@@ -5,13 +5,85 @@ from threadsafe import *
 from sybdb import *
 from config import *
 from login import *
+from query import *
 
 logger = logging.getLogger(__name__)
 
 dblib_mutex = None
 
+_DB_RES_INIT            = 0
+_DB_RES_RESULTSET_EMPTY = 1
+_DB_RES_RESULTSET_ROWS  = 2
+_DB_RES_NEXT_RESULT     = 3
+_DB_RES_NO_MORE_RESULTS = 4
+_DB_RES_SUCCEED         = 5
+
+REG_ROW         = -1
+MORE_ROWS       = -1
+NO_MORE_ROWS    = -2
+BUF_FULL        = -3
+NO_MORE_RESULTS = 2
+SUCCEED         = 1
+FAIL            = 0
+
 def CHECK_CONN(conn):
     pass
+
+#
+# Return the current row buffer index.  
+# We strive to validate it first.  It must be:
+# 	between zero and capacity (obviously), and
+# 	between the head and the tail, logically.  
+#
+# If the head has wrapped the tail, it shouldn't be in no man's land.  
+# IOW, if capacity is 9, head is 3 and tail is 7, good rows are 7-8 and 0-2.
+#      (Row 3 is about-to-be-inserted, and 4-6 are not in use.)  Here's a diagram:
+# 		d d d ! ! ! ! d d
+#		0 1 2 3 4 5 6 7 8
+#		      ^       ^
+#		      Head    Tail
+#
+# The special case is capacity == 1, meaning there's no buffering, and head == tail === 0.  
+#
+def buffer_current_index(dbproc):
+    buf = dbproc.row_buf
+    if buf.capacity <= 1: # no buffering
+        return -1
+    raise Exception('not implemented')
+    #if (buf->current == buf->head || buf->current == buf->capacity)
+    #        return -1;
+    #        
+    #assert(buf->current >= 0);
+    #assert(buf->current < buf->capacity);
+    #
+    #if( buf->tail < buf->head) {
+    #        assert(buf->tail < buf->current);
+    #        assert(buf->current < buf->head);
+    #} else {
+    #        if (buf->current > buf->head)
+    #                assert(buf->current > buf->tail);
+    #}
+    #return buf->current;
+
+def buffer_set_capacity(dbproc, nrows):
+    buf = dbproc.row_buf
+    if nrows == 0:
+        buf.capacity = 1
+        return
+    buf.capacity = nrows
+
+def buffer_is_full(buf):
+    #BUFFER_CHECK(buf)
+    return buf.capacity == buffer_count(buf) and buf.capacity > 1
+
+def buffer_free(dbproc):
+    pass
+
+def buffer_alloc(dbproc):
+    pass
+
+def dblib_add_connection(ctx, tds):
+    ctx.connection_list.append(tds)
 
 # \internal
 # \ingroup dblib_internal
@@ -20,7 +92,7 @@ def CHECK_CONN(conn):
 # \param dbproc contains all information needed by db-lib to manage communications with the server.
 # \param pcolinfo address of pointer to a TDSCOLUMN structure.
 # \remarks Makes sure dbproc and the requested column are valid.  
-#	Calls dbperror() if not.  
+#       Calls dbperror() if not.  
 # \returns appropriate error or SUCCEED
 #
 def dbcolptr(dbproc, column):
@@ -62,7 +134,7 @@ def dbdata(dbproc, col):
 #
 def dbcoltype(dbproc, column):
     logger.debug("dbcoltype(%d)" % column)
-    CHECK_PARAMETER(dbproc, SYBENULL, 0)
+    #CHECK_PARAMETER(dbproc, SYBENULL, 0)
 
     colinfo = dbcolptr(dbproc, column)
     if not colinfo:
@@ -72,7 +144,8 @@ def dbcoltype(dbproc, column):
         return SYBCHAR
     elif colinfo.column_type == SYBVARBINARY:
         return SYBBINARY
-    return tds_get_conversion_type(colinfo.column_type, colinfo.column_size)
+    #return tds_get_conversion_type(colinfo.column_type, colinfo.column_size)
+    return colinfo.column_type
 
 #
 # \ingroup dblib_core
@@ -115,7 +188,7 @@ def dbnextrow(dbproc):
     dbproc.row_type = NO_MORE_ROWS
     computeid = REG_ROW;
     idx = buffer_current_index(dbproc)
-    if -1 != ids:
+    if -1 != idx:
         #
         # Cool, the item we want is already there
         #
@@ -183,18 +256,18 @@ DBLIB_ERROR_MESSAGE = _dblib_error_message
 # * \brief Call client-installed error handler
 # * 
 # * \param dbproc contains all information needed by db-lib to manage communications with the server.
-# * \param msgno	identifies the error message to be passed to the client's handler.
+# * \param msgno        identifies the error message to be passed to the client's handler.
 # * \param errnum identifies the OS error (errno), if any.  Use 0 if not applicable.  
 # * \returns the handler's return code, subject to correction and adjustment for vendor style:
-# * 	- INT_CANCEL	The db-lib function that encountered the error will return FAIL.  
-# * 	- INT_TIMEOUT	The db-lib function will cancel the operation and return FAIL.  \a dbproc remains useable.  
-# * 	- INT_CONTINUE	The db-lib function will retry the operation.  
+# *     - INT_CANCEL    The db-lib function that encountered the error will return FAIL.  
+# *     - INT_TIMEOUT   The db-lib function will cancel the operation and return FAIL.  \a dbproc remains useable.  
+# *     - INT_CONTINUE  The db-lib function will retry the operation.  
 # * \remarks 
-# *	The client-installed handler may also return INT_EXIT.  If Sybase semantics are used, this function notifies
-# * 	the user and calls exit(3).  If Microsoft semantics are used, this function returns INT_CANCEL.  
+# *     The client-installed handler may also return INT_EXIT.  If Sybase semantics are used, this function notifies
+# *     the user and calls exit(3).  If Microsoft semantics are used, this function returns INT_CANCEL.  
 # *
-# *	If the client-installed handler returns something other than these four INT_* values, or returns timeout-related
-# *	value for anything but SYBETIME, it's treated here as INT_EXIT (see above).  
+# *     If the client-installed handler returns something other than these four INT_* values, or returns timeout-related
+# *     value for anything but SYBETIME, it's treated here as INT_EXIT (see above).  
 # *
 # * Instead of sprinkling error text all over db-lib, we consolidate it here, 
 # * where it can be translated (one day), and where it can be mapped to the TDS error number.  
@@ -205,23 +278,23 @@ DBLIB_ERROR_MESSAGE = _dblib_error_message
 # * 
 # * The call stack may look something like this:
 # *
-# * -#	application
-# * -#		db-lib function (encounters error)
-# * -#		dbperror
-# * -#	error handler (installed by application)
+# * -#  application
+# * -#          db-lib function (encounters error)
+# * -#          dbperror
+# * -#  error handler (installed by application)
 # *
 # * The error handling in this case is unambiguous: the caller invokes this function, the client's handler returns its 
 # * instruction, which the caller receives.  Quite often the caller will get INT_CANCEL, in which case it should put its 
 # * house in order and return FAIL.  
 # *
 # * The call stack may otherwise look something like this:
-# *			
-# * -#	application
-# * -#		db-lib function
-# * -#			libtds function (encounters error)
-# * -#		_dblib_handle_err_message
-# * -#		dbperror
-# * -# 	error handler (installed by application)
+# *                     
+# * -#  application
+# * -#          db-lib function
+# * -#                  libtds function (encounters error)
+# * -#          _dblib_handle_err_message
+# * -#          dbperror
+# * -#  error handler (installed by application)
 # *
 # * Because different client libraries specify their handler semantics differently, 
 # * and because libtds doesn't know which client library is in charge of any given connection, it cannot interpret the 
@@ -248,24 +321,24 @@ def dbperror (dbproc, msgno, errnum, *args):
 # \retval NO_MORE_RESULTS query produced no results. 
 #
 # \remarks Call dbresults() after calling dbsqlexec() or dbsqlok(), or dbrpcsend() returns SUCCEED.  Unless
-#	one of them fails, dbresults will return either SUCCEED or NO_MORE_RESULTS.  
+#       one of them fails, dbresults will return either SUCCEED or NO_MORE_RESULTS.  
 #
-#	The meaning of \em results is very specific and not very intuitive.  Results are created by either
-#	- a SELECT statement
-# 	- a stored procedure
+#       The meaning of \em results is very specific and not very intuitive.  Results are created by either
+#       - a SELECT statement
+#       - a stored procedure
 #
-# 	When dbresults returns SUCCEED, therefore, it indicates the server processed the query successfully and 
-# 	that one or more of these is present:
-#	- metadata -- dbnumcols() returns 1 or more
-#	- data -- dbnextrow() returns SUCCEED
-#	- return status -- dbhasretstat() returns TRUE
-#	- output parameters -- dbnumrets() returns 1 or more
+#       When dbresults returns SUCCEED, therefore, it indicates the server processed the query successfully and 
+#       that one or more of these is present:
+#       - metadata -- dbnumcols() returns 1 or more
+#       - data -- dbnextrow() returns SUCCEED
+#       - return status -- dbhasretstat() returns TRUE
+#       - output parameters -- dbnumrets() returns 1 or more
 #
-#	If none of the above are present, dbresults() returns NO_MORE_RESULTS.  
-# 	
-# 	SUCCEED does not imply that DBROWS() will return TRUE or even that dbnumcols() will return nonzero.  
-#	A general algorithm for reading results will call dbresults() until it return NO_MORE_RESULTS (or FAIL).  
-# 	An application should check for all the above kinds of results within the dbresults() loop.  
+#       If none of the above are present, dbresults() returns NO_MORE_RESULTS.  
+#       
+#       SUCCEED does not imply that DBROWS() will return TRUE or even that dbnumcols() will return nonzero.  
+#       A general algorithm for reading results will call dbresults() until it return NO_MORE_RESULTS (or FAIL).  
+#       An application should check for all the above kinds of results within the dbresults() loop.  
 # 
 # \sa dbsqlexec(), dbsqlok(), dbrpcsend(), dbcancel(), DBROWS(), dbnextrow(), dbnumcols(), dbhasretstat(), dbretstatus(), dbnumrets()
 #
@@ -284,10 +357,10 @@ def _dbresults(dbproc):
     if dbproc.dbresults_state == _DB_RES_SUCCEED:
         dbproc.dbresults_state = _DB_RES_NEXT_RESULT
         return SUCCEED
-    elif _dbproc.dbresults_state == DB_RES_RESULTSET_ROWS:
+    elif dbproc.dbresults_state == _DB_RES_RESULTSET_ROWS:
         dbperror(dbproc, SYBERPND, 0) # dbresults called while rows outstanding....
         return FAIL;
-    elif _dbproc.dbresults_state == _DB_RES_NO_MORE_RESULTS:
+    elif dbproc.dbresults_state == _DB_RES_NO_MORE_RESULTS:
         return NO_MORE_RESULTS;
 
     while True:
@@ -379,9 +452,8 @@ def dbcmd(dbproc, cmdstring):
         if not dbproc.noautofree:
             dbfreebuf(dbproc)
 
-    dbproc.dbbuf = smdstring
+    dbproc.dbbuf = cmdstring
     dbproc.command_state = DBCMDPEND
-    return SUCCEED
 
 #
 # \ingroup dblib_core
@@ -396,9 +468,8 @@ def dbcmd(dbproc, cmdstring):
 #
 def dbsqlexec(dbproc):
     logger.debug("dbsqlexec()")
-    rc = dbsqlsend(dbproc)
-    if SUCCEED == rc:
-        rc = dbsqlok(dbproc)
+    dbsqlsend(dbproc)
+    rc = dbsqlok(dbproc)
     return rc
 
 #
@@ -458,8 +529,13 @@ def dbsqlsend(dbproc):
     dbproc.dbresults_state = _DB_RES_INIT
     dbproc.command_state = DBCMDSENT
 
-class _DbProcess:
+class _DbProcRowBuf:
     pass
+
+class _DbProcess:
+    def __init__(self):
+        self.row_buf = _DbProcRowBuf()
+        self.text_sent = False
 
 # \internal
 # \ingroup dblib_internal
@@ -586,7 +662,7 @@ class _LoginRec:
 # \brief Allocate a \c LOGINREC structure.  
 #
 # \remarks A \c LOGINREC structure is passed to \c dbopen() to create a connection to the database. 
-# 	Does not communicate to the server; interacts strictly with library.  
+#       Does not communicate to the server; interacts strictly with library.  
 # \retval NULL the \c LOGINREC cannot be allocated.
 # \retval LOGINREC* to valid memory, otherwise.  
 #
@@ -625,11 +701,11 @@ def dbsetlogintime(seconds):
 #/
 # Thus saith Sybase:
 #     "If the user does not supply an error handler (or passes a NULL pointer to 
-#	dberrhandle), DB-Library will exhibit its default error-handling 
-#	behavior: It will abort the program if the error has made the affected 
-#	DBPROCESS unusable (the user can call DBDEAD to determine whether 
-#	or not a DBPROCESS has become unusable). If the error has not made the 
-#	DBPROCESS unusable, DB-Library will simply return an error code to its caller." 
+#       dberrhandle), DB-Library will exhibit its default error-handling 
+#       behavior: It will abort the program if the error has made the affected 
+#       DBPROCESS unusable (the user can call DBDEAD to determine whether 
+#       or not a DBPROCESS has become unusable). If the error has not made the 
+#       DBPROCESS unusable, DB-Library will simply return an error code to its caller." 
 #
 # It is not the error handler, however, that aborts anything.  It is db-lib, cf. dbperror().  
 #/ 
@@ -767,3 +843,188 @@ def _dblib_handle_err_message(tds_ctx, tds, msg):
 
 def _dblib_check_and_handle_interrupt(vdbproc):
     raise Exception('not implemented')
+
+#*
+# \ingroup dblib_core
+# \brief Wait for results of a query from the server.  
+# 
+# \param dbproc contains all information needed by db-lib to manage communications with the server.
+# \retval SUCCEED everything worked, fetch results with \c dbnextresults().
+# \retval FAIL SQL syntax error, typically.  
+# \sa dbcmd(), dbfcmd(), DBIORDESC(), DBIOWDESC(), dbmoretext(), dbnextrow(),
+#     dbpoll(), DBRBUF(), dbresults(), dbretstatus(), dbrpcsend(), dbsettime(), dbsqlexec(),
+#     dbsqlsend(), dbwritetext().
+#/
+def dbsqlok(dbproc):
+    return_code = SUCCEED
+    logger.debug("dbsqlok()")
+    #CHECK_CONN(FAIL);
+
+    tds = dbproc.tds_socket
+    #
+    # dbsqlok has been called after dbmoretext()
+    # This is the trigger to send the text data.
+    #
+    if dbproc.text_sent:
+        tds_flush_packet(tds)
+        dbproc.text_sent = 0
+
+    #
+    # See what the next packet from the server is.
+    # We want to skip any messages which are not processable. 
+    # We're looking for a result token or a done token.
+    #
+    while True:
+        done_flags = 0
+
+        #
+        # If we hit an end token -- e.g. if the command
+        # submitted returned no data (like an insert) -- then
+        # we process the end token to extract the status code. 
+        #
+        logger.debug("dbsqlok() not done, calling tds_process_tokens()")
+
+        tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+
+        #
+        # The error flag may be set for any intervening DONEINPROC packet, in particular
+        # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+        #/
+        if done_flags & TDS_DONE_ERROR:
+            return_code = FAIL
+        if tds_code == TDS_NO_MORE_RESULTS:
+                return SUCCEED;
+
+        elif tds_code == TDS_SUCCESS:
+            if result_type == TDS_ROWFMT_RESULT:
+                buffer_free(dbproc.row_buf)
+                buffer_alloc(dbproc)
+            elif result_type == TDS_COMPUTEFMT_RESULT:
+                dbproc.dbresults_state = _DB_RES_RESULTSET_EMPTY;
+                logger.debug("dbsqlok() found result token")
+                return SUCCEED;
+            elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
+                logger.debug("dbsqlok() found result token")
+                return SUCCEED;
+            elif result_type == TDS_DONEINPROC_RESULT:
+                pass
+            elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                logger.debug("dbsqlok() end status is %s", prdbretcode(return_code))
+                if True:
+                    if done_flags & TDS_DONE_ERROR:
+                        if done_flags & TDS_DONE_MORE_RESULTS:
+                            dbproc.dbresults_state = _DB_RES_NEXT_RESULT
+                        else:
+                            dbproc.dbresults_state = _DB_RES_NO_MORE_RESULTS
+
+                    else:
+                        logger.debug("dbsqlok() end status was success")
+                        dbproc.dbresults_state = _DB_RES_SUCCEED
+                    return return_code
+                else:
+                    retcode = FAIL if done_flags & TDS_DONE_ERROR else SUCCEED;
+                    dbproc.dbresults_state = _DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
+                    logger.debug("dbsqlok: returning %s with %s (%#x)", 
+                                    prdbretcode(retcode), prdbresults_state(dbproc.dbresults_state), done_flags)
+                    if retcode == SUCCEED and (done_flags & TDS_DONE_MORE_RESULTS):
+                        continue
+                    return retcode
+            else:
+                logger.debug('logic error: tds_process_tokens result_type %d', result_type);
+        else:
+            assert TDS_FAILED(tds_code)
+            return FAIL
+
+    return SUCCEED
+
+def dbnumcols(dbproc):
+    logger.debug("dbnumcols()")
+    #CHECK_PARAMETER(dbproc, SYBENULL, 0)
+
+    if dbproc and dbproc.tds_socket and dbproc.tds_socket.res_info:
+        return dbproc.tds_socket.res_info.num_cols
+    return 0
+
+#/**
+# * \ingroup dblib_core
+# * \brief Get count of rows processed
+# *
+# *
+# * \param dbproc contains all information needed by db-lib to manage communications with the server.
+# * \returns
+# * 	- for insert/update/delete, count of rows affected.
+# * 	- for select, count of rows returned, after all rows have been fetched.
+# * \sa DBCOUNT(), dbnextrow(), dbresults().
+# */
+def dbcount(dbproc):
+    logger.debug("dbcount()")
+    #CHECK_PARAMETER(dbproc, SYBENULL, -1);
+
+    if not dbproc or not dbproc.tds_socket or dbproc.tds_socket.rows_affected == TDS_NO_COUNT:
+        return -1
+    return dbproc.tds_socket.rows_affected
+
+#/**
+# * \ingroup dblib_core
+# * \brief Return name of a regular result column.
+# * 
+# * \param dbproc contains all information needed by db-lib to manage communications with the server.
+# * \param column Nth in the result set, starting with 1.  
+# * \return pointer to ASCII null-terminated string, the name of the column. 
+# * \retval NULL \a column is not in range.
+# * \sa dbcollen(), dbcoltype(), dbdata(), dbdatlen(), dbnumcols().
+# * \bug Relies on ASCII column names, post iconv conversion.  
+# *      Will not work as described for UTF-8 or UCS-2 clients.  
+# *      But maybe it shouldn't.  
+# */
+def dbcolname(dbproc,  column):
+    logger.debug("dbcolname(%d)", column)
+    #CHECK_PARAMETER(dbproc, SYBENULL, 0);
+
+    colinfo = dbcolptr(dbproc, column)
+    if not colinfo:
+        return None
+    return colinfo.column_name
+
+def prdbresults_state(retcode):
+    if retcode == _DB_RES_INIT:                 return "_DB_RES_INIT"
+    elif retcode == _DB_RES_RESULTSET_EMPTY:    return "_DB_RES_RESULTSET_EMPTY"
+    elif retcode == _DB_RES_RESULTSET_ROWS:     return "_DB_RES_RESULTSET_ROWS"
+    elif retcode == _DB_RES_NEXT_RESULT:        return "_DB_RES_NEXT_RESULT"
+    elif retcode == _DB_RES_NO_MORE_RESULTS:    return "_DB_RES_NO_MORE_RESULTS"
+    elif retcode == _DB_RES_SUCCEED:            return "_DB_RES_SUCCEED"
+    else: return "oops: %d ??" % retcode
+
+def prdbretcode(retcode):
+    if retcode == REG_ROW:            return "REG_ROW/MORE_ROWS"
+    elif retcode == NO_MORE_ROWS:       return "NO_MORE_ROWS"
+    elif retcode == BUF_FULL:           return "BUF_FULL"
+    elif retcode == NO_MORE_RESULTS:    return "NO_MORE_RESULTS"
+    elif retcode == SUCCEED:            return "SUCCEED"
+    elif retcode == FAIL:               return "FAIL"
+    else: return "oops: %u ??" % retcode
+
+def prretcode(retcode):
+    if retcode == TDS_SUCCESS:                  return "TDS_SUCCESS"
+    elif retcode == TDS_FAIL:                   return "TDS_FAIL"
+    elif retcode == TDS_NO_MORE_RESULTS:        return "TDS_NO_MORE_RESULTS"
+    elif retcode == TDS_CANCELLED:              return "TDS_CANCELLED"
+    else: return "oops: %u ??" % retcode
+
+def prresult_type(result_type):
+    if result_type == TDS_ROW_RESULT:          return "TDS_ROW_RESULT"
+    elif result_type == TDS_PARAM_RESULT:      return "TDS_PARAM_RESULT"
+    elif result_type == TDS_STATUS_RESULT:     return "TDS_STATUS_RESULT"
+    elif result_type == TDS_MSG_RESULT:        return "TDS_MSG_RESULT"
+    elif result_type == TDS_COMPUTE_RESULT:    return "TDS_COMPUTE_RESULT"
+    elif result_type == TDS_CMD_DONE:          return "TDS_CMD_DONE"
+    elif result_type == TDS_CMD_SUCCEED:       return "TDS_CMD_SUCCEED"
+    elif result_type == TDS_CMD_FAIL:          return "TDS_CMD_FAIL"
+    elif result_type == TDS_ROWFMT_RESULT:     return "TDS_ROWFMT_RESULT"
+    elif result_type == TDS_COMPUTEFMT_RESULT: return "TDS_COMPUTEFMT_RESULT"
+    elif result_type == TDS_DESCRIBE_RESULT:   return "TDS_DESCRIBE_RESULT"
+    elif result_type == TDS_DONE_RESULT:       return "TDS_DONE_RESULT"
+    elif result_type == TDS_DONEPROC_RESULT:   return "TDS_DONEPROC_RESULT"
+    elif result_type == TDS_DONEINPROC_RESULT: return "TDS_DONEINPROC_RESULT"
+    elif result_type == TDS_OTHERS_RESULT:     return "TDS_OTHERS_RESULT"
+    else: "oops: %u ??" % result_type

@@ -9,6 +9,45 @@ PYMSSQL_DEBUG = False
 # List to store the connection objects in
 connection_object_list = list()
 
+#############################
+## DB-API type definitions ##
+#############################
+STRING = 1
+BINARY = 2
+NUMBER = 3
+DATETIME = 4
+DECIMAL = 5
+
+##################
+## DB-LIB types ##
+##################
+SQLBINARY = SYBBINARY
+SQLBIT = SYBBIT
+SQLBITN = 104
+SQLCHAR = SYBCHAR
+SQLDATETIME = SYBDATETIME
+SQLDATETIM4 = SYBDATETIME4
+SQLDATETIMN = SYBDATETIMN
+SQLDECIMAL = SYBDECIMAL
+SQLFLT4 = SYBREAL
+SQLFLT8 = SYBFLT8
+SQLFLTN = SYBFLTN
+SQLIMAGE = SYBIMAGE
+SQLINT1 = SYBINT1
+SQLINT2 = SYBINT2
+SQLINT4 = SYBINT4
+SQLINT8 = SYBINT8
+SQLINTN = SYBINTN
+SQLMONEY = SYBMONEY
+SQLMONEY4 = SYBMONEY4
+SQLMONEYN = SYBMONEYN
+SQLNUMERIC = SYBNUMERIC
+SQLREAL = SYBREAL
+SQLTEXT = SYBTEXT
+SQLVARBINARY = SYBVARBINARY
+SQLVARCHAR = SYBVARCHAR
+SQLUUID = 36
+
 #######################
 ## Exception classes ##
 #######################
@@ -104,8 +143,7 @@ class MSSQLConnection(object):
         self._connected = 0
         #self._charset = <char *>PyMem_Malloc(PYMSSQL_CHARSETBUFSIZE)
         #self._charset[0] = <char>0
-        #self.last_msg_str = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
-        #self.last_msg_str[0] = <char>0
+        self.last_msg_str = ''
         #self.last_msg_srv = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
         #self.last_msg_srv[0] = <char>0
         #self.last_msg_proc = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
@@ -583,14 +621,42 @@ def check_and_raise(rtc, conn):
     #elif get_last_msg_str(conn):
     #    return maybe_raise_MSSQLDatabaseException(conn)
 
+def check_cancel_and_raise(rtc, conn):
+    if rtc == FAIL:
+        db_cancel(conn)
+        return maybe_raise_MSSQLDatabaseException(conn)
+    elif get_last_msg_str(conn):
+        return maybe_raise_MSSQLDatabaseException(conn)
+
+def get_last_msg_str(conn):
+    return conn.last_msg_str if conn != None else _mssql_last_msg_str
+
 def init_mssql():
     dbinit()
     dberrhandle(err_handler)
     dbmsghandle(msg_handler)
 
+######################
+## Helper Functions ##
+######################
+def get_api_coltype(coltype):
+    if coltype in (SQLBIT, SQLINT1, SQLINT2, SQLINT4, SQLINT8, SQLINTN,
+            SQLFLT4, SQLFLT8, SQLFLTN):
+        return NUMBER
+    elif coltype in (SQLMONEY, SQLMONEY4, SQLMONEYN, SQLNUMERIC,
+            SQLDECIMAL):
+        return DECIMAL
+    elif coltype in (SQLDATETIME, SQLDATETIM4, SQLDATETIMN):
+        return DATETIME
+    elif coltype in (SQLVARCHAR, SQLCHAR, SQLTEXT):
+        return STRING
+    else:
+        return BINARY
+
 init_mssql()
 
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
-    conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
+    #conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
+    conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
     conn.execute_scalar('select 1 as fieldname')

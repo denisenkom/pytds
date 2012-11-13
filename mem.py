@@ -69,7 +69,7 @@ def tds_realloc_socket(tds, bufsize):
 
     if tds.out_pos <= bufsize and bufsize > 0:
         if bufsize > tds.env.block_size:
-            tds.out_buf.extend('\0'*(bufsize - len(tds.out_pos)))
+            tds.out_buf.extend('\0'*(bufsize - len(tds.out_buf)))
         else:
             tds.out_buf = tds.out_buf[0:bufsize]
         tds.env.block_size = bufsize
@@ -153,6 +153,7 @@ class _TdsLogin:
         self.port = 1433
         self.block_size = 4096
         self.bulk_copy = False
+        self.text_size = 0
 
 def tds_alloc_login(use_environment):
     server_name = TDS_DEF_SERVER
@@ -187,6 +188,9 @@ def tds_alloc_login(use_environment):
     login.server_name = server_name
     #login.capabilities = defaultcaps
     return login
+
+def tds_free_login(login):
+    pass
 
 class _TdsContext:
     pass
