@@ -478,7 +478,8 @@ def set_max_connections(limit):
 
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
-    conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
+    conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
+    #conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
     cur = conn.cursor()
-    cur.execute('select 1')
-    assert (1,) == cur.fetchone()
+    cur.execute('select %s', [5])
+    assert (5,) == cur.fetchone()

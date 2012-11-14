@@ -696,7 +696,7 @@ def tdsdbopen(login, server, msdblib):
     dbproc.dboptcmd = None
     dbproc.avail_flag = True
     dbproc.command_state = DBCMDNONE
-    tds_set_server(login.tds_login, server)
+    tds_set_server(login, server)
     dbproc.tds_socket = tds_alloc_socket(dblib_get_tds_ctx(), 512)
 
     tds_set_parent(dbproc.tds_socket, dbproc)
@@ -707,7 +707,7 @@ def tdsdbopen(login, server, msdblib):
     dbproc.dbcurdb = ''
     dbproc.servcharset = '\0'
 
-    connection = tds_read_config_info(dbproc.tds_socket, login.tds_login, g_dblib_ctx.tds_ctx.locale)
+    connection = tds_read_config_info(dbproc.tds_socket, login, g_dblib_ctx.tds_ctx.locale)
     if not connection:
         dbclose(dbproc)
         return None
@@ -771,9 +771,6 @@ def tdsdbopen(login, server, msdblib):
 def dbopen(login, server):
     return tdsdbopen(login, server, 1)
 
-class _LoginRec:
-    pass
-
 #
 # \ingroup dblib_core
 # \brief Allocate a \c LOGINREC structure.  
@@ -785,11 +782,10 @@ class _LoginRec:
 #
 def dblogin():
     logger.debug("dblogin(void)")
-    loginrec = _LoginRec()
-    loginrec.tds_login = tds_alloc_login(1)
+    tds_login = tds_alloc_login(1)
     # set default values for loginrec
-    loginrec.tds_login.library = "DB-Library"
-    return loginrec
+    tds_login.library = "DB-Library"
+    return tds_login
 
 #
 # \ingroup dblib_core
