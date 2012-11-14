@@ -205,3 +205,11 @@ def tds_put_cancel(tds):
     if sent <= 0:
         raise Exception('TDS_FAIL')
     return TDS_SUCCESS
+
+def tds_ssl_deinit(tds):
+    if tds_conn(tds).tls_session:
+        gnutls_deinit(tds_conn(tds).tls_session)
+        #tds_conn(tds).tls_session = None
+    if tds_conn(tds).tls_credentials:
+        gnutls_certificate_free_credentials(tds_conn(tds).tls_credentials)
+        #tds_conn(tds).tls_credentials = None

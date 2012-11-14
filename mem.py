@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 class _TdsConn:
     def __init__(self):
         self.tls_session = None
+        self.tls_credentials = None
 
 class _TdsEnv:
     pass
@@ -30,7 +31,6 @@ class _TdsSocket(object):
         self.param_info = None
         self.cur_cursor = None
         self.use_iconv = True
-        self.tls_session = None
     def is_dead(self):
         return self.state == TDS_DEAD
 
@@ -76,6 +76,28 @@ def tds_realloc_socket(tds, bufsize):
         tds.env.block_size = bufsize
         return tds
     return None
+
+def tds_free_socket(tds):
+    if tds:
+        #if tds_conn(tds).authentication:
+        #    tds_conn(tds).authentication.free(tds, tds_conn(tds).authentication)
+        #tds_conn(tds).authentication = None
+        #tds_free_all_results(tds)
+        #tds_free_env(tds)
+        #while (tds->dyns)
+        #    tds_free_dynamic(tds, tds->dyns);
+        #while (tds->cursors)
+        #    tds_cursor_deallocated(tds, tds->cursors);
+        #free(tds->in_buf)
+        #free(tds->out_buf)
+        from net import tds_ssl_deinit, tds_close_socket
+        tds_ssl_deinit(tds)
+        tds_close_socket(tds);
+        tds_conn(tds).s_signal.close()
+        tds_conn(tds).s_signaled.close()
+        #tds_iconv_free(tds);
+        #free(tds_conn(tds)->product_name);
+        #free(tds);
 
 def tds_free_all_results(tds):
     logger.debug("tds_free_all_results()")
