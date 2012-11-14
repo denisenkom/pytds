@@ -219,11 +219,7 @@ def dbdata(dbproc, column):
     if colinfo.column_cur_size < 0:
         return None
     if is_blob_col(colinfo):
-        raise Exception('not implemented')
-        #BYTE *res = (BYTE *) ((TDSBLOB *) colinfo->column_data)->textvalue;
-        #if (!res)
-        #    return (BYTE *) empty;
-        #return res;
+        return colinfo.column_data.textvalue
     else:
         return colinfo.column_data
 
@@ -957,6 +953,7 @@ def _dblib_handle_err_message(tds_ctx, tds, msg):
 
 def _dblib_check_and_handle_interrupt(vdbproc):
     raise Exception('not implemented')
+
 
 #*
 # \ingroup dblib_core

@@ -95,11 +95,50 @@ def tds_iconv_get_info(tds, canonic_client, canonic_server):
 def tds_iconv_alloc(tds):
     tds.char_convs = {
             client2ucs2: {
-                'server_charset': {'canonic': TDS_CHARSET_UCS_2LE},
-                'client_charset': {'canonic': TDS_CHARSET_CP1251},
+                'server_charset': {'canonic': TDS_CHARSET_UCS_2LE, 'name': 'utf16'},
+                'client_charset': {'canonic': TDS_CHARSET_UNICODE, 'name': 'unicode'},
+                'from_wire': lambda buf: buf.decode('utf16'),
+                'from_wire2': None,
+                'flags': 0,
                 },
             client2server_chardata: {
-                'server_charset': {'canonic': TDS_CHARSET_CP1251},
+                'server_charset': {'canonic': TDS_CHARSET_CP1251, 'name': 'cp1251'},
+                'client_charset': {'canonic': TDS_CHARSET_UNICODE, 'name': 'unicode'},
+                'from_wire': lambda buf: buf.decode('cp1251'),
+                'from_wire2': None,
+                'flags': 0,
                 },
             iso2server_metadata: {},
             }
+
+def tds_iconv(tds, conv, io, inbuf):
+    if io == to_server:
+        cd = conv['to_wire']
+        cd2 = conv['to_wire2']
+    elif io == to_client:
+        cd = conv['from_wire']
+        cd2 = conv['from_wire2']
+    else:
+        assert io == to_server or io == to_client
+
+    # silly case, memcpy
+    if conv['flags'] & TDS_ENCODING_MEMCPY:
+        return inbuf
+
+    if conv['flags'] & TDS_ENCODING_INDIRECT:
+        tmp = tds_sys_iconv(cd, inbuf)
+        result = tds_sys_iconv(cd2, tmp)
+    elif io == to_client and conv['flags'] & TDS_ENCODING_SWAPBYTE and inbuf:
+        # swap bytes if necessary
+        raise Exception('not implemented')
+    else:
+        result = tds_sys_iconv(cd, inbuf)
+
+    # swap bytes if necessary
+    if io == to_server and conv['flags'] & TDS_ENCODING_SWAPBYTE:
+        raise Exception('not implemented')
+
+    return result
+
+def tds_sys_iconv(conv, buf):
+    return conv(buf)

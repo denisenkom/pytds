@@ -167,58 +167,36 @@ def tds_data_get(tds, curcol):
     # colsize == wire_size, bytes to read
     # curcol->column_cur_size == sizeof destination buffer, room to write
     #
-    dest = curcol.column_data;
     if is_blob_col(curcol):
-        raise Exception('not implemented')
-        #TDS_CHAR *p;
-        #int new_blob_size;
-        #assert(blob == (TDSBLOB *) dest); 	/* cf. column_varint_size case 4, above */
+        # Blobs don't use a column's fixed buffer because the official maximum size is 2 GB.
+        # Instead, they're reallocated as necessary, based on the data's size.
+        # Here we allocate memory, if need be.
         #
-        #/* 
-        #    * Blobs don't use a column's fixed buffer because the official maximum size is 2 GB.
-        #    * Instead, they're reallocated as necessary, based on the data's size.  
-        #    * Here we allocate memory, if need be.  
-        #    */
-        #/* TODO this can lead to a big waste of memory */
-        #if (USE_ICONV)
-        #        new_blob_size = determine_adjusted_size(curcol->char_conv, colsize);
-        #else
-        #        new_blob_size = colsize;
-        #if (new_blob_size == 0) {
-        #        curcol->column_cur_size = 0;
-        #        if (blob->textvalue)
-        #                TDS_ZERO_FREE(blob->textvalue);
-        #        return TDS_SUCCESS;
-        #}
+        # TODO this can lead to a big waste of memory
+        new_blob_size = colsize
+        if new_blob_size == 0:
+            curcol.column_cur_size = 0
+            blob.textvalue = b''
+            return TDS_SUCCESS
 
-        #p = blob->textvalue; /* save pointer in case realloc fails */
-        #if (!p) {
-        #        p = (TDS_CHAR *) malloc(new_blob_size);
-        #} else {
-        #        /* TODO perhaps we should store allocated bytes too ? */
-        #        if (new_blob_size > curcol->column_cur_size ||  (curcol->column_cur_size - new_blob_size) > 10240) {
-        #                p = (TDS_CHAR *) realloc(p, new_blob_size);
-        #        }
-        #}
-        #
-        #if (!p)
-        #        return TDS_FAIL;
-        #blob->textvalue = p;
-        #curcol->column_cur_size = new_blob_size;
-        #
-        #/* read the data */
-        #if (USE_ICONV && curcol->char_conv) {
-        #        if (TDS_FAILED(tds_get_char_data(tds, (char *) blob, colsize, curcol)))
-        #                return TDS_FAIL;
-        #} else {
-        #        assert(colsize == new_blob_size);
-        #        tds_get_n(tds, blob->textvalue, colsize);
-        #}
+        curcol.column_cur_size = new_blob_size
+        # read the data
+        if USE_ICONV(tds) and curcol.char_conv:
+            tds_get_char_data(tds, blob, colsize, curcol)
+        else:
+            assert colsize == new_blob_size
+            blob.textvalue = tds_get_n(tds, colsize)
     else: # non-numeric and non-blob
         curcol.column_cur_size = colsize
 
         if USE_ICONV(tds) and curcol.char_conv:
-            curcol.column_data = tds_get_char_data(tds, colsize, curcol)
+            if colsize == 0:
+                curcol.column_data = u''
+            elif curcol.char_conv:
+                curcol.column_data = read_and_convert(tds, curcol.char_conv, colsize)
+            else:
+                curcol.column_data = tds_get_n(tds, colsize)
+            curcol.cur_size = len(curcol.column_data)
         else:
             #
             # special case, some servers seem to return more data in some conditions 
@@ -306,6 +284,66 @@ def DEFINE_FUNCS(prefix, name):
     g[prefix+'_funcs'] = funcs
 
 DEFINE_FUNCS('default', 'data')
+
+def tds_numeric_get_info(tds, col):
+    col.column_size = tds_get_byte(tds)
+    col.column_prec = tds_get_byte(tds)
+    col.column_scale = tds_get_byte(tds)
+    # FIXME check prec/scale, don't let server crash us
+    return TDS_SUCCESS
+
+numeric_format = struct.Struct('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')
+
+def tds_numeric_row_len(col):
+    return numeric_format.size
+
+class _Numeric:
+    pass
+
+def tds_numeric_get(tds,  curcol):
+    CHECK_TDS_EXTRA(tds)
+    CHECK_COLUMN_EXTRA(curcol)
+
+    import pdb; pdb.set_trace()
+    colsize = tds_get_byte(tds)
+
+    # set NULL flag in the row buffer
+    if colsize <= 0:
+        curcol.column_cur_size = -1
+        return TDS_SUCCESS
+
+    #
+    # Since these can be passed around independent
+    # of the original column they came from, we embed the TDS_NUMERIC datatype in the row buffer
+    # instead of using the wire representation, even though it uses a few more bytes.
+    #
+    curcol.column_data = num = _Numeric()
+    # TODO perhaps it would be fine to change format ??
+    num.precision = curcol.column_prec
+    num.scale = curcol.column_scale
+
+    # server is going to crash freetds ??
+    # TODO close connection it server try to do so ??
+    if colsize > 33:
+        return TDS_FAIL
+    num.array = tds_get_n(tds, colsize)
+
+    if IS_TDS7_PLUS(tds):
+        from token import tds_swap_numeric
+        tds_swap_numeric(num)
+
+    # corrected colsize for column_cur_size
+    curcol.column_cur_size = numeric_format.size
+
+    return TDS_SUCCESS
+
+def tds_numeric_put_info(tds):
+    raise Exception('not implemented')
+
+def tds_numeric_put(tds):
+    raise Exception('not implemented')
+
+DEFINE_FUNCS('numeric', 'numeric')
 def gen_get_varint_size():
     table = '''\
 name	vendor	varint	fixed	nullable	variable	blob	numeric	unicode	ascii	size	nullable type
