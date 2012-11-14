@@ -332,7 +332,7 @@ class MSSQLConnection(object):
             #return int(<int>(<DBSMALLINT *>data)[0])
 
         elif type == SQLINT4:
-            return struct.unpack('<l', data)
+            return struct.unpack('<l', data)[0]
             #return int(<int>(<DBINT *>data)[0])
 
         elif type == SQLINT8:
@@ -569,6 +569,7 @@ class MSSQLConnection(object):
             logger.debug("_mssql.MSSQLConnection.get_result() END")
 
     def get_row(self, row_info):
+        dbproc = self.dbproc
         logger.debug("_mssql.MSSQLConnection.get_row()")
         global _row_count
 
@@ -579,12 +580,11 @@ class MSSQLConnection(object):
 
         for col in xrange(1, self.num_columns + 1):
 
-            with nogil:
-                data = get_data(dbproc, row_info, col)
-                col_type = get_type(dbproc, row_info, col)
-                len = get_length(dbproc, row_info, col)
+            data = get_data(dbproc, row_info, col)
+            col_type = get_type(dbproc, row_info, col)
+            len = get_length(dbproc, row_info, col)
 
-            if data == NULL:
+            if data == None:
                 record += (None,)
                 continue
 
@@ -660,4 +660,5 @@ if __name__ == '__main__':
     conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
     #conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
     conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
-    conn.execute_scalar('select 1 as fieldname')
+    assert 5 == conn.execute_scalar('select 5 as fieldname')
+    assert 'text' == conn.execute_scalar("select 'test' as fieldname")

@@ -790,15 +790,19 @@ def adjust_character_column_size(tds, curcol):
     curcol.on_server.column_size = curcol.column_size;
     curcol.column_size = determine_adjusted_size(curcol.char_conv, curcol.column_size)
 
+    print curcol.char_conv['server_charset']
     logger.debug("adjust_character_column_size:\n"
                  "\tServer charset: %s\n"
                  "\tServer column_size: %d\n"
                  "\tClient charset: %s\n"
                  "\tClient column_size: %d\n", 
-                 curcol.char_conv.server_charset.name, 
+                 curcol.char_conv['server_charset']['name'], 
                  curcol.on_server.column_size, 
-                 curcol.char_conv.client_charset.name,
+                 curcol.char_conv['client_charset']['name'],
                  curcol.column_size)
+
+def determine_adjusted_size(char_conv, column_size):
+    return column_size
 
 _prtype_map = dict((
             (SYBAOPAVG, "avg"),
