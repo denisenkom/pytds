@@ -141,8 +141,7 @@ class MSSQLConnection(object):
             charset='', database='', appname=None, port='1433', tds_version='7.1'):
         logger.debug("_mssql.MSSQLConnection.__cinit__()")
         self._connected = 0
-        #self._charset = <char *>PyMem_Malloc(PYMSSQL_CHARSETBUFSIZE)
-        #self._charset[0] = <char>0
+        self._charset = ''
         self.last_msg_str = ''
         #self.last_msg_srv = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
         #self.last_msg_srv[0] = <char>0
@@ -311,41 +310,28 @@ class MSSQLConnection(object):
 
     def convert_db_value(self, data, type, length):
         logger.debug("_mssql.MSSQLConnection.convert_db_value()")
-        #cdef char buf[NUMERIC_BUF_SZ] # buffer in which we store text rep of bug nums
-        #cdef int len
-        #cdef long prevPrecision
-        #cdef BYTE precision
-        #cdef DBDATEREC di
-        #cdef DBDATETIME dt
-        #cdef DBCOL dbcol
 
-        if type == SQLBIT:
-            raise Exception('not implemented')
-            #return bool(<int>(<DBBIT *>data)[0])
+        #import pdb; pdb.set_trace()
+        if type in (SQLBIT, SQLBITN):
+            return bool(struct.unpack('B', data)[0])
 
-        elif type == SQLINT1:
-            raise Exception('not implemented')
-            #return int(<int>(<DBTINYINT *>data)[0])
+        elif type == SQLINT1 or type == SYBINTN and length == 1:
+            return struct.unpack('b', data)[0]
 
-        elif type == SQLINT2:
-            raise Exception('not implemented')
-            #return int(<int>(<DBSMALLINT *>data)[0])
+        elif type == SQLINT2 or type == SYBINTN and length == 2:
+            return struct.unpack('<h', data)[0]
 
-        elif type == SQLINT4:
+        elif type == SQLINT4 or type == SYBINTN and length == 4:
             return struct.unpack('<l', data)[0]
-            #return int(<int>(<DBINT *>data)[0])
 
-        elif type == SQLINT8:
-            #return long(<PY_LONG_LONG>(<PY_LONG_LONG *>data)[0])
-            raise Exception('not implemented')
+        elif type == SQLINT8 or type == SYBINTN and length == 8:
+            return struct.unpack('<q', data)[0]
 
-        elif type == SQLFLT4:
-            #return float(<float>(<DBREAL *>data)[0])
-            raise Exception('not implemented')
+        elif type == SQLFLT4 or type == SYBFLTN and length == 4:
+            return struct.unpack('j', data)[0]
 
-        elif type == SQLFLT8:
-            #return float(<double>(<DBFLT8 *>data)[0])
-            raise Exception('not implemented')
+        elif type == SQLFLT8 or type == SYBFLTN and length == 8:
+            return struct.unpack('d', data)[0]
 
         elif type in (SQLMONEY, SQLMONEY4, SQLNUMERIC, SQLDECIMAL):
             raise Exception('not implemented')
@@ -363,34 +349,21 @@ class MSSQLConnection(object):
             #    ctx.prec = precision
             #    return decimal.Decimal(_remove_locale(buf, len))
 
-        elif type == SQLDATETIM4:
-            raise Exception('not implemented')
-            #dbconvert(self.dbproc, type, data, -1, SQLDATETIME,
-            #    <BYTE *>&dt, -1)
-            #dbdatecrack(self.dbproc, &di, <DBDATETIME *><BYTE *>&dt)
-            #return datetime.datetime(di.year, di.month, di.day,
-            #    di.hour, di.minute, di.second, di.millisecond * 1000)
-
-        elif type == SQLDATETIME:
-            raise Exception('not implemented')
-            #dbdatecrack(self.dbproc, &di, <DBDATETIME *>data)
-            #return datetime.datetime(di.year, di.month, di.day,
-            #    di.hour, di.minute, di.second, di.millisecond * 1000)
+        elif type in (SQLDATETIME, SQLDATETIM4, SQLDATETIMN):
+            return tds_datecrack(type, data)
 
         elif type in (SQLVARCHAR, SQLCHAR, SQLTEXT):
-            raise Exception('not implemented')
-            #if strlen(self._charset):
-            #    return (<char *>data)[:length].decode(self._charset)
-            #else:
-            #    return (<char *>data)[:length]
+            if self._charset:
+                return data[:length].decode(self._charset)
+            else:
+                return data[:length]
 
         elif type == SQLUUID and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
             raise Exception('not implemented')
             #return uuid.UUID(bytes_le=(<char *>data)[:length])
 
         else:
-            raise Exception('not implemented')
-            #return (<char *>data)[:length]
+            return data[:length]
 
     def select_db(self, dbname):
         """
@@ -463,6 +436,65 @@ class MSSQLConnection(object):
         check_and_raise(rtc, self)
         logger.debug("_mssql.MSSQLConnection.execute_non_query() END")
 
+    def execute_query(self, query_string, params=None):
+        """
+        execute_query(query_string, params=None)
+
+        This method sends a query to the MS SQL Server to which this object
+        instance is connected. An exception is raised on failure. If there
+        are pending results or rows prior to executing this command, they
+        are silently discarded. After calling this method you may iterate
+        over the connection object to get rows returned by the query.
+
+        You can use Python formatting here and all values get properly
+        quoted:
+            conn.execute_query('SELECT * FROM empl WHERE id=%d', 13)
+            conn.execute_query('SELECT * FROM empl WHERE id IN (%s)', ((5,6),))
+            conn.execute_query('SELECT * FROM empl WHERE name=%s', 'John Doe')
+            conn.execute_query('SELECT * FROM empl WHERE name LIKE %s', 'J%')
+            conn.execute_query('SELECT * FROM empl WHERE name=%(name)s AND \
+                city=%(city)s', { 'name': 'John Doe', 'city': 'Nowhere' } )
+            conn.execute_query('SELECT * FROM cust WHERE salesrep=%s \
+                AND id IN (%s)', ('John Doe', (1,2,3)))
+            conn.execute_query('SELECT * FROM empl WHERE id IN (%s)',\
+                (tuple(xrange(4)),))
+            conn.execute_query('SELECT * FROM empl WHERE id IN (%s)',\
+                (tuple([3,5,7,11]),))
+
+        This method is intented to be used on queries that return results,
+        i.e. SELECT. After calling this method AND reading all rows from,
+        result rows_affected property contains number of rows returned by
+        last command (this is how MS SQL returns it).
+        """
+        logger.debug("_mssql.MSSQLConnection.execute_query() BEGIN")
+        self.format_and_run_query(query_string, params)
+        self.get_result()
+        logger.debug("_mssql.MSSQLConnection.execute_query() END")
+
+    def execute_row(self, query_string, params=None):
+        """
+        execute_row(query_string, params=None)
+
+        This method sends a query to the MS SQL Server to which this object
+        instance is connected, then returns first row of data from result.
+
+        An exception is raised on failure. If there are pending results or
+        rows prior to executing this command, they are silently discarded.
+
+        This method accepts Python formatting. Please see execute_query()
+        for details.
+
+        This method is useful if you want just a single row and don't want
+        or don't need to iterate, as in:
+
+        conn.execute_row('SELECT * FROM employees WHERE id=%d', 13)
+
+        This method works exactly the same as 'iter(conn).next()'. Remaining
+        rows, if any, can still be iterated after calling this method.
+        """
+        logger.debug("_mssql.MSSQLConnection.execute_row()")
+        self.format_and_run_query(query_string, params)
+        return self.fetch_next_row_dict(0)
 
     def execute_scalar(self, query_string, params=None):
         """
@@ -500,6 +532,53 @@ class MSSQLConnection(object):
             return None
 
         return self.get_row(rtc)[0]
+
+    def fetch_next_row(self, throw):
+        logger.debug("_mssql.MSSQLConnection.fetch_next_row() BEGIN")
+        try:
+            self.get_result()
+
+            if self.last_dbresults == NO_MORE_RESULTS:
+                log("_mssql.MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
+                self.clear_metadata()
+                if throw:
+                    raise StopIteration
+                return None
+
+            rtc = dbnextrow(self.dbproc)
+
+            check_cancel_and_raise(rtc, self)
+
+            if rtc == NO_MORE_ROWS:
+                log("_mssql.MSSQLConnection.fetch_next_row(): NO MORE ROWS")
+                self.clear_metadata()
+                # 'rows_affected' is nonzero only after all records are read
+                self._rows_affected = dbcount(self.dbproc)
+                if throw:
+                    raise StopIteration
+                return None
+
+            return self.get_row(rtc)
+        finally:
+            logger.debug("_mssql.MSSQLConnection.fetch_next_row() END")
+
+    def fetch_next_row_dict(self, throw):
+        logger.debug("_mssql.MSSQLConnection.fetch_next_row_dict()")
+
+        row_dict = {}
+        row = self.fetch_next_row(throw)
+
+        for col in xrange(1, self.num_columns + 1):
+            name = self.column_names[col - 1]
+            value = row[col - 1]
+
+            # Add key by column name, only if the column has a name
+            if name:
+                row_dict[name] = value
+
+            row_dict[col - 1] = value
+
+        return row_dict
 
     def format_and_run_query(self, query_string, params=None):
         """
@@ -658,7 +737,18 @@ init_mssql()
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
     conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
-    #conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
-    conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
+    #conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
+    from datetime import datetime
+    assert 'abc' == conn.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
+    assert datetime(2010, 1, 2) == conn.execute_scalar("select cast('2010-01-02T00:00:00' as smalldatetime) as fieldname")
+    assert datetime(2010, 1, 2) == conn.execute_scalar("select cast('2010-01-02T00:00:00' as datetime) as fieldname")
+    #assert 12 == conn.execute_scalar('select cast(12 as bigint) as fieldname')
+    assert 12 == conn.execute_scalar('select cast(12 as smallint) as fieldname')
+    assert -12 == conn.execute_scalar('select -12 as fieldname')
+    assert 12 == conn.execute_scalar('select cast(12 as tinyint) as fieldname')
+    assert True == conn.execute_scalar('select cast(1 as bit) as fieldname')
+    assert 5.1 == conn.execute_scalar('select cast(5.1 as float) as fieldname')
+    assert {0: 'test', 1: 20} == conn.execute_row("select 'test', 20")
+    assert 'test' == conn.execute_scalar("select 'test' as fieldname")
+    assert 'test' == conn.execute_scalar("select N'test' as fieldname")
     assert 5 == conn.execute_scalar('select 5 as fieldname')
-    assert 'text' == conn.execute_scalar("select 'test' as fieldname")

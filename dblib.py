@@ -219,11 +219,7 @@ def dbdata(dbproc, column):
     if colinfo.column_cur_size < 0:
         return None
     if is_blob_col(colinfo):
-        raise Exception('not implemented')
-        #BYTE *res = (BYTE *) ((TDSBLOB *) colinfo->column_data)->textvalue;
-        #if (!res)
-        #    return (BYTE *) empty;
-        #return res;
+        return colinfo.column_data.textvalue
     else:
         return colinfo.column_data
 

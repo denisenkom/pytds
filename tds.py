@@ -1,4 +1,6 @@
+import struct
 from tdsproto import *
+
 
 TDS_IDLE = 0
 TDS_QUERYING = 1
@@ -28,11 +30,16 @@ client2server_chardata  = 1
 iso2server_metadata     = 2
 initial_char_conv_count = 3 # keep last
 
-TDS_CHARSET_ISO_8859_1 = 1
-TDS_CHARSET_CP1251     = 2
-TDS_CHARSET_CP1252     = 3
-TDS_CHARSET_UCS_2LE    = 4
+TDS_CHARSET_ISO_8859_1  = 1
+TDS_CHARSET_CP1251      = 2
+TDS_CHARSET_CP1252      = 3
+TDS_CHARSET_UCS_2LE     = 4
 
+TDS_CHARSET_UNICODE     = 5
+
+TDS_ENCODING_INDIRECT   = 1
+TDS_ENCODING_SWAPBYTE   = 2
+TDS_ENCODING_MEMCPY     = 4
 
 TDS_NO_COUNT = -1
 
@@ -141,3 +148,81 @@ def tds_get_s(tds):
     return tds._sock
 
 TDS_ADDITIONAL_SPACE = 0
+
+to_server = 0
+to_client = 1
+
+def tds_free_row(a, b):
+    pass
+
+TDS_DATETIME = struct.Struct('<ll')
+TDS_DATETIME4 = struct.Struct('<HH')
+
+#
+# Convert from db date format to a structured date format
+# @param datetype source date type. SYBDATETIME or SYBDATETIME4
+# @param di       source date
+# @param dr       destination date
+# @return TDS_FAIL or TDS_SUCCESS
+#
+def tds_datecrack(datetype, di):
+    if datetype == (SYBMSDATE, SYBMSTIME, SYBMSDATETIME2, SYBMSDATETIMEOFFSET):
+        # I think this is not a real wire format
+        raise Exception('not implemented')
+        #const TDS_DATETIMEALL *dta = (const TDS_DATETIMEALL *) di;
+        #dt_days = (datetype == SYBMSTIME) ? 0 : dta->date;
+        #if (datetype == SYBMSDATE) {
+        #    dms = 0;
+        #    secs = 0;
+        #    dt_time = 0;
+        #} else {
+        #    dms = dta->time % 10000000u;
+        #    dt_time = dta->time / 10000000u;
+        #    secs = dt_time % 60;
+        #    dt_time = dt_time / 60;
+        #}
+        #if (datetype == SYBMSDATETIMEOFFSET) {
+        #    --dt_days;
+        #    dt_time = dt_time + 86400 + dta->offset;
+        #    dt_days += dt_time / 86400;
+        #    dt_time %= 86400;
+        #}
+    elif datetype == SYBDATETIME or datetype == SYBDATETIMN and len(di) == 8:
+        dt_days, dt_time = TDS_DATETIME.unpack(di)
+        dms = ((dt_time % 300) * 1000 + 150) / 300 * 10000
+        dt_time = dt_time / 300
+        secs = dt_time % 60
+        dt_time = dt_time / 60
+    elif datetype == SYBDATETIME4 or datetype == SYBDATETIMN and len(di) == 4:
+        dt_days, dt_time = TDS_DATETIME4.unpack(di)
+        secs = 0;
+        dms = 0;
+    else:
+        raise Exception('TDS_FAIL')
+
+    #
+    # -53690 is minimun  (1753-1-1) (Gregorian calendar start in 1732) 
+    # 2958463 is maximun (9999-12-31)
+    #
+    l = dt_days + (146038 + 146097*4)
+    #wday = (l + 4) % 7
+    n = (4 * l) / 146097 # n century
+    l = l - (146097 * n + 3) / 4 # days from xx00-02-28 (y-m-d)
+    i = (4000 * (l + 1)) / 1461001 # years from xx00-02-28
+    l = l - (1461 * i) / 4 # year days from xx00-02-28
+    #ydays = l - 305 if l >= 306 else l + 60
+    l += 31
+    j = (80 * l) / 2447
+    days = l - (2447 * j) / 80
+    l = j / 11
+    months = j + 1 - 12 * l
+    years = 100 * (n - 1) + i + l
+    #if l == 0 and (years & 3) == 0 and (years % 100 != 0 or years % 400 == 0):
+    #    ++ydays
+
+    hours = dt_time / 60
+    mins = dt_time % 60
+
+    from datetime import datetime
+
+    return datetime(years, months + 1, days, hours, mins, secs, dms/10)

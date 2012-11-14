@@ -60,3 +60,6 @@ def tds_set_state(tds, state):
         assert False
     #check_tds_extra(tds)
     return tds.state
+
+def tds_swap_bytes(buf, size):
+    return buf[0:size][::-1]
