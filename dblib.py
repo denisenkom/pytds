@@ -26,6 +26,15 @@ NO_MORE_RESULTS = 2
 SUCCEED         = 1
 FAIL            = 0
 
+DBSAVE      = 1
+DBNOSAVE    = 0
+DBNOERR     = -1
+
+INT_EXIT	= 0
+INT_CONTINUE	= 1
+INT_CANCEL	= 2
+INT_TIMEOUT	= 3
+
 def CHECK_CONN(conn):
     pass
 
@@ -528,7 +537,7 @@ def _dbresults(dbproc):
                 pass
             else:
                 pass
-        elif ret_code == TDS_NO_MORE_RESULTS:
+        elif retcode == TDS_NO_MORE_RESULTS:
             dbproc.dbresults_state = _DB_RES_NO_MORE_RESULTS
             return NO_MORE_RESULTS
         else:
@@ -949,7 +958,29 @@ def db_env_chg(tds, type, oldval, newval):
         dbproc.servcharset = newval
 
 def _dblib_handle_info_message(tds_ctx, tds, msg):
-    raise Exception('not implemented')
+    dbproc = tds_get_parent(tds) if tds and tds_get_parent(tds) else None
+
+    logger.debug("_dblib_handle_info_message(%s)", msg)
+    logger.debug("msgno %d: \"%s\"", msg['msgno'], msg['message'])
+
+    # Check to see if the user supplied a function, else ignore the message. 
+    if _dblib_msg_handler:
+        _dblib_msg_handler(dbproc,
+                            msg['msgno'],
+                            msg['state'],
+                            msg['severity'], msg['message'], msg['server'], msg['proc_name'], msg['line_number'])
+    if msg['severity'] > 10 and _dblib_err_handler: # call the application's error handler, if installed. */
+        #
+        # Sybase docs say SYBESMSG is generated only in specific
+        # cases (severity greater than 16, or deadlock occurred, or
+        # a syntax error occurred.)  However, actual observed
+        # behavior is that SYBESMSG is always generated for
+        # server messages with severity greater than 10.
+        #
+        # Cannot call dbperror() here because server messsage numbers (and text) are not in its lookup table.
+        message = "General SQL Server error: Check messages from the SQL Server"
+        _dblib_err_handler(dbproc, msg['severity'], msg['msgno'], DBNOERR, message, None)
+    return TDS_SUCCESS
 
 def _dblib_handle_err_message(tds_ctx, tds, msg):
     raise Exception('not implemented')
@@ -1177,3 +1208,24 @@ def dbclose(dbproc):
     #        fprintf(dbproc->ftos, "/* dbclose() at %s */\n", _dbprdate(timestr));
     #        fclose(dbproc->ftos);
     #}
+
+#* \internal
+# \ingroup dblib_internal
+# \brief Check if \a dbproc is an ex-parrot.  
+# 
+# \param dbproc contains all information needed by db-lib to manage communications with the server.
+# \retval TRUE process has been marked \em dead.
+# \retval FALSE process is OK.  
+# \remarks dbdead() does not communicate with the server.  
+# 	Unless a previously db-lib marked \a dbproc \em dead, dbdead() returns \c FALSE.  
+# \sa dberrhandle().
+#/
+def dbdead(dbproc):
+    logger.debug("dbdead() [%s]", 'dead' if IS_TDSDEAD(dbproc.tds_socket) else "alive")
+
+    if None is dbproc:
+        return True
+
+    return IS_TDSDEAD(dbproc.tds_socket)
+
+DBDEAD = dbdead

@@ -135,6 +135,9 @@ TDS_DEF_LANG		= "us_english"
 def tds_set_ctx(tds, ctx):
     tds.conn.tds_ctx = ctx
 
+def tds_get_ctx(tds):
+    return tds.conn.tds_ctx
+
 def tds_set_parent(tds, parent):
     tds.conn.parent = parent
 

@@ -9,6 +9,15 @@ logger = logging.getLogger(__name__)
 
 PYMSSQL_DEBUG = False
 
+# Vars to store messages from the server in
+_mssql_last_msg_no = 0
+_mssql_last_msg_severity = 0
+_mssql_last_msg_state = 0
+_mssql_last_msg_line = 0
+_mssql_last_msg_str = ''
+_mssql_last_msg_srv = ''
+_mssql_last_msg_proc = ''
+
 # List to store the connection objects in
 connection_object_list = list()
 
@@ -82,14 +91,109 @@ class MSSQLDatabaseException(MSSQLException):
                 'line %d:\n%s' % (self.number, self.severity,
                 self.state, self.line, self.text)
 
+min_error_severity = 6
+
+###################
+## Error Handler ##
+###################
 def err_handler(dbproc, severity, dberr, oserr,
         dberrstr, oserrstr):
-    raise Exception('not converted')
+    global _mssql_last_msg_str
+    global _mssql_last_msg_no
+    global _mssql_last_msg_severity
+    global _mssql_last_msg_state
+    if severity < min_error_severity:
+        return INT_CANCEL
 
+    logger.debug("*** err_handler(severity = %d,  " \
+        "dberr = %d, oserr = %d, dberrstr = '%s',  oserrstr = '%s'); " \
+        "DBDEAD(dbproc) = %d", severity, dberr,
+        oserr, dberrstr, oserrstr, DBDEAD(dbproc))
+    logger.debug("*** previous max severity = %d",
+        _mssql_last_msg_severity)
+
+    conn = None
+    for c in connection_object_list:
+        if dbproc != c.dbproc:
+            continue
+        conn = c
+        break
+
+    mssql_lastmsgstr = conn.last_msg_str if conn else _mssql_last_msg_str
+    mssql_lastmsgseverity = conn.last_msg_severity if conn else _mssql_last_msg_severity
+
+    if severity > mssql_lastmsgseverity:
+        if conn:
+            conn.last_msg_severity = severity
+            conn.last_msg_no = dberr
+            conn.last_msg_state = oserr
+        else:
+            _mssql_last_msg_severity = severity
+            _mssql_last_msg_no = dberr
+            _mssql_last_msg_state = oserr
+
+    mssql_message = '%sDB-Lib error message %d, severity %d:\n%s\n' % (
+        mssql_lastmsgstr, dberr, severity, dberrstr)
+
+    if oserr != DBNOERR and oserr != 0:
+        if severity == EXCOMM:
+            error_type = 'Net-Lib'
+        else:
+            error_type = 'Operating System'
+        mssql_message = '%s error during %s' % (error_type, oserrstr)
+
+    if conn:
+        conn.last_msg_str = mssql_message
+    else:
+        _mssql_last_msg_str = mssql_message
+    return INT_CANCEL
+
+#####################
+## Message Handler ##
+#####################
 def msg_handler(dbproc, msgno, msgstate,
         severity, msgtext, srvname, procname,
         line):
-    raise Exception('not converted')
+    global _mssql_last_msg_str
+    global _mssql_last_msg_no
+    global _mssql_last_msg_severity
+    global _mssql_last_msg_state
+    global _mssql_last_msg_line
+    global _mssql_last_msg_srv
+    global _mssql_last_msg_proc
+    if severity < min_error_severity:
+        return INT_CANCEL
+
+    mssql_lastmsgseverity = _mssql_last_msg_severity
+
+    conn = None
+    for c in connection_object_list:
+        if dbproc != c.dbproc:
+            continue
+        conn = c
+        mssql_lastmsgseverity = conn.last_msg_severity
+        break
+
+    # Calculate the maximum severity of all messages in a row
+    # Fill the remaining fields as this is going to raise the exception
+    if severity > mssql_lastmsgseverity:
+        if conn:
+            conn.last_msg_severity = severity
+            conn.last_msg_no = msgno
+            conn.last_msg_state = msgstate
+            conn.last_msg_line = line
+            conn.last_msg_str = msgtext
+            conn.last_msg_srv = srvname
+            conn.last_msg_proc = procname
+        else:
+            _mssql_last_msg_severity = severity
+            _mssql_last_msg_no = msgno
+            _mssql_last_msg_state = msgstate
+            _mssql_last_msg_line = line
+            _mssql_last_msg_str = msgtext
+            _mssql_last_msg_srv = srvname
+            _mssql_last_msg_proc = procname
+    return 0
 
 
 # Module attributes for configuring _mssql
@@ -964,6 +1068,48 @@ class MSSQLConnection(object):
             record += (self.convert_db_value(data, col_type, len),)
         return record
 
+def get_last_msg_str(conn):
+    return conn.last_msg_str if conn != None else _mssql_last_msg_str
+
+def get_last_msg_srv(conn):
+    return conn.last_msg_srv if conn != None else _mssql_last_msg_srv
+
+def get_last_msg_proc(conn):
+    return conn.last_msg_proc if conn != None else _mssql_last_msg_proc
+
+def get_last_msg_no(conn):
+    return conn.last_msg_no if conn != None else _mssql_last_msg_no
+
+def get_last_msg_severity(conn):
+    return conn.last_msg_severity if conn != None else _mssql_last_msg_severity
+
+def get_last_msg_state(conn):
+    return conn.last_msg_state if conn != None else _mssql_last_msg_state
+
+def get_last_msg_line(conn):
+    return conn.last_msg_line if conn != None else _mssql_last_msg_line
+
+def maybe_raise_MSSQLDatabaseException(conn):
+
+    if get_last_msg_severity(conn) < min_error_severity:
+        return 0
+
+    error_msg = get_last_msg_str(conn)
+    if len(error_msg) == 0:
+        error_msg = "Unknown error"
+
+    ex = MSSQLDatabaseException((get_last_msg_no(conn), error_msg))
+    ex.text = error_msg
+    ex.srvname = get_last_msg_srv(conn)
+    ex.procname = get_last_msg_proc(conn)
+    ex.number = get_last_msg_no(conn)
+    ex.severity = get_last_msg_severity(conn)
+    ex.state = get_last_msg_state(conn)
+    ex.line = get_last_msg_line(conn)
+    db_cancel(conn)
+    clr_err(conn)
+    raise ex
+
 def assert_connected(conn):
     logger.debug("_mssql.assert_connected()")
     if not conn.connected:
@@ -995,9 +1141,6 @@ def check_cancel_and_raise(rtc, conn):
         return maybe_raise_MSSQLDatabaseException(conn)
     elif get_last_msg_str(conn):
         return maybe_raise_MSSQLDatabaseException(conn)
-
-def get_last_msg_str(conn):
-    return conn.last_msg_str if conn != None else _mssql_last_msg_str
 
 def init_mssql():
     dbinit()
