@@ -118,7 +118,7 @@ def TDS_IS_SOCKET_INVALID(sock):
     return sock is None
 
 def IS_TDSDEAD(tds):
-    return tds is None or TDS_IS_SOCKET_INVALID(tds_conn(tds)._sock)
+    return tds is None or tds._sock is None
 
 TDS_DEF_SERVER		= "SYBASE"
 TDS_DEF_BLKSZ		= 512

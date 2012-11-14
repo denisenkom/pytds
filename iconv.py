@@ -5,6 +5,7 @@ logger = logging.getLogger(__name__)
 
 iconv_aliases = [
         {'alias': 'cp1251', 'canonic': TDS_CHARSET_CP1251},
+        {'alias': 'iso_1', 'canonic': TDS_CHARSET_CP1251},
         ]
 
 canonic_charsets = {

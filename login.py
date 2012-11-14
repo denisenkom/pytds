@@ -44,7 +44,6 @@ def tds_connect(tds, login):
         connect_timeout = login.connect_timeout
         tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
         tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
-        import pdb; pdb.set_trace()
         tds_set_state(tds, TDS_IDLE)
         db_selected = False
         if login.tds_version >= 0x701:
@@ -58,7 +57,7 @@ def tds_connect(tds, login):
             tds_send_login(tds, login)
         if not tds_process_login_tokens(tds):
             raise Exception('Login failed')
-        text_size = kwargs.pop('text_size', None)
+        text_size = login.text_size
         if text_size or not db_selected and login.database:
             q = []
             if text_size:
@@ -206,9 +205,9 @@ def tds7_crypt_pass(password):
         encoded[i] = ((ch << 4)&0xff | (ch >> 4)) ^ 0xA5
     return encoded
 
-def tds71_do_login(tds, **kwargs):
-    instance_name = kwargs.pop('instance_name', 'MSSQLServer')
-    encryption_level = kwargs.pop('encryption_level', 0)
+def tds71_do_login(tds, login):
+    instance_name = login.instance_name or 'MSSQLServer'
+    encryption_level = login.encryption_level
     if tds.tds_version < 0x702:
         START_POS = 21
         buf = bytearray(struct.pack('>BHHBHHBHHBHHB',
@@ -286,7 +285,7 @@ def tds71_do_login(tds, **kwargs):
     if crypt_flag == 2:
         if encryption_level >= TDS_ENCRYPTION_REQUIRE:
             raise TdsError(TDS_FAIL)
-        return tds7_send_login(tds, **kwargs)
+        return tds7_send_login(tds, login)
     raise Exception('encryption is not supported yet')
 
 def tds_connect_and_login(tds, login):
