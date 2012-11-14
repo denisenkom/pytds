@@ -5,7 +5,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class _TdsConn:
-    pass
+    def __init__(self):
+        self.tls_session = None
 
 class _TdsEnv:
     pass
@@ -107,6 +108,8 @@ class _Column(object):
     def __init__(self):
         self.on_server = _OnServer()
         self.char_conv = None
+        self.column_nullbind = None
+        self.column_varaddr = 0
 
 class _Results(object):
     pass

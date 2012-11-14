@@ -1,4 +1,5 @@
 import struct
+from StringIO import StringIO
 from net import *
 
 def tds_get_byte(tds):
@@ -37,17 +38,17 @@ def tds_get_string(tds, size):
     return buf.decode('utf16')
 
 def tds_get_n(tds, need):
-    result = bytearray(need)
+    result = StringIO()
     pos = 0
     while True:
         have = tds.in_len - tds.in_pos
         if need <= have:
             break
-        result[pos:pos+have] = tds.in_buf[tds.in_pos:tds.in_pos+have]
+        result.write(tds.in_buf[tds.in_pos:tds.in_pos+have])
         pos += have
         need -= have
         tds_read_packet(tds)
     if need > 0:
-        result[pos:pos+need] = tds.in_buf[tds.in_pos:tds.in_pos+need]
+        result.write(tds.in_buf[tds.in_pos:tds.in_pos+need])
         tds.in_pos += need
-    return result
+    return result.getvalue()

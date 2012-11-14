@@ -72,6 +72,9 @@ def buffer_set_capacity(dbproc, nrows):
         return
     buf.capacity = nrows
 
+def buffer_count(buf):
+    return buf.capacity
+
 def buffer_is_full(buf):
     #BUFFER_CHECK(buf)
     return buf.capacity == buffer_count(buf) and buf.capacity > 1
@@ -81,6 +84,108 @@ def buffer_free(dbproc):
 
 def buffer_alloc(dbproc):
     pass
+
+def buffer_save_row(dbproc):
+    buf = dbproc.row_buf
+    if buf.capacity <= 1:
+        return SUCCEED
+    raise Exception('not implemented')
+
+def buffer_row_address(buf, idx):
+    #BUFFER_CHECK(buf)
+    if idx < 0 or idx >= buf.capacity:
+        #printf("idx is %d:\n", idx);
+        #buffer_struct_print(buf);
+        return None
+    return buf.rows[idx]
+
+def buffer_add_row(dbproc, resinfo):
+    buf = dbproc.row_buf
+    assert buf.capacity >= 0
+
+    if buffer_is_full(buf):
+        return -1
+
+    row = buffer_row_address(buf, buf.head)
+
+    # bump the row number, write it, and move the data to head
+    if row.resinfo:
+        tds_free_row(row.resinfo, row.row_data)
+        tds_free_results(row.resinfo)
+    buf.received += 1
+    row.row = buf.received
+    resinfo.ref_count += 1
+    row.resinfo = resinfo
+    row.row_data = None
+    row.sizes = []
+    for col in resinfo.columns:
+        row.sizes.append(col.column_cur_size)
+
+    # initial condition is head == 0 and tail == capacity
+    if buf.tail == buf.capacity:
+        # bumping this tail will set it to zero
+        assert buf.head == 0
+        buf.tail = 0
+
+    # update current, bump the head
+    buf.current = buf.head
+    buf.head = buffer_idx_increment(buf, buf.head)
+
+    return buf.current
+
+def buffer_idx_increment(buf, idx):
+    idx += 1
+    if idx >= buf.capacity:
+        idx = 0
+    return idx
+
+def buffer_transfer_bound_data(buf, res_type, compute_id, dbproc, idx):
+    logger.debug("buffer_transfer_bound_data(%d %d %d)", res_type, compute_id, idx)
+    #BUFFER_CHECK(buf);
+    #assert buffer_index_valid(buf, idx)
+
+    row = buffer_row_address(buf, idx)
+    assert row.resinfo
+
+    for i, curcol in enumerate(row.resinfo.columns):
+        if row.sizes:
+            curcol.column_cur_size = row.sizes[i]
+
+        if curcol.column_nullbind:
+            if curcol.column_cur_size < 0:
+                curcol.column_nullbind = -1
+            else:
+                curcol.column_nullbind = 0
+        if not curcol.column_varaddr:
+            continue
+
+        if row.row_data:
+            src = row.row_data[curcol.column_data - row.resinfo.current_row]
+        else:
+            src = curcol.column_data
+        srclen = curcol.column_cur_size;
+        if is_blob_col(curcol):
+            src = src.textvalue
+        desttype = dblib_bound_type(curcol.column_bindtype)
+        srctype = tds_get_conversion_type(curcol.column_type, curcol.column_size)
+
+        if srclen <= 0:
+            if srclen == 0 or not curcol.column_nullbind:
+                dbgetnull(dbproc, curcol.column_bindtype, curcol.column_bindlen,
+                                curcol.column_varaddr)
+        else:
+            copy_data_to_host_var(dbproc, srctype, src, srclen, desttype, 
+                                    curcol.column_varaddr,  curcol.column_bindlen,
+                                                curcol.column_bindtype, curcol.column_nullbind)
+
+    #
+    # this function always bumps current.  usually, it's called 
+    # by dbnextrow(), so bumping current is a pretty obvious choice.  
+    # it can also be called by dbgetrow(), but that function also 
+    # causes the bump.  if you call dbgetrow() for row n, a subsequent
+    # call to dbnextrow() yields n+1.
+    #
+    buf.current = buffer_idx_increment(buf, buf.current)
 
 def dblib_add_connection(ctx, tds):
     ctx.connection_list.append(tds)
@@ -109,8 +214,8 @@ def dbcolptr(dbproc, column):
         return None
     return dbproc.tds_socket.res_info.columns[column - 1]
 
-def dbdata(dbproc, col):
-    colinfo = dbproc.res_info.columns[col - 1]
+def dbdata(dbproc, column):
+    colinfo = dbcolptr(dbproc, column)
     if colinfo.column_cur_size < 0:
         return None
     if is_blob_col(colinfo):
@@ -158,7 +263,7 @@ def dbcoltype(dbproc, column):
 #
 def dbdatlen(dbproc, column):
     logger.debug("dbdatlen(%d)", column)
-    CHECK_PARAMETER(dbproc, SYBENULL, -1)
+    #CHECK_PARAMETER(dbproc, SYBENULL, -1)
 
     colinfo = dbcolptr(dbproc, column)
     if not colinfo:
@@ -175,7 +280,7 @@ def dbnextrow(dbproc):
     tds = dbproc.tds_socket
     resinfo = tds.res_info
     if not resinfo or dbproc.dbresults_state != _DB_RES_RESULTSET_ROWS:
-            # no result set or result set empty (no rows)
+        # no result set or result set empty (no rows)
         logger.debug("leaving dbnextrow() returning %d (NO_MORE_ROWS)", NO_MORE_ROWS)
         dbproc.row_type = NO_MORE_ROWS
         return NO_MORE_ROWS
@@ -529,13 +634,22 @@ def dbsqlsend(dbproc):
     dbproc.dbresults_state = _DB_RES_INIT
     dbproc.command_state = DBCMDSENT
 
+class _DbProcRow:
+    def __init__(self):
+        self.resinfo = None
+
 class _DbProcRowBuf:
-    pass
+    def __init__(self):
+        self.head = 0
+        self.tail = 0
+        self.rows = [_DbProcRow()]
+        self.received = 0
 
 class _DbProcess:
     def __init__(self):
         self.row_buf = _DbProcRowBuf()
         self.text_sent = False
+        self.noautofree = True
 
 # \internal
 # \ingroup dblib_internal
@@ -1028,3 +1142,9 @@ def prresult_type(result_type):
     elif result_type == TDS_DONEINPROC_RESULT: return "TDS_DONEINPROC_RESULT"
     elif result_type == TDS_OTHERS_RESULT:     return "TDS_OTHERS_RESULT"
     else: "oops: %u ??" % result_type
+
+def dbrows_pivoted(dbproc):
+    #struct pivot_t P;
+    #P.dbproc = dbproc;
+    #return tds_find(&P, pivots, npivots, sizeof(*pivots), pivot_key_equal); 
+    return None
