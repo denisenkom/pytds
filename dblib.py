@@ -190,6 +190,13 @@ def buffer_transfer_bound_data(buf, res_type, compute_id, dbproc, idx):
 def dblib_add_connection(ctx, tds):
     ctx.connection_list.append(tds)
 
+def dblib_del_connection(ctx, tds):
+    ctx.connection_list.remove(tds)
+
+def dblib_release_tds_ctx(count):
+    logger.debug("dblib_release_tds_ctx(%d)", count)
+    pass
+
 # \internal
 # \ingroup dblib_internal
 # \brief Sanity checks for column-oriented functions.  
@@ -1145,3 +1152,32 @@ def dbrows_pivoted(dbproc):
     #P.dbproc = dbproc;
     #return tds_find(&P, pivots, npivots, sizeof(*pivots), pivot_key_equal); 
     return None
+
+#
+# \ingroup dblib_core
+# \brief Close a connection to the server and free associated resources.  
+# 
+# \param dbproc contains all information needed by db-lib to manage communications with the server.
+# \sa dbexit(), dbopen().
+#
+def dbclose(dbproc):
+    logger.debug("dbclose()")
+    #CHECK_PARAMETER(dbproc, SYBENULL, )
+
+    tds = dbproc.tds_socket
+    if tds:
+        #
+        # this MUST be done before socket destruction
+        # it is possible that a TDSSOCKET is allocated on same position
+        #
+        TDS_MUTEX_LOCK(dblib_mutex)
+        dblib_del_connection(g_dblib_ctx, dbproc.tds_socket)
+        TDS_MUTEX_UNLOCK(dblib_mutex)
+
+        tds_free_socket(tds)
+        dblib_release_tds_ctx(1)
+
+    #if (dbproc->ftos != NULL) {
+    #        fprintf(dbproc->ftos, "/* dbclose() at %s */\n", _dbprdate(timestr));
+    #        fclose(dbproc->ftos);
+    #}

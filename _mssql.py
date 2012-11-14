@@ -62,6 +62,23 @@ class MSSQLDriverException(MSSQLException):
     the driver itself.
     """
 
+class MSSQLDatabaseException(MSSQLException):
+    """
+    Raised when an error occurs within the database.
+    """
+
+    @property
+    def message(self):
+        if self.procname:
+            return 'SQL Server message %d, severity %d, state %d, ' \
+                'procedure %s, line %d:\n%s' % (self.number,
+                self.severity, self.state, self.procname,
+                self.line, self.text)
+        else:
+            return 'SQL Server message %d, severity %d, state %d, ' \
+                'line %d:\n%s' % (self.number, self.severity,
+                self.state, self.line, self.text)
+
 def err_handler(dbproc, severity, dberr, oserr,
         dberrstr, oserrstr):
     raise Exception('not converted')
@@ -129,6 +146,25 @@ def _tds_ver_str_to_constant(verstr):
     else:
         raise MSSQLException('unrecognized tds version: %s' % verstr)
 
+##############################
+## MSSQL Row Iterator Class ##
+##############################
+class MSSQLRowIterator:
+
+    def __init__(self, connection):
+        self.conn = connection
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        assert_connected(self.conn)
+        clr_err(self.conn)
+        return self.conn.fetch_next_row_dict(1)
+
+############################
+## MSSQL Connection Class ##
+############################
 class MSSQLConnection(object):
     @property
     def connected(self):
@@ -136,6 +172,14 @@ class MSSQLConnection(object):
         True if the connection to a database is open.
         """
         return self._connected
+
+    @property
+    def rows_affected(self):
+        """
+        Number of rows affected by last query. For SELECT statements this
+        value is only meaningful after reading all rows.
+        """
+        return self._rows_affected
 
     def __init__(self, server="localhost", user="sa", password="",
             charset='', database='', appname=None, port='1433', tds_version='7.1'):
@@ -286,6 +330,15 @@ class MSSQLConnection(object):
         db_cancel(self)
         clr_err(self)
 
+    def __del__(self):
+        logger.debug("_mssql.MSSQLConnection.__dealloc__()")
+        self.close()
+
+    def __iter__(self):
+        assert_connected(self)
+        clr_err(self)
+        return MSSQLRowIterator(self)
+
     def cancel(self):
         """
         cancel() -- cancel all pending results.
@@ -307,6 +360,29 @@ class MSSQLConnection(object):
         self.column_types = None
         self.num_columns = 0
         self.last_dbresults = 0
+
+    def close(self):
+        """
+        close() -- close connection to an MS SQL Server.
+
+        This function tries to close the connection and free all memory used.
+        It can be called more than once in a row. No exception is raised in
+        this case.
+        """
+        logger.debug("_mssql.MSSQLConnection.close()")
+        if self == None:
+            return None
+
+        if not self._connected:
+            return None
+
+        clr_err(self)
+
+        dbclose(self.dbproc)
+        self.dbproc = None
+
+        self._connected = 0
+        connection_object_list.remove(self)
 
     def convert_db_value(self, data, type, length):
         logger.debug("_mssql.MSSQLConnection.convert_db_value()")
@@ -605,6 +681,32 @@ class MSSQLConnection(object):
         finally:
             logger.debug("_mssql.MSSQLConnection.format_and_run_query() END")
 
+    def get_header(self):
+        """
+        get_header() -- get the Python DB-API compliant header information.
+
+        This method is infrastructure and doesn't need to be called by your
+        code. It returns a list of 7-element tuples describing the current
+        result header. Only name and DB-API compliant type is filled, rest
+        of the data is None, as permitted by the specs.
+        """
+        logger.debug("_mssql.MSSQLConnection.get_header() BEGIN")
+        try:
+            self.get_result()
+
+            if self.num_columns == 0:
+                logger.debug("_mssql.MSSQLConnection.get_header(): num_columns == 0")
+                return None
+
+            header_tuple = []
+            for col in xrange(1, self.num_columns + 1):
+                col_name = self.column_names[col - 1]
+                col_type = self.column_types[col - 1]
+                header_tuple.append((col_name, col_type, None, None, None, None, None))
+            return tuple(header_tuple)
+        finally:
+            logger.debug("_mssql.MSSQLConnection.get_header() END")
+
     def get_result(self):
         logger.debug("_mssql.MSSQLConnection.get_result() BEGIN")
 
@@ -739,6 +841,7 @@ if __name__ == '__main__':
     conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
     #conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
     from datetime import datetime
+    assert 'abc' == conn.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
     assert 'abc' == conn.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
     assert datetime(2010, 1, 2) == conn.execute_scalar("select cast('2010-01-02T00:00:00' as smalldatetime) as fieldname")
     assert datetime(2010, 1, 2) == conn.execute_scalar("select cast('2010-01-02T00:00:00' as datetime) as fieldname")
