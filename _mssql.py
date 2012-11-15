@@ -1,25 +1,15 @@
 # vim: set fileencoding=utf8 :
-from dblib import *
 import logging
 import decimal
 import datetime
 import re
+from tds import *
+from mem import *
+from login import *
+from config import *
+from query import *
 
 logger = logging.getLogger(__name__)
-
-PYMSSQL_DEBUG = False
-
-# Vars to store messages from the server in
-_mssql_last_msg_no = 0
-_mssql_last_msg_severity = 0
-_mssql_last_msg_state = 0
-_mssql_last_msg_line = 0
-_mssql_last_msg_str = ''
-_mssql_last_msg_srv = ''
-_mssql_last_msg_proc = ''
-
-# List to store the connection objects in
-connection_object_list = list()
 
 #############################
 ## DB-API type definitions ##
@@ -91,118 +81,69 @@ class MSSQLDatabaseException(MSSQLException):
                 'line %d:\n%s' % (self.number, self.severity,
                 self.state, self.line, self.text)
 
-min_error_severity = 6
+DB_RES_INIT            = 0
+DB_RES_RESULTSET_EMPTY = 1
+DB_RES_RESULTSET_ROWS  = 2
+DB_RES_NEXT_RESULT     = 3
+DB_RES_NO_MORE_RESULTS = 4
+DB_RES_SUCCEED         = 5
 
-###################
-## Error Handler ##
-###################
-def err_handler(dbproc, severity, dberr, oserr,
-        dberrstr, oserrstr):
-    global _mssql_last_msg_str
-    global _mssql_last_msg_no
-    global _mssql_last_msg_severity
-    global _mssql_last_msg_state
-    if severity < min_error_severity:
-        return INT_CANCEL
+def prdbresults_state(retcode):
+    if retcode == DB_RES_INIT:                 return "DB_RES_INIT"
+    elif retcode == DB_RES_RESULTSET_EMPTY:    return "DB_RES_RESULTSET_EMPTY"
+    elif retcode == DB_RES_RESULTSET_ROWS:     return "DB_RES_RESULTSET_ROWS"
+    elif retcode == DB_RES_NEXT_RESULT:        return "DB_RES_NEXT_RESULT"
+    elif retcode == DB_RES_NO_MORE_RESULTS:    return "DB_RES_NO_MORE_RESULTS"
+    elif retcode == DB_RES_SUCCEED:            return "DB_RES_SUCCEED"
+    else: return "oops: %d ??" % retcode
 
-    logger.debug("*** err_handler(severity = %d,  " \
-        "dberr = %d, oserr = %d, dberrstr = '%s',  oserrstr = '%s'); " \
-        "DBDEAD(dbproc) = %d", severity, dberr,
-        oserr, dberrstr, oserrstr, DBDEAD(dbproc))
-    logger.debug("*** previous max severity = %d",
-        _mssql_last_msg_severity)
+REG_ROW         = -1
+MORE_ROWS       = -1
+NO_MORE_ROWS    = -2
+BUF_FULL        = -3
+NO_MORE_RESULTS = 2
+SUCCEED         = 1
+FAIL            = 0
 
-    conn = None
-    for c in connection_object_list:
-        if dbproc != c.dbproc:
-            continue
-        conn = c
-        break
+def prdbretcode(retcode):
+    if retcode == REG_ROW:            return "REG_ROW/MORE_ROWS"
+    elif retcode == NO_MORE_ROWS:       return "NO_MORE_ROWS"
+    elif retcode == BUF_FULL:           return "BUF_FULL"
+    elif retcode == NO_MORE_RESULTS:    return "NO_MORE_RESULTS"
+    elif retcode == SUCCEED:            return "SUCCEED"
+    elif retcode == FAIL:               return "FAIL"
+    else: return "oops: %u ??" % retcode
 
-    mssql_lastmsgstr = conn.last_msg_str if conn else _mssql_last_msg_str
-    mssql_lastmsgseverity = conn.last_msg_severity if conn else _mssql_last_msg_severity
+def prretcode(retcode):
+    if retcode == TDS_SUCCESS:                  return "TDS_SUCCESS"
+    elif retcode == TDS_FAIL:                   return "TDS_FAIL"
+    elif retcode == TDS_NO_MORE_RESULTS:        return "TDS_NO_MORE_RESULTS"
+    elif retcode == TDS_CANCELLED:              return "TDS_CANCELLED"
+    else: return "oops: %u ??" % retcode
 
-    if severity > mssql_lastmsgseverity:
-        if conn:
-            conn.last_msg_severity = severity
-            conn.last_msg_no = dberr
-            conn.last_msg_state = oserr
-        else:
-            _mssql_last_msg_severity = severity
-            _mssql_last_msg_no = dberr
-            _mssql_last_msg_state = oserr
-
-    mssql_message = '%sDB-Lib error message %d, severity %d:\n%s\n' % (
-        mssql_lastmsgstr, dberr, severity, dberrstr)
-
-    if oserr != DBNOERR and oserr != 0:
-        if severity == EXCOMM:
-            error_type = 'Net-Lib'
-        else:
-            error_type = 'Operating System'
-        mssql_message = '%s error during %s' % (error_type, oserrstr)
-
-    if conn:
-        conn.last_msg_str = mssql_message
-    else:
-        _mssql_last_msg_str = mssql_message
-    return INT_CANCEL
-
-#####################
-## Message Handler ##
-#####################
-def msg_handler(dbproc, msgno, msgstate,
-        severity, msgtext, srvname, procname,
-        line):
-    global _mssql_last_msg_str
-    global _mssql_last_msg_no
-    global _mssql_last_msg_severity
-    global _mssql_last_msg_state
-    global _mssql_last_msg_line
-    global _mssql_last_msg_srv
-    global _mssql_last_msg_proc
-    if severity < min_error_severity:
-        return INT_CANCEL
-
-    mssql_lastmsgseverity = _mssql_last_msg_severity
-
-    conn = None
-    for c in connection_object_list:
-        if dbproc != c.dbproc:
-            continue
-        conn = c
-        mssql_lastmsgseverity = conn.last_msg_severity
-        break
-
-    # Calculate the maximum severity of all messages in a row
-    # Fill the remaining fields as this is going to raise the exception
-    if severity > mssql_lastmsgseverity:
-        if conn:
-            conn.last_msg_severity = severity
-            conn.last_msg_no = msgno
-            conn.last_msg_state = msgstate
-            conn.last_msg_line = line
-            conn.last_msg_str = msgtext
-            conn.last_msg_srv = srvname
-            conn.last_msg_proc = procname
-        else:
-            _mssql_last_msg_severity = severity
-            _mssql_last_msg_no = msgno
-            _mssql_last_msg_state = msgstate
-            _mssql_last_msg_line = line
-            _mssql_last_msg_str = msgtext
-            _mssql_last_msg_srv = srvname
-            _mssql_last_msg_proc = procname
-    return 0
-
+def prresult_type(result_type):
+    if result_type == TDS_ROW_RESULT:          return "TDS_ROW_RESULT"
+    elif result_type == TDS_PARAM_RESULT:      return "TDS_PARAM_RESULT"
+    elif result_type == TDS_STATUS_RESULT:     return "TDS_STATUS_RESULT"
+    elif result_type == TDS_MSG_RESULT:        return "TDS_MSG_RESULT"
+    elif result_type == TDS_COMPUTE_RESULT:    return "TDS_COMPUTE_RESULT"
+    elif result_type == TDS_CMD_DONE:          return "TDS_CMD_DONE"
+    elif result_type == TDS_CMD_SUCCEED:       return "TDS_CMD_SUCCEED"
+    elif result_type == TDS_CMD_FAIL:          return "TDS_CMD_FAIL"
+    elif result_type == TDS_ROWFMT_RESULT:     return "TDS_ROWFMT_RESULT"
+    elif result_type == TDS_COMPUTEFMT_RESULT: return "TDS_COMPUTEFMT_RESULT"
+    elif result_type == TDS_DESCRIBE_RESULT:   return "TDS_DESCRIBE_RESULT"
+    elif result_type == TDS_DONE_RESULT:       return "TDS_DONE_RESULT"
+    elif result_type == TDS_DONEPROC_RESULT:   return "TDS_DONEPROC_RESULT"
+    elif result_type == TDS_DONEINPROC_RESULT: return "TDS_DONEINPROC_RESULT"
+    elif result_type == TDS_OTHERS_RESULT:     return "TDS_OTHERS_RESULT"
+    else: "oops: %u ??" % result_type
 
 # Module attributes for configuring _mssql
 login_timeout = 60
+query_timeout = 60
 
 min_error_severity = 6
-
-# Buffer size for large numbers
-NUMERIC_BUF_SZ = 45
 
 ###########################
 ## Compatibility Aliases ##
@@ -211,14 +152,9 @@ def connect(*args, **kwargs):
     return MSSQLConnection(*args, **kwargs)
 
 def clr_err(conn):
-    if conn is not None:
-        conn.last_msg_no = 0
-        conn.last_msg_severity = 0
-        conn.last_msg_state = 0
-    else:
-        _mssql_last_msg_no = 0
-        _mssql_last_msg_severity = 0
-        _mssql_last_msg_state = 0
+    conn.last_msg_no = 0
+    conn.last_msg_severity = 0
+    conn.last_msg_state = 0
 
 def db_cancel(conn):
     if conn == None:
@@ -227,8 +163,6 @@ def db_cancel(conn):
     if conn.dbproc is None:
         return
 
-    from query import tds_send_cancel
-    from token import tds_process_cancel
     tds_send_cancel(conn.dbproc.tds_socket)
     tds_process_cancel(conn.dbproc.tds_socket)
 
@@ -475,6 +409,9 @@ class MSSQLConnection(object):
         logger.debug("_mssql.MSSQLConnection.__cinit__()")
         self._connected = 0
         self._charset = ''
+        self.last_msg_no = 0
+        self.last_msg_severity = 0
+        self.last_msg_state = 0
         self.last_msg_str = ''
         self.last_msg_srv = ''
         self.last_msg_proc = ''
@@ -517,31 +454,39 @@ class MSSQLConnection(object):
         #else:
         #    os.environ['TDSHOST'] = server
 
-        # Add ourselves to the global connection list
-        connection_object_list.append(self)
-
         # Set the character set name
         if charset:
             _charset = charset
             self._charset = _charset
             login.charset = self._charset
 
-        # Set the login timeout
-        dbsetlogintime(login_timeout)
-
         # Connect to the server
+        msdblib = True
         try:
-            self.dbproc = dbopen(login, server)
-            #self.dbproc.tds_socket = tds_connect(server, database, user, password,
-            #        port=port,
-            #        connect_timeout=login_timeout,
-            #        app_name=appname,
-            #        client_charset=charset if charset else 'utf8',
-            #        tds_version=_tds_ver_str_to_constant(tds_version))
+            dbproc = self
+            self.dbproc = dbproc
+            dbproc.msdblib = msdblib
+            tds_set_server(login, server)
+            ctx = tds_alloc_context()
+            ctx.msg_handler = self._msg_handler
+            ctx.err_handler = self._err_handler
+            ctx.int_handler = self._int_handler
+            dbproc.tds_socket = tds_alloc_socket(ctx, 512)
+            tds_set_parent(dbproc.tds_socket, dbproc)
+            dbproc.tds_socket.env_chg_func = self._db_env_chg
+            dbproc.envchange_rcv = 0
+            dbproc.dbcurdb = ''
+            dbproc.servcharset = ''
+            login.option_flag2 &= ~0x02 # we're not an ODBC driver
+            tds_fix_login(login) # initialize from Environment variables
+
+            login.connect_timeout = login_timeout
+            login.query_timeout = query_timeout
+
+            tds_connect_and_login(dbproc.tds_socket, login)
         except Exception:
             logger.exception("_mssql.MSSQLConnection.__init__() connection failed")
-            connection_object_list.remove(self)
-            maybe_raise_MSSQLDatabaseException(None)
+            maybe_raise_MSSQLDatabaseException(self)
             raise MSSQLDriverException("Connection to the database failed for an unknown reason.")
 
         self._connected = 1
@@ -563,9 +508,6 @@ class MSSQLConnection(object):
             "SET TEXTSIZE 2147483647;" # http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
 
         #dbsqlsend() begin
-        from tds import *
-        from query import tds_submit_query
-        from token import tds_process_tokens
         tds = self.dbproc.tds_socket
         if tds.state == TDS_PENDING:
             raise Exception('not implemented')
@@ -616,9 +558,40 @@ class MSSQLConnection(object):
         db_cancel(self)
         clr_err(self)
 
-    def __del__(self):
-        logger.debug("_mssql.MSSQLConnection.__dealloc__()")
-        self.close()
+    def _int_handler(self):
+        raise Exception('not implemented')
+
+    def _err_handler(self, tds_ctx, tds, msg):
+        self._msg_handler(tds_ctx, tds, msg)
+
+    def _msg_handler(self, tds_ctx, tds, msg):
+        if msg['severity'] < min_error_severity:
+            return
+        if msg['severity'] > self.last_msg_severity:
+            self.last_msg_severity = msg['severity']
+            self.last_msg_no = msg['msgno']
+            self.last_msg_state = msg['state']
+            self.last_msg_line = msg['line_number']
+            self.last_msg_str = msg['message']
+            self.last_msg_srv = msg['server']
+            self.last_msg_proc = msg['proc_name']
+
+    def _db_env_chg(self, tds, type, oldval, newval):
+        assert oldval is not None and newval is not None
+        if oldval == '\x01':
+            oldval = "(0x1)"
+
+        logger.debug("db_env_chg(%d, %s, %s)", type, oldval, newval)
+
+        dbproc = self.dbproc
+        dbproc.envchange_rcv |= (1 << (type - 1))
+        if type == TDS_ENV_DATABASE:
+            dbproc.dbcurdb = newval
+        elif type == TDS_ENV_CHARSET:
+            dbproc.servcharset = newval
+        def __del__(self):
+            logger.debug("_mssql.MSSQLConnection.__dealloc__()")
+            self.close()
 
     def __iter__(self):
         assert_connected(self)
@@ -664,16 +637,16 @@ class MSSQLConnection(object):
 
         clr_err(self)
 
-        dbclose(self.dbproc)
+        tds = self.dbproc.tds_socket
+        if tds:
+            tds_free_socket(tds)
         self.dbproc = None
 
         self._connected = 0
-        connection_object_list.remove(self)
 
     def convert_db_value(self, data, type, length):
         logger.debug("_mssql.MSSQLConnection.convert_db_value()")
 
-        #import pdb; pdb.set_trace()
         if type in (SQLBIT, SQLBITN):
             return bool(struct.unpack('B', data)[0])
 
@@ -760,8 +733,6 @@ class MSSQLConnection(object):
 
         self.format_and_run_query(query_string, params)
         # getting results
-        from tds import *
-        from token import tds_process_tokens
         while True:
             rc, result_type, done_flags = tds_process_tokens(self.dbproc.tds_socket, TDS_TOKEN_RESULTS)
             if done_flags & TDS_DONE_ERROR:
@@ -861,6 +832,52 @@ class MSSQLConnection(object):
         else:
             return self.fetch_next_row(0)
 
+    def _nextrow(self):
+        result = FAIL
+        dbproc = self.dbproc
+        logger.debug("_nextrow()")
+        tds = dbproc.tds_socket
+        resinfo = tds.res_info
+        if not resinfo or dbproc.dbresults_state != DB_RES_RESULTSET_ROWS:
+            # no result set or result set empty (no rows)
+            logger.debug("leaving _nextrow() returning %d (NO_MORE_ROWS)", NO_MORE_ROWS)
+            dbproc.row_type = NO_MORE_ROWS
+            return NO_MORE_ROWS
+
+        #
+        # Try to get the dbproc->row_buf.current item from the buffered rows, if any.  
+        # Else read from the stream, unless the buffer is exhausted.  
+        # If no rows are read, DBROWTYPE() will report NO_MORE_ROWS. 
+        #/
+        dbproc.row_type = NO_MORE_ROWS
+        computeid = REG_ROW
+        mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
+
+        # Get the row from the TDS stream.
+        rc, res_type, _ = tds_process_tokens(tds, mask)
+        if rc == TDS_SUCCESS:
+            if res_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
+                if res_type == TDS_COMPUTE_RESULT:
+                    computeid = tds.current_results.computeid
+                # Add the row to the row buffer, whose capacity is always at least 1
+                resinfo = tds.current_results
+                result = dbproc.row_type = REG_ROW if res_type == TDS_ROW_RESULT else computeid
+                #_, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+            else:
+                dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                result = NO_MORE_ROWS
+        elif rc == TDS_NO_MORE_RESULTS:
+            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+            result = NO_MORE_ROWS
+        else:
+            raise Exception("unexpected result from tds_process_tokens")
+
+        if res_type == TDS_COMPUTE_RESULT:
+            logger.debug("leaving _nextrow() returning compute_id %d\n", result)
+        else:
+            logger.debug("leaving _nextrow() returning %s\n", prdbretcode(result))
+        return result
+
     def execute_scalar(self, query_string, params=None):
         """
         execute_scalar(query_string, params=None)
@@ -887,7 +904,7 @@ class MSSQLConnection(object):
         self.format_and_run_query(query_string, params)
         self.get_result()
 
-        rtc = dbnextrow(self.dbproc)
+        rtc = self._nextrow()
 
         self._rows_affected = self.dbproc.tds_socket.rows_affected
 
@@ -910,7 +927,7 @@ class MSSQLConnection(object):
                     raise StopIteration
                 return None
 
-            rtc = dbnextrow(self.dbproc)
+            rtc = self._nextrow()
 
             check_cancel_and_raise(rtc, self)
 
@@ -918,7 +935,8 @@ class MSSQLConnection(object):
                 logger.debug("_mssql.MSSQLConnection.fetch_next_row(): NO MORE ROWS")
                 self.clear_metadata()
                 # 'rows_affected' is nonzero only after all records are read
-                self._rows_affected = dbcount(self.dbproc)
+                tds_socket = self.dbproc.tds_socket
+                self._rows_affected = tds_socket.rows_affected
                 if throw:
                     raise StopIteration
                 return None
@@ -944,6 +962,76 @@ class MSSQLConnection(object):
             row_dict[col - 1] = value
 
         return row_dict
+
+    def _sqlok(self):
+        dbproc = self.dbproc
+        return_code = SUCCEED
+        logger.debug("dbsqlok()")
+        #CHECK_CONN(FAIL);
+
+        tds = dbproc.tds_socket
+        # See what the next packet from the server is.
+        # We want to skip any messages which are not processable. 
+        # We're looking for a result token or a done token.
+        #
+        while True:
+            #
+            # If we hit an end token -- e.g. if the command
+            # submitted returned no data (like an insert) -- then
+            # we process the end token to extract the status code. 
+            #
+            logger.debug("dbsqlok() not done, calling tds_process_tokens()")
+
+            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+
+            #
+            # The error flag may be set for any intervening DONEINPROC packet, in particular
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            #/
+            if done_flags & TDS_DONE_ERROR:
+                return_code = FAIL
+            if tds_code == TDS_NO_MORE_RESULTS:
+                return SUCCEED
+
+            elif tds_code == TDS_SUCCESS:
+                if result_type == TDS_ROWFMT_RESULT:
+                    pass
+                elif result_type == TDS_COMPUTEFMT_RESULT:
+                    dbproc.dbresults_state = _DB_RES_RESULTSET_EMPTY;
+                    logger.debug("dbsqlok() found result token")
+                    return SUCCEED;
+                elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
+                    logger.debug("dbsqlok() found result token")
+                    return SUCCEED;
+                elif result_type == TDS_DONEINPROC_RESULT:
+                    pass
+                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                    logger.debug("dbsqlok() end status is %s", prdbretcode(return_code))
+                    if True:
+                        if done_flags & TDS_DONE_ERROR:
+                            if done_flags & TDS_DONE_MORE_RESULTS:
+                                dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                            else:
+                                dbproc.dbresults_state = DB_RES_NO_MORE_RESULTS
+
+                        else:
+                            logger.debug("dbsqlok() end status was success")
+                            dbproc.dbresults_state = DB_RES_SUCCEED
+                        return return_code
+                    else:
+                        retcode = FAIL if done_flags & TDS_DONE_ERROR else SUCCEED;
+                        dbproc.dbresults_state = DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
+                        logger.debug("dbsqlok: returning %s with %s (%#x)", 
+                                        prdbretcode(retcode), prdbresults_state(dbproc.dbresults_state), done_flags)
+                        if retcode == SUCCEED and (done_flags & TDS_DONE_MORE_RESULTS):
+                            continue
+                        return retcode
+                else:
+                    logger.debug('logic error: tds_process_tokens result_type %d', result_type);
+            else:
+                assert TDS_FAILED(tds_code)
+                return FAIL
+        return SUCCEED
 
     def format_and_run_query(self, query_string, params=None):
         """
@@ -973,9 +1061,8 @@ class MSSQLConnection(object):
             if rtc == SUCCEED:
                 tds_submit_query(self.dbproc.tds_socket, query_string)
                 self.dbproc.envchange_rcv = 0
-                from dblib import _DB_RES_INIT
-                self.dbproc.dbresults_state = _DB_RES_INIT
-                rtc = dbsqlok(self.dbproc)
+                self.dbproc.dbresults_state = DB_RES_INIT
+                rtc = self._sqlok()
             check_cancel_and_raise(rtc, self)
         finally:
             logger.debug("_mssql.MSSQLConnection.format_and_run_query() END")
@@ -1010,6 +1097,88 @@ class MSSQLConnection(object):
         finally:
             logger.debug("_mssql.MSSQLConnection.get_header() END")
 
+    def _start_results(self):
+        dbproc = self.dbproc
+        result_type = 0
+
+        tds = dbproc.tds_socket
+
+        logger.debug("dbresults: dbresults_state is %d (%s)\n", 
+                                        dbproc.dbresults_state, prdbresults_state(dbproc.dbresults_state))
+        if dbproc.dbresults_state == DB_RES_SUCCEED:
+            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+            return SUCCEED
+        elif dbproc.dbresults_state == DB_RES_RESULTSET_ROWS:
+            dbperror(dbproc, SYBERPND, 0) # dbresults called while rows outstanding....
+            return FAIL
+        elif dbproc.dbresults_state == DB_RES_NO_MORE_RESULTS:
+            return NO_MORE_RESULTS;
+
+        while True:
+            retcode, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+
+            logger.debug("dbresults() tds_process_tokens returned %d (%s),\n\t\t\tresult_type %s\n", 
+                                            retcode, prretcode(retcode), prresult_type(result_type))
+
+            if retcode == TDS_SUCCESS:
+                if result_type == TDS_ROWFMT_RESULT:
+                    #buffer_free(&dbproc->row_buf);
+                    #buffer_alloc(dbproc);
+                    dbproc.dbresults_state = DB_RES_RESULTSET_EMPTY
+
+                elif result_type == TDS_COMPUTEFMT_RESULT:
+                    pass
+
+                elif result_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
+                    dbproc.dbresults_state = DB_RES_RESULTSET_ROWS
+                    return SUCCEED
+
+                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                    logger.debug("dbresults(): dbresults_state is %d (%s)\n", 
+                                    dbproc.dbresults_state, prdbresults_state(dbproc.dbresults_state))
+
+                    # A done token signifies the end of a logical command.
+                    # There are three possibilities:
+                    # 1. Simple command with no result set, i.e. update, delete, insert
+                    # 2. Command with result set but no rows
+                    # 3. Command with result set and rows
+                    #
+                    if dbproc.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
+                        dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                        if done_flags & TDS_DONE_ERROR:
+                            return FAIL
+
+                    elif dbproc.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
+                        dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                        return SUCCEED
+                    else:
+                        assert False
+
+                elif result_type == TDS_DONEINPROC_RESULT:
+                        #
+                        # Return SUCCEED on a command within a stored procedure
+                        # only if the command returned a result set. 
+                        #
+                        if dbproc.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
+                            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                        elif dbproc.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
+                            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                            return SUCCEED;
+                        elif dbproc.dbresults_state in (DB_RES_NO_MORE_RESULTS, DB_RES_SUCCEED):
+                            pass
+
+                elif result_type in (TDS_STATUS_RESULT, TDS_MSG_RESULT, TDS_DESCRIBE_RESULT, TDS_PARAM_RESULT):
+                    pass
+                else:
+                    pass
+            elif retcode == TDS_NO_MORE_RESULTS:
+                dbproc.dbresults_state = DB_RES_NO_MORE_RESULTS
+                return NO_MORE_RESULTS
+            else:
+                assert TDS_FAILED(retcode)
+                dbproc.dbresults_state = DB_RES_INIT
+                return FAIL
+
     def get_result(self):
         logger.debug("_mssql.MSSQLConnection.get_result() BEGIN")
 
@@ -1022,7 +1191,7 @@ class MSSQLConnection(object):
 
             # Since python doesn't have a do/while loop do it this way
             while True:
-                self.last_dbresults = dbresults(self.dbproc)
+                self.last_dbresults = self._start_results()
                 self.num_columns = self.dbproc.tds_socket.res_info.num_cols if self.dbproc.tds_socket.res_info else 0
                 if self.last_dbresults != SUCCEED or self.num_columns > 0:
                     break
@@ -1055,10 +1224,6 @@ class MSSQLConnection(object):
     def get_row(self, row_info):
         dbproc = self.dbproc
         logger.debug("_mssql.MSSQLConnection.get_row()")
-        global _row_count
-
-        if PYMSSQL_DEBUG:
-            _row_count += 1
 
         record = tuple()
 
@@ -1074,34 +1239,33 @@ class MSSQLConnection(object):
                 record += (None,)
                 continue
 
-            if PYMSSQL_DEBUG:
-                fprintf(stderr, 'Processing row %d, column %d,' \
-                    'Got data=%x, coltype=%d, len=%d\n', _row_count, col,
-                    data, col_type, size)
+            logger.debug('Processing column %s,' \
+                'Got data=%s, coltype=%d, len=%d', col.column_name,
+                data, col_type, size)
 
             record += (self.convert_db_value(data, col_type, size),)
         return record
 
 def get_last_msg_str(conn):
-    return conn.last_msg_str if conn != None else _mssql_last_msg_str
+    return conn.last_msg_str
 
 def get_last_msg_srv(conn):
-    return conn.last_msg_srv if conn != None else _mssql_last_msg_srv
+    return conn.last_msg_srv
 
 def get_last_msg_proc(conn):
-    return conn.last_msg_proc if conn != None else _mssql_last_msg_proc
+    return conn.last_msg_proc
 
 def get_last_msg_no(conn):
-    return conn.last_msg_no if conn != None else _mssql_last_msg_no
+    return conn.last_msg_no
 
 def get_last_msg_severity(conn):
-    return conn.last_msg_severity if conn != None else _mssql_last_msg_severity
+    return conn.last_msg_severity
 
 def get_last_msg_state(conn):
-    return conn.last_msg_state if conn != None else _mssql_last_msg_state
+    return conn.last_msg_state
 
 def get_last_msg_line(conn):
-    return conn.last_msg_line if conn != None else _mssql_last_msg_line
+    return conn.last_msg_line
 
 def maybe_raise_MSSQLDatabaseException(conn):
 
@@ -1142,11 +1306,6 @@ def check_cancel_and_raise(rtc, conn):
     elif get_last_msg_str(conn):
         return maybe_raise_MSSQLDatabaseException(conn)
 
-def init_mssql():
-    dbinit()
-    dberrhandle(err_handler)
-    dbmsghandle(msg_handler)
-
 ######################
 ## Helper Functions ##
 ######################
@@ -1163,25 +1322,3 @@ def get_api_coltype(coltype):
         return STRING
     else:
         return BINARY
-
-init_mssql()
-
-if __name__ == '__main__':
-    logging.basicConfig(level='DEBUG')
-    conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
-    #conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
-    from datetime import datetime
-    assert 'abc' == conn.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
-    assert 'abc' == conn.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
-    assert datetime(2010, 1, 2) == conn.execute_scalar("select cast('2010-01-02T00:00:00' as smalldatetime) as fieldname")
-    assert datetime(2010, 1, 2) == conn.execute_scalar("select cast('2010-01-02T00:00:00' as datetime) as fieldname")
-    #assert 12 == conn.execute_scalar('select cast(12 as bigint) as fieldname')
-    assert 12 == conn.execute_scalar('select cast(12 as smallint) as fieldname')
-    assert -12 == conn.execute_scalar('select -12 as fieldname')
-    assert 12 == conn.execute_scalar('select cast(12 as tinyint) as fieldname')
-    assert True == conn.execute_scalar('select cast(1 as bit) as fieldname')
-    assert 5.1 == conn.execute_scalar('select cast(5.1 as float) as fieldname')
-    assert {0: 'test', 1: 20} == conn.execute_row("select 'test', 20")
-    assert 'test' == conn.execute_scalar("select 'test' as fieldname")
-    assert 'test' == conn.execute_scalar("select N'test' as fieldname")
-    assert 5 == conn.execute_scalar('select 5 as fieldname')
