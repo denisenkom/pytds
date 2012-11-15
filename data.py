@@ -281,7 +281,10 @@ def tds72_get_varmax(tds, curcol):
             blob.textvalue = strio.getvalue()
             curcol.column_cur_size = len(blob.textvalue)
             return TDS_SUCCESS
-        strio.write(tds_get_n(tds, chunk_len))
+        if curcol.char_conv:
+            strio.write(tds_iconv(tds, curcol.char_conv, to_client, tds_get_n(tds, chunk_len)))
+        else:
+            strio.write(tds_get_n(tds, chunk_len))
     return TDS_SUCCESS
 
 def tds_data_put_info(tds):
