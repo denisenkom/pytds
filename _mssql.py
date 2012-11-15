@@ -181,7 +181,7 @@ def _tds_ver_str_to_constant(verstr):
     elif verstr == u'7.2':
         return 0x702
     elif verstr == '7.3':
-        return 0x702
+        return 0x703
     #elif verstr == u'8.0':
     #    return 0x800
     else:

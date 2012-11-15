@@ -22,9 +22,11 @@ tds72_query_start = str(bytearray([
     1, 0, 0, 0]))
 
 def tds_start_query(tds):
-    tds_put_n(tds, tds72_query_start, 10)
-    tds_put_n(tds, tds.tds72_transaction, 8)
-    tds_put_n(tds, tds72_query_start[10 + 8:], 4)
+    tds_put_s(tds, tds72_query_start[:10])
+    assert len(tds.tds72_transaction) == 8
+    tds_put_s(tds, tds.tds72_transaction)
+    assert len(tds72_query_start[10 + 8:]) == 4
+    tds_put_s(tds, tds72_query_start[10 + 8:])
 
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
@@ -80,7 +82,7 @@ def tds_submit_query_params(tds, query, params):
         # TODO ICONV use converted size, not input size and convert string
         TDS_PUT_INT(tds, len(query) + 1)
         tds_put_byte(tds, 1 if params else 0) # 1 if there are params, 0 otherwise
-        tds_put_n(tds, query)
+        tds_put_s(tds, query)
         if params:
             # add on parameters
             tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
@@ -136,9 +138,9 @@ def tds_submit_query_params(tds, query, params):
             tds_put_byte(tds, SYBNTEXT) # must be Ntype
             TDS_PUT_INT(tds, len(converted_query))
             if IS_TDS71_PLUS(tds):
-                tds_put_n(tds, tds.collation)
+                tds_put_s(tds, tds.collation)
             TDS_PUT_INT(tds, len(converted_query))
-            tds_put_n(tds, converted_query)
+            tds_put_s(tds, converted_query)
         else:
             tds7_put_query_params(tds, converted_query)
         tds7_put_params_definition(tds, param_definition)

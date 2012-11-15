@@ -1,4 +1,5 @@
 import logging
+from StringIO import StringIO
 from tds import *
 from tdsproto import *
 from read import *
@@ -263,6 +264,25 @@ def tds_data_get(tds, curcol):
 
 def tds_data_row_len(tds):
     raise Exception('not implemented')
+
+def tds72_get_varmax(tds, curcol):
+    size = tds_get_int8(tds);
+
+    # NULL
+    if size == -1:
+        curcol.column_cur_size = -1
+        return TDS_SUCCESS
+
+    blob = curcol.column_data = _Blob()
+    strio = StringIO()
+    while True:
+        chunk_len = tds_get_int(tds)
+        if chunk_len <= 0:
+            blob.textvalue = strio.getvalue()
+            curcol.column_cur_size = len(blob.textvalue)
+            return TDS_SUCCESS
+        strio.write(tds_get_n(tds, chunk_len))
+    return TDS_SUCCESS
 
 def tds_data_put_info(tds):
     raise Exception('not implemented')

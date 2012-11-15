@@ -13,17 +13,17 @@ TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
-#define IS_TDS42(x) (x->tds_version==0x402)
-#define IS_TDS46(x) (x->tds_version==0x406)
+def IS_TDS42(x): return x.tds_version==0x402
+def IS_TDS46(x): return x.tds_version==0x406
 def IS_TDS50(x): return x.tds_version==0x500
-#define IS_TDS70(x) (x->tds_version==0x700)
-#define IS_TDS71(x) (x->tds_version==0x701)
+def IS_TDS70(x): return x.tds_version==0x700
+def IS_TDS71(x): return x.tds_version==0x701
 def IS_TDS72(x): return x.tds_version==0x702
-#define IS_TDS73(x) (x->tds_version==0x703)
+def IS_TDS73(x): return x.tds_version==0x703
 def IS_TDS7_PLUS(x): return x.tds_version>=0x700
 def IS_TDS71_PLUS(x): return x.tds_version>=0x701
 def IS_TDS72_PLUS(x): return x.tds_version>=0x702
-#define IS_TDS73_PLUS(x) ((x)->tds_version>=0x703)
+def IS_TDS73_PLUS(x): return x.tds_version>=0x703
 
 client2ucs2             = 0
 client2server_chardata  = 1
