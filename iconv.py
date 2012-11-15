@@ -1,3 +1,4 @@
+import codecs
 import logging
 from tds import *
 
@@ -9,8 +10,10 @@ iconv_aliases = [
         ]
 
 canonic_charsets = {
-        TDS_CHARSET_ISO_8859_1: {'name': 'ISO8859'},
-        TDS_CHARSET_CP1251: {'name': 'cp1251'},
+        TDS_CHARSET_ISO_8859_1: {'name': 'ISO8859', 'canonic': TDS_CHARSET_ISO_8859_1},
+        TDS_CHARSET_CP1251: {'name': 'cp1251', 'canonic': TDS_CHARSET_CP1251},
+        TDS_CHARSET_CP1252: {'name': 'cp1252', 'canonic': TDS_CHARSET_CP1252},
+        TDS_CHARSET_UNICODE: {'name': 'unicode', 'canonic': TDS_CHARSET_UNICODE},
         }
 
 # change singlebyte conversions according to server
@@ -77,6 +80,7 @@ def tds_canonical_charset(charset_name):
 # Get a iconv info structure, allocate and initialize if needed
 def tds_iconv_get_info(tds, canonic_client, canonic_server):
     # search a charset from already allocated charsets
+    assert canonic_client == TDS_CHARSET_UNICODE
     i = len(tds.char_convs) - 1
     while i >= initial_char_conv_count:
         if canonic_client == tds.char_convs[i]['client_charset']['canonic']\
@@ -225,78 +229,77 @@ def collate2charset(sql_collate, lcid):
                   0x843,
                   0xc1a):
                     cp = TDS_CHARSET_CP1251;
+    elif lcid in (0x1007,
+                  0x1009,
+                  0x100a,
+                  0x100c,
+                  0x1407,
+                  0x1409,
+                  0x140a,
+                  0x140c,
+                  0x1809,
+                  0x180a,
+                  0x180c,
+                  0x1c09,
+                  0x1c0a,
+                  0x2009,
+                  0x200a,
+                  0x2409,
+                  0x240a,
+                  0x2809,
+                  0x280a,
+                  0x2c09,
+                  0x2c0a,
+                  0x3009,
+                  0x300a,
+                  0x3409,
+                  0x340a,
+                  0x380a,
+                  0x3c0a,
+                  0x400a,
+                  0x403,
+                  0x406,
+                  0x407,		#/* 0x10407 */
+                  0x409,
+                  0x40a,
+                  0x40b,
+                  0x40c,
+                  0x40f,
+                  0x410,
+                  0x413,
+                  0x414,
+                  0x416,
+                  0x41d,
+                  0x421,
+                  0x42d,
+                  0x436,
+                  0x437,		#/* 0x10437 */
+                  0x438,
+                     #case 0x439:  ??? Unicode only
+                  0x43e,
+                  0x440a,
+                  0x441,
+                  0x456,
+                  0x480a,
+                  0x4c0a,
+                  0x500a,
+                  0x807,
+                  0x809,
+                  0x80a,
+                  0x80c,
+                  0x810,
+                  0x813,
+                  0x814,
+                  0x816,
+                  0x81d,
+                  0x83e,
+                  0xc07,
+                  0xc09,
+                  0xc0a,
+                  0xc0c):
+            cp = TDS_CHARSET_CP1252;
     else:
         raise Exception('not implemented')
-    #case 0x1007:
-    #case 0x1009:
-    #case 0x100a:
-    #case 0x100c:
-    #case 0x1407:
-    #case 0x1409:
-    #case 0x140a:
-    #case 0x140c:
-    #case 0x1809:
-    #case 0x180a:
-    #case 0x180c:
-    #case 0x1c09:
-    #case 0x1c0a:
-    #case 0x2009:
-    #case 0x200a:
-    #case 0x2409:
-    #case 0x240a:
-    #case 0x2809:
-    #case 0x280a:
-    #case 0x2c09:
-    #case 0x2c0a:
-    #case 0x3009:
-    #case 0x300a:
-    #case 0x3409:
-    #case 0x340a:
-    #case 0x380a:
-    #case 0x3c0a:
-    #case 0x400a:
-    #case 0x403:
-    #case 0x406:
-    #case 0x407:		/* 0x10407 */
-    #case 0x409:
-    #case 0x40a:
-    #case 0x40b:
-    #case 0x40c:
-    #case 0x40f:
-    #case 0x410:
-    #case 0x413:
-    #case 0x414:
-    #case 0x416:
-    #case 0x41d:
-    #case 0x421:
-    #case 0x42d:
-    #case 0x436:
-    #case 0x437:		/* 0x10437 */
-    #case 0x438:
-    #        /*case 0x439:  ??? Unicode only */
-    #case 0x43e:
-    #case 0x440a:
-    #case 0x441:
-    #case 0x456:
-    #case 0x480a:
-    #case 0x4c0a:
-    #case 0x500a:
-    #case 0x807:
-    #case 0x809:
-    #case 0x80a:
-    #case 0x80c:
-    #case 0x810:
-    #case 0x813:
-    #case 0x814:
-    #case 0x816:
-    #case 0x81d:
-    #case 0x83e:
-    #case 0xc07:
-    #case 0xc09:
-    #case 0xc0a:
-    #case 0xc0c:
-    #        cp = TDS_CHARSET_CP1252;
-    #        break;
     #case 0x408:
     #        cp = TDS_CHARSET_CP1253;
     #        break;
@@ -371,3 +374,89 @@ def tds_iconv_from_collate(tds, collate):
         return tds.char_convs[client2server_chardata]
 
     return tds_iconv_get_info(tds, tds.char_convs[client2ucs2]['client_charset']['canonic'], canonic_charset)
+
+#
+# Open iconv descriptors to convert between character sets (both directions).
+# 1.  Look up the canonical names of the character sets.
+# 2.  Look up their widths.
+# 3.  Ask iconv to open a conversion descriptor.
+# 4.  Fail if any of the above offer any resistance.  
+# \remarks The charset names written to \a iconv will be the canonical names, 
+#          not necessarily the names passed in. 
+#
+def tds_iconv_info_init(char_conv, client_canonical, server_canonical):
+    assert client_canonical == TDS_CHARSET_UNICODE
+    assert 'to_wire' not in char_conv
+    assert 'to_wire2' not in char_conv
+    assert 'from_wire' not in char_conv
+    assert 'from_wire2' not in char_conv
+
+    if client_canonical < 0:
+        logger.debug("tds_iconv_info_init: client charset name \"%d\" invalid", client_canonical)
+        return False
+
+    if server_canonical < 0:
+        logger.debug("tds_iconv_info_init: server charset name \"%d\" invalid", server_canonical)
+        return False
+
+    char_conv['client_charset'] = canonic_charsets[client_canonical]
+    char_conv['server_charset'] = canonic_charsets[server_canonical]
+
+    # special case, same charset, no conversion
+    if client_canonical == server_canonical:
+        char_conv['to_wire'] = -1
+        char_conv['from_wire'] = -1
+        char_conv['flags'] = TDS_ENCODING_MEMCPY
+        return True
+
+    char_conv['flags'] = 0
+    char_conv['codec'] = codec = codecs.lookup(char_conv['server_charset']['name'])
+    char_conv['from_wire'] = lambda buf: codec.decode(buf)[0]
+    char_conv['from_wire2'] = -1
+    char_conv['to_wire'] = lambda buf: codec.encode(buf)[0]
+    char_conv['to_wire2'] = -1
+    return True
+
+    #if not iconv_names[server_canonical]:
+    #    if server_canonical == POS_UCS2LE:
+    #        server_canonical = POS_UCS2BE
+    #        char_conv['flags'] = TDS_ENCODING_SWAPBYTE
+    #    elif server_canonical == POS_UCS2BE:
+    #        server_canonical = POS_UCS2LE
+    #        char_conv['flags'] = TDS_ENCODING_SWAPBYTE
+
+    ## get iconv names
+    #if not iconv_names[client_canonical]:
+    #    if not tds_set_iconv_name(client_canonical):
+    #        logger.debug("Charset %d not supported by iconv, using \"%s\" instead", client_canonical, iconv_names[client_canonical])
+    #if not iconv_names[server_canonical]:
+    #    if not tds_set_iconv_name(server_canonical):
+    #        logger.debug("Charset %d not supported by iconv, using \"%s\" instead", server_canonical, iconv_names[server_canonical])
+
+    #char_conv['to_wire'] = tds_sys_iconv_open(iconv_names[server_canonical], iconv_names[client_canonical])
+    #if char_conv['to_wire'] == -1:
+    #    logger.debug("tds_iconv_info_init: cannot convert \"%s\"->\"%s\"", client['name'], server['name'])
+
+    #char_conv['from_wire'] = tds_sys_iconv_open(iconv_names[client_canonical], iconv_names[server_canonical])
+    #if char_conv['from_wire'] == -1:
+    #    logger.debug("tds_iconv_info_init: cannot convert \"%s\"->\"%s\"\n", server['name'], client['name'])
+
+    ## try indirect conversions
+    #if char_conv['to_wire'] == -1 or char_conv['from_wire'] == -1:
+    #    tds_iconv_info_close(char_conv);
+
+    #    # TODO reuse some conversion, client charset is usually constant in all connection (or ISO8859-1)
+    #    char_conv['to_wire'] = tds_sys_iconv_open(iconv_names[POS_UTF8], iconv_names[client_canonical])
+    #    char_conv['to_wire2'] = tds_sys_iconv_open(iconv_names[server_canonical], iconv_names[POS_UTF8])
+    #    char_conv['from_wire'] = tds_sys_iconv_open(iconv_names[POS_UTF8], iconv_names[server_canonical])
+    #    char_conv['from_wire2'] = tds_sys_iconv_open(iconv_names[client_canonical], iconv_names[POS_UTF8])
+
+    #    if char_conv['to_wire'] == -1 or char_conv['to_wire2'] == -1 or char_conv['from_wire'] == -1 or char_conv['from_wire2'] == -1:
+    #        tds_iconv_info_close(char_conv)
+    #        logger.debug("tds_iconv_info_init: cannot convert \"%s\"->\"%s\" indirectly", server['name'], client['name'])
+    #        return 0
+
+    #    char_conv['flags'] |= TDS_ENCODING_INDIRECT
+    ## TODO, do some optimizations like UCS2 -> UTF8 min,max = 2,2 (UCS2) and 1,4 (UTF8)
+    ## tdsdump_log(TDS_DBG_FUNC, "tds_iconv_info_init: converting \"%s\"->\"%s\"\n", client->name, server->name)
+    #return 1

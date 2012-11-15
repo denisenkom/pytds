@@ -795,7 +795,6 @@ def adjust_character_column_size(tds, curcol):
     curcol.on_server.column_size = curcol.column_size;
     curcol.column_size = determine_adjusted_size(curcol.char_conv, curcol.column_size)
 
-    print curcol.char_conv['server_charset']
     logger.debug("adjust_character_column_size:\n"
                  "\tServer charset: %s\n"
                  "\tServer column_size: %d\n"
