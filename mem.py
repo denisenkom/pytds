@@ -31,6 +31,7 @@ class _TdsSocket(object):
         self.param_info = None
         self.cur_cursor = None
         self.use_iconv = True
+        self.collation = None
     def is_dead(self):
         return self.state == TDS_DEAD
 
@@ -179,6 +180,7 @@ class _TdsLogin:
         self.block_size = 4096
         self.bulk_copy = False
         self.text_size = 0
+        self.encryption_level = 0
 
 def tds_alloc_login(use_environment):
     server_name = TDS_DEF_SERVER
@@ -220,7 +222,7 @@ def tds_free_login(login):
 class _TdsContext:
     pass
 
-def tds_alloc_context(parent):
+def tds_alloc_context(parent=None):
     from locale import tds_get_locale
     locale = tds_get_locale()
     if locale is None:

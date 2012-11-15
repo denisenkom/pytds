@@ -112,12 +112,12 @@ def is_blob_type(x): return x in (SYBTEXT, SYBIMAGE, SYBNTEXT)
 def is_blob_col(col): return (col.column_varint_size > 2)
 # large type means it has a two byte size field
 # define is_large_type(x) (x>128)
-#define is_numeric_type(x) (x==SYBNUMERIC || x==SYBDECIMAL)
+def is_numeric_type(x): return x in (SYBNUMERIC, SYBDECIMAL)
 def is_unicode_type(x): return x in (XSYBNVARCHAR,XSYBNCHAR,SYBNTEXT,SYBMSXML)
-#define is_collate_type(x) (x==XSYBVARCHAR || x==XSYBCHAR || x==SYBTEXT || x==XSYBNVARCHAR || x==XSYBNCHAR || x==SYBNTEXT)
+def is_collate_type(x): return x in (XSYBVARCHAR, XSYBCHAR, SYBTEXT, XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT)
 def is_ascii_type(x): return x in (XSYBCHAR,XSYBVARCHAR,SYBTEXT,SYBCHAR,SYBVARCHAR)
-#define is_char_type(x) (is_unicode_type(x) || is_ascii_type(x))
-#define is_similar_type(x, y) ((is_char_type(x) && is_char_type(y)) || ((is_unicode_type(x) && is_unicode_type(y))))
+def is_char_type(x): return is_unicode_type(x) or is_ascii_type(x)
+def is_similar_type(x, y): return is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
 
 def tds_conn(tds): return tds.conn
 

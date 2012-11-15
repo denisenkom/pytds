@@ -216,9 +216,9 @@ def tds71_do_login(tds, login):
                 #encryption
                 1, START_POS + 6, 1,
                 #instance
-                2, START_POS + 6 + 1, len(instance_name),
+                2, START_POS + 6 + 1, len(instance_name)+1,
                 # process id
-                3, START_POS + 6 + 1 + len(instance_name), 4,
+                3, START_POS + 6 + 1 + len(instance_name)+1, 4,
                 # end
                 0xff
                 ))
@@ -230,11 +230,11 @@ def tds71_do_login(tds, login):
                 #encryption
                 1, START_POS + 6, 1,
                 #instance
-                2, START_POS + 6 + 1, len(instance_name),
+                2, START_POS + 6 + 1, len(instance_name)+1,
                 # process id
-                3, START_POS + 6 + 1 + len(instance_name), 4,
+                3, START_POS + 6 + 1 + len(instance_name)+1, 4,
                 # MARS enabled
-                4, START_POS + 6 + 1 + len(instance_name) + 4, 1,
+                4, START_POS + 6 + 1 + len(instance_name)+1 + 4, 1,
                 # end
                 0xff
                 ))
@@ -242,18 +242,19 @@ def tds71_do_login(tds, login):
     assert buf[START_POS-1] == 0xff
     tds.out_flag = TDS71_PRELOGIN
     tds_put_s(tds, buf)
-    netlib8 = b'\x08\x00\x01\0x55\0x00\0x00'
-    netlib9 = b'\x09\x00\x00\0x00\0x00\0x00'
-    tds_put_s(tds, netlib9 if tds.tds_version >= 0x702 else netlib8)
+    netlib8 = b'\x08\x00\x01\x55\x00\x00'
+    netlib9 = b'\x09\x00\x00\x00\x00\x00'
+    tds_put_s(tds, netlib9 if IS_TDS72_PLUS(tds) else netlib8)
     # encryption
-    if False:
+    if True:
         # not supported
         tds_put_byte(tds, 2)
     else:
         tds_put_byte(tds, 1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
     tds_put_s(tds, instance_name.encode('ascii'))
+    tds_put_byte(tds, 0) # zero terminate instance_name
     tds_put_int(tds, os.getpid())
-    if tds.tds_version >= 0x702:
+    if IS_TDS72_PLUS(tds):
         # MARS (1 enabled)
         tds_put_byte(tds, 0)
     tds_flush_packet(tds)
@@ -273,11 +274,12 @@ def tds71_do_login(tds, login):
             break
         if i + 4 > size:
             raise TdsError(TDS_FAIL)
-        off, l = struct.unpack('>HH')
+        off, l = struct.unpack('>HH', bytes(p[i+1:i+1+4]))
         if off > size or off + l > size:
             raise TdsError(TDS_FAIL)
         if type == 1 and l >= 1:
             crypt_flag = p[off]
+        i += 5
     # we readed all packet
     tds.in_pos += size
     logger.debug('detected flag %d', crypt_flag)

@@ -138,19 +138,22 @@ def tds_process_env_chg(tds):
         else:
             tds.collation = tds_get_n(tds, 5)
             tds_get_n(tds, size - 5)
-            lcid = (tds.collation[0] + (tds.collation[1] << 8) + (tds.collation[2] << 16)) & 0xfffff
-            tds7_srv_charset_changed(tds, tds.collation[4], lcid)
+            lcid = (ord(tds.collation[0]) + (ord(tds.collation[1]) << 8) + (ord(tds.collation[2]) << 16)) & 0xfffff
+            tds7_srv_charset_changed(tds, ord(tds.collation[4]), lcid)
         logger.debug("tds.collation now {0}".format(tds.collation));
         # discard old one
         tds_get_n(tds, tds_get_byte(tds))
+        return TDS_SUCCESS
     elif type == TDS_ENV_BEGINTRANS:
         size = tds_get_byte(tds)
         tds.tds72_transaction = tds_get_n(tds, 8)
         tds_get_n(tds, tds_get_byte(tds))
+        return TDS_SUCCESS
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
         tds.tds72_transaction = None
         tds_get_n(tds, tds_get_byte(tds))
         tds_get_n(tds, tds_get_byte(tds))
+        return TDS_SUCCESS
     # discard byte values, not still supported
     # TODO support them
     elif IS_TDS71_PLUS(tds) and type > TDS_ENV_PACKSIZE:
@@ -158,6 +161,7 @@ def tds_process_env_chg(tds):
         tds_get_n(tds, tds_get_byte(tds))
         # discard old one
         tds_get_n(tds, tds_get_byte(tds))
+        return TDS_SUCCESS
 
     # fetch the new value
     newval = tds_get_string(tds, tds_get_byte(tds))
