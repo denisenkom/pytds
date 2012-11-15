@@ -1348,8 +1348,6 @@ def dbsqlok(dbproc):
     # We're looking for a result token or a done token.
     #
     while True:
-        done_flags = 0
-
         #
         # If we hit an end token -- e.g. if the command
         # submitted returned no data (like an insert) -- then
@@ -1366,7 +1364,7 @@ def dbsqlok(dbproc):
         if done_flags & TDS_DONE_ERROR:
             return_code = FAIL
         if tds_code == TDS_NO_MORE_RESULTS:
-                return SUCCEED;
+            return SUCCEED
 
         elif tds_code == TDS_SUCCESS:
             if result_type == TDS_ROWFMT_RESULT:
