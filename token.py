@@ -124,7 +124,7 @@ def tds_process_end(tds, marker):
         tds.rows_affected = rows_affected
     else:
         tds.rows_affected = None
-    return TDS_CANCELLED if was_cancelled else TDS_SUCCESS, tmp
+    return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), tmp
 
 def tds_process_env_chg(tds):
     size = tds_get_smallint(tds)
@@ -610,7 +610,7 @@ def tds_process_tokens(tds, flag):
             return rc, parent['result_type'], done_flags
 
         if tds.state == TDS_IDLE:
-            return TDS_CANCELLED if cancel_seen else TDS_NO_MORE_RESULTS, parent['result_type'], done_flags
+            return (TDS_CANCELLED if cancel_seen else TDS_NO_MORE_RESULTS), parent['result_type'], done_flags
 
         if tds.state == TDS_DEAD:
             # TODO free all results ??
