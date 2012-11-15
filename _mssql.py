@@ -505,6 +505,7 @@ class MSSQLConnection(object):
         login.password = password
         login.app = appname
         login.tds_version = _tds_ver_str_to_constant(tds_version)
+        login.database = database
 
         # override the HOST to be the portion without the server, otherwise
         # FreeTDS chokes when server still has the port definition.
@@ -691,7 +692,7 @@ class MSSQLConnection(object):
             return struct.unpack('<q', data)[0]
 
         elif type == SQLFLT4 or type == SYBFLTN and length == 4:
-            return struct.unpack('j', data)[0]
+            return struct.unpack('f', data)[0]
 
         elif type == SQLFLT8 or type == SYBFLTN and length == 8:
             return struct.unpack('d', data)[0]
