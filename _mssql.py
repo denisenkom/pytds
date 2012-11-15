@@ -961,10 +961,12 @@ class MSSQLConnection(object):
             logger.debug(query_string)
 
             # Prepare the query buffer
-            dbcmd(self.dbproc, query_string)
+            self.dbproc.dbbuf = query_string
+            self.dbproc.command_state = DBCMDPEND
 
             # Execute the query
-            rtc = dbsqlexec(self.dbproc)
+            dbsqlsend(self.dbproc)
+            rtc = dbsqlok(self.dbproc)
             check_cancel_and_raise(rtc, self)
         finally:
             logger.debug("_mssql.MSSQLConnection.format_and_run_query() END")
