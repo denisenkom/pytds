@@ -445,7 +445,10 @@ class MSSQLRowIterator:
     def next(self):
         assert_connected(self.conn)
         clr_err(self.conn)
-        return self.conn.fetch_next_row_dict(1)
+        if self.conn.as_dict:
+            return self.conn.fetch_next_row_dict(1)
+        else:
+            return self.conn.fetch_next_row(1)
 
 ############################
 ## MSSQL Connection Class ##
@@ -467,21 +470,17 @@ class MSSQLConnection(object):
         return self._rows_affected
 
     def __init__(self, server="localhost", user="sa", password="",
-            charset='', database='', appname=None, port='1433', tds_version='7.1'):
+            charset='', database='', appname=None, port='1433', tds_version='7.1',
+            as_dict=True):
         logger.debug("_mssql.MSSQLConnection.__cinit__()")
         self._connected = 0
         self._charset = ''
         self.last_msg_str = ''
-        #self.last_msg_srv = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
-        #self.last_msg_srv[0] = <char>0
-        #self.last_msg_proc = <char *>PyMem_Malloc(PYMSSQL_MSGSIZE)
-        #self.last_msg_proc[0] = <char>0
+        self.last_msg_srv = ''
+        self.last_msg_proc = ''
         self.column_names = None
         self.column_types = None
-
-        #cdef LOGINREC *login
-        #cdef RETCODE rtc
-        #cdef char *_charset
+        self.as_dict = as_dict
 
         # support MS methods of connecting locally
         instance = ""
@@ -496,8 +495,6 @@ class MSSQLConnection(object):
         login = tds_alloc_login(1)
         # set default values for loginrec
         login.library = "DB-Library"
-        #if login == NULL:
-        #    raise MSSQLDriverException("Out of memory")
 
         appname = appname or "pymssql"
 
@@ -858,7 +855,10 @@ class MSSQLConnection(object):
         """
         logger.debug("_mssql.MSSQLConnection.execute_row()")
         self.format_and_run_query(query_string, params)
-        return self.fetch_next_row_dict(0)
+        if self.as_dict:
+            return self.fetch_next_row_dict(0)
+        else:
+            return self.fetch_next_row(0)
 
     def execute_scalar(self, query_string, params=None):
         """

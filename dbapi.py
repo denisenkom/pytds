@@ -115,11 +115,11 @@ class Connection(object):
         Instructs all cursors this connection creates to return results
         as a dictionary rather than a tuple.
         """
-        return self._as_dict
+        return self.conn.as_dict
 
     @as_dict.setter
     def as_dict(self, value):
-        self._as_dict = value
+        self.conn.as_dict = value
 
     @property
     def autocommit_state(self):
@@ -139,10 +139,9 @@ class Connection(object):
             raise InterfaceError('Connection is closed.')
         return self.conn
 
-    def __init__(self, conn, as_dict):
+    def __init__(self, conn):
         self.conn = conn
         self._autocommit = False
-        self.as_dict = as_dict
         try:
             self._conn.execute_non_query('BEGIN TRAN')
         except Exception, e:
@@ -187,14 +186,12 @@ class Connection(object):
         except Exception, e:
             raise OperationalError('Cannot commit transaction: ' + str(e[0]))
 
-    def cursor(self, as_dict=None):
+    def cursor(self):
         """
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
-        if as_dict is None:
-            as_dict = self.as_dict
-        return Cursor(self, as_dict)
+        return Cursor(self)
 
     def rollback(self):
         """
@@ -240,13 +237,12 @@ class Cursor(object):
             raise InterfaceError('Cursor is closed.')
         return self.conn
 
-    def __init__(self, conn, as_dict):
+    def __init__(self, conn):
         self.conn = conn
         self.description = None
         self._batchsize = 1
         self._rownumber = 0
         self._returnvalue = None
-        self.as_dict = as_dict
 
     def __iter__(self):
         """
@@ -341,13 +337,10 @@ class Cursor(object):
     def getrow(self):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
-        converting the row if as_dict = False.
         """
         row = iter(self._source._conn).next()
         self._rownumber = self._source._conn.rows_affected
-        if self.as_dict:
-            return row
-        return tuple([row[r] for r in sorted(row) if type(r) == int])
+        return row
 
     def fetchone(self):
         if self.description is None:
@@ -389,11 +382,7 @@ class Cursor(object):
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
         try:
-            if self.as_dict:
-                rows = [row for row in self._source._conn]
-            else:
-                rows = [tuple([row[r] for r in sorted(row.keys()) if \
-                        type(r) == int]) for row in self._source._conn]
+            rows = [row for row in self._source._conn]
             self._rownumber = self._source._conn.rows_affected
             return rows
         except _mssql.MSSQLDatabaseException, e:
@@ -472,7 +461,7 @@ def connect(server='.', user='', password='', database='', timeout=0,
 
     try:
         conn = _mssql.connect(server, user, password, charset, database,
-            appname, port, tds_version=tds_version)
+            appname, port, tds_version=tds_version, as_dict=as_dict)
 
     except _mssql.MSSQLDatabaseException, e:
         raise OperationalError(e[0])
@@ -484,7 +473,7 @@ def connect(server='.', user='', password='', database='', timeout=0,
     if timeout != 0:
         conn.query_timeout = timeout
 
-    return Connection(conn, as_dict)
+    return Connection(conn)
 
 def get_max_connections():
     """
@@ -501,12 +490,3 @@ def set_max_connections(limit):
     :type limit: int
     """
     _mssql.set_max_connections(limit)
-
-if __name__ == '__main__':
-    logging.basicConfig(level='DEBUG')
-    conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
-    #conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
-    cur = conn.cursor()
-    import pdb; pdb.set_trace()
-    cur.execute('select ')
-    assert (5,) == cur.fetchone()
