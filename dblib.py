@@ -660,6 +660,9 @@ def dbnextrow(dbproc):
                     result = dbproc.row_type = REG_ROW if res_type == TDS_ROW_RESULT else computeid
                     if False:
                         _, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+                else:
+                    dbproc.dbresults_state = _DB_RES_NEXT_RESULT
+                    result = NO_MORE_ROWS
             elif rc == TDS_NO_MORE_RESULTS:
                 dbproc.dbresults_state = _DB_RES_NEXT_RESULT
                 result = NO_MORE_ROWS

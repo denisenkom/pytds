@@ -903,7 +903,7 @@ class MSSQLConnection(object):
             self.get_result()
 
             if self.last_dbresults == NO_MORE_RESULTS:
-                log("_mssql.MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
+                logger.debug("_mssql.MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
                 self.clear_metadata()
                 if throw:
                     raise StopIteration
@@ -914,7 +914,7 @@ class MSSQLConnection(object):
             check_cancel_and_raise(rtc, self)
 
             if rtc == NO_MORE_ROWS:
-                log("_mssql.MSSQLConnection.fetch_next_row(): NO MORE ROWS")
+                logger.debug("_mssql.MSSQLConnection.fetch_next_row(): NO MORE ROWS")
                 self.clear_metadata()
                 # 'rows_affected' is nonzero only after all records are read
                 self._rows_affected = dbcount(self.dbproc)
