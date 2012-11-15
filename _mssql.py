@@ -405,7 +405,7 @@ class MSSQLConnection(object):
 
     def __init__(self, server="localhost", user="sa", password="",
             charset='', database='', appname=None, port='1433', tds_version='7.1',
-            as_dict=True):
+            as_dict=True, encryption_level=TDS_ENCRYPTION_OFF):
         logger.debug("_mssql.MSSQLConnection.__cinit__()")
         self._connected = 0
         self._charset = ''
@@ -436,6 +436,7 @@ class MSSQLConnection(object):
 
         appname = appname or "pymssql"
 
+        login.encryption_level = encryption_level
         login.user_name = user
         login.password = password
         login.app = appname

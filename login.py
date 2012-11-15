@@ -2,6 +2,13 @@
 import struct
 import os
 import logging
+ENCRYPTION_ENABLED = False
+encryption_supported = False
+try:
+    import ssl
+    encryption_supported = True
+except:
+    pass
 from tdsproto import *
 from write import *
 from tds import *
@@ -246,11 +253,11 @@ def tds71_do_login(tds, login):
     netlib9 = b'\x09\x00\x00\x00\x00\x00'
     tds_put_s(tds, netlib9 if IS_TDS72_PLUS(tds) else netlib8)
     # encryption
-    if True:
+    if ENCRYPTION_ENABLED and encryption_supported:
+        tds_put_byte(tds, 1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
+    else:
         # not supported
         tds_put_byte(tds, 2)
-    else:
-        tds_put_byte(tds, 1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
     tds_put_s(tds, instance_name.encode('ascii'))
     tds_put_byte(tds, 0) # zero terminate instance_name
     tds_put_int(tds, os.getpid())
@@ -288,7 +295,8 @@ def tds71_do_login(tds, login):
         if encryption_level >= TDS_ENCRYPTION_REQUIRE:
             raise TdsError(TDS_FAIL)
         return tds7_send_login(tds, login)
-    raise Exception('encryption is not supported yet')
+    tds_set_s(ssl.wrap_socket(tds_get_s(tds), ssl_version=ssl.PROTOCOL_TLSv1))
+    return tds7_send_login(tds, login)
 
 def tds_connect_and_login(tds, login):
     return tds_connect(tds, login)
