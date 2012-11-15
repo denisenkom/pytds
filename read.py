@@ -34,6 +34,13 @@ def tds_get_int(tds):
     else:
         return struct.unpack('>l', bytes(buf))[0]
 
+def tds_get_int8(tds):
+    buf = tds_get_n(tds, 8)
+    if tds_conn(tds).emul_little_endian:
+        return struct.unpack('<q', bytes(buf))[0]
+    else:
+        return struct.unpack('>q', bytes(buf))[0]
+
 def tds_get_string(tds, size):
     buf = tds_get_n(tds, size*2)
     return buf.decode('utf16')

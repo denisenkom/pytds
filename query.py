@@ -9,6 +9,23 @@ def START_QUERY(tds):
     if IS_TDS72_PLUS(tds):
         tds_start_query(tds)
 
+tds72_query_start = str(bytearray([
+    #/* total length */
+    0x16, 0, 0, 0,
+    #/* length */
+    0x12, 0, 0, 0,
+    #/* type */
+    0x02, 0,
+    #/* transaction */
+    0, 0, 0, 0, 0, 0, 0, 0,
+    #/* request count */
+    1, 0, 0, 0]))
+
+def tds_start_query(tds):
+    tds_put_n(tds, tds72_query_start, 10)
+    tds_put_n(tds, tds.tds72_transaction, 8)
+    tds_put_n(tds, tds72_query_start[10 + 8:], 4)
+
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
     tds_set_state(tds, TDS_PENDING)
