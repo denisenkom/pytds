@@ -481,6 +481,7 @@ class MSSQLConnection(object):
         self.column_names = None
         self.column_types = None
         self.as_dict = as_dict
+        self.dbproc = None
 
         # support MS methods of connecting locally
         instance = ""
@@ -960,13 +961,21 @@ class MSSQLConnection(object):
 
             logger.debug(query_string)
 
-            # Prepare the query buffer
-            self.dbproc.dbbuf = query_string
-            self.dbproc.command_state = DBCMDPEND
+            rtc = SUCCEED
+            if self.dbproc.tds_socket.state == TDS_PENDING:
+                raise Exception('not checked')
+                rc, result_type, _ = tds_process_tokens(tds, result_type, TDS_TOKEN_TRAILING)
+                if rc != TDS_NO_MORE_RESULTS:
+                    dbperror(self.dbproc, SYBERPND, 0)
+                    rtc = FAIL
 
             # Execute the query
-            dbsqlsend(self.dbproc)
-            rtc = dbsqlok(self.dbproc)
+            if rtc == SUCCEED:
+                tds_submit_query(self.dbproc.tds_socket, query_string)
+                self.dbproc.envchange_rcv = 0
+                from dblib import _DB_RES_INIT
+                self.dbproc.dbresults_state = _DB_RES_INIT
+                rtc = dbsqlok(self.dbproc)
             check_cancel_and_raise(rtc, self)
         finally:
             logger.debug("_mssql.MSSQLConnection.format_and_run_query() END")
@@ -1014,28 +1023,28 @@ class MSSQLConnection(object):
             # Since python doesn't have a do/while loop do it this way
             while True:
                 self.last_dbresults = dbresults(self.dbproc)
-                self.num_columns = dbnumcols(self.dbproc)
+                self.num_columns = self.dbproc.tds_socket.res_info.num_cols if self.dbproc.tds_socket.res_info else 0
                 if self.last_dbresults != SUCCEED or self.num_columns > 0:
                     break
             check_cancel_and_raise(self.last_dbresults, self)
 
-            self._rows_affected = dbcount(self.dbproc)
+            self._rows_affected = self.dbproc.tds_socket.rows_affected if self.dbproc.tds_socket.rows_affected != TDS_NO_COUNT else -1
 
             if self.last_dbresults == NO_MORE_RESULTS:
                 self.num_columns = 0
                 logger.debug("_mssql.MSSQLConnection.get_result(): NO_MORE_RESULTS, return None")
                 return None
 
-            self.num_columns = dbnumcols(self.dbproc)
+            self.num_columns = self.dbproc.tds_socket.res_info.num_cols
 
             logger.debug("_mssql.MSSQLConnection.get_result(): num_columns = %d", self.num_columns)
 
             column_names = list()
             column_types = list()
 
-            for col in xrange(1, self.num_columns + 1):
-                column_names.append(dbcolname(self.dbproc, col))
-                coltype = dbcoltype(self.dbproc, col)
+            for col in self.dbproc.tds_socket.res_info.columns:
+                column_names.append(col.column_name)
+                coltype = col.column_type
                 column_types.append(get_api_coltype(coltype))
 
             self.column_names = tuple(column_names)
@@ -1053,11 +1062,13 @@ class MSSQLConnection(object):
 
         record = tuple()
 
-        for col in xrange(1, self.num_columns + 1):
-
-            data = get_data(dbproc, row_info, col)
-            col_type = get_type(dbproc, row_info, col)
-            len = get_length(dbproc, row_info, col)
+        for col in dbproc.tds_socket.res_info.columns:
+            if is_blob_col(col):
+                data = col.column_data.textvalue
+            else:
+                data = col.column_data
+            col_type = col.column_type
+            size = len(data)
 
             if data == None:
                 record += (None,)
@@ -1066,9 +1077,9 @@ class MSSQLConnection(object):
             if PYMSSQL_DEBUG:
                 fprintf(stderr, 'Processing row %d, column %d,' \
                     'Got data=%x, coltype=%d, len=%d\n', _row_count, col,
-                    data, col_type, len)
+                    data, col_type, size)
 
-            record += (self.convert_db_value(data, col_type, len),)
+            record += (self.convert_db_value(data, col_type, size),)
         return record
 
 def get_last_msg_str(conn):
@@ -1118,25 +1129,11 @@ def assert_connected(conn):
     if not conn.connected:
         raise MSSQLDriverException("Not connected to any MS SQL server")
 
-
-def get_data(dbproc, row_info, col):
-    return dbdata(dbproc, col) if row_info == REG_ROW else \
-        dbadata(dbproc, row_info, col)
-
-def get_type(dbproc, row_info, col):
-    return dbcoltype(dbproc, col) if row_info == REG_ROW else \
-        dbalttype(dbproc, row_info, col)
-
-def get_length(dbproc, row_info, col):
-    return dbdatlen(dbproc, col) if row_info == REG_ROW else \
-        dbadlen(dbproc, row_info, col)
-
 def check_and_raise(rtc, conn):
-    pass
-    #if rtc == FAIL:
-    #    return maybe_raise_MSSQLDatabaseException(conn)
-    #elif get_last_msg_str(conn):
-    #    return maybe_raise_MSSQLDatabaseException(conn)
+    if rtc == FAIL:
+        return maybe_raise_MSSQLDatabaseException(conn)
+    elif get_last_msg_str(conn):
+        return maybe_raise_MSSQLDatabaseException(conn)
 
 def check_cancel_and_raise(rtc, conn):
     if rtc == FAIL:
