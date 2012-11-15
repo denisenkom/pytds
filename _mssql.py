@@ -1,10 +1,22 @@
 # vim: set fileencoding=utf8 :
 from dblib import *
 import logging
+import decimal
+import datetime
+import re
 
 logger = logging.getLogger(__name__)
 
 PYMSSQL_DEBUG = False
+
+# Vars to store messages from the server in
+_mssql_last_msg_no = 0
+_mssql_last_msg_severity = 0
+_mssql_last_msg_state = 0
+_mssql_last_msg_line = 0
+_mssql_last_msg_str = ''
+_mssql_last_msg_srv = ''
+_mssql_last_msg_proc = ''
 
 # List to store the connection objects in
 connection_object_list = list()
@@ -79,14 +91,109 @@ class MSSQLDatabaseException(MSSQLException):
                 'line %d:\n%s' % (self.number, self.severity,
                 self.state, self.line, self.text)
 
+min_error_severity = 6
+
+###################
+## Error Handler ##
+###################
 def err_handler(dbproc, severity, dberr, oserr,
         dberrstr, oserrstr):
-    raise Exception('not converted')
+    global _mssql_last_msg_str
+    global _mssql_last_msg_no
+    global _mssql_last_msg_severity
+    global _mssql_last_msg_state
+    if severity < min_error_severity:
+        return INT_CANCEL
 
+    logger.debug("*** err_handler(severity = %d,  " \
+        "dberr = %d, oserr = %d, dberrstr = '%s',  oserrstr = '%s'); " \
+        "DBDEAD(dbproc) = %d", severity, dberr,
+        oserr, dberrstr, oserrstr, DBDEAD(dbproc))
+    logger.debug("*** previous max severity = %d",
+        _mssql_last_msg_severity)
+
+    conn = None
+    for c in connection_object_list:
+        if dbproc != c.dbproc:
+            continue
+        conn = c
+        break
+
+    mssql_lastmsgstr = conn.last_msg_str if conn else _mssql_last_msg_str
+    mssql_lastmsgseverity = conn.last_msg_severity if conn else _mssql_last_msg_severity
+
+    if severity > mssql_lastmsgseverity:
+        if conn:
+            conn.last_msg_severity = severity
+            conn.last_msg_no = dberr
+            conn.last_msg_state = oserr
+        else:
+            _mssql_last_msg_severity = severity
+            _mssql_last_msg_no = dberr
+            _mssql_last_msg_state = oserr
+
+    mssql_message = '%sDB-Lib error message %d, severity %d:\n%s\n' % (
+        mssql_lastmsgstr, dberr, severity, dberrstr)
+
+    if oserr != DBNOERR and oserr != 0:
+        if severity == EXCOMM:
+            error_type = 'Net-Lib'
+        else:
+            error_type = 'Operating System'
+        mssql_message = '%s error during %s' % (error_type, oserrstr)
+
+    if conn:
+        conn.last_msg_str = mssql_message
+    else:
+        _mssql_last_msg_str = mssql_message
+    return INT_CANCEL
+
+#####################
+## Message Handler ##
+#####################
 def msg_handler(dbproc, msgno, msgstate,
         severity, msgtext, srvname, procname,
         line):
-    raise Exception('not converted')
+    global _mssql_last_msg_str
+    global _mssql_last_msg_no
+    global _mssql_last_msg_severity
+    global _mssql_last_msg_state
+    global _mssql_last_msg_line
+    global _mssql_last_msg_srv
+    global _mssql_last_msg_proc
+    if severity < min_error_severity:
+        return INT_CANCEL
+
+    mssql_lastmsgseverity = _mssql_last_msg_severity
+
+    conn = None
+    for c in connection_object_list:
+        if dbproc != c.dbproc:
+            continue
+        conn = c
+        mssql_lastmsgseverity = conn.last_msg_severity
+        break
+
+    # Calculate the maximum severity of all messages in a row
+    # Fill the remaining fields as this is going to raise the exception
+    if severity > mssql_lastmsgseverity:
+        if conn:
+            conn.last_msg_severity = severity
+            conn.last_msg_no = msgno
+            conn.last_msg_state = msgstate
+            conn.last_msg_line = line
+            conn.last_msg_str = msgtext
+            conn.last_msg_srv = srvname
+            conn.last_msg_proc = procname
+        else:
+            _mssql_last_msg_severity = severity
+            _mssql_last_msg_no = msgno
+            _mssql_last_msg_state = msgstate
+            _mssql_last_msg_line = line
+            _mssql_last_msg_str = msgtext
+            _mssql_last_msg_srv = srvname
+            _mssql_last_msg_proc = procname
+    return 0
 
 
 # Module attributes for configuring _mssql
@@ -145,6 +252,184 @@ def _tds_ver_str_to_constant(verstr):
     #    return 0x800
     else:
         raise MSSQLException('unrecognized tds version: %s' % verstr)
+
+#######################
+## Quoting Functions ##
+#######################
+def _quote_simple_value(value, charset='utf8'):
+
+    if value == None:
+        return 'NULL'
+
+    if isinstance(value, bool):
+        return '1' if value else '0'
+
+    if isinstance(value, float):
+        return repr(value)
+
+    if isinstance(value, (int, long, decimal.Decimal)):
+        return str(value)
+
+    if isinstance(value, str):
+        # see if it can be decoded as ascii if there are no null bytes
+        if '\0' not in value:
+            try:
+                value.decode('ascii')
+                return "'" + value.replace("'", "''") + "'"
+            except UnicodeDecodeError:
+                pass
+
+        # will still be string type if there was a null byte in it or if the
+        # decoding failed.  In this case, just send it as hex.
+        if isinstance(value, str):
+            return '0x' + value.encode('hex')
+
+    if isinstance(value, unicode):
+        return "N'" + value.encode(charset).replace("'", "''") + "'"
+
+    if isinstance(value, datetime.datetime):
+        return "{ts '%04d-%02d-%02d %02d:%02d:%02d.%d'}" % (
+            value.year, value.month, value.day,
+            value.hour, value.minute, value.second,
+            value.microsecond / 1000)
+
+    if isinstance(value, datetime.date):
+        return "{d '%04d-%02d-%02d'} " % (
+        value.year, value.month, value.day)
+
+    return None
+
+def _quote_or_flatten(data, charset='utf8'):
+    result = _quote_simple_value(data, charset)
+
+    if result is not None:
+        return result
+
+    if not issubclass(type(data), (list, tuple)):
+        raise ValueError('expected a simple type, a tuple or a list')
+
+    quoted = []
+    for value in data:
+        value = _quote_simple_value(value, charset)
+
+        if value is None:
+            raise ValueError('found an unsupported type')
+
+        quoted.append(value)
+    return '(' + ','.join(quoted) + ')'
+
+# This function is supposed to take a simple value, tuple or dictionary,
+# normally passed in via the params argument in the execute_* methods. It
+# then quotes and flattens the arguments and returns then.
+def _quote_data(data, charset='utf8'):
+    result = _quote_simple_value(data)
+
+    if result is not None:
+        return result
+
+    if issubclass(type(data), dict):
+        result = {}
+        for k, v in data.iteritems():
+            result[k] = _quote_or_flatten(v, charset)
+        return result
+
+    if issubclass(type(data), (tuple, list)):
+        result = []
+        for v in data:
+            result.append(_quote_or_flatten(v, charset))
+        return tuple(result)
+
+    raise ValueError('expected a simple type, a tuple or a dictionary.')
+
+_re_pos_param = re.compile(r'(%(s|d))')
+_re_name_param = re.compile(r'(%\(([^\)]+)\)s)')
+def _substitute_params(toformat, params, charset):
+    if params is None:
+        return toformat
+
+    if not issubclass(type(params),
+            (bool, int, long, float, unicode, str,
+            datetime.datetime, datetime.date, dict, tuple, decimal.Decimal, list)):
+        raise ValueError("'params' arg can be only a tuple or a dictionary.")
+
+    if charset:
+        quoted = _quote_data(params, charset)
+    else:
+        quoted = _quote_data(params)
+
+    # positional string substitution now requires a tuple
+    if isinstance(quoted, basestring):
+        quoted = (quoted,)
+
+    if isinstance(params, dict):
+        """ assume name based substitutions """
+        offset = 0
+        for match in _re_name_param.finditer(toformat):
+            param_key = match.group(2)
+
+            if not params.has_key(param_key):
+                raise ValueError('params dictionary did not contain value for placeholder: %s' % param_key)
+
+            # calculate string positions so we can keep track of the offset to
+            # be used in future substituations on this string.  This is
+            # necessary b/c the match start() and end() are based on the
+            # original string, but we modify the original string each time we
+            # loop, so we need to make an adjustment for the difference between
+            # the length of the placeholder and the length of the value being
+            # substituted
+            param_val = quoted[param_key]
+            param_val_len = len(param_val)
+            placeholder_len = len(match.group(1))
+            offset_adjust = param_val_len - placeholder_len
+
+            # do the string substitution
+            match_start = match.start(1) + offset
+            match_end = match.end(1) + offset
+            toformat = toformat[:match_start] + param_val + toformat[match_end:]
+
+            # adjust the offset for the next usage
+            offset += offset_adjust
+    else:
+        """ assume position based substitutions """
+        offset = 0
+        for count, match in enumerate(_re_pos_param.finditer(toformat)):
+            # calculate string positions so we can keep track of the offset to
+            # be used in future substituations on this string.  This is
+            # necessary b/c the match start() and end() are based on the
+            # original string, but we modify the original string each time we
+            # loop, so we need to make an adjustment for the difference between
+            # the length of the placeholder and the length of the value being
+            # substituted
+            try:
+                param_val = quoted[count]
+            except IndexError:
+                raise ValueError('more placeholders in sql than params available')
+            param_val_len = len(param_val)
+            placeholder_len = 2
+            offset_adjust = param_val_len - placeholder_len
+
+            # do the string substitution
+            match_start = match.start(1) + offset
+            match_end = match.end(1) + offset
+            toformat = toformat[:match_start] + param_val + toformat[match_end:]
+            #print(param_val, param_val_len, offset_adjust, match_start, match_end)
+            # adjust the offset for the next usage
+            offset += offset_adjust
+    return toformat
+
+# We'll add these methods to the module to allow for unit testing of the
+# underlying C methods.
+def quote_simple_value(value):
+    return _quote_simple_value(value)
+
+def quote_or_flatten(data):
+    return _quote_or_flatten(data)
+
+def quote_data(data):
+    return _quote_data(data)
+
+def substitute_params(toformat, params, charset='utf8'):
+    return _substitute_params(toformat, params, charset)
 
 ##############################
 ## MSSQL Row Iterator Class ##
@@ -208,16 +493,19 @@ class MSSQLConnection(object):
 
         server = server + "\\" + instance if instance else server
 
-        login = dblogin()
+        login = tds_alloc_login(1)
+        # set default values for loginrec
+        login.library = "DB-Library"
         #if login == NULL:
         #    raise MSSQLDriverException("Out of memory")
 
         appname = appname or "pymssql"
 
-        login.tds_login.user_name = user
-        login.tds_login.password = password
-        login.tds_login.app = appname
-        login.tds_login.tds_version = _tds_ver_str_to_constant(tds_version)
+        login.user_name = user
+        login.password = password
+        login.app = appname
+        login.tds_version = _tds_ver_str_to_constant(tds_version)
+        login.database = database
 
         # override the HOST to be the portion without the server, otherwise
         # FreeTDS chokes when server still has the port definition.
@@ -238,7 +526,7 @@ class MSSQLConnection(object):
         if charset:
             _charset = charset
             self._charset = _charset
-            login.tds_login.charset = self._charset
+            login.charset = self._charset
 
         # Set the login timeout
         dbsetlogintime(login_timeout)
@@ -404,7 +692,7 @@ class MSSQLConnection(object):
             return struct.unpack('<q', data)[0]
 
         elif type == SQLFLT4 or type == SYBFLTN and length == 4:
-            return struct.unpack('j', data)[0]
+            return struct.unpack('f', data)[0]
 
         elif type == SQLFLT8 or type == SYBFLTN and length == 8:
             return struct.unpack('d', data)[0]
@@ -681,6 +969,10 @@ class MSSQLConnection(object):
         finally:
             logger.debug("_mssql.MSSQLConnection.format_and_run_query() END")
 
+    def format_sql_command(self, format, params=None):
+        logger.debug("_mssql.MSSQLConnection.format_sql_command()")
+        return _substitute_params(format, params, self._charset)
+
     def get_header(self):
         """
         get_header() -- get the Python DB-API compliant header information.
@@ -777,6 +1069,48 @@ class MSSQLConnection(object):
             record += (self.convert_db_value(data, col_type, len),)
         return record
 
+def get_last_msg_str(conn):
+    return conn.last_msg_str if conn != None else _mssql_last_msg_str
+
+def get_last_msg_srv(conn):
+    return conn.last_msg_srv if conn != None else _mssql_last_msg_srv
+
+def get_last_msg_proc(conn):
+    return conn.last_msg_proc if conn != None else _mssql_last_msg_proc
+
+def get_last_msg_no(conn):
+    return conn.last_msg_no if conn != None else _mssql_last_msg_no
+
+def get_last_msg_severity(conn):
+    return conn.last_msg_severity if conn != None else _mssql_last_msg_severity
+
+def get_last_msg_state(conn):
+    return conn.last_msg_state if conn != None else _mssql_last_msg_state
+
+def get_last_msg_line(conn):
+    return conn.last_msg_line if conn != None else _mssql_last_msg_line
+
+def maybe_raise_MSSQLDatabaseException(conn):
+
+    if get_last_msg_severity(conn) < min_error_severity:
+        return 0
+
+    error_msg = get_last_msg_str(conn)
+    if len(error_msg) == 0:
+        error_msg = "Unknown error"
+
+    ex = MSSQLDatabaseException((get_last_msg_no(conn), error_msg))
+    ex.text = error_msg
+    ex.srvname = get_last_msg_srv(conn)
+    ex.procname = get_last_msg_proc(conn)
+    ex.number = get_last_msg_no(conn)
+    ex.severity = get_last_msg_severity(conn)
+    ex.state = get_last_msg_state(conn)
+    ex.line = get_last_msg_line(conn)
+    db_cancel(conn)
+    clr_err(conn)
+    raise ex
+
 def assert_connected(conn):
     logger.debug("_mssql.assert_connected()")
     if not conn.connected:
@@ -808,9 +1142,6 @@ def check_cancel_and_raise(rtc, conn):
         return maybe_raise_MSSQLDatabaseException(conn)
     elif get_last_msg_str(conn):
         return maybe_raise_MSSQLDatabaseException(conn)
-
-def get_last_msg_str(conn):
-    return conn.last_msg_str if conn != None else _mssql_last_msg_str
 
 def init_mssql():
     dbinit()

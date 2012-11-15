@@ -246,9 +246,9 @@ def tds_process_msg(tds, marker):
     else:
         # EED can be followed to PARAMFMT/PARAMS, do not store it in dynamic
         tds.cur_dyn = None
-        if tds.msg_handler:
+        if tds_get_ctx(tds).msg_handler:
             logger.debug('tds_process_msg() calling client msg handler')
-            tds.msg_handler(tds, msg)
+            tds_get_ctx(tds).msg_handler(tds_get_ctx(tds), tds, msg)
         elif msg['msgno']:
             logger.warn(u'Msg {msgno}, Severity {severity}, State {state}, Server {server}, Line {line_number}\n{message}'.format(**msg))
 

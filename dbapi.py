@@ -27,6 +27,32 @@ __version__ = '2.0.0'
 import logging
 import _mssql
 
+# comliant with DB SIG 2.0
+apilevel = '2.0'
+
+# module may be shared, but not connections
+threadsafety = 1
+
+# this module uses extended python format codes
+paramstyle = 'pyformat'
+
+# store a tuple of programming error codes
+prog_errors = (
+    102,    # syntax error
+    207,    # invalid column name
+    208,    # invalid object name
+    2812,   # unknown procedure
+    4104    # multi-part identifier could not be bound
+)
+
+# store a tuple of integrity error codes
+integrity_errors = (
+    515,    # NULL insert
+    547,    # FK related
+    2601,   # violate unique index
+    2627,   # violate UNIQUE KEY constraint
+)
+
 # exception hierarchy
 class Warning(StandardError):
     pass
@@ -478,7 +504,9 @@ def set_max_connections(limit):
 
 if __name__ == '__main__':
     logging.basicConfig(level='DEBUG')
-    conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
+    conn = connect(server='subportal_dev', database=u'SubmissionPortal', user='sra_sa', password='sra_sa_pw', tds_version='7.0', charset='utf8')
+    #conn = connect(server='localhost', database=u'Учет', user='voroncova', password='voroncova', tds_version='7.0')
     cur = conn.cursor()
-    cur.execute('select 1')
-    assert (1,) == cur.fetchone()
+    import pdb; pdb.set_trace()
+    cur.execute('select ')
+    assert (5,) == cur.fetchone()
