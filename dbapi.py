@@ -626,104 +626,11 @@ class Connection(object):
 
         self.format_and_run_query(query_string, params)
         # getting results
-        while True:
-            rc, result_type, done_flags = tds_process_tokens(self.tds_socket, TDS_TOKEN_RESULTS)
-            if done_flags & TDS_DONE_ERROR:
-                raise MSSQLDriverException("Could not set connection properties")
-            if rc == TDS_NO_MORE_RESULTS:
-                break
-            elif rc == TDS_SUCCESS:
-                if result_type == TDS_ROWFMT_RESULT:
-                    pass
-                elif result_type == TDS_COMPUTEFMT_RESULT:
-                    pass
-                elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
-                    logger.debug("dbsqlok() found result token")
-                    break
-                elif result_type == TDS_DONEINPROC_RESULT:
-                    pass
-                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("dbsqlok() end status is {0}".format(rc))
-                    if done_flags & TDS_DONE_ERROR:
-                        raise MSSQLDriverException("Could not set connection properties")
-                    else:
-                        logger.debug("dbsqlok() end status was success")
-                        break
-                else:
-                    logger.error("logic error: tds_process_tokens result_type {0}".format(result_type))
-                    break;
-                break;
-        else:
-            assert TDS_FAILED(rc)
-            raise MSSQLDriverException("Could not set connection properties")
         self._rows_affected = self.tds_socket.rows_affected
 
         rtc = db_cancel(self)
         check_and_raise(rtc, self)
         logger.debug("MSSQLConnection.execute_non_query() END")
-
-    def execute_query(self, query_string, params=None):
-        """
-        execute_query(query_string, params=None)
-
-        This method sends a query to the MS SQL Server to which this object
-        instance is connected. An exception is raised on failure. If there
-        are pending results or rows prior to executing this command, they
-        are silently discarded. After calling this method you may iterate
-        over the connection object to get rows returned by the query.
-
-        You can use Python formatting here and all values get properly
-        quoted:
-            conn.execute_query('SELECT * FROM empl WHERE id=%d', 13)
-            conn.execute_query('SELECT * FROM empl WHERE id IN (%s)', ((5,6),))
-            conn.execute_query('SELECT * FROM empl WHERE name=%s', 'John Doe')
-            conn.execute_query('SELECT * FROM empl WHERE name LIKE %s', 'J%')
-            conn.execute_query('SELECT * FROM empl WHERE name=%(name)s AND \
-                city=%(city)s', { 'name': 'John Doe', 'city': 'Nowhere' } )
-            conn.execute_query('SELECT * FROM cust WHERE salesrep=%s \
-                AND id IN (%s)', ('John Doe', (1,2,3)))
-            conn.execute_query('SELECT * FROM empl WHERE id IN (%s)',\
-                (tuple(xrange(4)),))
-            conn.execute_query('SELECT * FROM empl WHERE id IN (%s)',\
-                (tuple([3,5,7,11]),))
-
-        This method is intented to be used on queries that return results,
-        i.e. SELECT. After calling this method AND reading all rows from,
-        result rows_affected property contains number of rows returned by
-        last command (this is how MS SQL returns it).
-        """
-        logger.debug("MSSQLConnection.execute_query() BEGIN")
-        self.format_and_run_query(query_string, params)
-        self.get_result()
-        logger.debug("MSSQLConnection.execute_query() END")
-
-    def execute_row(self, query_string, params=None):
-        """
-        execute_row(query_string, params=None)
-
-        This method sends a query to the MS SQL Server to which this object
-        instance is connected, then returns first row of data from result.
-
-        An exception is raised on failure. If there are pending results or
-        rows prior to executing this command, they are silently discarded.
-
-        This method accepts Python formatting. Please see execute_query()
-        for details.
-
-        This method is useful if you want just a single row and don't want
-        or don't need to iterate, as in:
-
-        conn.execute_row('SELECT * FROM employees WHERE id=%d', 13)
-
-        This method works exactly the same as 'iter(conn).next()'. Remaining
-        rows, if any, can still be iterated after calling this method.
-        """
-        logger.debug("MSSQLConnection.execute_row()")
-        self.format_and_run_query(query_string, params)
-        if self.as_dict:
-            return self.fetch_next_row_dict(0)
-        else:
-            return self.fetch_next_row(0)
 
     def _nextrow(self):
         result = FAIL
@@ -769,55 +676,6 @@ class Connection(object):
         else:
             logger.debug("leaving _nextrow() returning %s\n", prdbretcode(result))
         return result
-
-    def execute_scalar(self, query_string, params=None):
-        """
-        execute_scalar(query_string, params=None)
-
-        This method sends a query to the MS SQL Server to which this object
-        instance is connected, then returns first column of first row from
-        result. An exception is raised on failure. If there are pending
-
-        results or rows prior to executing this command, they are silently
-        discarded.
-
-        This method accepts Python formatting. Please see execute_query()
-        for details.
-
-        This method is useful if you want just a single value, as in:
-            conn.execute_scalar('SELECT COUNT(*) FROM employees')
-
-        This method works in the same way as 'iter(conn).next()[0]'.
-        Remaining rows, if any, can still be iterated after calling this
-        method.
-        """
-        logger.debug("MSSQLConnection.execute_scalar()")
-
-        self.format_and_run_query(query_string, params)
-        self.get_result()
-
-        rtc = self._nextrow()
-
-        self._rows_affected = self.tds_socket.rows_affected
-
-        if rtc == NO_MORE_ROWS:
-            self.clear_metadata()
-            self.last_dbresults = 0
-            return None
-
-        return self.get_row(rtc)[0]
-
-    def init_procedure(self, procname):
-        """
-        init_procedure(procname) -- creates and returns a MSSQLStoredProcedure
-        object.
-
-        This methods initilizes a stored procedure or function on the server
-        and creates a MSSQLStoredProcedure object that allows parameters to
-        be bound.
-        """
-        logger.debug("Connection.init_procedure()")
-        return StoredProcedure(procname, self)
 
     def nextresult(self):
         """
@@ -1226,10 +1084,8 @@ class Cursor(object):
         self._rownumber = 0
 
         try:
-            if not params:
-                self._source.execute_query(operation)
-            else:
-                self._source.execute_query(operation, params)
+            self._source.format_and_run_query(operation, params)
+            self._source.get_result()
             self.description = self._source.get_header()
             self._rownumber = self._source.rows_affected
 
@@ -1250,6 +1106,33 @@ class Cursor(object):
             # support correct rowcount across multiple executes
             rownumber += self._rownumber
         self._rownumber = rownumber
+
+    def execute_scalar(self, query_string, params=None):
+        """
+        execute_scalar(query_string, params=None)
+
+        This method sends a query to the MS SQL Server to which this object
+        instance is connected, then returns first column of first row from
+        result. An exception is raised on failure. If there are pending
+
+        results or rows prior to executing this command, they are silently
+        discarded.
+
+        This method accepts Python formatting. Please see execute_query()
+        for details.
+
+        This method is useful if you want just a single value, as in:
+            conn.execute_scalar('SELECT COUNT(*) FROM employees')
+
+        This method works in the same way as 'iter(conn).next()[0]'.
+        Remaining rows, if any, can still be iterated after calling this
+        method.
+        """
+        self.execute(query_string, params)
+        row = self.fetchone()
+        if not row:
+            return None
+        return row[0]
 
     def nextset(self):
         try:
