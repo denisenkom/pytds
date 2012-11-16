@@ -211,7 +211,7 @@ def tds_submit_query(tds, query, params=()):
             else:
                 sp_name = 'sp_executesql'
                 tds_put_smallint(tds, len(sp_name))
-                TDS_PUT_N_AS_UCS2(tds, sp_name)
+                tds_put_s(tds, tds.char_convs[client2ucs2]['to_wire'](sp_name))
             tds_put_smallint(tds, 0)
 
             # string with sql statement
