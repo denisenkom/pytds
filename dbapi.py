@@ -1400,6 +1400,9 @@ class Cursor(object):
         except MSSQLDriverException, e:
             raise InterfaceError, e[0]
 
+    def nextresult(self):
+        self._source.nextresult()
+
     def setinputsizes(self, sizes=None):
         """
         This method does nothing, as permitted by DB-API specification.
