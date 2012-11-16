@@ -20,11 +20,19 @@ def tds_put_byte(tds, value):
     tds.out_buf[tds.out_pos] = value
     tds.out_pos += 1
 
+TDS_PUT_BYTE = tds_put_byte
+
 def tds_put_int(tds, value):
     if tds_conn(tds).emul_little_endian:
         tds_put_s(tds, struct.pack('<l', value))
     else:
         tds_put_s(tds, struct.pack('>l', value))
+
+def tds_put_int8(tds, value):
+    if tds_conn(tds).emul_little_endian:
+        tds_put_s(tds, struct.pack('<q', value))
+    else:
+        tds_put_s(tds, struct.pack('>q', value))
 
 TDS_PUT_SMALLINT = tds_put_smallint
 

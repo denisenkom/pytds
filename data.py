@@ -1,8 +1,10 @@
 import logging
+from datetime import datetime
 from StringIO import StringIO
 from tds import *
 from tdsproto import *
 from read import *
+from write import *
 from tds_checks import *
 
 logger = logging.getLogger(__name__)
@@ -287,11 +289,158 @@ def tds72_get_varmax(tds, curcol):
             strio.write(tds_get_n(tds, chunk_len))
     return TDS_SUCCESS
 
-def tds_data_put_info(tds):
-    raise Exception('not implemented')
+def tds_data_put_info(tds, col):
+    size = tds_fix_column_size(tds, col)
+    vs = col.column_varint_size
+    if vs == 0:
+        pass
+    elif vs == 1:
+        tds_put_byte(tds, size)
+    elif vs == 2:
+        tds_put_smallint(tds, size)
+    elif vs in (4, 5):
+        tds_put_int(tds, size)
+    elif vs == 8:
+        tds_put_smallint(tds, 0xffff)
 
-def tds_data_put(tds):
-    raise Exception('not implemented')
+    # TDS7.1 output collate information
+    if IS_TDS71_PLUS(tds) and is_collate_type(col.on_server.column_type):
+        tds_put_s(tds, tds.collation)
+
+def tds_data_put(tds, curcol):
+    logger.debug("tds_data_put: colsize = %d", curcol.column_cur_size)
+    if curcol.value is None:
+        logger.debug("tds_data_put: null param")
+        vs = curcol.column_varint_size
+        if vs == 5:
+            tds_put_int(tds, 0)
+        elif vs == 4:
+            tds_put_int(tds, -1)
+        elif vs == 2:
+            tds_put_smallint(tds, -1)
+        elif vs == 8:
+            tds_put_int8(tds, -1)
+        else:
+            assert curcol.column_varint_size
+            # FIXME not good for SYBLONGBINARY/SYBLONGCHAR (still not supported)
+            tds_put_byte(tds, 0)
+        return
+    colsize = curcol.column_cur_size
+
+    size = tds_fix_column_size(tds, curcol)
+
+    # convert string if needed
+    value = curcol.value
+    if curcol.char_conv and colsize:
+        # we need to convert data before
+        # TODO this can be a waste of memory...
+        value = tds_convert_string(tds, curcol.char_conv, value)
+        colsize = len(value)
+
+    #
+    # TODO here we limit data sent with MIN, should mark somewhere
+    # and inform client ??
+    # Test proprietary behavior
+    #
+    if IS_TDS7_PLUS(tds):
+        logger.debug("tds_data_put: not null param varint_size = %d",
+                    curcol.column_varint_size)
+
+        vs = curcol.column_varint_size
+        if vs == 8:
+            tds_put_int8(tds, colsize);
+            tds_put_int(tds, colsize);
+        elif vs == 4: # It's a BLOB...
+            colsize = min(colsize, size)
+            # mssql require only size
+            tds_put_int(tds, colsize)
+        elif vs == 2:
+            colsize = min(colsize, size)
+            tds_put_smallint(tds, colsize)
+        elif vs == 1:
+            colsize = min(colsize, size)
+            tds_put_byte(tds, colsize)
+        elif vs == 0:
+            # TODO should be column_size
+            colsize = tds_get_size_by_type(curcol.on_server.column_type)
+
+        # put real data
+        column_type = curcol.on_server.column_type
+        if column_type == SYBINTN and colsize == 4:
+            tds_put_int(tds, value)
+        elif column_type == SYBINTN and colsize == 8:
+            tds_put_int8(tds, value)
+        elif column_type in (XSYBNVARCHAR, XSYBNCHAR):
+            tds_put_s(tds, value)
+        elif column_type in (XSYBVARBINARY, XSYBBINARY):
+            tds_put_s(tds, value)
+        elif column_type in (SYBDATETIME, SYBDATETIMN):
+            days = (value - _base_date).days
+            time = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
+            tds_put_s(tds, TDS_DATETIME.pack(days, time))
+        else:
+            raise Exception('not implemented')
+        # finish chunk for varchar/varbinary(max)
+        if curcol.column_varint_size == 8 and colsize:
+            tds_put_int(tds, 0)
+    else:
+        raise Exception('not implemented')
+        # TODO ICONV handle charset conversions for data 
+        # put size of data 
+#        switch (curcol->column_varint_size) {
+#        case 5:	/* It's a LONGBINARY */
+#                colsize = MIN(colsize, 0x7fffffff);
+#                tds_put_int(tds, colsize);
+#                break;
+#        case 4:	/* It's a BLOB... */
+#                tds_put_byte(tds, 16);
+#                tds_put_n(tds, blob->textptr, 16);
+#                tds_put_n(tds, blob->timestamp, 8);
+#                colsize = MIN(colsize, 0x7fffffff);
+#                tds_put_int(tds, colsize);
+#                break;
+#        case 2:
+#                colsize = MIN(colsize, 8000);
+#                tds_put_smallint(tds, colsize);
+#                break;
+#        case 1:
+#                if (!colsize) {
+#                        tds_put_byte(tds, 1);
+#                        if (is_char_type(curcol->column_type))
+#                                tds_put_byte(tds, ' ');
+#                        else
+#                                tds_put_byte(tds, 0);
+#                        return TDS_SUCCESS;
+#                }
+#                colsize = MIN(colsize, 255);
+#                tds_put_byte(tds, colsize);
+#                break;
+#        case 0:
+#                /* TODO should be column_size */
+#                colsize = tds_get_size_by_type(curcol->column_type);
+#                break;
+#        }
+#
+#        /* conversion error, exit with an error */
+#        if (converted < 0)
+#                return TDS_FAIL;
+#
+#        /* put real data */
+#        if (blob) {
+#                tds_put_n(tds, s, colsize);
+#        } else {
+##ifdef WORDS_BIGENDIAN
+#                unsigned char buf[64];
+#
+#                if (tds_conn(tds)->emul_little_endian && !converted && colsize < 64) {
+#                        tdsdump_log(TDS_DBG_INFO1, "swapping coltype %d\n",
+#                                    tds_get_conversion_type(curcol->column_type, colsize));
+#                        memcpy(buf, s, colsize);
+#                        tds_swap_datatype(tds_get_conversion_type(curcol->column_type, colsize), buf);
+#                        s = (char *) buf;
+#                }
+##endif
+#                tds_put_n(tds, s, colsize);
 
 class _ColumnFuncs(object):
     pass
@@ -303,7 +452,7 @@ def DEFINE_FUNCS(prefix, name):
     funcs.get_data = g['tds_{0}_get'.format(name)]
     funcs.row_len = g['tds_{0}_row_len'.format(name)]
     funcs.put_info = g['tds_{0}_put_info'.format(name)]
-    funcs.put = g['tds_{0}_put'.format(name)]
+    funcs.put_data = g['tds_{0}_put'.format(name)]
     g[prefix+'_funcs'] = funcs
 
 DEFINE_FUNCS('default', 'data')
@@ -478,3 +627,79 @@ def tds_get_conversion_type(srctype, colsize):
 exec(gen_get_varint_size())
 
 def USE_ICONV(tds): return tds_conn(tds).use_iconv
+
+#
+# Get column size for wire
+#
+def tds_fix_column_size(tds, curcol):
+    size = curcol.on_server.column_size
+
+    if not size:
+        size = curcol.column_size
+        if is_unicode_type(curcol.on_server.column_type):
+            size *= 2
+
+    vs = curcol.column_varint_size
+    if vs == 0:
+        return size
+    elif vs == 1:
+        size = max(min(size, 255), 1)
+    elif vs == 2:
+        if curcol.on_server.column_type in (XSYBNVARCHAR, XSYBNCHAR):
+            mn = 2
+        else:
+            mn = 1
+        size = max(min(size, 8000), mn)
+    elif vs == 4:
+        if curcol.on_server.column_type == SYBNTEXT:
+            size = max(min(size, 0x7ffffffe), 2)
+        else:
+            size = max(min(size, 0x7fffffff), 1)
+    #return curcol->on_server.column_size = size
+    return size
+
+def tds_convert_string(tds, char_conv, s):
+    return char_conv['to_wire'](s)
+
+def tds_msdatetime_get_info(tds, col):
+    raise Exception('not implemented')
+    col.column_scale = col.column_prec = 0
+    if col.column_type != SYBMSDATE:
+        col.column_scale = col.column_prec = tds_get_byte(tds)
+        if col.column_prec > 7:
+            raise Exception('TDS_FAIL')
+    col.on_server.column_size = col.column_size = sizeof(TDS_DATETIMEALL)
+
+def tds_msdatetime_get(tds, col):
+    raise Exception('unimplemented')
+
+def tds_msdatetime_row_len(col):
+    raise Exception('unneeded')
+
+def tds_msdatetime_put_info(tds, col):
+    # TODO precision
+    if col.on_server.column_type != SYBMSDATE:
+        tds_put_byte(tds, 7)
+
+_base_date = datetime(1900, 1, 1)
+
+def tds_msdatetime_put(tds, col):
+    if col.value is None:
+        tds_put_byte(tds, 0)
+        return
+
+    # TODO precision
+    value = col.value
+    parts = []
+    if col.on_server.column_type != SYBMSDATE:
+        # TODO: fix this
+        parts.append(struct.pack('<L', value.second)[:5])
+    if col.on_server.column_type != SYBMSTIME:
+        parts.append(struct.pack('<l', (value - _base_date).days)[:3])
+    if col.on_server.column_type == SYBMSDATETIMEOFFSET:
+        parts.append(struct.pack('<H', value.utcoffset()))
+    size = reduce(lambda a, b: a + len(b), parts, 0)
+    parts.insert(0, chr(size))
+    tds_put_s(tds, b''.join(parts))
+
+DEFINE_FUNCS('msdatetime', 'msdatetime')

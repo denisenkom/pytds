@@ -20,6 +20,12 @@ def tds_unget_byte(tds):
     # this is a one trick pony...don't call it twice
     tds.in_pos -= 1
 
+def tds_peek(tds):
+    result = tds_get_byte(tds)
+    if tds.in_pos > 0:
+        tds.in_pos -= 1
+    return result
+
 def tds_get_smallint(tds):
     buf = tds_get_n(tds, 2)
     if tds_conn(tds).emul_little_endian:

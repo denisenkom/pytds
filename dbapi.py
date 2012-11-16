@@ -198,7 +198,7 @@ def prdbretcode(retcode):
     else: return "oops: %u ??" % retcode
 
 def prretcode(retcode):
-    if retcode == TDS_SUCCESS:                  return "TDS_SUCCESS"
+    if retcode == TDS_SUCCESS or retcode is None:return "TDS_SUCCESS"
     elif retcode == TDS_FAIL:                   return "TDS_FAIL"
     elif retcode == TDS_NO_MORE_RESULTS:        return "TDS_NO_MORE_RESULTS"
     elif retcode == TDS_CANCELLED:              return "TDS_CANCELLED"
@@ -233,11 +233,11 @@ class Connection(object):
         Instructs all cursors this connection creates to return results
         as a dictionary rather than a tuple.
         """
-        return self.conn.as_dict
+        return self._as_dict
 
     @as_dict.setter
     def as_dict(self, value):
-        self.conn.as_dict = value
+        self._as_dict = value
 
     @property
     def autocommit_state(self):
@@ -288,7 +288,7 @@ class Connection(object):
         self.last_msg_proc = ''
         self.column_names = None
         self.column_types = None
-        self.as_dict = as_dict
+        self._as_dict = as_dict
         self.dbproc = None
 
         # support MS methods of connecting locally
@@ -532,11 +532,6 @@ class Connection(object):
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
         self.close()
-
-    def __iter__(self):
-        assert_connected(self)
-        clr_err(self)
-        return MSSQLRowIterator(self)
 
     def cancel(self):
         """
@@ -854,6 +849,45 @@ class Connection(object):
             return None
 
         return self.get_row(rtc)[0]
+
+    def init_procedure(self, procname):
+        """
+        init_procedure(procname) -- creates and returns a MSSQLStoredProcedure
+        object.
+
+        This methods initilizes a stored procedure or function on the server
+        and creates a MSSQLStoredProcedure object that allows parameters to
+        be bound.
+        """
+        logger.debug("Connection.init_procedure()")
+        return StoredProcedure(procname, self)
+
+    def nextresult(self):
+        """
+        nextresult() -- move to the next result, skipping all pending rows.
+
+        This method fetches and discards any rows remaining from the current
+        resultset, then it advances to the next (if any) resultset. Returns
+        True if the next resultset is available, otherwise None.
+        """
+
+        logger.debug("Connection.nextresult()")
+
+        assert_connected(self)
+        clr_err(self)
+
+        rtc = self._nextrow()
+        check_cancel_and_raise(rtc, self)
+
+        while rtc != NO_MORE_ROWS:
+            rtc = dbnextrow(self.dbproc)
+            check_cancel_and_raise(rtc, self)
+
+        self.last_dbresults = 0
+        self.get_result()
+
+        if self.last_dbresults != NO_MORE_RESULTS:
+            return 1
 
     def fetch_next_row(self, throw):
         logger.debug("MSSQLConnection.fetch_next_row() BEGIN")
@@ -1224,26 +1258,12 @@ class Cursor(object):
         :type parameters: sequence
         """
         self._returnvalue = None
-        proc = self._source._conn.init_procedure(procname)
-        for parameter in parameters:
-            if type(parameter) is output:
-                param_type = parameter.type
-                param_value = parameter.value
-                param_output = True
-            else:
-                param_type = type(parameter)
-                param_value = parameter
-                param_output = False
-
-            try:
-                type_name = param_type.__name__
-                db_type = DBTYPES[type_name]
-            except (AttributeError, KeyError):
-                raise NotSupportedError('Unable to determine database type')
-
-            proc.bind(param_value, db_type, output=param_output)
-        self._returnvalue = proc.execute()
-        return tuple([proc.parameters[p] for p in proc.parameters])
+        tds = self._source.tds_socket
+        tds_submit_rpc(tds, procname, parameters)
+        self._source.last_dbresults = 0
+        self._source.dbresults_state = DB_RES_INIT
+        rtc = self._source._sqlok()
+        check_cancel_and_raise(rtc, self._source)
 
     def close(self):
         """
@@ -1301,8 +1321,13 @@ class Cursor(object):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
-        row = iter(self._source._conn).next()
-        self._rownumber = self._source._conn.rows_affected
+        assert_connected(self.conn)
+        clr_err(self.conn)
+        if self.conn.as_dict:
+            row = self.conn.fetch_next_row_dict(1)
+        else:
+            row = self.conn.fetch_next_row(1)
+        self._rownumber = self._source.rows_affected
         return row
 
     def fetchone(self):
@@ -1345,7 +1370,7 @@ class Cursor(object):
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
         try:
-            rows = [row for row in self._source._conn]
+            rows = [row for row in self]
             self._rownumber = self._source._conn.rows_affected
             return rows
         except MSSQLDatabaseException, e:
@@ -1353,7 +1378,7 @@ class Cursor(object):
         except MSSQLDriverException, e:
             raise InterfaceError, e[0]
 
-    def __next__(self):
+    def next(self):
         try:
             row = self.getrow()
             self._rownumber += 1
@@ -1422,7 +1447,7 @@ def connect(server='.', user='', password='', database='', timeout=0,
         server = host
 
     try:
-        conn = MSSQLConnection(server, user, password, charset, database,
+        conn = Connection(server, user, password, charset, database,
             appname, port, tds_version=tds_version, as_dict=as_dict, login_timeout=login_timeout,
             timeout=timeout, encryption_level=encryption_level)
 
@@ -1432,7 +1457,7 @@ def connect(server='.', user='', password='', database='', timeout=0,
     except MSSQLDriverException, e:
         raise InterfaceError(e[0])
 
-    return Connection(conn)
+    return conn
 
 def clr_err(conn):
     conn.last_msg_no = 0
@@ -1648,24 +1673,6 @@ def quote_data(data):
 def substitute_params(toformat, params, charset='utf8'):
     return _substitute_params(toformat, params, charset)
 
-##############################
-## MSSQL Row Iterator Class ##
-##############################
-class MSSQLRowIterator:
-
-    def __init__(self, connection):
-        self.conn = connection
-
-    def __iter__(self):
-        return self
-
-    def next(self):
-        assert_connected(self.conn)
-        clr_err(self.conn)
-        if self.conn.as_dict:
-            return self.conn.fetch_next_row_dict(1)
-        else:
-            return self.conn.fetch_next_row(1)
 
 def get_last_msg_str(conn):
     return conn.last_msg_str

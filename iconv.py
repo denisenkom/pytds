@@ -100,13 +100,16 @@ def tds_iconv_get_info(tds, canonic_client, canonic_server):
     del tds.char_convs[new_id]
     return None
 
+_utf16_le_codec = codecs.lookup('utf_16_le')
+
 def tds_iconv_alloc(tds):
     tds.char_convs = {
             client2ucs2: {
-                'server_charset': {'canonic': TDS_CHARSET_UCS_2LE, 'name': 'utf16'},
+                'server_charset': {'canonic': TDS_CHARSET_UCS_2LE, 'name': 'utf_16_le'},
                 'client_charset': {'canonic': TDS_CHARSET_UNICODE, 'name': 'unicode'},
-                'from_wire': lambda buf: buf.decode('utf16'),
+                'from_wire': lambda buf: _utf16_le_codec.decode(buf)[0],
                 'from_wire2': None,
+                'to_wire': lambda s: _utf16_le_codec.encode(s)[0],
                 'flags': 0,
                 },
             client2server_chardata: {
