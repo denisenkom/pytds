@@ -34,7 +34,7 @@ def tds_start_query(tds):
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
     tds_set_state(tds, TDS_PENDING)
-    return tds_flush_packet(tds)
+    tds_flush_packet(tds)
 
 def convert_params(tds, parameters):
     if isinstance(parameters, dict):
@@ -116,7 +116,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
                 column_type = param.on_server.column_type
                 tds_put_data_info(tds, param)
                 param.funcs.put_data(tds, param)
-            return tds_query_flush_packet(tds)
+            tds_query_flush_packet(tds)
         elif IS_TDS50(tds):
             tds.out_flag = TDS_NORMAL
             tds_put_byte(tds, TDS_DBRPC_TOKEN)
@@ -131,7 +131,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
                 tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME)
 
             # send it
-            return tds_query_flush_packet(tds)
+            tds_query_flush_packet(tds)
             # emulate it for TDS4.x, send RPC for mssql
             if tds.tds_version < 0x500:
                 return tds_send_emulated_rpc(tds, rpc_name, params)
@@ -160,90 +160,84 @@ def tds_submit_query(tds, query, params=()):
 
     if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
         raise Exception('TDS_FAIL')
+    try:
+        if IS_TDS50(tds):
+            new_query = None
+            # are there '?' style parameters ?
+            if tds_next_placeholder(query):
+                new_query = tds5_fix_dot_query(query, params)
+                query = new_query
 
-    if IS_TDS50(tds):
-        new_query = None
-        # are there '?' style parameters ?
-        if tds_next_placeholder(query):
-            new_query = tds5_fix_dot_query(query, params)
-            if new_query is None:
-                tds_set_state(tds, TDS_IDLE)
-                raise Exception('TDS_FAIL')
-            query = new_query
-
-        tds.out_flag = TDS_NORMAL
-        tds_put_byte(tds, TDS_LANGUAGE_TOKEN)
-        # TODO ICONV use converted size, not input size and convert string
-        TDS_PUT_INT(tds, len(query) + 1)
-        tds_put_byte(tds, 1 if params else 0) # 1 if there are params, 0 otherwise
-        tds_put_s(tds, query)
-        if params:
-            # add on parameters
-            tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
-    elif not IS_TDS7_PLUS(tds) or not params:
-        tds.out_flag = TDS_QUERY
-        START_QUERY(tds)
-        tds_put_string(tds, query)
-    else:
-        #TDSCOLUMN *param;
-        #size_t definition_len;
-        #int count, i;
-        #char *param_definition;
-        #size_t converted_query_len;
-        #const char *converted_query;
-
-        converted_query = tds_convert_string(tds, tds.char_convs[client2ucs2], query)
-        if not converted_query:
-            tds_set_state(tds, TDS_IDLE);
-            raise Exception('TDS_FAIL')
-
-        count = tds_count_placeholders_ucs2le(converted_query)
-        params = convert_params(tds, params)
-
-        if count:
-            #
-            # TODO perhaps functions that calls tds7_build_param_def_from_query
-            # should call also tds7_build_param_def_from_params ??
-            #
-            param_definition = tds7_build_param_def_from_query(tds, converted_query, params)
-            if not param_definition:
-                tds_set_state(tds, TDS_IDLE)
-                raise Exception('TDS_FAIL')
+            tds.out_flag = TDS_NORMAL
+            tds_put_byte(tds, TDS_LANGUAGE_TOKEN)
+            # TODO ICONV use converted size, not input size and convert string
+            TDS_PUT_INT(tds, len(query) + 1)
+            tds_put_byte(tds, 1 if params else 0) # 1 if there are params, 0 otherwise
+            tds_put_s(tds, query)
+            if params:
+                # add on parameters
+                tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
+        elif not IS_TDS7_PLUS(tds) or not params:
+            tds.out_flag = TDS_QUERY
+            START_QUERY(tds)
+            tds_put_string(tds, query)
         else:
-            param_definition = tds7_build_param_def_from_params(tds, converted_query, params)
-            if not param_definition:
-                tds_set_state(tds, TDS_IDLE)
-                raise Exception('TDS_FAIL')
+            #TDSCOLUMN *param;
+            #size_t definition_len;
+            #int count, i;
+            #char *param_definition;
+            #size_t converted_query_len;
+            #const char *converted_query;
 
-        tds.out_flag = TDS_RPC
-        START_QUERY(tds)
-        # procedure name
-        if IS_TDS71_PLUS(tds):
-            tds_put_smallint(tds, -1)
-            tds_put_smallint(tds, TDS_SP_EXECUTESQL)
-        else:
-            tds_put_smallint(tds, 13)
-            TDS_PUT_N_AS_UCS2(tds, "sp_executesql")
-        tds_put_smallint(tds, 0)
+            converted_query = tds_convert_string(tds, tds.char_convs[client2ucs2], query)
+            count = tds_count_placeholders_ucs2le(converted_query)
+            params = convert_params(tds, params)
 
-        # string with sql statement
-        if not count:
-            tds_put_byte(tds, 0)
-            tds_put_byte(tds, 0)
-            tds_put_byte(tds, SYBNTEXT) # must be Ntype
-            TDS_PUT_INT(tds, len(converted_query))
+            if count:
+                #
+                # TODO perhaps functions that calls tds7_build_param_def_from_query
+                # should call also tds7_build_param_def_from_params ??
+                #
+                param_definition = tds7_build_param_def_from_query(tds, converted_query, params)
+            else:
+                param_definition = tds7_build_param_def_from_params(tds, converted_query, params)
+
+            tds.out_flag = TDS_RPC
+            START_QUERY(tds)
+            # procedure name
             if IS_TDS71_PLUS(tds):
-                tds_put_s(tds, tds.collation)
-            TDS_PUT_INT(tds, len(converted_query))
-            tds_put_s(tds, converted_query)
-        else:
-            tds7_put_query_params(tds, converted_query)
-        tds7_put_params_definition(tds, param_definition)
-        for param in params:
-            tds_put_data_info(tds, param)
-            param.funcs.put_data(tds, param)
-        tds.internal_sp_called = TDS_SP_EXECUTESQL
-    return tds_query_flush_packet(tds)
+                tds_put_smallint(tds, -1)
+                tds_put_smallint(tds, TDS_SP_EXECUTESQL)
+            else:
+                sp_name = 'sp_executesql'
+                tds_put_smallint(tds, len(sp_name))
+                TDS_PUT_N_AS_UCS2(tds, sp_name)
+            tds_put_smallint(tds, 0)
+
+            # string with sql statement
+            if count:
+                tds7_put_query_params(tds, converted_query)
+            else:
+                tds_put_byte(tds, 0)
+                tds_put_byte(tds, 0)
+                tds_put_byte(tds, SYBNTEXT) # must be Ntype
+                TDS_PUT_INT(tds, len(converted_query))
+                if IS_TDS71_PLUS(tds):
+                    tds_put_s(tds, tds.collation)
+                TDS_PUT_INT(tds, len(converted_query))
+                tds_put_s(tds, converted_query)
+            # parameters definition
+            tds7_put_params_definition(tds, param_definition)
+            # parameter values
+            for param in params:
+                tds_put_data_info(tds, param)
+                param.funcs.put_data(tds, param)
+            tds.internal_sp_called = TDS_SP_EXECUTESQL
+        tds_query_flush_packet(tds)
+    except:
+        tds_set_state(tds, TDS_IDLE)
+        raise
+
 
 #/**
 # * tds_send_cancel() sends an empty packet (8 byte header only)
