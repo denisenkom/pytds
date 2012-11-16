@@ -117,7 +117,7 @@ def tds_iconv_alloc(tds):
             client2server_chardata: {
                 'server_charset': {'canonic': TDS_CHARSET_CP1251, 'name': 'cp1251'},
                 'client_charset': {'canonic': TDS_CHARSET_UNICODE, 'name': 'unicode'},
-                'from_wire': lambda buf: _cp1251_codec.decode(buf),
+                'from_wire': lambda buf: _cp1251_codec.decode(buf)[0],
                 'from_wire2': None,
                 'codec': _cp1251_codec,
                 'flags': 0,
