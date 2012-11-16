@@ -386,74 +386,24 @@ class Connection(object):
 
         self._connected = 1
 
-        return
-
         logger.debug("MSSQLConnection.__init__() -> dbcmd() setting connection values")
         # Set some connection properties to some reasonable values
-        query =\
-            "SET ARITHABORT ON;"                \
-            "SET CONCAT_NULL_YIELDS_NULL ON;"   \
-            "SET ANSI_NULLS ON;"                \
-            "SET ANSI_NULL_DFLT_ON ON;"         \
-            "SET ANSI_PADDING ON;"              \
-            "SET ANSI_WARNINGS ON;"             \
-            "SET ANSI_NULL_DFLT_ON ON;"         \
-            "SET CURSOR_CLOSE_ON_COMMIT ON;"    \
-            "SET QUOTED_IDENTIFIER ON;"         \
-            "SET TEXTSIZE 2147483647;" # http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
-
-        #dbsqlsend() begin
-        tds = self.self.tds_socket
-        if tds.state == TDS_PENDING:
-            raise Exception('not implemented')
-            #if (tds_process_tokens(tds, &result_type, NULL, TDS_TOKEN_TRAILING) != TDS_NO_MORE_RESULTS) {
-            #        dbperror(self, SYBERPND, 0);
-            #        dbproc->command_state = DBCMDSENT;
-            #        return FAIL;
-            #}
-        tds_submit_query(tds, query)
-
-        #dbsqlsend() end
-        #dbsqlok() begin
-        while True:
-            rc, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
-            if done_flags & TDS_DONE_ERROR:
-                raise MSSQLDriverException("Could not set connection properties")
-            if rc == TDS_NO_MORE_RESULTS:
-                break
-            elif rc == TDS_SUCCESS:
-                if result_type == TDS_ROWFMT_RESULT:
-                    pass
-                elif result_type == TDS_COMPUTEFMT_RESULT:
-                    pass
-                elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
-                    logger.debug("dbsqlok() found result token")
-                    break
-                elif result_type == TDS_DONEINPROC_RESULT:
-                    pass
-                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("dbsqlok() end status is {0}".format(return_code))
-                    if done_flags & TDS_DONE_ERROR:
-                        raise MSSQLDriverException("Could not set connection properties")
-                    else:
-                        logger.debug("dbsqlok() end status was success")
-                        break
-                else:
-                    logger.error("logic error: tds_process_tokens result_type {0}".format(result_type))
-                    break;
-                break;
-        else:
-            assert TDS_FAILED(rc)
-            raise MSSQLDriverException("Could not set connection properties")
-
-        #dbsqlok() end
-        #if (rtc == FAIL):
-        #    raise MSSQLDriverException("Could not set connection properties")
-
-        db_cancel(self)
-        clr_err(self)
+        # textsize - http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
+        query = '''
+            SET ARITHABORT ON;
+            SET CONCAT_NULL_YIELDS_NULL ON;
+            SET ANSI_NULLS ON;
+            SET ANSI_NULL_DFLT_ON ON;
+            SET ANSI_PADDING ON;
+            SET ANSI_WARNINGS ON;
+            SET ANSI_NULL_DFLT_ON ON;
+            SET CURSOR_CLOSE_ON_COMMIT ON;
+            SET QUOTED_IDENTIFIER ON;
+            SET TEXTSIZE 2147483647;
+        '''
+        self.execute_non_query(query)
         try:
-            self._conn.execute_non_query('BEGIN TRAN')
+            self.execute_non_query('BEGIN TRAN')
         except Exception, e:
             raise OperationalError('Cannot start transaction: ' + str(e[0]))
 
@@ -705,7 +655,7 @@ class Connection(object):
                 elif result_type == TDS_DONEINPROC_RESULT:
                     pass
                 elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("dbsqlok() end status is {0}".format(return_code))
+                    logger.debug("dbsqlok() end status is {0}".format(rc))
                     if done_flags & TDS_DONE_ERROR:
                         raise MSSQLDriverException("Could not set connection properties")
                     else:
