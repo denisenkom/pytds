@@ -36,18 +36,6 @@ def tds_query_flush_packet(tds):
     tds_set_state(tds, TDS_PENDING)
     return tds_flush_packet(tds)
 
-#
-# tds_submit_query() sends a language string to the database server for
-# processing.  TDS 4.2 is a plain text message with a packet type of 0x01,
-# TDS 7.0 is a unicode string with packet type 0x01, and TDS 5.0 uses a 
-# TDS_LANGUAGE_TOKEN to encapsulate the query and a packet type of 0x0f.
-# \param tds state information for the socket and the TDS protocol
-# \param query language query to submit
-# \return TDS_FAIL or TDS_SUCCESS
-#
-def tds_submit_query(tds, query):
-    return tds_submit_query_params(tds, query, None)
-
 def convert_params(tds, parameters):
     if isinstance(parameters, dict):
         return [make_param(tds, name, value) for name, value in parameters.items()]
@@ -67,7 +55,7 @@ def convert_params(tds, parameters):
 
 def make_param(tds, name, value, output=False):
     column = _Column()
-    column.column_name = ''
+    column.column_name = name
     column.column_output = 1 if output else 0
     if value is None:
         col_type = SYBINTN
@@ -81,7 +69,10 @@ def make_param(tds, name, value, output=False):
     elif isinstance(value, float):
         col_type = SYBFLTN
     elif isinstance(value, unicode):
-        col_type = XSYBNCHAR
+        if len(value) > 4000:
+            col_type = XSYBNVARCHAR
+        else:
+            col_type = XSYBNCHAR
         size = len(value) * 2
         column.char_conv = tds.char_convs[client2ucs2]
     elif isinstance(value, str):
@@ -95,6 +86,8 @@ def make_param(tds, name, value, output=False):
     column.on_server.column_type = col_type
     column.on_server.column_size = column.column_cur_size = size
     column.value = value
+    column.funcs = tds_get_column_funcs(tds, col_type)
+    column.column_varint_size = tds_get_varint_size(tds, col_type)
     return column
 
 def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
@@ -121,8 +114,6 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
             params = convert_params(tds, params)
             for param in params:
                 column_type = param.on_server.column_type
-                param.funcs = tds_get_column_funcs(tds, column_type)
-                param.column_varint_size = tds_get_varint_size(tds, column_type)
                 tds_put_data_info(tds, param)
                 param.funcs.put_data(tds, param)
             return tds_query_flush_packet(tds)
@@ -149,7 +140,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
         raise
 
 #
-# tds_submit_query_params() sends a language string to the database server for
+# tds_submit_query() sends a language string to the database server for
 # processing.  TDS 4.2 is a plain text message with a packet type of 0x01,
 # TDS 7.0 is a unicode string with packet type 0x01, and TDS 5.0 uses a
 # TDS_LANGUAGE_TOKEN to encapsulate the query and a packet type of 0x0f.
@@ -158,7 +149,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
 # \param params parameters of query
 # \return TDS_FAIL or TDS_SUCCESS
 #
-def tds_submit_query_params(tds, query, params):
+def tds_submit_query(tds, query, params=()):
     #size_t query_len;
     CHECK_TDS_EXTRA(tds)
     if params:
@@ -189,10 +180,10 @@ def tds_submit_query_params(tds, query, params):
         if params:
             # add on parameters
             tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
-    elif not IS_TDS7_PLUS(tds) or not params or not params.num_cols:
-            tds.out_flag = TDS_QUERY
-            START_QUERY(tds)
-            tds_put_string(tds, query)
+    elif not IS_TDS7_PLUS(tds) or not params:
+        tds.out_flag = TDS_QUERY
+        START_QUERY(tds)
+        tds_put_string(tds, query)
     else:
         #TDSCOLUMN *param;
         #size_t definition_len;
@@ -207,18 +198,19 @@ def tds_submit_query_params(tds, query, params):
             raise Exception('TDS_FAIL')
 
         count = tds_count_placeholders_ucs2le(converted_query)
+        params = convert_params(tds, params)
 
-        if not count:
-            param_definition = tds7_build_param_def_from_params(tds, converted_query, params)
-            if not param_definition:
-                tds_set_state(tds, TDS_IDLE)
-                raise Exception('TDS_FAIL')
-        else:
+        if count:
             #
             # TODO perhaps functions that calls tds7_build_param_def_from_query
             # should call also tds7_build_param_def_from_params ??
             #
             param_definition = tds7_build_param_def_from_query(tds, converted_query, params)
+            if not param_definition:
+                tds_set_state(tds, TDS_IDLE)
+                raise Exception('TDS_FAIL')
+        else:
+            param_definition = tds7_build_param_def_from_params(tds, converted_query, params)
             if not param_definition:
                 tds_set_state(tds, TDS_IDLE)
                 raise Exception('TDS_FAIL')
@@ -247,11 +239,9 @@ def tds_submit_query_params(tds, query, params):
         else:
             tds7_put_query_params(tds, converted_query)
         tds7_put_params_definition(tds, param_definition)
-        for param in params.columns:
-            # TODO check error
-            tds_put_data_info(tds, param, 0);
-            if tds_put_data(tds, param) != TDS_SUCCESS:
-                raise Exception('TDS_FAIL')
+        for param in params:
+            tds_put_data_info(tds, param)
+            param.funcs.put_data(tds, param)
         tds.internal_sp_called = TDS_SP_EXECUTESQL
     return tds_query_flush_packet(tds)
 
@@ -314,7 +304,7 @@ def tds_put_data_info(tds, curcol):
     else:
         # TODO ICONV convert
         tds_put_byte(tds, len(curcol.column_name))
-        tds_put_n(tds, curcol.column_name)
+        tds_put_s(tds, curcol.column_name)
     #
     # TODO support other flags (use defaul null/no metadata)
     # bit 1 (2 as flag) in TDS7+ is "default value" bit 
@@ -333,3 +323,202 @@ def tds_put_data_info(tds, curcol):
     # TODO needed in TDS4.2 ?? now is called only is TDS >= 5
     if not IS_TDS7_PLUS(tds):
         tds_put_byte(tds, 0x00) # locale info length
+
+#
+# Output params types and query (required by sp_prepare/sp_executesql/sp_prepexec)
+# \param tds       state information for the socket and the TDS protocol
+# \param query     query (in ucs2le codings)
+# \param query_len query length in bytes
+#
+#def tds7_put_query_params(tds, query):
+#    assert IS_TDS7_PLUS(tds)
+#
+#    # we use all "@PX" for parameters
+#    num_placeholders = tds_count_placeholders_ucs2le(query, query_end);
+#    len = num_placeholders * 2;
+#    # adjust for the length of X
+#    for (i = 10; i <= num_placeholders; i *= 10) {
+#            len += num_placeholders - i + 1;
+#    }
+#
+#    # string with sql statement
+#    # replace placeholders with dummy parametes
+#    tds_put_byte(tds, 0)
+#    tds_put_byte(tds, 0)
+#    tds_put_byte(tds, SYBNTEXT) # must be Ntype
+#    len = 2u * len + query_len;
+#    TDS_PUT_INT(tds, len)
+#    if (IS_TDS71_PLUS(tds))
+#        tds_put_n(tds, tds->collation, 5)
+#    TDS_PUT_INT(tds, len);
+#    s = query;
+#    # TODO do a test with "...?" and "...?)"
+#    for (i = 1;; ++i)
+#        e = tds_next_placeholder_ucs2le(s, query_end, 0);
+#        assert(e && query <= e && e <= query_end);
+#        tds_put_n(tds, s, e - s);
+#        if (e == query_end)
+#                break;
+#        sprintf(buf, "@P%d", i);
+#        tds_put_string(tds, buf, -1);
+#        s = e + 2;
+#    }
+#}
+
+def tds_count_placeholders_ucs2le(converted_query):
+    return 0
+
+#
+# Return string with parameters definition, useful for TDS7+
+# \param tds     state information for the socket and the TDS protocol
+# \param params  parameters to build declaration
+# \param out_len length output buffer in bytes
+# \return allocated and filled string or NULL on failure (coded in ucs2le charset )
+#
+# TODO find a better name for this function
+def tds7_build_param_def_from_params(tds, query, params):
+    assert IS_TDS7_PLUS(tds)
+
+    # try to detect missing names
+    #if (params->num_cols) {
+    #        ids = (struct tds_ids *) calloc(params->num_cols, sizeof(struct tds_ids));
+    #        if (!ids)
+    #                goto Cleanup;
+    #        if (!params->columns[0]->column_name[0]) {
+    #                const char *s = query, *e, *id_end;
+    #                const char *query_end = query + query_len;
+
+    #                for (i = 0;  i < params->num_cols; s = e + 2) {
+    #                        e = tds_next_placeholder_ucs2le(s, query_end, 1);
+    #                        if (e == query_end)
+    #                                break;
+    #                        if (e[0] != '@')
+    #                                continue;
+    #                        /* find end of param name */
+    #                        for (id_end = e + 2; id_end != query_end; id_end += 2)
+    #                                if (!id_end[1] && (id_end[0] != '_' && id_end[1] != '#' && !isalnum((unsigned char) id_end[0])))
+    #                                        break;
+    #                        ids[i].p = e;
+    #                        ids[i].len = id_end - e;
+    #                        ++i;
+    #                }
+    #        }
+    #}
+
+    param_strs = []
+    param_fmt = '{0} {1}'
+
+    for param in params:
+        # this part of buffer can be not-ascii compatible, use all ucs2...
+        param_strs.append(param_fmt.format(param.column_name, tds_get_column_declaration(tds, param)))
+    return ','.join(param_strs)
+
+#
+# Return declaration for column (like "varchar(20)")
+# \param tds    state information for the socket and the TDS protocol
+# \param curcol column
+# \param out    buffer to hold declaration
+# \return TDS_FAIL or TDS_SUCCESS
+#
+def tds_get_column_declaration(tds, curcol):
+    max_len = 8000 if IS_TDS7_PLUS(tds) else 255
+
+    size = tds_fix_column_size(tds, curcol)
+    t = curcol.on_server.column_type #tds_get_conversion_type(curcol.on_server.column_type, curcol.on_server.column_size)
+
+    if t in (XSYBCHAR, SYBCHAR):
+        return "CHAR(%d)" % min(size, max_len)
+    elif t in (SYBVARCHAR, XSYBVARCHAR):
+        if curcol.column_varint_size == 8:
+            return "VARCHAR(MAX)"
+        else:
+            return "VARCHAR(%d)" % min(size, max_len)
+    elif t == SYBINT1:
+        return "TINYINT"
+    elif t == SYBINT2:
+        return "SMALLINT"
+    elif t == SYBINT4:
+        return "INT"
+    elif t == SYBINT8:
+        # TODO even for Sybase ??
+        return "BIGINT"
+    elif t == SYBFLT8:
+        return "FLOAT"
+    elif t == SYBDATETIME:
+        return "DATETIME"
+    elif t == SYBBIT:
+        return "BIT"
+    elif t == SYBTEXT:
+        return "TEXT"
+    elif t == (SYBLONGBINARY, # TODO correct ??
+            SYBIMAGE):
+        return "IMAGE"
+    elif t == SYBMONEY4:
+        return "SMALLMONEY"
+    elif t == SYBMONEY:
+        return "MONEY"
+    elif t == SYBDATETIME4:
+        return "SMALLDATETIME"
+    elif t == SYBREAL:
+        return "REAL"
+    elif t == (SYBBINARY, XSYBBINARY):
+        return "BINARY(%d)" % min(size, max_len)
+    elif t == (SYBVARBINARY, XSYBVARBINARY):
+        if curcol.column_varint_size == 8:
+            return "VARBINARY(MAX)"
+        else:
+            return "VARBINARY(%u)" % min(size, max_len)
+    elif t == SYBNUMERIC:
+        return "NUMERIC(%d,%d)" % (curcol.column_prec, curcol.column_scale)
+    elif t == SYBDECIMAL:
+        return "DECIMAL(%d,%d)" % (curcol.column_prec, curcol.column_scale)
+    elif t == SYBUNIQUE:
+        if IS_TDS7_PLUS(tds):
+            return "UNIQUEIDENTIFIER"
+    elif t == SYBNTEXT:
+        if IS_TDS7_PLUS(tds):
+            return "NTEXT"
+    elif t in (SYBNVARCHAR, XSYBNVARCHAR):
+        if curcol.column_varint_size == 8:
+            return "NVARCHAR(MAX)"
+        elif IS_TDS7_PLUS(tds):
+            return "NVARCHAR(%u)" % min(size/2, 4000)
+    elif t == XSYBNCHAR:
+        if IS_TDS7_PLUS(tds):
+            return "NCHAR(%u)" % min(size/2, 4000)
+    elif t == SYBVARIANT:
+        if IS_TDS7_PLUS(tds):
+            return "SQL_VARIANT"
+    # TODO support scale !!
+    elif t == SYBMSTIME:
+        return "TIME"
+    elif t == SYBMSDATE:
+        return "DATE"
+    elif t == SYBMSDATETIME2:
+        return "DATETIME2"
+    elif t == SYBMSDATETIMEOFFSET:
+        return "DATETIMEOFFSET"
+    # nullable types should not occur here...
+    elif t in (SYBFLTN, SYBMONEYN, SYBDATETIMN, SYBBITN, SYBINTN):
+        assert False
+        # TODO...
+    else:
+        logger.error("Unknown type %d", t)
+
+    return ''
+
+def tds7_put_params_definition(tds, param_definition):
+    logger.debug('tds7_put_params_definition(%s)', param_definition)
+    # string with parameters types
+    tds_put_byte(tds, 0)
+    tds_put_byte(tds, 0)
+    tds_put_byte(tds, SYBNTEXT) # must be Ntype
+
+    # put parameters definitions
+    param_definition = tds.char_convs[client2ucs2]['to_wire'](param_definition)
+    param_length = len(param_definition)
+    TDS_PUT_INT(tds, param_length)
+    if IS_TDS71_PLUS(tds):
+        tds_put_s(tds, tds.collation)
+    TDS_PUT_INT(tds, param_length if param_length else -1)
+    tds_put_s(tds, param_definition)

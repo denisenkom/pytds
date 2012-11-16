@@ -28,6 +28,8 @@ def tds_put_int(tds, value):
     else:
         tds_put_s(tds, struct.pack('>l', value))
 
+TDS_PUT_INT = tds_put_int
+
 def tds_put_int8(tds, value):
     if tds_conn(tds).emul_little_endian:
         tds_put_s(tds, struct.pack('<q', value))

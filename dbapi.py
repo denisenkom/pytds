@@ -225,9 +225,11 @@ def prresult_type(result_type):
 
 class MemoryChunkedHandler(object):
     def begin(self, column, size):
+        logger.debug('MemoryChunkedHandler.begin(sz=%d)', size)
         self.size = size
         self.sio = StringIO()
     def new_chunk(self, val):
+        logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
         self.sio.write(val)
     def end(self):
         return self.sio.getvalue()
@@ -1042,9 +1044,6 @@ class Connection(object):
             # Cancel any pending results
             self.cancel()
 
-            if params:
-                query_string = self.format_sql_command(query_string, params)
-
             logger.debug(query_string)
 
             rtc = SUCCEED
@@ -1057,7 +1056,7 @@ class Connection(object):
 
             # Execute the query
             if rtc == SUCCEED:
-                tds_submit_query(self.dbproc.tds_socket, query_string)
+                tds_submit_query(self.dbproc.tds_socket, query_string, params)
                 self.dbproc.envchange_rcv = 0
                 self.dbproc.dbresults_state = DB_RES_INIT
                 rtc = self._sqlok()
