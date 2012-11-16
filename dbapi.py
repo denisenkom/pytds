@@ -336,7 +336,8 @@ class Connection(object):
         login.user_name = user
         login.password = password
         login.app = appname
-        login.tds_version = _tds_ver_str_to_constant(tds_version)
+        if tds_version:
+            login.tds_version = _tds_ver_str_to_constant(tds_version)
         login.database = database
 
         # override the HOST to be the portion without the server, otherwise
