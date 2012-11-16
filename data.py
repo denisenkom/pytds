@@ -373,9 +373,9 @@ def tds_data_put(tds, curcol):
 
         # put real data
         column_type = curcol.on_server.column_type
-        if column_type == SYBINTN and colsize == 4:
+        if column_type == SYBINTN and colsize == 4 or column_type == SYBINT4:
             tds_put_int(tds, value)
-        elif column_type == SYBINTN and colsize == 8:
+        elif column_type == SYBINTN and colsize == 8 or column_type == SYBINT8:
             tds_put_int8(tds, value)
         elif column_type in (XSYBNVARCHAR, XSYBNCHAR):
             tds_put_s(tds, value)

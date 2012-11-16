@@ -849,6 +849,21 @@ class Connection(object):
 
             # Execute the query
             if rtc == SUCCEED:
+                if params:
+                    if isinstance(params, (list, tuple)):
+                        names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                        if len(names) == 1:
+                            query_string = query_string % names[0]
+                        else:
+                            query_string = query_string % names
+                        params = dict(zip(names, params))
+                    elif isinstance(params, dict):
+                        # prepend names with @
+                        rename = dict((name, '@{0}'.format(name)) for name in params.keys())
+                        params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                        query_string = query_string % rename
+                    logger.debug('converted query: {0}'.format(query_string))
+                    logger.debug('params: {0}'.format(params))
                 tds_submit_query(self.tds_socket, query_string, params)
                 self.envchange_rcv = 0
                 self.dbresults_state = DB_RES_INIT
