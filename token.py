@@ -313,7 +313,7 @@ def tds_process_login_tokens(tds):
             # using TDS 4.2, something like 5F 06 32 FF for 6.50
             if ver['major'] == 4 and ver['minor'] == 2 and (product_version & 0xff0000ff) == 0x5f0000ff:
                 product_version = (product_version & 0xffff00 | 0x800000) << 8
-            tds.product_version = product_version
+            tds_conn(tds).product_version = product_version
             logger.debug('Product version {0:x}'.format(product_version))
             # TDS 5.0 reports 5 on success 6 on failure
             # TDS 4.2 reports 1 on success and is not present of failure

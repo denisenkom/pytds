@@ -231,3 +231,24 @@ def tds_datecrack(datetype, di):
     from datetime import datetime
 
     return datetime(years, months + 1, days, hours, mins, secs, dms/10)
+
+#
+# Quote an id
+# \param tds    state information for the socket and the TDS protocol
+# \param buffer buffer to store quoted id. If NULL do not write anything 
+#        (useful to compute quote length)
+# \param id     id to quote
+# \param idlen  id length
+# \result written chars (not including needed terminator)
+#
+def tds_quote_id(tds, id):
+    # quote always for mssql
+    if TDS_IS_MSSQL(tds) or tds_conn(tds).product_version >= TDS_SYB_VER(12, 5, 1):
+        return '[{0}]'.format(id.replace(']', ']]'))
+
+    return '"{0}"'.format(id.replace('"', '""'))
+
+# Check if product is Sybase (such as Adaptive Server Enterrprice). x should be a TDSSOCKET*.
+def TDS_IS_SYBASE(x): return not tds_conn(x).product_version & 0x80000000
+# Check if product is Microsft SQL Server. x should be a TDSSOCKET*.
+def TDS_IS_MSSQL(x): return tds_conn(x).product_version & 0x80000000
