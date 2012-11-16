@@ -222,6 +222,17 @@ def prresult_type(result_type):
     elif result_type == TDS_OTHERS_RESULT:     return "TDS_OTHERS_RESULT"
     else: "oops: %u ??" % result_type
 
+
+class MemoryChunkedHandler(object):
+    def begin(self, column, size):
+        self.size = size
+        self.sio = StringIO()
+    def new_chunk(self, val):
+        self.sio.write(val)
+    def end(self):
+        return self.sio.getvalue()
+
+
 min_error_severity = 6
 ######################
 ## Connection class ##
@@ -271,6 +282,18 @@ class Connection(object):
         if self.conn == None:
             raise InterfaceError('Connection is closed.')
         return self.conn
+
+    @property
+    def chunk_handler(self):
+        '''
+        Returns current chunk handler
+        Default is MemoryChunkedHandler()
+        '''
+        return self.tds_socket.chunk_handler
+
+    @chunk_handler.setter
+    def chunk_handler_set(self, value):
+        self.tds_socket.chunk_handler = value
 
     def __init__(self, server, user, password,
             charset, database, appname, port, tds_version,
@@ -344,6 +367,7 @@ class Connection(object):
             ctx.err_handler = self._err_handler
             ctx.int_handler = self._int_handler
             dbproc.tds_socket = tds_alloc_socket(ctx, 512)
+            self.tds_socket.chunk_handler = MemoryChunkedHandler()
             tds_set_parent(dbproc.tds_socket, dbproc)
             dbproc.tds_socket.env_chg_func = self._db_env_chg
             dbproc.envchange_rcv = 0

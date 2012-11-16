@@ -101,6 +101,7 @@ def tds_iconv_get_info(tds, canonic_client, canonic_server):
     return None
 
 _utf16_le_codec = codecs.lookup('utf_16_le')
+_cp1251_codec = codecs.lookup('cp1251')
 
 def tds_iconv_alloc(tds):
     tds.char_convs = {
@@ -110,13 +111,15 @@ def tds_iconv_alloc(tds):
                 'from_wire': lambda buf: _utf16_le_codec.decode(buf)[0],
                 'from_wire2': None,
                 'to_wire': lambda s: _utf16_le_codec.encode(s)[0],
+                'codec': _utf16_le_codec,
                 'flags': 0,
                 },
             client2server_chardata: {
                 'server_charset': {'canonic': TDS_CHARSET_CP1251, 'name': 'cp1251'},
                 'client_charset': {'canonic': TDS_CHARSET_UNICODE, 'name': 'unicode'},
-                'from_wire': lambda buf: buf.decode('cp1251'),
+                'from_wire': lambda buf: _cp1251_codec.decode(buf),
                 'from_wire2': None,
+                'codec': _cp1251_codec,
                 'flags': 0,
                 },
             iso2server_metadata: {},

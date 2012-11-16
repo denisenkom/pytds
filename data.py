@@ -276,17 +276,24 @@ def tds72_get_varmax(tds, curcol):
         return TDS_SUCCESS
 
     blob = curcol.column_data = _Blob()
-    strio = StringIO()
+    chunk_handler = tds.chunk_handler
+    chunk_handler.begin(curcol, size)
+    decoder = None
+    if curcol.char_conv:
+        decoder = curcol.char_conv['codec'].incrementaldecoder()
     while True:
         chunk_len = tds_get_int(tds)
         if chunk_len <= 0:
-            blob.textvalue = strio.getvalue()
+            if decoder:
+                val = decoder.decode('', True)
+                chunk_handler.new_chunk(val)
+            blob.textvalue = chunk_handler.end()
             curcol.column_cur_size = len(blob.textvalue)
             return TDS_SUCCESS
-        if curcol.char_conv:
-            strio.write(tds_iconv(tds, curcol.char_conv, to_client, tds_get_n(tds, chunk_len)))
-        else:
-            strio.write(tds_get_n(tds, chunk_len))
+        val = tds_get_n(tds, chunk_len)
+        if decoder:
+            val = decoder.decode(val)
+        chunk_handler.new_chunk(val)
     return TDS_SUCCESS
 
 def tds_data_put_info(tds, col):
