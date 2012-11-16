@@ -275,17 +275,6 @@ class Connection(object):
         return self._rows_affected
 
     @property
-    def _conn(self):
-        """
-        INTERNAL PROPERTY. Returns the MSSQLConnection object, and
-        raise exception if it's set to None. It's easier than adding the
-        necessary checks to every other method.
-        """
-        if self.conn == None:
-            raise InterfaceError('Connection is closed.')
-        return self.conn
-
-    @property
     def chunk_handler(self):
         '''
         Returns current chunk handler
@@ -416,7 +405,7 @@ class Connection(object):
             return
 
         tran_type = 'ROLLBACK' if status else 'BEGIN'
-        self._conn.execute_non_query('%s TRAN' % tran_type)
+        self.execute_non_query('%s TRAN' % tran_type)
         self._autocommit = status
 
     def commit(self):
@@ -428,8 +417,7 @@ class Connection(object):
             return
 
         try:
-            self._conn.execute_non_query('COMMIT TRAN')
-            self._conn.execute_non_query('BEGIN TRAN')
+            self.execute_non_query('COMMIT TRAN; BEGIN TRAN')
         except Exception, e:
             raise OperationalError('Cannot commit transaction: ' + str(e[0]))
 
@@ -448,7 +436,7 @@ class Connection(object):
             return
 
         try:
-            self._conn.execute_non_query('ROLLBACK TRAN')
+            self.execute_non_query('ROLLBACK TRAN')
         except MSSQLException, e:
             # PEP 249 indicates that we have contract with the user that we will
             # always have a transaction in place if autocommit is False.
@@ -466,7 +454,7 @@ class Connection(object):
             if 'The ROLLBACK TRANSACTION request has no corresponding BEGIN TRANSACTION' not in str(e):
                 raise
         try:
-            self._conn.execute_non_query('BEGIN TRAN')
+            self.execute_non_query('BEGIN TRAN')
         except Exception, e:
             raise OperationalError('Cannot begin transaction: ' + str(e[0]))
 
@@ -1239,11 +1227,11 @@ class Cursor(object):
 
         try:
             if not params:
-                self._source._conn.execute_query(operation)
+                self._source.execute_query(operation)
             else:
-                self._source._conn.execute_query(operation, params)
-            self.description = self._source._conn.get_header()
-            self._rownumber = self._source._conn.rows_affected
+                self._source.execute_query(operation, params)
+            self.description = self._source.get_header()
+            self._rownumber = self._source.rows_affected
 
         except MSSQLDatabaseException, e:
             if e.number in prog_errors:
@@ -1265,10 +1253,10 @@ class Cursor(object):
 
     def nextset(self):
         try:
-            if not self._source._conn.nextresult():
+            if not self._source.nextresult():
                 return None
             self._rownumber = 0
-            self.description = self._source._conn.get_header()
+            self.description = self._source.get_header()
             return 1
 
         except MSSQLDatabaseException, e:
@@ -1332,7 +1320,7 @@ class Cursor(object):
 
         try:
             rows = [row for row in self]
-            self._rownumber = self._source._conn.rows_affected
+            self._rownumber = self._source.rows_affected
             return rows
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
