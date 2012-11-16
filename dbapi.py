@@ -505,8 +505,9 @@ class Connection(object):
         assert_connected(self)
         clr_err(self)
 
-        rtc = db_cancel(self)
-        check_and_raise(rtc, self)
+        tds_send_cancel(self.tds_socket)
+        tds_process_cancel(self.tds_socket)
+        self.clear_metadata()
 
     def clear_metadata(self):
         logger.debug("MSSQLConnection.clear_metadata()")
@@ -627,9 +628,8 @@ class Connection(object):
         self.format_and_run_query(query_string, params)
         # getting results
         self._rows_affected = self.tds_socket.rows_affected
-
-        rtc = db_cancel(self)
-        check_and_raise(rtc, self)
+        # discard results
+        self.cancel()
         logger.debug("MSSQLConnection.execute_non_query() END")
 
     def _nextrow(self):
@@ -1299,15 +1299,6 @@ def clr_err(conn):
     conn.last_msg_severity = 0
     conn.last_msg_state = 0
 
-def db_cancel(conn):
-    if conn == None:
-        return
-
-    tds_send_cancel(conn.tds_socket)
-    tds_process_cancel(conn.tds_socket)
-
-    conn.clear_metadata()
-
 def _tds_ver_str_to_constant(verstr):
     """
         http://www.freetds.org/userguide/choosingtdsprotocol.htm
@@ -1544,7 +1535,7 @@ def maybe_raise_MSSQLDatabaseException(conn):
     ex.severity = get_last_msg_severity(conn)
     ex.state = get_last_msg_state(conn)
     ex.line = get_last_msg_line(conn)
-    db_cancel(conn)
+    conn.cancel()
     clr_err(conn)
     raise ex
 
@@ -1561,7 +1552,7 @@ def check_and_raise(rtc, conn):
 
 def check_cancel_and_raise(rtc, conn):
     if rtc == FAIL:
-        db_cancel(conn)
+        conn.cancel()
         return maybe_raise_MSSQLDatabaseException(conn)
     elif get_last_msg_str(conn):
         return maybe_raise_MSSQLDatabaseException(conn)
