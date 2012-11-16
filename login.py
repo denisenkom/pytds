@@ -60,6 +60,7 @@ def tds_connect(tds, login):
             tds7_send_login(tds, login)
             db_selected = True
         else:
+            raise Exception('This TDS version is not supported')
             tds.out_flag = TDS_LOGIN
             tds_send_login(tds, login)
         if not tds_process_login_tokens(tds):

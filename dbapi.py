@@ -382,10 +382,10 @@ class Connection(object):
             login.query_timeout = timeout
 
             tds_connect_and_login(dbproc.tds_socket, login)
-        except Exception:
+        except Exception as e:
             logger.exception("MSSQLConnection.__init__() connection failed")
             maybe_raise_MSSQLDatabaseException(self)
-            raise MSSQLDriverException("Connection to the database failed for an unknown reason.")
+            raise InterfaceError("Connection to the database failed: " + unicode(e))
 
         self._connected = 1
 
