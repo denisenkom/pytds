@@ -314,7 +314,6 @@ class Connection(object):
         self.column_names = None
         self.column_types = None
         self._as_dict = as_dict
-        self.dbproc = None
 
         # support MS methods of connecting locally
         instance = ""
@@ -328,9 +327,9 @@ class Connection(object):
 
         login = tds_alloc_login(1)
         # set default values for loginrec
-        login.library = "DB-Library"
+        login.library = "Python TDS Library"
 
-        appname = appname or "pymssql"
+        appname = appname or "pytds"
 
         login.encryption_level = encryption_level
         login.user_name = user
@@ -361,28 +360,25 @@ class Connection(object):
         # Connect to the server
         msdblib = True
         try:
-            dbproc = self
-            self.dbproc = dbproc
-            dbproc.msdblib = msdblib
+            self.msdblib = msdblib
             tds_set_server(login, server)
             ctx = tds_alloc_context()
             ctx.msg_handler = self._msg_handler
             ctx.err_handler = self._err_handler
             ctx.int_handler = self._int_handler
-            dbproc.tds_socket = tds_alloc_socket(ctx, 512)
+            self.tds_socket = tds_alloc_socket(ctx, 512)
             self.tds_socket.chunk_handler = MemoryChunkedHandler()
-            tds_set_parent(dbproc.tds_socket, dbproc)
-            dbproc.tds_socket.env_chg_func = self._db_env_chg
-            dbproc.envchange_rcv = 0
-            dbproc.dbcurdb = ''
-            dbproc.servcharset = ''
+            self.tds_socket.env_chg_func = self._db_env_chg
+            self.envchange_rcv = 0
+            self.dbcurdb = ''
+            self.servcharset = ''
             login.option_flag2 &= ~0x02 # we're not an ODBC driver
             tds_fix_login(login) # initialize from Environment variables
 
             login.connect_timeout = login_timeout
             login.query_timeout = timeout
 
-            tds_connect_and_login(dbproc.tds_socket, login)
+            tds_connect_and_login(self.tds_socket, login)
         except Exception as e:
             logger.exception("MSSQLConnection.__init__() connection failed")
             maybe_raise_MSSQLDatabaseException(self)
@@ -407,11 +403,11 @@ class Connection(object):
             "SET TEXTSIZE 2147483647;" # http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
 
         #dbsqlsend() begin
-        tds = self.dbproc.tds_socket
+        tds = self.self.tds_socket
         if tds.state == TDS_PENDING:
             raise Exception('not implemented')
             #if (tds_process_tokens(tds, &result_type, NULL, TDS_TOKEN_TRAILING) != TDS_NO_MORE_RESULTS) {
-            #        dbperror(dbproc, SYBERPND, 0);
+            #        dbperror(self, SYBERPND, 0);
             #        dbproc->command_state = DBCMDSENT;
             #        return FAIL;
             #}
@@ -549,12 +545,11 @@ class Connection(object):
 
         logger.debug("db_env_chg(%d, %s, %s)", type, oldval, newval)
 
-        dbproc = self.dbproc
-        dbproc.envchange_rcv |= (1 << (type - 1))
+        self.envchange_rcv |= (1 << (type - 1))
         if type == TDS_ENV_DATABASE:
-            dbproc.dbcurdb = newval
+            self.dbcurdb = newval
         elif type == TDS_ENV_CHARSET:
-            dbproc.servcharset = newval
+            self.servcharset = newval
 
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
@@ -599,10 +594,9 @@ class Connection(object):
 
         clr_err(self)
 
-        tds = self.dbproc.tds_socket
+        tds = self.tds_socket
         if tds:
             tds_free_socket(tds)
-        self.dbproc = None
 
         self._connected = 0
 
@@ -639,7 +633,7 @@ class Connection(object):
             #else:
             #    precision = dbcol.Scale
 
-            #len = dbconvert(self.dbproc, type, data, -1, SQLCHAR,
+            #len = dbconvert(self, type, data, -1, SQLCHAR,
             #    <BYTE *>buf, NUMERIC_BUF_SZ)
 
             #with decimal.localcontext() as ctx:
@@ -670,8 +664,7 @@ class Connection(object):
         failure.
         """
         logger.debug("MSSQLConnection.select_db()")
-
-        dbuse(self.dbproc, dbname)
+        self.execute_non_query('use {0}'.format(tds_quote_id(self.tds_socket, dbname)))
 
     def execute_non_query(self, query_string, params=None):
         """
@@ -696,7 +689,7 @@ class Connection(object):
         self.format_and_run_query(query_string, params)
         # getting results
         while True:
-            rc, result_type, done_flags = tds_process_tokens(self.dbproc.tds_socket, TDS_TOKEN_RESULTS)
+            rc, result_type, done_flags = tds_process_tokens(self.tds_socket, TDS_TOKEN_RESULTS)
             if done_flags & TDS_DONE_ERROR:
                 raise MSSQLDriverException("Could not set connection properties")
             if rc == TDS_NO_MORE_RESULTS:
@@ -725,7 +718,7 @@ class Connection(object):
         else:
             assert TDS_FAILED(rc)
             raise MSSQLDriverException("Could not set connection properties")
-        self._rows_affected = self.dbproc.tds_socket.rows_affected
+        self._rows_affected = self.tds_socket.rows_affected
 
         rtc = db_cancel(self)
         check_and_raise(rtc, self)
@@ -796,22 +789,21 @@ class Connection(object):
 
     def _nextrow(self):
         result = FAIL
-        dbproc = self.dbproc
         logger.debug("_nextrow()")
-        tds = dbproc.tds_socket
+        tds = self.tds_socket
         resinfo = tds.res_info
-        if not resinfo or dbproc.dbresults_state != DB_RES_RESULTSET_ROWS:
+        if not resinfo or self.dbresults_state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
             logger.debug("leaving _nextrow() returning %d (NO_MORE_ROWS)", NO_MORE_ROWS)
-            dbproc.row_type = NO_MORE_ROWS
+            self.row_type = NO_MORE_ROWS
             return NO_MORE_ROWS
 
         #
-        # Try to get the dbproc->row_buf.current item from the buffered rows, if any.  
+        # Try to get the self->row_buf.current item from the buffered rows, if any.  
         # Else read from the stream, unless the buffer is exhausted.  
         # If no rows are read, DBROWTYPE() will report NO_MORE_ROWS. 
         #/
-        dbproc.row_type = NO_MORE_ROWS
+        self.row_type = NO_MORE_ROWS
         computeid = REG_ROW
         mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
 
@@ -823,13 +815,13 @@ class Connection(object):
                     computeid = tds.current_results.computeid
                 # Add the row to the row buffer, whose capacity is always at least 1
                 resinfo = tds.current_results
-                result = dbproc.row_type = REG_ROW if res_type == TDS_ROW_RESULT else computeid
+                result = self.row_type = REG_ROW if res_type == TDS_ROW_RESULT else computeid
                 #_, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
             else:
-                dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                self.dbresults_state = DB_RES_NEXT_RESULT
                 result = NO_MORE_ROWS
         elif rc == TDS_NO_MORE_RESULTS:
-            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+            self.dbresults_state = DB_RES_NEXT_RESULT
             result = NO_MORE_ROWS
         else:
             raise Exception("unexpected result from tds_process_tokens")
@@ -868,7 +860,7 @@ class Connection(object):
 
         rtc = self._nextrow()
 
-        self._rows_affected = self.dbproc.tds_socket.rows_affected
+        self._rows_affected = self.tds_socket.rows_affected
 
         if rtc == NO_MORE_ROWS:
             self.clear_metadata()
@@ -907,7 +899,7 @@ class Connection(object):
         check_cancel_and_raise(rtc, self)
 
         while rtc != NO_MORE_ROWS:
-            rtc = dbnextrow(self.dbproc)
+            rtc = dbnextrow(self)
             check_cancel_and_raise(rtc, self)
 
         self.last_dbresults = 0
@@ -936,7 +928,7 @@ class Connection(object):
                 logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
                 self.clear_metadata()
                 # 'rows_affected' is nonzero only after all records are read
-                tds_socket = self.dbproc.tds_socket
+                tds_socket = self.tds_socket
                 self._rows_affected = tds_socket.rows_affected
                 if throw:
                     raise StopIteration
@@ -965,12 +957,11 @@ class Connection(object):
         return row_dict
 
     def _sqlok(self):
-        dbproc = self.dbproc
         return_code = SUCCEED
         logger.debug("dbsqlok()")
         #CHECK_CONN(FAIL);
 
-        tds = dbproc.tds_socket
+        tds = self.tds_socket
         # See what the next packet from the server is.
         # We want to skip any messages which are not processable. 
         # We're looking for a result token or a done token.
@@ -998,7 +989,7 @@ class Connection(object):
                 if result_type == TDS_ROWFMT_RESULT:
                     pass
                 elif result_type == TDS_COMPUTEFMT_RESULT:
-                    dbproc.dbresults_state = _DB_RES_RESULTSET_EMPTY;
+                    self.dbresults_state = _DB_RES_RESULTSET_EMPTY;
                     logger.debug("dbsqlok() found result token")
                     return SUCCEED;
                 elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
@@ -1011,19 +1002,19 @@ class Connection(object):
                     if True:
                         if done_flags & TDS_DONE_ERROR:
                             if done_flags & TDS_DONE_MORE_RESULTS:
-                                dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                                self.dbresults_state = DB_RES_NEXT_RESULT
                             else:
-                                dbproc.dbresults_state = DB_RES_NO_MORE_RESULTS
+                                self.dbresults_state = DB_RES_NO_MORE_RESULTS
 
                         else:
                             logger.debug("dbsqlok() end status was success")
-                            dbproc.dbresults_state = DB_RES_SUCCEED
+                            self.dbresults_state = DB_RES_SUCCEED
                         return return_code
                     else:
                         retcode = FAIL if done_flags & TDS_DONE_ERROR else SUCCEED;
-                        dbproc.dbresults_state = DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
+                        self.dbresults_state = DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
                         logger.debug("dbsqlok: returning %s with %s (%#x)", 
-                                        prdbretcode(retcode), prdbresults_state(dbproc.dbresults_state), done_flags)
+                                        prdbretcode(retcode), prdbresults_state(self.dbresults_state), done_flags)
                         if retcode == SUCCEED and (done_flags & TDS_DONE_MORE_RESULTS):
                             continue
                         return retcode
@@ -1048,18 +1039,18 @@ class Connection(object):
             logger.debug(query_string)
 
             rtc = SUCCEED
-            if self.dbproc.tds_socket.state == TDS_PENDING:
+            if self.tds_socket.state == TDS_PENDING:
                 raise Exception('not checked')
                 rc, result_type, _ = tds_process_tokens(tds, result_type, TDS_TOKEN_TRAILING)
                 if rc != TDS_NO_MORE_RESULTS:
-                    dbperror(self.dbproc, SYBERPND, 0)
+                    dbperror(self, SYBERPND, 0)
                     rtc = FAIL
 
             # Execute the query
             if rtc == SUCCEED:
-                tds_submit_query(self.dbproc.tds_socket, query_string, params)
-                self.dbproc.envchange_rcv = 0
-                self.dbproc.dbresults_state = DB_RES_INIT
+                tds_submit_query(self.tds_socket, query_string, params)
+                self.envchange_rcv = 0
+                self.dbresults_state = DB_RES_INIT
                 rtc = self._sqlok()
             check_cancel_and_raise(rtc, self)
         finally:
@@ -1096,20 +1087,19 @@ class Connection(object):
             logger.debug("MSSQLConnection.get_header() END")
 
     def _start_results(self):
-        dbproc = self.dbproc
         result_type = 0
 
-        tds = dbproc.tds_socket
+        tds = self.tds_socket
 
         logger.debug("dbresults: dbresults_state is %d (%s)\n", 
-                                        dbproc.dbresults_state, prdbresults_state(dbproc.dbresults_state))
-        if dbproc.dbresults_state == DB_RES_SUCCEED:
-            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                                        self.dbresults_state, prdbresults_state(self.dbresults_state))
+        if self.dbresults_state == DB_RES_SUCCEED:
+            self.dbresults_state = DB_RES_NEXT_RESULT
             return SUCCEED
-        elif dbproc.dbresults_state == DB_RES_RESULTSET_ROWS:
-            dbperror(dbproc, SYBERPND, 0) # dbresults called while rows outstanding....
+        elif self.dbresults_state == DB_RES_RESULTSET_ROWS:
+            dbperror(self, SYBERPND, 0) # dbresults called while rows outstanding....
             return FAIL
-        elif dbproc.dbresults_state == DB_RES_NO_MORE_RESULTS:
+        elif self.dbresults_state == DB_RES_NO_MORE_RESULTS:
             return NO_MORE_RESULTS;
 
         while True:
@@ -1120,20 +1110,18 @@ class Connection(object):
 
             if retcode == TDS_SUCCESS:
                 if result_type == TDS_ROWFMT_RESULT:
-                    #buffer_free(&dbproc->row_buf);
-                    #buffer_alloc(dbproc);
-                    dbproc.dbresults_state = DB_RES_RESULTSET_EMPTY
+                    self.dbresults_state = DB_RES_RESULTSET_EMPTY
 
                 elif result_type == TDS_COMPUTEFMT_RESULT:
                     pass
 
                 elif result_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
-                    dbproc.dbresults_state = DB_RES_RESULTSET_ROWS
+                    self.dbresults_state = DB_RES_RESULTSET_ROWS
                     return SUCCEED
 
                 elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
                     logger.debug("dbresults(): dbresults_state is %d (%s)\n", 
-                                    dbproc.dbresults_state, prdbresults_state(dbproc.dbresults_state))
+                                    self.dbresults_state, prdbresults_state(self.dbresults_state))
 
                     # A done token signifies the end of a logical command.
                     # There are three possibilities:
@@ -1141,13 +1129,13 @@ class Connection(object):
                     # 2. Command with result set but no rows
                     # 3. Command with result set and rows
                     #
-                    if dbproc.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
-                        dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                    if self.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
+                        self.dbresults_state = DB_RES_NEXT_RESULT
                         if done_flags & TDS_DONE_ERROR:
                             return FAIL
 
-                    elif dbproc.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
-                        dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                    elif self.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
+                        self.dbresults_state = DB_RES_NEXT_RESULT
                         return SUCCEED
                     else:
                         assert False
@@ -1157,12 +1145,12 @@ class Connection(object):
                         # Return SUCCEED on a command within a stored procedure
                         # only if the command returned a result set. 
                         #
-                        if dbproc.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
-                            dbproc.dbresults_state = DB_RES_NEXT_RESULT
-                        elif dbproc.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
-                            dbproc.dbresults_state = DB_RES_NEXT_RESULT
+                        if self.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
+                            self.dbresults_state = DB_RES_NEXT_RESULT
+                        elif self.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
+                            self.dbresults_state = DB_RES_NEXT_RESULT
                             return SUCCEED;
-                        elif dbproc.dbresults_state in (DB_RES_NO_MORE_RESULTS, DB_RES_SUCCEED):
+                        elif self.dbresults_state in (DB_RES_NO_MORE_RESULTS, DB_RES_SUCCEED):
                             pass
 
                 elif result_type in (TDS_STATUS_RESULT, TDS_MSG_RESULT, TDS_DESCRIBE_RESULT, TDS_PARAM_RESULT):
@@ -1170,11 +1158,11 @@ class Connection(object):
                 else:
                     pass
             elif retcode == TDS_NO_MORE_RESULTS:
-                dbproc.dbresults_state = DB_RES_NO_MORE_RESULTS
+                self.dbresults_state = DB_RES_NO_MORE_RESULTS
                 return NO_MORE_RESULTS
             else:
                 assert TDS_FAILED(retcode)
-                dbproc.dbresults_state = DB_RES_INIT
+                self.dbresults_state = DB_RES_INIT
                 return FAIL
 
     def get_result(self):
@@ -1190,26 +1178,26 @@ class Connection(object):
             # Since python doesn't have a do/while loop do it this way
             while True:
                 self.last_dbresults = self._start_results()
-                self.num_columns = self.dbproc.tds_socket.res_info.num_cols if self.dbproc.tds_socket.res_info else 0
+                self.num_columns = self.tds_socket.res_info.num_cols if self.tds_socket.res_info else 0
                 if self.last_dbresults != SUCCEED or self.num_columns > 0:
                     break
             check_cancel_and_raise(self.last_dbresults, self)
 
-            self._rows_affected = self.dbproc.tds_socket.rows_affected if self.dbproc.tds_socket.rows_affected != TDS_NO_COUNT else -1
+            self._rows_affected = self.tds_socket.rows_affected if self.tds_socket.rows_affected != TDS_NO_COUNT else -1
 
             if self.last_dbresults == NO_MORE_RESULTS:
                 self.num_columns = 0
                 logger.debug("MSSQLConnection.get_result(): NO_MORE_RESULTS, return None")
                 return None
 
-            self.num_columns = self.dbproc.tds_socket.res_info.num_cols
+            self.num_columns = self.tds_socket.res_info.num_cols
 
             logger.debug("MSSQLConnection.get_result(): num_columns = %d", self.num_columns)
 
             column_names = list()
             column_types = list()
 
-            for col in self.dbproc.tds_socket.res_info.columns:
+            for col in self.tds_socket.res_info.columns:
                 column_names.append(col.column_name)
                 coltype = col.column_type
                 column_types.append(get_api_coltype(coltype))
@@ -1220,12 +1208,11 @@ class Connection(object):
             logger.debug("MSSQLConnection.get_result() END")
 
     def get_row(self, row_info):
-        dbproc = self.dbproc
         logger.debug("MSSQLConnection.get_row()")
 
         record = tuple()
 
-        for col in dbproc.tds_socket.res_info.columns:
+        for col in self.tds_socket.res_info.columns:
             if is_blob_col(col):
                 data = col.column_data.textvalue
             else:
@@ -1492,11 +1479,8 @@ def db_cancel(conn):
     if conn == None:
         return
 
-    if conn.dbproc is None:
-        return
-
-    tds_send_cancel(conn.dbproc.tds_socket)
-    tds_process_cancel(conn.dbproc.tds_socket)
+    tds_send_cancel(conn.tds_socket)
+    tds_process_cancel(conn.tds_socket)
 
     conn.clear_metadata()
 
