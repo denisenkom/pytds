@@ -458,6 +458,11 @@ class Connection(object):
         except Exception, e:
             raise OperationalError('Cannot begin transaction: ' + str(e[0]))
 
+    def clr_err(self):
+        self.last_msg_no = 0
+        self.last_msg_severity = 0
+        self.last_msg_state = 0
+
     def _int_handler(self):
         raise Exception('not implemented')
 
@@ -503,7 +508,7 @@ class Connection(object):
         """
         logger.debug("MSSQLConnection.cancel()")
         assert_connected(self)
-        clr_err(self)
+        self.clr_err()
 
         tds_send_cancel(self.tds_socket)
         tds_process_cancel(self.tds_socket)
@@ -531,7 +536,7 @@ class Connection(object):
         if not self._connected:
             return None
 
-        clr_err(self)
+        self.clr_err()
 
         tds = self.tds_socket
         if tds:
@@ -689,7 +694,7 @@ class Connection(object):
         logger.debug("Connection.nextresult()")
 
         assert_connected(self)
-        clr_err(self)
+        self.clr_err()
 
         rtc = self._nextrow()
         check_cancel_and_raise(rtc, self)
@@ -1154,7 +1159,7 @@ class Cursor(object):
         Helper method used by fetchone and fetchmany to fetch and handle
         """
         assert_connected(self.conn)
-        clr_err(self.conn)
+        self.conn.clr_err()
         if self.conn.as_dict:
             row = self.conn.fetch_next_row_dict(1)
         else:
@@ -1294,10 +1299,6 @@ def connect(server='.', user='', password='', database='', timeout=0,
 
     return conn
 
-def clr_err(conn):
-    conn.last_msg_no = 0
-    conn.last_msg_severity = 0
-    conn.last_msg_state = 0
 
 def _tds_ver_str_to_constant(verstr):
     """
@@ -1536,7 +1537,7 @@ def maybe_raise_MSSQLDatabaseException(conn):
     ex.state = get_last_msg_state(conn)
     ex.line = get_last_msg_line(conn)
     conn.cancel()
-    clr_err(conn)
+    conn.clr_err()
     raise ex
 
 def assert_connected(conn):
