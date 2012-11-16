@@ -899,14 +899,14 @@ class Connection(object):
         check_cancel_and_raise(rtc, self)
 
         while rtc != NO_MORE_ROWS:
-            rtc = dbnextrow(self)
+            rtc = self._nextrow()
             check_cancel_and_raise(rtc, self)
 
         self.last_dbresults = 0
         self.get_result()
 
         if self.last_dbresults != NO_MORE_RESULTS:
-            return 1
+            return True
 
     def fetch_next_row(self, throw):
         logger.debug("MSSQLConnection.fetch_next_row() BEGIN")
