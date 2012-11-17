@@ -289,7 +289,6 @@ class Connection(object):
     def __init__(self, server, user, password,
             charset, database, appname, port, tds_version,
             as_dict, encryption_level, login_timeout, timeout):
-        self.conn = self
         self._autocommit = False
         logger.debug("Connection.__init__()")
         self._connected = 0
@@ -347,9 +346,7 @@ class Connection(object):
             login.charset = self._charset
 
         # Connect to the server
-        msdblib = True
         try:
-            self.msdblib = msdblib
             tds_set_server(login, server)
             ctx = tds_alloc_context()
             ctx.msg_handler = self._msg_handler
@@ -358,9 +355,8 @@ class Connection(object):
             self.tds_socket = tds_alloc_socket(ctx, 512)
             self.tds_socket.chunk_handler = MemoryChunkedHandler()
             self.tds_socket.env_chg_func = self._db_env_chg
-            self.envchange_rcv = 0
-            self.dbcurdb = ''
-            self.servcharset = ''
+            self._curdb = ''
+            self._servcharset = ''
             login.option_flag2 &= ~0x02 # we're not an ODBC driver
             tds_fix_login(login) # initialize from Environment variables
 
@@ -476,11 +472,10 @@ class Connection(object):
 
         logger.debug("db_env_chg(%d, %s, %s)", type, oldval, newval)
 
-        self.envchange_rcv |= (1 << (type - 1))
         if type == TDS_ENV_DATABASE:
-            self.dbcurdb = newval
+            self._curdb = newval
         elif type == TDS_ENV_CHARSET:
-            self.servcharset = newval
+            self._servcharset = newval
 
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
@@ -805,7 +800,6 @@ class Connection(object):
                     logger.debug('converted query: {0}'.format(query_string))
                     logger.debug('params: {0}'.format(params))
                 tds_submit_query(self.tds_socket, query_string, params)
-                self.envchange_rcv = 0
                 self.dbresults_state = DB_RES_INIT
                 rtc = self._sqlok()
             check_cancel_and_raise(rtc, self)
@@ -963,7 +957,7 @@ class Connection(object):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
-        assert_connected(self.conn)
+        assert_connected(self)
         self.clr_err()
         self.get_result()
 
