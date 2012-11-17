@@ -628,7 +628,6 @@ class Connection(object):
         if not resinfo or self.dbresults_state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
             logger.debug("leaving _nextrow() returning %d (NO_MORE_ROWS)", NO_MORE_ROWS)
-            self.row_type = NO_MORE_ROWS
             return NO_MORE_ROWS
 
         #
@@ -636,7 +635,6 @@ class Connection(object):
         # Else read from the stream, unless the buffer is exhausted.  
         # If no rows are read, DBROWTYPE() will report NO_MORE_ROWS. 
         #/
-        self.row_type = NO_MORE_ROWS
         computeid = REG_ROW
         mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
 
@@ -648,7 +646,7 @@ class Connection(object):
                     computeid = tds.current_results.computeid
                 # Add the row to the row buffer, whose capacity is always at least 1
                 resinfo = tds.current_results
-                result = self.row_type = REG_ROW if res_type == TDS_ROW_RESULT else computeid
+                result = REG_ROW if res_type == TDS_ROW_RESULT else computeid
                 #_, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
             else:
                 self.dbresults_state = DB_RES_NEXT_RESULT
