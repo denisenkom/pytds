@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, date, time, timedelta, tzinfo
 from StringIO import StringIO
 from tds import *
 from tdsproto import *
@@ -148,15 +148,15 @@ def to_python(tds, data, type, length):
     elif type in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
         return tds_datecrack(type, data)
 
-    elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT):
-        return data[:length]
+    elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY):
+        return data
 
     elif type == SYBUUID and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
         raise Exception('not implemented')
         #return uuid.UUID(bytes_le=(<char *>data)[:length])
 
     else:
-        return data[:length]
+        raise Exception('unknown type')
 #
 # Read a data from wire
 # \param tds state information for the socket and the TDS protocol
@@ -685,16 +685,87 @@ def tds_convert_string(tds, char_conv, s):
     return char_conv['to_wire'](s)
 
 def tds_msdatetime_get_info(tds, col):
-    raise Exception('not implemented')
     col.column_scale = col.column_prec = 0
     if col.column_type != SYBMSDATE:
         col.column_scale = col.column_prec = tds_get_byte(tds)
         if col.column_prec > 7:
             raise Exception('TDS_FAIL')
-    col.on_server.column_size = col.column_size = sizeof(TDS_DATETIMEALL)
+
+ZERO = timedelta(0)
+
+# A class building tzinfo objects for fixed-offset time zones.
+# Note that FixedOffset(0, "UTC") is a different way to build a
+# UTC tzinfo object.
+
+class FixedOffset(tzinfo):
+    """Fixed offset in minutes east from UTC."""
+
+    def __init__(self, offset, name):
+        self.__offset = timedelta(minutes = offset)
+        self.__name = name
+
+    def utcoffset(self, dt):
+        return self.__offset
+
+    def tzname(self, dt):
+        return self.__name
+
+    def dst(self, dt):
+        return ZERO
 
 def tds_msdatetime_get(tds, col):
-    raise Exception('unimplemented')
+    size = tds_get_byte(tds)
+    if size == 0:
+        col.column_cur_size = -1
+        col.value = None
+        return
+
+    if col.column_type == SYBMSDATETIMEOFFSET:
+        size -= 2
+    if col.column_type != SYBMSTIME:
+        size -= 3
+    if size < 0:
+        raise Exception('TDS_FAIL')
+
+    # get time part
+    nanoseconds = 0
+    if col.column_type != SYBMSDATE:
+        assert size >= 3 and size <= 5
+        if size < 3 or size > 5:
+            raise Exception('TDS_FAIL')
+        time_buf = tds_get_n(tds, size)
+        val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(time_buf), 0)
+        for i in range(col.column_prec, 7):
+            val *= 10
+        nanoseconds = val*100
+
+    # get date part
+    days = 0
+    if col.column_type != SYBMSTIME:
+        date_buf = tds_get_n(tds, 3)
+        val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(date_buf), 0)
+        days = val - 693595
+
+    # get time offset
+    tz = None
+    if col.column_type == SYBMSDATETIMEOFFSET:
+        offset = tds_get_smallint(tds)
+        if offset > 840 or offset < -840:
+            raise Exception('TDS_FAIL')
+        tz = FixedOffset(offset, '')
+
+    if col.column_type == SYBMSTIME:
+        hours = nanoseconds/1000000000/60/60
+        nanoseconds -= hours*60*60*1000000000
+        minutes = nanoseconds/1000000000/60
+        nanoseconds -= minutes*60*1000000000
+        seconds = nanoseconds/1000000000
+        nanoseconds -= seconds*1000000000
+        col.value = time(hours, minutes, seconds, nanoseconds/1000)
+    elif col.column_type == SYBMSDATE:
+        col.value = date(1900, 1, 1) + timedelta(days=days)
+    else:
+        col.value = datetime(1900, 1, 1, tzinfo=tz) + timedelta(days=days, microseconds=nanoseconds/1000)
 
 def tds_msdatetime_row_len(col):
     raise Exception('unneeded')

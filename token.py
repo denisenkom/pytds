@@ -695,7 +695,7 @@ def tds7_process_result(tds):
     for col in range(num_cols):
         curcol = info.columns[col]
 
-        if curcol.column_namelen > 0:
+        if curcol.column_name:
             name = curcol.column_name
         #tdsdump_log(TDS_DBG_INFO1, " %-20s %7d/%-7d %7d/%-7d %7d\n", 
         #                                name, 
@@ -719,7 +719,7 @@ def tds7_get_data_info(tds, curcol):
     CHECK_TDS_EXTRA(tds)
     CHECK_COLUMN_EXTRA(curcol)
 
-    #/*  User defined data type of the column */
+    # User defined data type of the column
     curcol.column_usertype = tds_get_int(tds) if IS_TDS72_PLUS(tds) else tds_get_smallint(tds)
 
     curcol.column_flags = tds_get_smallint(tds) # Flags
@@ -735,7 +735,7 @@ def tds7_get_data_info(tds, curcol):
     curcol.funcs.get_info(tds, curcol)
 
     # Adjust column size according to client's encoding
-    curcol.on_server.column_size = curcol.column_size
+    #curcol.on_server.column_size = curcol.column_size
 
     # NOTE adjustements must be done after curcol->char_conv initialization
     adjust_character_column_size(tds, curcol)
@@ -745,19 +745,16 @@ def tds7_get_data_info(tds, curcol):
     # number of bytes...tds_get_string handles this
     #
     curcol.column_name = tds_get_string(tds, tds_get_byte(tds))
-    curcol.column_namelen = len(curcol.column_name)
 
     logger.debug("tds7_get_data_info: \n"
                 "\tcolname = %s (%d bytes)\n"
                 "\ttype = %d (%s)\n"
                 "\tserver's type = %d (%s)\n"
-                "\tcolumn_varint_size = %d\n"
-                "\tcolumn_size = %d (%d on server)" % (
+                "\tcolumn_varint_size = %d" % (
                 curcol.column_name, len(curcol.column_name), 
                 curcol.column_type, tds_prtype(curcol.column_type),
                 curcol.on_server.column_type, tds_prtype(curcol.on_server.column_type),
-                curcol.column_varint_size,
-                curcol.column_size, curcol.on_server.column_size))
+                curcol.column_varint_size))
 
     CHECK_COLUMN_EXTRA(curcol)
 
