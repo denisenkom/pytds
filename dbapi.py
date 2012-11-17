@@ -391,10 +391,8 @@ class Connection(object):
             SET TEXTSIZE 2147483647;
         '''
         self.execute_non_query(query)
-        try:
-            self.execute_non_query('BEGIN TRAN')
-        except Exception, e:
-            raise OperationalError('Cannot start transaction: ' + str(e[0]))
+        tds_submit_begin_tran(self.tds_socket)
+        self._sqlok()
 
     def autocommit(self, status):
         """
@@ -404,8 +402,12 @@ class Connection(object):
         if status == self._autocommit:
             return
 
-        tran_type = 'ROLLBACK' if status else 'BEGIN'
-        self.execute_non_query('%s TRAN' % tran_type)
+        self.cancel()
+        if status:
+            tds_submit_rollback(self.tds_socket, False)
+        else:
+            tds_submit_begin_tran(self.tds_socket)
+        self._sqlok()
         self._autocommit = status
 
     def commit(self):
@@ -413,11 +415,13 @@ class Connection(object):
         Commit transaction which is currently in progress.
         """
 
-        if self._autocommit == True:
+        if self._autocommit:
             return
 
+        self.cancel()
         try:
-            self.execute_non_query('COMMIT TRAN; BEGIN TRAN')
+            tds_submit_commit(self.tds_socket, True)
+            self._sqlok()
         except Exception, e:
             raise OperationalError('Cannot commit transaction: ' + str(e[0]))
 
@@ -432,29 +436,13 @@ class Connection(object):
         """
         Roll back transaction which is currently in progress.
         """
-        if self._autocommit == True:
+        if self._autocommit:
             return
 
+        self.cancel()
         try:
-            self.execute_non_query('ROLLBACK TRAN')
-        except MSSQLException, e:
-            # PEP 249 indicates that we have contract with the user that we will
-            # always have a transaction in place if autocommit is False.
-            # Therefore, it seems logical to ignore this exception since it
-            # indicates a situation we shouldn't ever encounter anyway.  However,
-            # it can happen when an error is severe enough to cause a
-            # "batch-abort".  In that case, SQL Server *implicitly* rolls back
-            # the transaction for us (how helpful!).  But there doesn't seem
-            # to be any way for us to know if an error is severe enough to cause
-            # a batch abort:
-            #   http://stackoverflow.com/questions/5877162/why-does-microsoft-sql-server-implicitly-rollback-when-a-create-statement-fails
-            #
-            # the alternative is to do 'select @@trancount' before each rollback
-            # but that is slower and doesn't seem to offer any benefit.
-            if 'The ROLLBACK TRANSACTION request has no corresponding BEGIN TRANSACTION' not in str(e):
-                raise
-        try:
-            self.execute_non_query('BEGIN TRAN')
+            tds_submit_rollback(self.tds_socket, True)
+            self._sqlok()
         except Exception, e:
             raise OperationalError('Cannot begin transaction: ' + str(e[0]))
 

@@ -516,3 +516,61 @@ def tds7_put_params_definition(tds, param_definition):
         tds_put_s(tds, tds.collation)
     TDS_PUT_INT(tds, param_length if param_length else -1)
     tds_put_s(tds, param_definition)
+
+def tds_submit_begin_tran(tds):
+    logger.debug('tds_submit_begin_tran()')
+    if IS_TDS72(tds):
+        if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+            raise Exception('TDS_FAIL')
+
+        tds.out_flag = TDS7_TRANS
+        tds_start_query(tds)
+
+        # begin transaction
+        tds_put_smallint(tds, 5)
+        tds_put_byte(tds, 0) # new transaction level TODO
+        tds_put_byte(tds, 0) # new transaction name
+
+        tds_query_flush_packet(tds)
+    else:
+        tds_submit_query(tds, "BEGIN TRANSACTION")
+
+def tds_submit_rollback(tds, cont):
+    logger.debug('tds_submit_rollback(%s)', cont)
+    if not IS_TDS72(tds):
+        if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+            raise Exception('TDS_FAIL')
+
+        tds.out_flag = TDS7_TRANS
+        tds_start_query(tds)
+        tds_put_smallint(tds, 8) # rollback
+        tds_put_byte(tds, 0) # name
+        if cont:
+            tds_put_byte(tds, 1)
+            tds_put_byte(tds, 0) # new transaction level TODO
+            tds_put_byte(tds, 0) # new transaction name
+        else:
+            tds_put_byte(tds, 0) # do not continue
+        tds_query_flush_packet(tds);
+    else:
+        tds_submit_query(tds, "IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
+
+def tds_submit_commit(tds, cont):
+    logger.debug('tds_submit_commit(%s)', cont)
+    if IS_TDS72(tds):
+        if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+            raise Exception('TDS_FAIL')
+
+        tds.out_flag = TDS7_TRANS
+        tds_start_query(tds)
+        tds_put_smallint(tds, 7) # commit
+        tds_put_byte(tds, 0) # name
+        if cont:
+            tds_put_byte(tds, 1)
+            tds_put_byte(tds, 0) # new transaction level TODO
+            tds_put_byte(tds, 0) # new transaction name
+        else:
+            tds_put_byte(tds, 0) # do not continue
+        tds_query_flush_packet(tds)
+    else:
+        tds_submit_query(tds, "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
