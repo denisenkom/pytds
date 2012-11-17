@@ -106,7 +106,6 @@ DECIMAL = 5
 ##################
 ## DB-LIB types ##
 ##################
-SQLBINARY = SYBBINARY
 SQLBIT = SYBBIT
 SQLBITN = 104
 SQLCHAR = SYBCHAR
@@ -527,61 +526,6 @@ class Connection(object):
 
         self._connected = 0
 
-    def convert_db_value(self, data, type, length):
-        logger.debug("MSSQLConnection.convert_db_value()")
-
-        if type in (SQLBIT, SQLBITN):
-            return bool(struct.unpack('B', data)[0])
-
-        elif type == SQLINT1 or type == SYBINTN and length == 1:
-            return struct.unpack('b', data)[0]
-
-        elif type == SQLINT2 or type == SYBINTN and length == 2:
-            return struct.unpack('<h', data)[0]
-
-        elif type == SQLINT4 or type == SYBINTN and length == 4:
-            return struct.unpack('<l', data)[0]
-
-        elif type == SQLINT8 or type == SYBINTN and length == 8:
-            return struct.unpack('<q', data)[0]
-
-        elif type == SQLFLT4 or type == SYBFLTN and length == 4:
-            return struct.unpack('f', data)[0]
-
-        elif type == SQLFLT8 or type == SYBFLTN and length == 8:
-            return struct.unpack('d', data)[0]
-
-        elif type in (SQLMONEY, SQLMONEY4, SQLNUMERIC, SQLDECIMAL):
-            raise Exception('not implemented')
-            #dbcol.SizeOfStruct = sizeof(dbcol)
-
-            #if type in (SQLMONEY, SQLMONEY4):
-            #    precision = 4
-            #else:
-            #    precision = dbcol.Scale
-
-            #len = dbconvert(self, type, data, -1, SQLCHAR,
-            #    <BYTE *>buf, NUMERIC_BUF_SZ)
-
-            #with decimal.localcontext() as ctx:
-            #    ctx.prec = precision
-            #    return decimal.Decimal(_remove_locale(buf, len))
-
-        elif type in (SQLDATETIME, SQLDATETIM4, SQLDATETIMN):
-            return tds_datecrack(type, data)
-
-        elif type in (SQLVARCHAR, SQLCHAR, SQLTEXT):
-            if self._charset:
-                return data[:length].decode(self._charset)
-            else:
-                return data[:length]
-
-        elif type == SQLUUID and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
-            raise Exception('not implemented')
-            #return uuid.UUID(bytes_le=(<char *>data)[:length])
-
-        else:
-            return data[:length]
 
     def select_db(self, dbname):
         """
@@ -980,39 +924,11 @@ class Connection(object):
                 raise StopIteration
             return None
 
-        row = list()
-
-        for col in self.tds_socket.res_info.columns:
-            if is_blob_col(col):
-                data = col.column_data.textvalue
-            else:
-                data = col.column_data
-            col_type = col.column_type
-            size = len(data)
-
-            if data == None:
-                row.append(None)
-                continue
-
-            logger.debug('Processing column %s,' \
-                'Got data=%s, coltype=%d, len=%d', col.column_name,
-                data, col_type, size)
-
-            row.append(self.convert_db_value(data, col_type, size))
-        row = tuple(row)
+        cols = self.tds_socket.res_info.columns
+        row = tuple(col.value for col in cols)
         if self.as_dict:
-            row_dict = {}
-
-            for i, col in enumerate(self.tds_socket.res_into.columns):
-                name = col.column_name
-                value = row[i]
-
-                # Add key by column name, only if the column has a name
-                if name:
-                    row_dict[name] = value
-
-                row_dict[i] = value
-
+            row_dict = dict(enumerate(cols))
+            row_dict.update(dict((col.column_name, col.value) for col in cols if col.column_name))
             row = row_dict
         return row
 

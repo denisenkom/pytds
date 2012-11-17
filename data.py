@@ -105,6 +105,58 @@ def tds_data_get_info(tds, col):
 class _Blob():
     pass
 
+def to_python(tds, data, type, length):
+    logger.debug("to_python()")
+
+    if type in (SYBBIT, SYBBITN):
+        return bool(struct.unpack('B', data)[0])
+
+    elif type == SYBINT1 or type == SYBINTN and length == 1:
+        return struct.unpack('b', data)[0]
+
+    elif type == SYBINT2 or type == SYBINTN and length == 2:
+        return struct.unpack('<h', data)[0]
+
+    elif type == SYBINT4 or type == SYBINTN and length == 4:
+        return struct.unpack('<l', data)[0]
+
+    elif type == SYBINT8 or type == SYBINTN and length == 8:
+        return struct.unpack('<q', data)[0]
+
+    elif type == SYBREAL or type == SYBFLTN and length == 4:
+        return struct.unpack('f', data)[0]
+
+    elif type == SYBFLT8 or type == SYBFLTN and length == 8:
+        return struct.unpack('d', data)[0]
+
+    elif type in (SYBMONEY, SYBMONEY4, SYBNUMERIC, SYBDECIMAL):
+        raise Exception('not implemented')
+        #dbcol.SizeOfStruct = sizeof(dbcol)
+
+        #if type in (SQLMONEY, SQLMONEY4):
+        #    precision = 4
+        #else:
+        #    precision = dbcol.Scale
+
+        #len = dbconvert(self, type, data, -1, SQLCHAR,
+        #    <BYTE *>buf, NUMERIC_BUF_SZ)
+
+        #with decimal.localcontext() as ctx:
+        #    ctx.prec = precision
+        #    return decimal.Decimal(_remove_locale(buf, len))
+
+    elif type in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
+        return tds_datecrack(type, data)
+
+    elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT):
+        return data[:length]
+
+    elif type == SYBUUID and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
+        raise Exception('not implemented')
+        #return uuid.UUID(bytes_le=(<char *>data)[:length])
+
+    else:
+        return data[:length]
 #
 # Read a data from wire
 # \param tds state information for the socket and the TDS protocol
@@ -140,7 +192,8 @@ def tds_data_get(tds, curcol):
         if colsize == 0:
             colsize = -1;
     elif cvs == 8:
-        return tds72_get_varmax(tds, curcol)
+        curcol.value = tds72_get_varmax(tds, curcol)
+        return
     elif cvs == 2:
         colsize = tds_get_smallint(tds)
     elif cvs == 1:
@@ -159,7 +212,8 @@ def tds_data_get(tds, curcol):
     # set NULL flag in the row buffer
     if colsize < 0:
         curcol.column_cur_size = -1
-        return TDS_SUCCESS
+        curcol.value = None
+        return
 
     #
     # We're now set to read the data from the wire.  For varying types (e.g. char/varchar)
@@ -180,15 +234,16 @@ def tds_data_get(tds, curcol):
         if new_blob_size == 0:
             curcol.column_cur_size = 0
             blob.textvalue = b''
-            return TDS_SUCCESS
+            curcol.value = ''
+            return
 
         curcol.column_cur_size = new_blob_size
         # read the data
         if USE_ICONV(tds) and curcol.char_conv:
-            tds_get_char_data(tds, blob, colsize, curcol)
+            curcol.value = tds_get_char_data(tds, blob, colsize, curcol)
         else:
             assert colsize == new_blob_size
-            blob.textvalue = tds_get_n(tds, colsize)
+            curcol.value = tds_get_n(tds, colsize)
     else: # non-numeric and non-blob
         curcol.column_cur_size = colsize
 
@@ -227,42 +282,7 @@ def tds_data_get(tds, curcol):
                     if colsize < curcol.column_size:
                         curcol.column_data.extend(fillchar*(curcol.column_size - colsize))
                     colsize = curcol.column_size
-
-#ifdef WORDS_BIGENDIAN
-#    /*
-#        * MS SQL Server 7.0 has broken date types from big endian
-#        * machines, this swaps the low and high halves of the
-#        * affected datatypes
-#        *
-#        * Thought - this might be because we don't have the
-#        * right flags set on login.  -mjs
-#        *
-#        * Nope its an actual MS SQL bug -bsb
-#        */
-#    /* TODO test on login, remove configuration -- freddy77 */
-#    if (tds_conn(tds)->broken_dates &&
-#        (curcol->column_type == SYBDATETIME ||
-#            curcol->column_type == SYBDATETIME4 ||
-#            curcol->column_type == SYBDATETIMN ||
-#            curcol->column_type == SYBMONEY ||
-#            curcol->column_type == SYBMONEY4 || (curcol->column_type == SYBMONEYN && curcol->column_size > 4)))
-#            /*
-#                * above line changed -- don't want this for 4 byte SYBMONEYN
-#                * values (mlilback, 11/7/01)
-#                */
-#    {
-#            unsigned char temp_buf[8];
-#
-#            memcpy(temp_buf, dest, colsize / 2);
-#            memcpy(dest, &dest[colsize / 2], colsize / 2);
-#            memcpy(&dest[colsize / 2], temp_buf, colsize / 2);
-#    }
-#    if (tds_conn(tds)->emul_little_endian) {
-#            tdsdump_log(TDS_DBG_INFO1, "swapping coltype %d\n", tds_get_conversion_type(curcol->column_type, colsize));
-#            tds_swap_datatype(tds_get_conversion_type(curcol->column_type, colsize), dest);
-#    }
-#endif
-    return TDS_SUCCESS
+        curcol.value = to_python(tds, curcol.column_data, curcol.column_type, curcol.column_size)
 
 def tds_data_row_len(tds):
     raise Exception('not implemented')
@@ -273,9 +293,8 @@ def tds72_get_varmax(tds, curcol):
     # NULL
     if size == -1:
         curcol.column_cur_size = -1
-        return TDS_SUCCESS
+        return None
 
-    blob = curcol.column_data = _Blob()
     chunk_handler = tds.chunk_handler
     chunk_handler.begin(curcol, size)
     decoder = None
@@ -287,14 +306,11 @@ def tds72_get_varmax(tds, curcol):
             if decoder:
                 val = decoder.decode('', True)
                 chunk_handler.new_chunk(val)
-            blob.textvalue = chunk_handler.end()
-            curcol.column_cur_size = len(blob.textvalue)
-            return TDS_SUCCESS
+            return chunk_handler.end()
         val = tds_get_n(tds, chunk_len)
         if decoder:
             val = decoder.decode(val)
         chunk_handler.new_chunk(val)
-    return TDS_SUCCESS
 
 def tds_data_put_info(tds, col):
     size = tds_fix_column_size(tds, col)
