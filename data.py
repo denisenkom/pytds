@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, date, time, timedelta, tzinfo
+from decimal import Decimal
 from StringIO import StringIO
 from tds import *
 from tdsproto import *
@@ -129,21 +130,16 @@ def to_python(tds, data, type, length):
     elif type == SYBFLT8 or type == SYBFLTN and length == 8:
         return struct.unpack('d', data)[0]
 
-    elif type in (SYBMONEY, SYBMONEY4, SYBNUMERIC, SYBDECIMAL):
-        raise Exception('not implemented')
-        #dbcol.SizeOfStruct = sizeof(dbcol)
-
-        #if type in (SQLMONEY, SQLMONEY4):
-        #    precision = 4
-        #else:
-        #    precision = dbcol.Scale
-
-        #len = dbconvert(self, type, data, -1, SQLCHAR,
-        #    <BYTE *>buf, NUMERIC_BUF_SZ)
-
-        #with decimal.localcontext() as ctx:
-        #    ctx.prec = precision
-        #    return decimal.Decimal(_remove_locale(buf, len))
+    elif type in (SYBMONEY, SYBMONEY4, SYBMONEYN):
+        if length == 8:
+            hi, lo = struct.unpack('<lL', data)
+            val = hi * (2 ** 32) + lo
+        elif length == 4:
+            val, = struct.unpack('<l', data)
+        else:
+            raise Exception('unsupported size of money type')
+        val = Decimal(val)/10000
+        return val
 
     elif type in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
         return tds_datecrack(type, data)
@@ -151,12 +147,12 @@ def to_python(tds, data, type, length):
     elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY):
         return data
 
-    elif type == SYBUUID and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
+    elif type == SYBUNIQUE and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
         raise Exception('not implemented')
         #return uuid.UUID(bytes_le=(<char *>data)[:length])
 
     else:
-        raise Exception('unknown type')
+        raise Exception('unknown type {0}'.format(type))
 #
 # Read a data from wire
 # \param tds state information for the socket and the TDS protocol
@@ -485,7 +481,6 @@ def tds_numeric_get_info(tds, col):
     col.column_prec = tds_get_byte(tds)
     col.column_scale = tds_get_byte(tds)
     # FIXME check prec/scale, don't let server crash us
-    return TDS_SUCCESS
 
 numeric_format = struct.Struct('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB')
 
@@ -499,38 +494,43 @@ def tds_numeric_get(tds,  curcol):
     CHECK_TDS_EXTRA(tds)
     CHECK_COLUMN_EXTRA(curcol)
 
-    import pdb; pdb.set_trace()
     colsize = tds_get_byte(tds)
 
     # set NULL flag in the row buffer
     if colsize <= 0:
         curcol.column_cur_size = -1
-        return TDS_SUCCESS
+        curcol.value = None
+        return
 
     #
     # Since these can be passed around independent
     # of the original column they came from, we embed the TDS_NUMERIC datatype in the row buffer
     # instead of using the wire representation, even though it uses a few more bytes.
     #
-    curcol.column_data = num = _Numeric()
+    #curcol.column_data = num = _Numeric()
     # TODO perhaps it would be fine to change format ??
-    num.precision = curcol.column_prec
-    num.scale = curcol.column_scale
+    #num.precision = curcol.column_prec
+    scale = curcol.column_scale
 
     # server is going to crash freetds ??
     # TODO close connection it server try to do so ??
     if colsize > 33:
-        return TDS_FAIL
-    num.array = tds_get_n(tds, colsize)
+        raise Exception('TDS_FAIL')
+    positive = tds_get_byte(tds)
+    buf = tds_get_n(tds, colsize - 1)
 
     if IS_TDS7_PLUS(tds):
-        from token import tds_swap_numeric
-        tds_swap_numeric(num)
+        val = reduce(lambda acc, val: acc*256 + ord(val), reversed(buf), 0)
+        val = Decimal(val)
+        if not positive:
+            val *= -1
+        val /= 10 ** scale
+        curcol.value = val
+    else:
+        raise Exception('not supported')
 
     # corrected colsize for column_cur_size
     curcol.column_cur_size = numeric_format.size
-
-    return TDS_SUCCESS
 
 def tds_numeric_put_info(tds):
     raise Exception('not implemented')
