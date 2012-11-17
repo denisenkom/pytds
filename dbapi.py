@@ -975,30 +975,6 @@ class Connection(object):
         finally:
             logger.debug("MSSQLConnection.get_result() END")
 
-    def get_row(self, row_info):
-        logger.debug("MSSQLConnection.get_row()")
-
-        record = tuple()
-
-        for col in self.tds_socket.res_info.columns:
-            if is_blob_col(col):
-                data = col.column_data.textvalue
-            else:
-                data = col.column_data
-            col_type = col.column_type
-            size = len(data)
-
-            if data == None:
-                record += (None,)
-                continue
-
-            logger.debug('Processing column %s,' \
-                'Got data=%s, coltype=%d, len=%d', col.column_name,
-                data, col_type, size)
-
-            record += (self.convert_db_value(data, col_type, size),)
-        return record
-
     def _getrow(self, throw):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
@@ -1028,19 +1004,38 @@ class Connection(object):
                 raise StopIteration
             return None
 
-        row = self.get_row(rtc)
+        row = list()
+
+        for col in self.tds_socket.res_info.columns:
+            if is_blob_col(col):
+                data = col.column_data.textvalue
+            else:
+                data = col.column_data
+            col_type = col.column_type
+            size = len(data)
+
+            if data == None:
+                row.append(None)
+                continue
+
+            logger.debug('Processing column %s,' \
+                'Got data=%s, coltype=%d, len=%d', col.column_name,
+                data, col_type, size)
+
+            row.append(self.convert_db_value(data, col_type, size))
+        row = tuple(row)
         if self.as_dict:
             row_dict = {}
 
-            for col in xrange(1, self.num_columns + 1):
-                name = self.column_names[col - 1]
-                value = row[col - 1]
+            for i, col in enumerate(self.tds_socket.res_into.columns):
+                name = col.column_name
+                value = row[i]
 
                 # Add key by column name, only if the column has a name
                 if name:
                     row_dict[name] = value
 
-                row_dict[col - 1] = value
+                row_dict[i] = value
 
             row = row_dict
         return row
@@ -1213,9 +1208,6 @@ class Cursor(object):
             raise OperationalError, e[0]
         except MSSQLDriverException, e:
             raise InterfaceError, e[0]
-
-    def nextresult(self):
-        self._source.nextresult()
 
     def setinputsizes(self, sizes=None):
         """
