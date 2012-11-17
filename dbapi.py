@@ -1245,11 +1245,11 @@ def check_and_raise(rtc, conn):
         return maybe_raise_MSSQLDatabaseException(conn)
 
 def check_cancel_and_raise(rtc, conn):
-    if rtc == FAIL:
-        conn.cancel()
-        return maybe_raise_MSSQLDatabaseException(conn)
-    elif get_last_msg_str(conn):
-        return maybe_raise_MSSQLDatabaseException(conn)
+    #if rtc == FAIL:
+    #    conn.cancel()
+    #    return maybe_raise_MSSQLDatabaseException(conn)
+    #elif get_last_msg_str(conn):
+    return maybe_raise_MSSQLDatabaseException(conn)
 
 ######################
 ## Helper Functions ##
