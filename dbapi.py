@@ -709,54 +709,6 @@ class Connection(object):
         if self.last_dbresults != NO_MORE_RESULTS:
             return True
 
-    def fetch_next_row(self, throw):
-        logger.debug("MSSQLConnection.fetch_next_row() BEGIN")
-        try:
-            self.get_result()
-
-            if self.last_dbresults == NO_MORE_RESULTS:
-                logger.debug("MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
-                self.clear_metadata()
-                if throw:
-                    raise StopIteration
-                return None
-
-            rtc = self._nextrow()
-
-            check_cancel_and_raise(rtc, self)
-
-            if rtc == NO_MORE_ROWS:
-                logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
-                self.clear_metadata()
-                # 'rows_affected' is nonzero only after all records are read
-                tds_socket = self.tds_socket
-                self._rows_affected = tds_socket.rows_affected
-                if throw:
-                    raise StopIteration
-                return None
-
-            return self.get_row(rtc)
-        finally:
-            logger.debug("MSSQLConnection.fetch_next_row() END")
-
-    def fetch_next_row_dict(self, throw):
-        logger.debug("MSSQLConnection.fetch_next_row_dict()")
-
-        row_dict = {}
-        row = self.fetch_next_row(throw)
-
-        for col in xrange(1, self.num_columns + 1):
-            name = self.column_names[col - 1]
-            value = row[col - 1]
-
-            # Add key by column name, only if the column has a name
-            if name:
-                row_dict[name] = value
-
-            row_dict[col - 1] = value
-
-        return row_dict
-
     def _sqlok(self):
         return_code = SUCCEED
         logger.debug("dbsqlok()")
@@ -1047,6 +999,52 @@ class Connection(object):
             record += (self.convert_db_value(data, col_type, size),)
         return record
 
+    def _getrow(self, throw):
+        """
+        Helper method used by fetchone and fetchmany to fetch and handle
+        """
+        assert_connected(self.conn)
+        self.clr_err()
+        self.get_result()
+
+        if self.last_dbresults == NO_MORE_RESULTS:
+            logger.debug("MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
+            self.clear_metadata()
+            if throw:
+                raise StopIteration
+            return None
+
+        rtc = self._nextrow()
+
+        check_cancel_and_raise(rtc, self)
+
+        if rtc == NO_MORE_ROWS:
+            logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
+            self.clear_metadata()
+            # 'rows_affected' is nonzero only after all records are read
+            tds_socket = self.tds_socket
+            self._rows_affected = tds_socket.rows_affected
+            if throw:
+                raise StopIteration
+            return None
+
+        row = self.get_row(rtc)
+        if self.as_dict:
+            row_dict = {}
+
+            for col in xrange(1, self.num_columns + 1):
+                name = self.column_names[col - 1]
+                value = row[col - 1]
+
+                # Add key by column name, only if the column has a name
+                if name:
+                    row_dict[name] = value
+
+                row_dict[col - 1] = value
+
+            row = row_dict
+        return row
+
 ##################
 ## Cursor class ##
 ##################
@@ -1065,7 +1063,6 @@ class Cursor(object):
         self.conn = conn
         self.description = None
         self._batchsize = 1
-        self._rownumber = 0
         self._returnvalue = None
 
     def __iter__(self):
@@ -1101,13 +1098,11 @@ class Cursor(object):
 
     def execute(self, operation, params=()):
         self.description = None
-        self._rownumber = 0
 
         try:
             self._source.format_and_run_query(operation, params)
             self._source.get_result()
             self.description = self._source.get_header()
-            self._rownumber = self._source.rows_affected
 
         except MSSQLDatabaseException, e:
             if e.number in prog_errors:
@@ -1120,12 +1115,9 @@ class Cursor(object):
 
     def executemany(self, operation, params_seq):
         self.description = None
-        rownumber = 0
         for params in params_seq:
             self.execute(operation, params)
             # support correct rowcount across multiple executes
-            rownumber += self._rownumber
-        self._rownumber = rownumber
 
     def execute_scalar(self, query_string, params=None):
         """
@@ -1158,7 +1150,6 @@ class Cursor(object):
         try:
             if not self._source.nextresult():
                 return None
-            self._rownumber = 0
             self.description = self._source.get_header()
             return 1
 
@@ -1169,28 +1160,12 @@ class Cursor(object):
 
         return None
 
-    def getrow(self):
-        """
-        Helper method used by fetchone and fetchmany to fetch and handle
-        """
-        assert_connected(self.conn)
-        self.conn.clr_err()
-        if self.conn.as_dict:
-            row = self.conn.fetch_next_row_dict(1)
-        else:
-            row = self.conn.fetch_next_row(1)
-        self._rownumber = self._source.rows_affected
-        return row
-
     def fetchone(self):
         if self.description is None:
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
         try:
-            return self.getrow()
-
-        except StopIteration:
-            return None
+            return self.conn._getrow(throw=False)
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
         except MSSQLDriverException, e:
@@ -1207,10 +1182,10 @@ class Cursor(object):
         try:
             rows = []
             for i in xrange(size):
-                try:
-                    rows.append(self.getrow())
-                except StopIteration:
+                row = self.conn._getrow(throw=False)
+                if not row:
                     break
+                rows.append(row)
             return rows
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
@@ -1223,7 +1198,6 @@ class Cursor(object):
 
         try:
             rows = [row for row in self]
-            self._rownumber = self._source.rows_affected
             return rows
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
@@ -1232,8 +1206,7 @@ class Cursor(object):
 
     def next(self):
         try:
-            row = self.getrow()
-            self._rownumber += 1
+            row = self.conn._getrow(throw=True)
             return row
 
         except MSSQLDatabaseException, e:
