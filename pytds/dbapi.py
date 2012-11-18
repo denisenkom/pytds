@@ -285,6 +285,18 @@ class Connection(object):
     def chunk_handler_set(self, value):
         self.tds_socket.chunk_handler = value
 
+    def _get_connection(self):
+        if self.tds_socket.is_dead():
+            try:
+                # clear transaction
+                self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
+                tds_connect_and_login(self.tds_socket, self._login)
+            except Exception as e:
+                logger.exception("MSSQLConnection.__init__() connection failed")
+                maybe_raise_MSSQLDatabaseException(self)
+                raise InterfaceError("Connection to the database failed: " + unicode(e))
+        return self.tds_socket
+
     def __init__(self, server, user, password,
             charset, database, appname, port, tds_version,
             as_dict, encryption_level, login_timeout, timeout):
@@ -312,7 +324,7 @@ class Connection(object):
 
         server = server + "\\" + instance if instance else server
 
-        login = tds_alloc_login(1)
+        self._login = login = tds_alloc_login(1)
         # set default values for loginrec
         login.library = "Python TDS Library"
 
@@ -345,32 +357,22 @@ class Connection(object):
             login.charset = self._charset
 
         # Connect to the server
-        try:
-            tds_set_server(login, server)
-            ctx = tds_alloc_context()
-            ctx.msg_handler = self._msg_handler
-            ctx.err_handler = self._err_handler
-            ctx.int_handler = self._int_handler
-            self.tds_socket = tds_alloc_socket(ctx, 512)
-            self.tds_socket.chunk_handler = MemoryChunkedHandler()
-            self.tds_socket.env_chg_func = self._db_env_chg
-            self._curdb = ''
-            self._servcharset = ''
-            login.option_flag2 &= ~0x02 # we're not an ODBC driver
-            tds_fix_login(login) # initialize from Environment variables
+        tds_set_server(login, server)
+        ctx = tds_alloc_context()
+        ctx.msg_handler = self._msg_handler
+        ctx.err_handler = self._err_handler
+        ctx.int_handler = self._int_handler
+        self.tds_socket = tds_alloc_socket(ctx, 512)
+        self.tds_socket.chunk_handler = MemoryChunkedHandler()
+        self.tds_socket.env_chg_func = self._db_env_chg
+        self._curdb = ''
+        self._servcharset = ''
+        login.option_flag2 &= ~0x02 # we're not an ODBC driver
+        tds_fix_login(login) # initialize from Environment variables
 
-            login.connect_timeout = login_timeout
-            login.query_timeout = timeout
+        login.connect_timeout = login_timeout
+        login.query_timeout = timeout
 
-            tds_connect_and_login(self.tds_socket, login)
-        except Exception as e:
-            logger.exception("MSSQLConnection.__init__() connection failed")
-            maybe_raise_MSSQLDatabaseException(self)
-            raise InterfaceError("Connection to the database failed: " + unicode(e))
-
-        self._connected = 1
-
-        logger.debug("MSSQLConnection.__init__() -> dbcmd() setting connection values")
         # Set some connection properties to some reasonable values
         # textsize - http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
         query = '''
@@ -489,7 +491,6 @@ class Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.cancel()")
-        assert_connected(self)
         self.clr_err()
 
         tds_send_cancel(self.tds_socket)
@@ -618,7 +619,6 @@ class Connection(object):
 
         logger.debug("Connection.nextresult()")
 
-        assert_connected(self)
         self.clr_err()
 
         rtc = self._nextrow()
@@ -709,6 +709,7 @@ class Connection(object):
         execute_*() function. It returns NULL on error, None on success.
         """
         logger.debug("MSSQLConnection.format_and_run_query() BEGIN")
+        tds = self._get_connection()
 
         try:
             # Cancel any pending results
@@ -717,7 +718,7 @@ class Connection(object):
             logger.debug(query_string)
 
             rtc = SUCCEED
-            if self.tds_socket.state == TDS_PENDING:
+            if tds.state == TDS_PENDING:
                 raise Exception('not checked')
                 rc, result_type, _ = tds_process_tokens(tds, result_type, TDS_TOKEN_TRAILING)
                 if rc != TDS_NO_MORE_RESULTS:
@@ -741,7 +742,7 @@ class Connection(object):
                         query_string = query_string % rename
                     logger.debug('converted query: {0}'.format(query_string))
                     logger.debug('params: {0}'.format(params))
-                tds_submit_query(self.tds_socket, query_string, params)
+                tds_submit_query(tds, query_string, params)
                 self.dbresults_state = DB_RES_INIT
                 rtc = self._sqlok()
             check_cancel_and_raise(rtc, self)
@@ -899,7 +900,6 @@ class Connection(object):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
-        assert_connected(self)
         self.clr_err()
         self.get_result()
 
@@ -1232,11 +1232,6 @@ def maybe_raise_MSSQLDatabaseException(conn):
     conn.cancel()
     conn.clr_err()
     raise ex
-
-def assert_connected(conn):
-    logger.debug("assert_connected()")
-    if not conn.connected:
-        raise MSSQLDriverException("Not connected to any MS SQL server")
 
 def check_and_raise(rtc, conn):
     if rtc == FAIL:
