@@ -65,6 +65,78 @@ def tds_process_default_tokens(tds, marker):
         return rc
     elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
         tds_process_msg(tds, marker)
+    elif marker == TDS_CAPABILITY_TOKEN:
+        # TODO split two part of capability and use it
+        tok_size = tds_get_smallint(tds)
+        # vicm
+        #
+        # Sybase 11.0 servers return the wrong length in the capability packet, causing use to read
+        # past the done packet.
+        #
+        if not TDS_IS_MSSQL(tds) and tds_conn(tds).product_version < TDS_SYB_VER(12, 0, 0):
+            raise Exception('not supported')
+            #p = tds_conn(tds).capabilities;
+            #pend = tds_conn(tds)->capabilities + TDS_MAX_CAPABILITY;
+
+            #while True:
+            #    type = tds_get_byte(tds)
+            #    size = tds_get_byte(tds)
+            #    if ((p + 2) > pend)
+            #        break
+            #    *p++ = type;
+            #    *p++ = size;
+            #    if ((p + size) > pend)
+            #        break
+            #    if (tds_get_n(tds, p, size) == NULL)
+            #        return TDS_FAIL;
+            #    if type == 2:
+            #        break
+        else:
+            tds_conn(tds).capabilities = tds_get_n(tds, min(tok_size, TDS_MAX_CAPABILITY))
+            # PARAM_TOKEN can be returned inserting text in db, to return new timestamp
+    elif marker == TDS_PARAM_TOKEN:
+        tds_unget_byte(tds)
+        return tds_process_param_result_tokens(tds)
+    elif marker == TDS7_RESULT_TOKEN:
+        return tds7_process_result(tds)
+    elif marker == TDS_OPTIONCMD_TOKEN:
+        return tds5_process_optioncmd(tds)
+    elif marker == TDS_RESULT_TOKEN:
+        return tds_process_result(tds)
+    elif marker == TDS_ROWFMT2_TOKEN:
+        return tds5_process_result(tds)
+    elif marker == TDS_COLNAME_TOKEN:
+        return tds_process_col_name(tds)
+    elif marker == TDS_COLFMT_TOKEN:
+        return tds_process_col_fmt(tds)
+    elif marker == TDS_ROW_TOKEN:
+        return tds_process_row(tds)
+    elif marker == TDS5_PARAMFMT_TOKEN:
+        # store discarded parameters in param_info, not in old dynamic
+        tds.cur_dyn = None
+        return tds_process_dyn_result(tds)
+    elif marker == TDS5_PARAMFMT2_TOKEN:
+        tds.cur_dyn = None
+        return tds5_process_dyn_result2(tds)
+    elif marker == TDS5_PARAMS_TOKEN:
+        # save params
+        return tds_process_params_result_token(tds)
+    elif marker == TDS_CURINFO_TOKEN:
+        return tds_process_cursor_tokens(tds)
+    elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
+        logger.warning("Eating %s token", tds_token_name(marker))
+        tds_skip_n(tds, tds_get_smallint(tds))
+    elif marker == TDS_TABNAME_TOKEN: # used for FOR BROWSE query
+        return tds_process_tabname(tds)
+    elif marker == TDS_COLINFO_TOKEN:
+        return tds_process_colinfo(tds, None, 0)
+    elif marker == TDS_ORDERBY2_TOKEN:
+        logger.warning("Eating %s token", tds_token_name(marker))
+        tds_skip_n(tds, tds_get_int(tds))
+    elif marker == TDS_NBC_ROW_TOKEN:
+        logger.error("error: cannot process TDS_NBC_ROW_TOKEN %d(%x)!", marker, marker)
+        tds_close_socket(tds)
+        raise Exception('TDSEBTOK')
     else:
         tds_close_socket(tds)
         logger.error('Unknown marker: {0}({0:x})'.format(marker))

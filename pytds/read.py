@@ -51,6 +51,18 @@ def tds_get_string(tds, size):
     buf = tds_get_n(tds, size*2)
     return buf.decode('utf16')
 
+def tds_skip_n(tds, need):
+    pos = 0
+    while True:
+        have = tds.in_len - tds.in_pos
+        if need <= have:
+            break
+        pos += have
+        need -= have
+        tds_read_packet(tds)
+    if need > 0:
+        tds.in_pos += need
+
 def tds_get_n(tds, need):
     result = StringIO()
     pos = 0

@@ -12,6 +12,7 @@ except:
     print('Settings module is not found, please create settings module and specify HOST, DATATABSE, USER and PASSWORD there')
     sys.exit(1)
 
+#logging.basicConfig(level='DEBUG')
 logging.basicConfig()
 
 conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, tds_version='7.3')
@@ -75,6 +76,24 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
         self._test_val(Decimal('1234.567'))
         self._test_val(Decimal('1234000'))
 
+class TableTestCase(unittest.TestCase):
+    def setUp(self):
+        cur = conn.cursor()
+        cur.execute(u'''
+        create table testtable (id int)
+        ''')
+        cur.execute(u'''
+        insert into testtable (id) values (1)
+        ''')
+
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute('select id from testtable order by id')
+        self.assertEqual([(1,)], cur.fetchall())
+
+    def tearDown(self):
+        cur = conn.cursor()
+        cur.execute(u'drop table testtable')
 
 #class StoredProcsTestCase(unittest.TestCase):
 #    def setUp(self):
