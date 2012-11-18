@@ -123,6 +123,15 @@ class StoredProcsTestCase(unittest.TestCase):
         cur.callproc('testproc', {'@param': val})
         self.assertEqual(cur.fetchall(), [(val,)])
 
+class CursorCloseTestCase(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute('select 10; select 12')
+        cur.fetchone()
+        cur.close()
+        cur2 = conn.cursor()
+        cur2.execute('select 20')
+        cur2.fetchone()
 
 
 if __name__ == '__main__':
