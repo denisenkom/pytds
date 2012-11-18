@@ -177,8 +177,8 @@ def tds_data_get(tds, curcol):
             # It's a BLOB...
             size = tds_get_byte(tds)
             if size == 16: # Jeff's hack
-                blob.textptr = tds_get_n(tds, 16)
-                blob.timestamp = tds_get_n(tds, 8)
+                textptr = tds_get_n(tds, 16)
+                timestamp = tds_get_n(tds, 8)
                 colsize = tds_get_int(tds)
             else:
                 colsize = -1

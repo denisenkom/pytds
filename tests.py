@@ -80,16 +80,20 @@ class TableTestCase(unittest.TestCase):
     def setUp(self):
         cur = conn.cursor()
         cur.execute(u'''
-        create table testtable (id int)
+        create table testtable (id int, _text text)
         ''')
         cur.execute(u'''
-        insert into testtable (id) values (1)
+        insert into testtable (id, _text) values (1, 'text')
         ''')
 
     def runTest(self):
         cur = conn.cursor()
         cur.execute('select id from testtable order by id')
         self.assertEqual([(1,)], cur.fetchall())
+
+        cur = conn.cursor()
+        cur.execute('select _text from testtable order by id')
+        self.assertEqual([(u'text',)], cur.fetchall())
 
     def tearDown(self):
         cur = conn.cursor()
