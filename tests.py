@@ -61,10 +61,19 @@ class TestCase(unittest.TestCase):
         assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
 
 class ParametrizedQueriesTestCase(unittest.TestCase):
-    def runTest(self):
+    def _test_val(self, val):
         cur = conn.cursor()
-        cur.execute('select %s', (u'hello',))
-        self.assertEqual(cur.fetchall(), [(u'hello',)])
+        cur.execute('select %s', (val,))
+        self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        self._test_val(u'hello')
+        self._test_val(123)
+        self._test_val(-123)
+        self._test_val(123.12)
+        self._test_val(-123.12)
+        self._test_val(datetime(2011, 2, 3, 10, 11, 12, 3000))
+        self._test_val(Decimal('1234.567'))
+        self._test_val(Decimal('1234000'))
 
 
 #class StoredProcsTestCase(unittest.TestCase):

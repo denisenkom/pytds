@@ -105,6 +105,8 @@ def tds_data_get_info(tds, col):
 class _Blob():
     pass
 
+_SYBFLT8_STRUCT = struct.Struct('d')
+
 def to_python(tds, data, type, length):
     logger.debug("to_python()")
 
@@ -127,7 +129,7 @@ def to_python(tds, data, type, length):
         return struct.unpack('f', data)[0]
 
     elif type == SYBFLT8 or type == SYBFLTN and length == 8:
-        return struct.unpack('d', data)[0]
+        return _SYBFLT8_STRUCT.unpack(data)[0]
 
     elif type in (SYBMONEY, SYBMONEY4, SYBMONEYN):
         if length == 8:
@@ -311,6 +313,7 @@ def tds_data_put_info(tds, col):
     if IS_TDS71_PLUS(tds) and is_collate_type(col.on_server.column_type):
         tds_put_s(tds, tds.collation)
 
+
 def tds_data_put(tds, curcol):
     logger.debug("tds_data_put")
     if curcol.value is None:
@@ -361,17 +364,16 @@ def tds_data_put(tds, curcol):
             colsize = min(colsize, size)
             tds_put_smallint(tds, colsize)
         elif vs == 1:
-            colsize = min(colsize, size)
-            tds_put_byte(tds, colsize)
+            tds_put_byte(tds, size)
         elif vs == 0:
             # TODO should be column_size
             colsize = tds_get_size_by_type(curcol.on_server.column_type)
 
         # put real data
         column_type = curcol.on_server.column_type
-        if column_type == SYBINTN and colsize == 4 or column_type == SYBINT4:
+        if column_type == SYBINTN and size == 4 or column_type == SYBINT4:
             tds_put_int(tds, value)
-        elif column_type == SYBINTN and colsize == 8 or column_type == SYBINT8:
+        elif column_type == SYBINTN and size == 8 or column_type == SYBINT8:
             tds_put_int8(tds, value)
         elif column_type in (XSYBNVARCHAR, XSYBNCHAR):
             tds_put_s(tds, value)
@@ -381,6 +383,8 @@ def tds_data_put(tds, curcol):
             days = (value - _base_date).days
             time = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
             tds_put_s(tds, TDS_DATETIME.pack(days, time))
+        elif column_type == SYBFLTN and size == 8 or column_type == SYBFLT8:
+            tds_put_s(tds, _SYBFLT8_STRUCT.pack(value))
         else:
             raise Exception('not implemented')
         # finish chunk for varchar/varbinary(max)
@@ -511,12 +515,43 @@ def tds_numeric_get(tds,  curcol):
     else:
         raise Exception('not supported')
 
+tds_numeric_bytes_per_prec = [
+    #
+    # precision can't be 0 but using a value > 0 assure no
+    # core if for some bug it's 0...
+    #
+    1,
+    2,  2,  3,  3,  4,  4,  4,  5,  5,
+    6,  6,  6,  7,  7,  8,  8,  9,  9,  9,
+    10, 10, 11, 11, 11, 12, 12, 13, 13, 14,
+    14, 14, 15, 15, 16, 16, 16, 17, 17, 18,
+    18, 19, 19, 19, 20, 20, 21, 21, 21, 22,
+    22, 23, 23, 24, 24, 24, 25, 25, 26, 26,
+    26, 27, 27, 28, 28, 28, 29, 29, 30, 30,
+    31, 31, 31, 32, 32, 33, 33, 33
+    ]
 
-def tds_numeric_put_info(tds):
-    raise Exception('not implemented')
+def tds_numeric_put_info(tds, col):
+    tds_put_byte(tds, tds_numeric_bytes_per_prec[col.column_prec])
+    tds_put_byte(tds, col.column_prec)
+    tds_put_byte(tds, col.column_scale)
 
-def tds_numeric_put(tds):
-    raise Exception('not implemented')
+
+def tds_numeric_put(tds, col):
+    scale = col.column_scale
+    size = tds_numeric_bytes_per_prec[col.column_prec]
+    tds_put_byte(tds, size)
+    val = col.value
+    positive = 1 if val > 0 else 0
+    tds_put_byte(tds, positive) # sign
+    if not positive:
+        val *= -1
+    size -= 1
+    val = long(val * (10 ** scale))
+    for i in range(size):
+        tds_put_byte(tds, val % 256)
+        val /= 256
+    assert val == 0
 
 DEFINE_FUNCS('numeric', 'numeric')
 def gen_get_varint_size():

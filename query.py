@@ -61,13 +61,14 @@ def make_param(tds, name, value, output=False):
         col_type = SYBINTN
     elif isinstance(value, int):
         if -2**31 <= value <= 2**31 -1:
-            col_type = SYBINT4
+            col_type = SYBINTN
             size = 4
         else:
             col_type = SYBINT8
             size = 8
     elif isinstance(value, float):
         col_type = SYBFLTN
+        size = 8
     elif isinstance(value, unicode):
         if len(value) > 4000:
             col_type = XSYBNVARCHAR
@@ -81,6 +82,12 @@ def make_param(tds, name, value, output=False):
     elif isinstance(value, datetime):
         col_type = SYBDATETIMN
         size = 8
+    elif isinstance(value, Decimal):
+        col_type = SYBDECIMAL
+        _, digits, exp = value.as_tuple()
+        size = 12
+        column.column_scale = -exp
+        column.column_prec = len(digits)
     else:
         raise Exception('NotSupportedError: Unable to determine database type')
     column.on_server.column_type = col_type
@@ -431,14 +438,14 @@ def tds_get_column_declaration(tds, curcol):
         return "TINYINT"
     elif t == SYBINT2:
         return "SMALLINT"
-    elif t == SYBINT4:
+    elif t == SYBINT4 or t == SYBINTN and size == 4:
         return "INT"
     elif t == SYBINT8:
         # TODO even for Sybase ??
         return "BIGINT"
-    elif t == SYBFLT8:
+    elif t == SYBFLT8 or t == SYBFLTN and size == 8:
         return "FLOAT"
-    elif t == SYBDATETIME:
+    elif t == SYBDATETIME or t == SYBDATETIMN and size == 8:
         return "DATETIME"
     elif t == SYBBIT:
         return "BIT"
@@ -451,7 +458,7 @@ def tds_get_column_declaration(tds, curcol):
         return "SMALLMONEY"
     elif t == SYBMONEY:
         return "MONEY"
-    elif t == SYBDATETIME4:
+    elif t == SYBDATETIME4 or t == SYBDATETIMN and size == 4:
         return "SMALLDATETIME"
     elif t == SYBREAL:
         return "REAL"
@@ -493,7 +500,7 @@ def tds_get_column_declaration(tds, curcol):
     elif t == SYBMSDATETIMEOFFSET:
         return "DATETIMEOFFSET"
     # nullable types should not occur here...
-    elif t in (SYBFLTN, SYBMONEYN, SYBDATETIMN, SYBBITN, SYBINTN):
+    elif t in (SYBMONEYN, SYBDATETIMN, SYBBITN):
         assert False
         # TODO...
     else:
