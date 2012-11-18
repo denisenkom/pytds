@@ -40,7 +40,6 @@ def tds_open_socket(tds, host, port=1433, timeout=0):
 def tds_close_socket(tds):
     if not tds.is_dead():
         tds._sock.close()
-        tds._sock = None
         tds_set_state(tds, TDS_DEAD)
 
 def tds_select(tds, tds_sel, timeout_seconds):
@@ -49,7 +48,7 @@ def tds_select(tds, tds_sel, timeout_seconds):
     while timeout_seconds is None or seconds > 0:
         timeout = poll_seconds * 1000 if poll_seconds else None
         poll = select.poll()
-        poll.register(tds._sock.fileno(), tds_sel)
+        poll.register(tds._sock, tds_sel)
         poll.register(tds_conn(tds).s_signaled, select.POLLIN)
         res = poll.poll(timeout)
         result = 0
