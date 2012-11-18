@@ -287,14 +287,30 @@ class Connection(object):
 
     def _get_connection(self):
         if self.tds_socket.is_dead():
+            # clear transaction
+            self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
+            tds_connect_and_login(self.tds_socket, self._login)
+            # Set some connection properties to some reasonable values
+            # textsize - http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
+            query = '''
+                SET ARITHABORT ON;
+                SET CONCAT_NULL_YIELDS_NULL ON;
+                SET ANSI_NULLS ON;
+                SET ANSI_NULL_DFLT_ON ON;
+                SET ANSI_PADDING ON;
+                SET ANSI_WARNINGS ON;
+                SET ANSI_NULL_DFLT_ON ON;
+                SET CURSOR_CLOSE_ON_COMMIT ON;
+                SET QUOTED_IDENTIFIER ON;
+                SET TEXTSIZE 2147483647;
+            '''
+            cur = self.cursor()
             try:
-                # clear transaction
-                self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
-                tds_connect_and_login(self.tds_socket, self._login)
-            except Exception as e:
-                logger.exception("MSSQLConnection.__init__() connection failed")
-                maybe_raise_MSSQLDatabaseException(self)
-                raise InterfaceError("Connection to the database failed: " + unicode(e))
+                cur.execute(query)
+            finally:
+                cur.close()
+            tds_submit_begin_tran(self.tds_socket)
+            self._sqlok()
         return self.tds_socket
 
     def __init__(self, server, user, password,
@@ -370,24 +386,6 @@ class Connection(object):
 
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
-
-        # Set some connection properties to some reasonable values
-        # textsize - http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
-        query = '''
-            SET ARITHABORT ON;
-            SET CONCAT_NULL_YIELDS_NULL ON;
-            SET ANSI_NULLS ON;
-            SET ANSI_NULL_DFLT_ON ON;
-            SET ANSI_PADDING ON;
-            SET ANSI_WARNINGS ON;
-            SET ANSI_NULL_DFLT_ON ON;
-            SET CURSOR_CLOSE_ON_COMMIT ON;
-            SET QUOTED_IDENTIFIER ON;
-            SET TEXTSIZE 2147483647;
-        '''
-        self.execute_non_query(query)
-        tds_submit_begin_tran(self.tds_socket)
-        self._sqlok()
 
     def autocommit(self, status):
         """
@@ -526,34 +524,11 @@ class Connection(object):
         failure.
         """
         logger.debug("MSSQLConnection.select_db()")
-        self.execute_non_query('use {0}'.format(tds_quote_id(self.tds_socket, dbname)))
-
-    def execute_non_query(self, query_string, params=None):
-        """
-        execute_non_query(query_string, params=None)
-
-        This method sends a query to the MS SQL Server to which this object
-        instance is connected. After completion, its results (if any) are
-        discarded. An exception is raised on failure. If there are any pending
-        results or rows prior to executing this command, they are silently
-        discarded. This method accepts Python formatting. Please see
-        execute_query() for more details.
-
-        This method is useful for INSERT, UPDATE, DELETE and for Data
-        Definition Language commands, i.e. when you need to alter your database
-        schema.
-
-        After calling this method, rows_affected property contains number of
-        rows affected by the last SQL command.
-        """
-        logger.debug("MSSQLConnection.execute_non_query() BEGIN")
-
-        self.format_and_run_query(query_string, params)
-        # getting results
-        self._rows_affected = self.tds_socket.rows_affected
-        # discard results
-        self.cancel()
-        logger.debug("MSSQLConnection.execute_non_query() END")
+        cur = self.cursor()
+        try:
+            cur.execute('use {0}'.format(tds_quote_id(self.tds_socket, dbname)))
+        finally:
+            cur.close()
 
     def _nextrow(self):
         result = FAIL
@@ -666,52 +641,6 @@ class Connection(object):
                 assert TDS_FAILED(tds_code)
                 return FAIL
         return SUCCEED
-
-    def format_and_run_query(self, query_string, params=None):
-        """
-        This is a helper function, which does most of the work needed by any
-        execute_*() function. It returns NULL on error, None on success.
-        """
-        logger.debug("MSSQLConnection.format_and_run_query() BEGIN")
-        tds = self._get_connection()
-
-        try:
-            # Cancel any pending results
-            self.cancel()
-
-            logger.debug(query_string)
-
-            rtc = SUCCEED
-            if tds.state == TDS_PENDING:
-                raise Exception('not checked')
-                rc, result_type, _ = tds_process_tokens(tds, result_type, TDS_TOKEN_TRAILING)
-                if rc != TDS_NO_MORE_RESULTS:
-                    dbperror(self, SYBERPND, 0)
-                    rtc = FAIL
-
-            # Execute the query
-            if rtc == SUCCEED:
-                if params:
-                    if isinstance(params, (list, tuple)):
-                        names = tuple('@P{0}'.format(n) for n in range(len(params)))
-                        if len(names) == 1:
-                            query_string = query_string % names[0]
-                        else:
-                            query_string = query_string % names
-                        params = dict(zip(names, params))
-                    elif isinstance(params, dict):
-                        # prepend names with @
-                        rename = dict((name, '@{0}'.format(name)) for name in params.keys())
-                        params = dict(('@{0}'.format(name), value) for name, value in params.items())
-                        query_string = query_string % rename
-                    logger.debug('converted query: {0}'.format(query_string))
-                    logger.debug('params: {0}'.format(params))
-                tds_submit_query(tds, query_string, params)
-                self._state = DB_RES_INIT
-                rtc = self._sqlok()
-            check_cancel_and_raise(self)
-        finally:
-            logger.debug("MSSQLConnection.format_and_run_query() END")
 
     def _start_results(self):
         result_type = 0
@@ -850,9 +779,12 @@ class Cursor(object):
         :type parameters: sequence
         """
         logger.debug('callproc begin')
-        tds = self._conn._get_connection()
         self._results = None
-        self._state = DB_RES_INIT
+        tds = self._conn._get_connection()
+        if tds.state == TDS_PENDING:
+            rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+            if rc != TDS_NO_MORE_RESULTS:
+                raise InterfaceError('Results are still pending on connection')
         tds_submit_rpc(tds, procname, parameters)
         self._source._state = DB_RES_INIT
         self._source._sqlok()
@@ -863,12 +795,38 @@ class Cursor(object):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
+        self._conn.cancel()
         self._conn = None
 
     def execute(self, operation, params=()):
         self._results = None
         try:
-            self._source.format_and_run_query(operation, params)
+            tds = self._conn._get_connection()
+            if tds.state == TDS_PENDING:
+                rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+                if rc != TDS_NO_MORE_RESULTS:
+                    raise InterfaceError('Results are still pending on connection')
+
+            # Execute the query
+            if params:
+                if isinstance(params, (list, tuple)):
+                    names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                    if len(names) == 1:
+                        operation = operation % names[0]
+                    else:
+                        operation = operation % names
+                    params = dict(zip(names, params))
+                elif isinstance(params, dict):
+                    # prepend names with @
+                    rename = dict((name, '@{0}'.format(name)) for name in params.keys())
+                    params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                    operation = operation % rename
+                logger.debug('converted query: {0}'.format(operation))
+                logger.debug('params: {0}'.format(params))
+            tds_submit_query(tds, operation, params)
+            self._conn._state = DB_RES_INIT
+            self._conn._sqlok()
+            check_cancel_and_raise(self._conn)
 
         except MSSQLDatabaseException, e:
             if e.number in prog_errors:
