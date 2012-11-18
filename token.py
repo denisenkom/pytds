@@ -473,13 +473,13 @@ def tds_process_tokens(tds, flag):
                         if tds.internal_sp_called == TDS_SP_CURSOROPEN and tds.cur_cursor:
                             cursor = tds.cur_cursor
 
-                            cursor.cursor_id = curcol.column_data
+                            cursor.cursor_id = curcol.value
                             logger.debug("stored internal cursor id {0}".format(cursor.cursor_id))
                             cursor.srv_status &= ~(TDS_CUR_ISTAT_CLOSED|TDS_CUR_ISTAT_OPEN|TDS_CUR_ISTAT_DEALLOC)
                             cursor.srv_status |= TDS_CUR_ISTAT_OPEN if cursor.cursor_id else TDS_CUR_ISTAT_CLOSED|TDS_CUR_ISTAT_DEALLOC
                         if (tds.internal_sp_called == TDS_SP_PREPARE or tds.internal_sp_called == TDS_SP_PREPEXEC)\
-                            and tds.cur_dyn and tds.cur_dyn.num_id == 0 and curcol.column_cur_size > 0:
-                                tds.cur_dyn.num_id = curcol.column_data
+                            and tds.cur_dyn and tds.cur_dyn.num_id == 0 and curcol.value:
+                                tds.cur_dyn.num_id = curcol.value
                 else:
                     if SET_RETURN(TDS_PARAM_RESULT, 'PROC'):
                         rc = tds_process_param_result_tokens(tds)

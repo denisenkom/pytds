@@ -84,7 +84,7 @@ def make_param(tds, name, value, output=False):
     else:
         raise Exception('NotSupportedError: Unable to determine database type')
     column.on_server.column_type = col_type
-    column.on_server.column_size = column.column_cur_size = size
+    column.on_server.column_size = size
     column.value = value
     column.funcs = tds_get_column_funcs(tds, col_type)
     column.column_varint_size = tds_get_varint_size(tds, col_type)

@@ -86,7 +86,6 @@ def tds_get_char_data(tds, wire_size, curcol):
     #
     # silly case, empty string
     if wire_size == 0:
-        curcol.column_cur_size = 0
         return ''
 
     if curcol.char_conv:
@@ -100,10 +99,8 @@ def tds_get_char_data(tds, wire_size, curcol):
         # TDS5/UTF-16 -> use UTF-16
         #
         result = read_and_convert(tds, curcol.char_conv, wire_size)
-        curcol.column_cur_size = len(result)
         return result
     else:
-        curcol.column_cur_size = wire_size
         return tds_get_n(tds, wire_size)
 
 #

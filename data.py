@@ -22,10 +22,9 @@ def tds_set_column_type(tds, curcol, type):
     curcol.column_type = tds_get_cardinal_type(type, curcol.column_usertype)
 
     # set size
-    curcol.column_cur_size = -1
     curcol.column_varint_size = tds_get_varint_size(tds, type)
     if curcol.column_varint_size == 0:
-        curcol.column_cur_size = curcol.on_server.column_size = curcol.column_size = tds_get_size_by_type(type)
+        curcol.on_server.column_size = curcol.column_size = tds_get_size_by_type(type)
 
 def tds_get_column_funcs(tds, type):
     if type in (SYBNUMERIC, SYBDECIMAL):
@@ -175,7 +174,6 @@ def tds_data_get(tds, curcol):
         else:
             # It's a BLOB...
             size = tds_get_byte(tds)
-            curcol.column_data = blob = _Blob()
             if size == 16: # Jeff's hack
                 blob.textptr = tds_get_n(tds, 16)
                 blob.timestamp = tds_get_n(tds, 8)
@@ -183,7 +181,6 @@ def tds_data_get(tds, curcol):
             else:
                 colsize = -1
     elif cvs == 5:
-        curcol.column_data = blob = _Blob()
         colsize = tds_get_int(tds)
         if colsize == 0:
             colsize = -1;
@@ -207,18 +204,13 @@ def tds_data_get(tds, curcol):
     logger.debug("tds_get_data(): wire column size is %d" % colsize)
     # set NULL flag in the row buffer
     if colsize < 0:
-        curcol.column_cur_size = -1
         curcol.value = None
         return
 
     #
-    # We're now set to read the data from the wire.  For varying types (e.g. char/varchar)
-    # make sure that curcol->column_cur_size reflects the size of the read data, 
-    # after any charset conversion.  tds_get_char_data() does that for you, 
-    # but of course tds_get_n() doesn't.  
+    # We're now set to read the data from the wire.
     #
     # colsize == wire_size, bytes to read
-    # curcol->column_cur_size == sizeof destination buffer, room to write
     #
     if is_blob_col(curcol):
         # Blobs don't use a column's fixed buffer because the official maximum size is 2 GB.
@@ -228,29 +220,24 @@ def tds_data_get(tds, curcol):
         # TODO this can lead to a big waste of memory
         new_blob_size = colsize
         if new_blob_size == 0:
-            curcol.column_cur_size = 0
-            blob.textvalue = b''
             curcol.value = ''
             return
 
-        curcol.column_cur_size = new_blob_size
         # read the data
         if USE_ICONV(tds) and curcol.char_conv:
-            curcol.value = tds_get_char_data(tds, blob, colsize, curcol)
+            curcol.value = tds_get_char_data(tds, colsize, curcol)
         else:
             assert colsize == new_blob_size
             curcol.value = tds_get_n(tds, colsize)
     else: # non-numeric and non-blob
-        curcol.column_cur_size = colsize
-
         if USE_ICONV(tds) and curcol.char_conv:
             if colsize == 0:
-                curcol.column_data = u''
+                curcol.value= u''
             elif curcol.char_conv:
-                curcol.column_data = read_and_convert(tds, curcol.char_conv, colsize)
+                curcol.value= read_and_convert(tds, curcol.char_conv, colsize)
             else:
-                curcol.column_data = tds_get_n(tds, colsize)
-            curcol.cur_size = len(curcol.column_data)
+                curcol.value = tds_get_n(tds, colsize)
+            curcol.cur_size = len(curcol.value)
         else:
             #
             # special case, some servers seem to return more data in some conditions 
@@ -260,10 +247,9 @@ def tds_data_get(tds, curcol):
             if colsize > curcol.column_size:
                 discard_len = colsize - curcol.column_size
                 colsize = curcol.column_size
-            curcol.column_data = tds_get_n(tds, colsize)
+            curcol.value= tds_get_n(tds, colsize)
             if discard_len > 0:
                 tds_get_n(tds, discard_len)
-            curcol.column_cur_size = colsize
 
         # pad (UNI)CHAR and BINARY types
         fillchar = '\0'
@@ -276,9 +262,9 @@ def tds_data_get(tds, curcol):
                 curcol.column_type in (SYBBINARY, XSYBBINARY):
 
                     if colsize < curcol.column_size:
-                        curcol.column_data.extend(fillchar*(curcol.column_size - colsize))
+                        curcol.value.extend(fillchar*(curcol.column_size - colsize))
                     colsize = curcol.column_size
-        curcol.value = to_python(tds, curcol.column_data, curcol.column_type, curcol.column_size)
+        curcol.value = to_python(tds, curcol.value, curcol.column_type, curcol.column_size)
 
 def tds_data_row_len(tds):
     raise Exception('not implemented')
@@ -288,7 +274,6 @@ def tds72_get_varmax(tds, curcol):
 
     # NULL
     if size == -1:
-        curcol.column_cur_size = -1
         return None
 
     chunk_handler = tds.chunk_handler
@@ -327,7 +312,7 @@ def tds_data_put_info(tds, col):
         tds_put_s(tds, tds.collation)
 
 def tds_data_put(tds, curcol):
-    logger.debug("tds_data_put: colsize = %d", curcol.column_cur_size)
+    logger.debug("tds_data_put")
     if curcol.value is None:
         logger.debug("tds_data_put: null param")
         vs = curcol.column_varint_size
@@ -344,13 +329,12 @@ def tds_data_put(tds, curcol):
             # FIXME not good for SYBLONGBINARY/SYBLONGCHAR (still not supported)
             tds_put_byte(tds, 0)
         return
-    colsize = curcol.column_cur_size
 
     size = tds_fix_column_size(tds, curcol)
 
     # convert string if needed
     value = curcol.value
-    if curcol.char_conv and colsize:
+    if curcol.char_conv:
         # we need to convert data before
         # TODO this can be a waste of memory...
         value = tds_convert_string(tds, curcol.char_conv, value)
@@ -498,7 +482,6 @@ def tds_numeric_get(tds,  curcol):
 
     # set NULL flag in the row buffer
     if colsize <= 0:
-        curcol.column_cur_size = -1
         curcol.value = None
         return
 
@@ -507,7 +490,6 @@ def tds_numeric_get(tds,  curcol):
     # of the original column they came from, we embed the TDS_NUMERIC datatype in the row buffer
     # instead of using the wire representation, even though it uses a few more bytes.
     #
-    #curcol.column_data = num = _Numeric()
     # TODO perhaps it would be fine to change format ??
     #num.precision = curcol.column_prec
     scale = curcol.column_scale
@@ -529,8 +511,6 @@ def tds_numeric_get(tds,  curcol):
     else:
         raise Exception('not supported')
 
-    # corrected colsize for column_cur_size
-    curcol.column_cur_size = numeric_format.size
 
 def tds_numeric_put_info(tds):
     raise Exception('not implemented')
@@ -716,7 +696,6 @@ class FixedOffset(tzinfo):
 def tds_msdatetime_get(tds, col):
     size = tds_get_byte(tds)
     if size == 0:
-        col.column_cur_size = -1
         col.value = None
         return
 

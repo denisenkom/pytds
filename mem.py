@@ -161,16 +161,10 @@ def tds_row_free(row):
 #
 def tds_alloc_row(res_info):
     # compute row size
-    for col in res_info.columns:
-        col.column_data_free = None
     res_info.row_size = len(res_info.columns)
 
     res_info.current_row = []
     res_info.row_free = tds_row_free
-
-    # fill column_data
-    for col in res_info.columns:
-        col.column_data = {}
 
 class _TdsLogin:
     def __init__(self):
