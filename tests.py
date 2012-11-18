@@ -99,25 +99,29 @@ class TableTestCase(unittest.TestCase):
         cur = conn.cursor()
         cur.execute(u'drop table testtable')
 
-#class StoredProcsTestCase(unittest.TestCase):
-#    def setUp(self):
-#        cur = conn.cursor()
-#        cur.execute('''
-#        create procedure testproc (@param datetime)
-#        as
-#        begin
-#            select @param
-#        end
-#        ''')
-#    def tearDown(self):
-#        cur = conn.cursor()
-#        cur.execute(u'drop procedure testproc')
-#
-#    def runTest(self):
-#        cur = conn.cursor()
-#        val = datetime(2011, 2, 3, 10, 11, 12, 4000)
-#        cur.callproc('testproc', {'@param': val})
-#        self.assertEqual(cur.fetchall(), [(val,)])
+class StoredProcsTestCase(unittest.TestCase):
+    def setUp(self):
+        cur = conn.cursor()
+        cur.execute('''
+        if object_id('testproc') is not null
+            drop procedure testproc
+        ''')
+        cur.execute('''
+        create procedure testproc (@param datetime)
+        as
+        begin
+            select @param
+        end
+        ''')
+    def tearDown(self):
+        cur = conn.cursor()
+        cur.execute(u'drop procedure testproc')
+
+    def runTest(self):
+        cur = conn.cursor()
+        val = datetime(2011, 2, 3, 10, 11, 12, 3000)
+        cur.callproc('testproc', {'@param': val})
+        self.assertEqual(cur.fetchall(), [(val,)])
 
 
 

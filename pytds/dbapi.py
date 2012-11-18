@@ -310,8 +310,6 @@ class Connection(object):
         self.last_msg_str = ''
         self.last_msg_srv = ''
         self.last_msg_proc = ''
-        self.column_names = None
-        self.column_types = None
         self._as_dict = as_dict
 
         # support MS methods of connecting locally
@@ -495,14 +493,6 @@ class Connection(object):
 
         tds_send_cancel(self.tds_socket)
         tds_process_cancel(self.tds_socket)
-        self.clear_metadata()
-
-    def clear_metadata(self):
-        logger.debug("MSSQLConnection.clear_metadata()")
-        self.column_names = None
-        self.column_types = None
-        self.num_columns = 0
-        self.last_dbresults = 0
 
     def close(self):
         """
@@ -570,7 +560,7 @@ class Connection(object):
         logger.debug("_nextrow()")
         tds = self.tds_socket
         resinfo = tds.res_info
-        if not resinfo or self.dbresults_state != DB_RES_RESULTSET_ROWS:
+        if not resinfo or self._state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
             logger.debug("leaving _nextrow() returning %d (NO_MORE_ROWS)", NO_MORE_ROWS)
             return NO_MORE_ROWS
@@ -594,10 +584,10 @@ class Connection(object):
                 result = REG_ROW if res_type == TDS_ROW_RESULT else computeid
                 #_, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
             else:
-                self.dbresults_state = DB_RES_NEXT_RESULT
+                self._state = DB_RES_NEXT_RESULT
                 result = NO_MORE_ROWS
         elif rc == TDS_NO_MORE_RESULTS:
-            self.dbresults_state = DB_RES_NEXT_RESULT
+            self._state = DB_RES_NEXT_RESULT
             result = NO_MORE_ROWS
         else:
             raise Exception("unexpected result from tds_process_tokens")
@@ -607,32 +597,6 @@ class Connection(object):
         else:
             logger.debug("leaving _nextrow() returning %s\n", prdbretcode(result))
         return result
-
-    def nextresult(self):
-        """
-        nextresult() -- move to the next result, skipping all pending rows.
-
-        This method fetches and discards any rows remaining from the current
-        resultset, then it advances to the next (if any) resultset. Returns
-        True if the next resultset is available, otherwise None.
-        """
-
-        logger.debug("Connection.nextresult()")
-
-        self.clr_err()
-
-        rtc = self._nextrow()
-        check_cancel_and_raise(rtc, self)
-
-        while rtc != NO_MORE_ROWS:
-            rtc = self._nextrow()
-            check_cancel_and_raise(rtc, self)
-
-        self.last_dbresults = 0
-        self.get_result()
-
-        if self.last_dbresults != NO_MORE_RESULTS:
-            return True
 
     def _sqlok(self):
         return_code = SUCCEED
@@ -667,7 +631,7 @@ class Connection(object):
                 if result_type == TDS_ROWFMT_RESULT:
                     pass
                 elif result_type == TDS_COMPUTEFMT_RESULT:
-                    self.dbresults_state = _DB_RES_RESULTSET_EMPTY;
+                    self._state = _DB_RES_RESULTSET_EMPTY;
                     logger.debug("dbsqlok() found result token")
                     return SUCCEED;
                 elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
@@ -680,19 +644,19 @@ class Connection(object):
                     if True:
                         if done_flags & TDS_DONE_ERROR:
                             if done_flags & TDS_DONE_MORE_RESULTS:
-                                self.dbresults_state = DB_RES_NEXT_RESULT
+                                self._state = DB_RES_NEXT_RESULT
                             else:
-                                self.dbresults_state = DB_RES_NO_MORE_RESULTS
+                                self._state = DB_RES_NO_MORE_RESULTS
 
                         else:
                             logger.debug("dbsqlok() end status was success")
-                            self.dbresults_state = DB_RES_SUCCEED
+                            self._state = DB_RES_SUCCEED
                         return return_code
                     else:
                         retcode = FAIL if done_flags & TDS_DONE_ERROR else SUCCEED;
-                        self.dbresults_state = DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
+                        self._state = DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
                         logger.debug("dbsqlok: returning %s with %s (%#x)", 
-                                        prdbretcode(retcode), prdbresults_state(self.dbresults_state), done_flags)
+                                        prdbretcode(retcode), prdbresults_state(self._state), done_flags)
                         if retcode == SUCCEED and (done_flags & TDS_DONE_MORE_RESULTS):
                             continue
                         return retcode
@@ -743,74 +707,44 @@ class Connection(object):
                     logger.debug('converted query: {0}'.format(query_string))
                     logger.debug('params: {0}'.format(params))
                 tds_submit_query(tds, query_string, params)
-                self.dbresults_state = DB_RES_INIT
+                self._state = DB_RES_INIT
                 rtc = self._sqlok()
-            check_cancel_and_raise(rtc, self)
+            check_cancel_and_raise(self)
         finally:
             logger.debug("MSSQLConnection.format_and_run_query() END")
-
-    def get_header(self):
-        """
-        get_header() -- get the Python DB-API compliant header information.
-
-        This method is infrastructure and doesn't need to be called by your
-        code. It returns a list of 7-element tuples describing the current
-        result header. Only name and DB-API compliant type is filled, rest
-        of the data is None, as permitted by the specs.
-        """
-        logger.debug("MSSQLConnection.get_header() BEGIN")
-        try:
-            self.get_result()
-
-            if self.num_columns == 0:
-                logger.debug("MSSQLConnection.get_header(): num_columns == 0")
-                return None
-
-            header_tuple = []
-            for col in xrange(1, self.num_columns + 1):
-                col_name = self.column_names[col - 1]
-                col_type = self.column_types[col - 1]
-                header_tuple.append((col_name, col_type, None, None, None, None, None))
-            return tuple(header_tuple)
-        finally:
-            logger.debug("MSSQLConnection.get_header() END")
 
     def _start_results(self):
         result_type = 0
 
         tds = self.tds_socket
 
-        logger.debug("dbresults: dbresults_state is %d (%s)\n", 
-                                        self.dbresults_state, prdbresults_state(self.dbresults_state))
-        if self.dbresults_state == DB_RES_SUCCEED:
-            self.dbresults_state = DB_RES_NEXT_RESULT
-            return SUCCEED
-        elif self.dbresults_state == DB_RES_RESULTSET_ROWS:
-            dbperror(self, SYBERPND, 0) # dbresults called while rows outstanding....
-            return FAIL
-        elif self.dbresults_state == DB_RES_NO_MORE_RESULTS:
-            return NO_MORE_RESULTS;
+        logger.debug("_start_results begin: _state is %d (%s)\n", 
+                                        self._state, prdbresults_state(self._state))
+        if self._state == DB_RES_RESULTSET_ROWS:
+            raise Exception('FAIL')
+        elif self._state == DB_RES_NO_MORE_RESULTS:
+            return
 
         while True:
             retcode, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
 
-            logger.debug("dbresults() tds_process_tokens returned %d (%s),\n\t\t\tresult_type %s\n", 
+            logger.debug("_start_results() tds_process_tokens returned %d (%s),\n\t\t\tresult_type %s\n", 
                                             retcode, prretcode(retcode), prresult_type(result_type))
 
             if retcode == TDS_SUCCESS:
                 if result_type == TDS_ROWFMT_RESULT:
-                    self.dbresults_state = DB_RES_RESULTSET_EMPTY
+                    self._state = DB_RES_RESULTSET_EMPTY
 
                 elif result_type == TDS_COMPUTEFMT_RESULT:
                     pass
 
                 elif result_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
-                    self.dbresults_state = DB_RES_RESULTSET_ROWS
-                    return SUCCEED
+                    self._state = DB_RES_RESULTSET_ROWS
+                    return
 
                 elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("dbresults(): dbresults_state is %d (%s)\n", 
-                                    self.dbresults_state, prdbresults_state(self.dbresults_state))
+                    logger.debug("_start_results() got done token _state is %d (%s)",
+                                    self._state, prdbresults_state(self._state))
 
                     # A done token signifies the end of a logical command.
                     # There are three possibilities:
@@ -818,14 +752,14 @@ class Connection(object):
                     # 2. Command with result set but no rows
                     # 3. Command with result set and rows
                     #
-                    if self.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
-                        self.dbresults_state = DB_RES_NEXT_RESULT
+                    if self._state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
+                        self._state = DB_RES_NEXT_RESULT
                         if done_flags & TDS_DONE_ERROR:
-                            return FAIL
+                            raise Exception('FAIL')
 
-                    elif self.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
-                        self.dbresults_state = DB_RES_NEXT_RESULT
-                        return SUCCEED
+                    elif self._state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
+                        self._state = DB_RES_NEXT_RESULT
+                        return
                     else:
                         assert False
 
@@ -834,89 +768,37 @@ class Connection(object):
                         # Return SUCCEED on a command within a stored procedure
                         # only if the command returned a result set. 
                         #
-                        if self.dbresults_state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
-                            self.dbresults_state = DB_RES_NEXT_RESULT
-                        elif self.dbresults_state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
-                            self.dbresults_state = DB_RES_NEXT_RESULT
-                            return SUCCEED;
-                        elif self.dbresults_state in (DB_RES_NO_MORE_RESULTS, DB_RES_SUCCEED):
+                        if self._state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
+                            self._state = DB_RES_NEXT_RESULT
+                        elif self._state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
+                            self._state = DB_RES_NEXT_RESULT
+                            return
+                        elif self._state in (DB_RES_NO_MORE_RESULTS, DB_RES_SUCCEED):
                             pass
 
-                elif result_type in (TDS_STATUS_RESULT, TDS_MSG_RESULT, TDS_DESCRIBE_RESULT, TDS_PARAM_RESULT):
-                    pass
-                else:
-                    pass
             elif retcode == TDS_NO_MORE_RESULTS:
-                self.dbresults_state = DB_RES_NO_MORE_RESULTS
-                return NO_MORE_RESULTS
+                self._state = DB_RES_NO_MORE_RESULTS
+                return
             else:
-                assert TDS_FAILED(retcode)
-                self.dbresults_state = DB_RES_INIT
-                return FAIL
-
-    def get_result(self):
-        logger.debug("MSSQLConnection.get_result() BEGIN")
-
-        try:
-            if self.last_dbresults:
-                logger.debug("MSSQLConnection.get_result(): last_dbresults == True, return None")
-                return None
-
-            self.clear_metadata()
-
-            # Since python doesn't have a do/while loop do it this way
-            while True:
-                self.last_dbresults = self._start_results()
-                self.num_columns = self.tds_socket.res_info.num_cols if self.tds_socket.res_info else 0
-                if self.last_dbresults != SUCCEED or self.num_columns > 0:
-                    break
-            check_cancel_and_raise(self.last_dbresults, self)
-
-            self._rows_affected = self.tds_socket.rows_affected if self.tds_socket.rows_affected != TDS_NO_COUNT else -1
-
-            if self.last_dbresults == NO_MORE_RESULTS:
-                self.num_columns = 0
-                logger.debug("MSSQLConnection.get_result(): NO_MORE_RESULTS, return None")
-                return None
-
-            self.num_columns = self.tds_socket.res_info.num_cols
-
-            logger.debug("MSSQLConnection.get_result(): num_columns = %d", self.num_columns)
-
-            column_names = list()
-            column_types = list()
-
-            for col in self.tds_socket.res_info.columns:
-                column_names.append(col.column_name)
-                coltype = col.column_type
-                column_types.append(get_api_coltype(coltype))
-
-            self.column_names = tuple(column_names)
-            self.column_types = tuple(column_types)
-        finally:
-            logger.debug("MSSQLConnection.get_result() END")
+                self._state = DB_RES_INIT
+                raise Exception('FAIL')
 
     def _getrow(self, throw):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
-        self.clr_err()
-        self.get_result()
-
-        if self.last_dbresults == NO_MORE_RESULTS:
+        if self._state == DB_RES_NO_MORE_RESULTS:
             logger.debug("MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
-            self.clear_metadata()
             if throw:
                 raise StopIteration
             return None
 
         rtc = self._nextrow()
 
-        check_cancel_and_raise(rtc, self)
+        check_cancel_and_raise(self)
 
         if rtc == NO_MORE_ROWS:
             logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
-            self.clear_metadata()
             # 'rows_affected' is nonzero only after all records are read
             tds_socket = self.tds_socket
             self._rows_affected = tds_socket.rows_affected
@@ -942,15 +824,14 @@ class Cursor(object):
     """
     @property
     def _source(self):
-        if self.conn == None:
+        if self._conn == None:
             raise InterfaceError('Cursor is closed.')
-        return self.conn
+        return self._conn
 
     def __init__(self, conn):
-        self.conn = conn
-        self.description = None
+        self._conn = conn
         self._batchsize = 1
-        self._returnvalue = None
+        self._results = None
 
     def __iter__(self):
         """
@@ -968,28 +849,26 @@ class Cursor(object):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        self._returnvalue = None
-        tds = self._source.tds_socket
+        logger.debug('callproc begin')
+        tds = self._conn._get_connection()
+        self._results = None
+        self._state = DB_RES_INIT
         tds_submit_rpc(tds, procname, parameters)
-        self._source.last_dbresults = 0
-        self._source.dbresults_state = DB_RES_INIT
-        rtc = self._source._sqlok()
-        check_cancel_and_raise(rtc, self._source)
+        self._source._state = DB_RES_INIT
+        self._source._sqlok()
+        check_cancel_and_raise(self._source)
+        logger.debug('callproc end')
 
     def close(self):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        self.conn = None
-        self.description = None
+        self._conn = None
 
     def execute(self, operation, params=()):
-        self.description = None
-
+        self._results = None
         try:
             self._source.format_and_run_query(operation, params)
-            self._source.get_result()
-            self.description = self._source.get_header()
 
         except MSSQLDatabaseException, e:
             if e.number in prog_errors:
@@ -1001,7 +880,7 @@ class Cursor(object):
             raise InterfaceError, e[0]
 
     def executemany(self, operation, params_seq):
-        self.description = None
+        self._results = None
         for params in params_seq:
             self.execute(operation, params)
             # support correct rowcount across multiple executes
@@ -1035,10 +914,17 @@ class Cursor(object):
 
     def nextset(self):
         try:
-            if not self._source.nextresult():
-                return None
-            self.description = self._source.get_header()
-            return 1
+            self._results = None
+            self._conn.clr_err()
+
+            self._conn._nextrow()
+            check_cancel_and_raise(self._conn)
+
+            while rtc != NO_MORE_ROWS:
+                self._conn._nextrow()
+                check_cancel_and_raise(self._conn)
+            self._get_results()
+            return not self._conn._state == DB_RES_NO_MORE_RESULTS
 
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
@@ -1047,12 +933,34 @@ class Cursor(object):
 
         return None
 
+    def _get_results(self):
+        if not self._results:
+            tds = self._conn.tds_socket
+            self._conn._start_results()
+            check_cancel_and_raise(self._conn)
+            self._rows_affected = tds.rows_affected if tds.rows_affected != TDS_NO_COUNT else -1
+            if self._conn._state == DB_RES_NO_MORE_RESULTS:
+                descr = None
+            else:
+                header_tuple = []
+                for col in tds.res_info.columns:
+                    coltype = get_api_coltype(col.column_type)
+                    header_tuple.append((col.column_name, coltype, None, None, None, None, None))
+                descr = tuple(header_tuple)
+            logger.debug('_get_results set description: %s', descr)
+            self._results = {'description': descr}
+        return self._results
+
+    @property
+    def description(self):
+        return self._get_results()['description']
+
     def fetchone(self):
         if self.description is None:
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
         try:
-            return self.conn._getrow(throw=False)
+            return self._conn._getrow(throw=False)
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
         except MSSQLDriverException, e:
@@ -1069,7 +977,7 @@ class Cursor(object):
         try:
             rows = []
             for i in xrange(size):
-                row = self.conn._getrow(throw=False)
+                row = self._conn._getrow(throw=False)
                 if not row:
                     break
                 rows.append(row)
@@ -1084,7 +992,12 @@ class Cursor(object):
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
         try:
-            rows = [row for row in self]
+            rows = []
+            while True:
+                row = self._conn._getrow(throw=False)
+                if not row:
+                    break
+                rows.append(row)
             return rows
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
@@ -1093,7 +1006,7 @@ class Cursor(object):
 
     def next(self):
         try:
-            row = self.conn._getrow(throw=True)
+            row = self._conn._getrow(throw=True)
             return row
 
         except MSSQLDatabaseException, e:
@@ -1239,11 +1152,7 @@ def check_and_raise(rtc, conn):
     elif get_last_msg_str(conn):
         return maybe_raise_MSSQLDatabaseException(conn)
 
-def check_cancel_and_raise(rtc, conn):
-    #if rtc == FAIL:
-    #    conn.cancel()
-    #    return maybe_raise_MSSQLDatabaseException(conn)
-    #elif get_last_msg_str(conn):
+def check_cancel_and_raise(conn):
     return maybe_raise_MSSQLDatabaseException(conn)
 
 ######################
