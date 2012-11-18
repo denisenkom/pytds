@@ -5,7 +5,6 @@ from iconv import *
 from mem import *
 from tds_checks import *
 from data import *
-from numeric import *
 
 logger = logging.getLogger(__name__)
 

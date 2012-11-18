@@ -1,3 +1,6 @@
 *.pyc
 *.swp
 settings.py
+build
+dist
+MANIFEST

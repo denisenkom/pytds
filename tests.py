@@ -4,7 +4,7 @@ import sys
 from decimal import Decimal
 import logging
 from datetime import datetime, date, time
-from dbapi import connect, FixedOffset, OperationalError, ProgrammingError
+from pytds.dbapi import connect, FixedOffset, OperationalError, ProgrammingError
 
 try:
     import settings
