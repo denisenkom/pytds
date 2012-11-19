@@ -7,4 +7,9 @@ setup(name='pytds',
         author_email='denisenkom@gmail.com',
         url='https://github.com/denisenkom/pytds',
         packages=['pytds'],
+        classifiers=[
+            'Development Status :: 4 - Beta',
+            'Programming Language :: Python',
+            'Programming Language :: Python :: 2.7',
+        ],
         )
