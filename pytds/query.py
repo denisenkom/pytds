@@ -59,6 +59,7 @@ def make_param(tds, name, value, output=False):
     column.column_output = 1 if output else 0
     if value is None:
         col_type = SYBINTN
+        size = 4
     elif isinstance(value, int):
         if -2**31 <= value <= 2**31 -1:
             col_type = SYBINTN

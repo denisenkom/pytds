@@ -76,6 +76,7 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
         self._test_val(datetime(2011, 2, 3, 10, 11, 12, 3000))
         self._test_val(Decimal('1234.567'))
         self._test_val(Decimal('1234000'))
+        self._test_val(None)
 
 class TableTestCase(unittest.TestCase):
     def setUp(self):
