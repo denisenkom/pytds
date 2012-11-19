@@ -549,7 +549,7 @@ def tds_submit_begin_tran(tds):
 
 def tds_submit_rollback(tds, cont):
     logger.debug('tds_submit_rollback(%s)', cont)
-    if not IS_TDS72(tds):
+    if IS_TDS72(tds):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
