@@ -131,13 +131,12 @@ class StoredProcsTestCase(unittest.TestCase):
 
 class CursorCloseTestCase(unittest.TestCase):
     def runTest(self):
-        cur = conn.cursor()
-        cur.execute('select 10; select 12')
-        cur.fetchone()
-        cur.close()
-        cur2 = conn.cursor()
-        cur2.execute('select 20')
-        cur2.fetchone()
+        with conn.cursor() as cur:
+            cur.execute('select 10; select 12')
+            cur.fetchone()
+        with conn.cursor() as cur2:
+            cur2.execute('select 20')
+            cur2.fetchone()
 
 class MultipleRecordsetsTestCase(unittest.TestCase):
     def runTest(self):
@@ -150,42 +149,104 @@ class MultipleRecordsetsTestCase(unittest.TestCase):
 
 class TransactionsTestCase(unittest.TestCase):
     def _create_table(self):
-        cur = conn.cursor()
-        cur.execute('''
-        if object_id('testtable') is not null
-            drop table testtable
-        ''')
+        with conn.cursor() as cur:
+            cur.execute('''
+            if object_id('testtable') is not null
+                drop table testtable
+            ''')
         conn.commit()
-        cur.execute('''
-        create table testtable (field datetime)
-        ''')
+        with conn.cursor() as cur:
+            cur.execute('''
+            create table testtable (field datetime)
+            ''')
 
     def runTest(self):
         self._create_table()
-        cur = conn.cursor()
-        cur.execute("select object_id('testtable')")
-        self.assertNotEquals((None,), cur.fetchone())
+        with conn.cursor() as cur:
+            cur.execute("select object_id('testtable')")
+            self.assertNotEquals((None,), cur.fetchone())
         conn.rollback()
-        cur.execute("select object_id('testtable')")
-        self.assertEquals((None,), cur.fetchone())
+        with conn.cursor() as cur:
+            cur.execute("select object_id('testtable')")
+            self.assertEquals((None,), cur.fetchone())
         self._create_table()
         conn.commit()
-        self.assertNotEquals((None,), cur.fetchone())
+        with conn.cursor() as cur:
+            cur.execute("select object_id('testtable')")
+            self.assertNotEquals((None,), cur.fetchone())
 
     def tearDown(self):
-        cur = conn.cursor()
-        cur.execute('''
-        if object_id('testtable') is not null
-            drop table testtable
-        ''')
+        with conn.cursor() as cur:
+            cur.execute('''
+            if object_id('testtable') is not null
+                drop table testtable
+            ''')
         conn.commit()
 
-class MultiPacketRequest(unittest.TestCase):
-    def runTest(self):
-        cur = conn.cursor()
-        param = 'x' * (len(conn.tds_socket.out_buf)*10)
-        cur.execute('select %s', (param,))
-        self.assertEqual([(param, )], cur.fetchall())
+#class MultiPacketRequest(unittest.TestCase):
+#    def runTest(self):
+#        cur = conn.cursor()
+#        param = 'x' * (len(conn.tds_socket.out_buf)*10)
+#        cur.execute('select %s', (param,))
+#        self.assertEqual([(param, )], cur.fetchall())
+
+#class BigRequest(unittest.TestCase):
+#    def runTest(self):
+#        cur = conn.cursor()
+#        param = u'x' * 1000
+#        params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
+#        cur.execute('select %s, %s, %s, %s', params)
+#        self.assertEqual([params], cur.fetchall())
+
+#class Rowcount(unittest.TestCase):
+#    def _create_table(self):
+#        cur = conn.cursor()
+#        cur.execute('''
+#        if object_id('testtable') is not null
+#            drop table testtable
+#        ''')
+#        cur.execute('''
+#        create table testtable (field int)
+#        ''')
+#
+#    def setUp(self):
+#        self._create_table()
+#
+#    def runTest(self):
+#        cur = conn.cursor()
+#        cur.execute('insert into testtable (field) values (1)')
+#        self.assertEqual(cur.rowcount, 1)
+#        cur.execute('insert into testtable (field) values (2)')
+#        self.assertEqual(cur.rowcount, 1)
+#        cur.execute('select * from testtable')
+#        cur.fetchall()
+#        self.assertEqual(cur.rowcount, 2)
+#
+#    def tearDown(self):
+#        conn.rollback()
+#
+#class NoRows(unittest.TestCase):
+#    def _create_table(self):
+#        cur = conn.cursor()
+#        cur.execute('''
+#        if object_id('testtable') is not null
+#            drop table testtable
+#        ''')
+#        cur.execute('''
+#        create table testtable (field int)
+#        ''')
+#
+#    def setUp(self):
+#        self._create_table()
+#
+#    def runTest(self):
+#        cur = conn.cursor()
+#        cur.execute('select * from testtable')
+#        self.assertEqual([], cur.fetchall())
+#
+#    def tearDown(self):
+#        conn.rollback()
+
 
 if __name__ == '__main__':
     unittest.main()

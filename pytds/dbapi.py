@@ -696,6 +696,12 @@ class Cursor(object):
         self._batchsize = 1
         self._results = None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
     def __iter__(self):
         """
         Return self to make cursors compatibile with Python iteration
@@ -842,15 +848,11 @@ class Cursor(object):
         return self._get_results()['description']
 
     def fetchone(self):
-        if self.description is None:
-            raise OperationalError('Statement not executed or executed statement has no resultset')
-
+        self._get_results()
         return self._conn._getrow(throw=False)
 
     def fetchmany(self, size=None):
-        if self.description is None:
-            raise OperationalError('Statement not executed or executed statement has no resultset')
-
+        self._get_results()
         if size == None:
             size = self._batchsize
         self.batchsize = size
@@ -864,9 +866,7 @@ class Cursor(object):
         return rows
 
     def fetchall(self):
-        if self.description is None:
-            raise OperationalError('Statement not executed or executed statement has no resultset')
-
+        self._get_results()
         rows = []
         while True:
             row = self._conn._getrow(throw=False)
@@ -876,6 +876,7 @@ class Cursor(object):
         return rows
 
     def next(self):
+        self._get_results()
         row = self._conn._getrow(throw=True)
         return row
 

@@ -161,6 +161,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
 # \return TDS_FAIL or TDS_SUCCESS
 #
 def tds_submit_query(tds, query, params=()):
+    logger.info('tds_submit_query(%s, %s)', query, params)
     #size_t query_len;
     CHECK_TDS_EXTRA(tds)
     if params:
