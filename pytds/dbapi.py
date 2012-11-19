@@ -53,7 +53,17 @@ class InterfaceError(Error):
     pass
 
 class DatabaseError(Error):
-    pass
+    @property
+    def message(self):
+        if self.procname:
+            return 'SQL Server message %d, severity %d, state %d, ' \
+                'procedure %s, line %d:\n%s' % (self.number,
+                self.severity, self.state, self.procname,
+                self.line, self.text)
+        else:
+            return 'SQL Server message %d, severity %d, state %d, ' \
+                'line %d:\n%s' % (self.number, self.severity,
+                self.state, self.line, self.text)
 
 class DataError(Error):
     pass
@@ -131,37 +141,6 @@ SQLTEXT = SYBTEXT
 SQLVARBINARY = SYBVARBINARY
 SQLVARCHAR = SYBVARCHAR
 SQLUUID = 36
-
-#######################
-## Exception classes ##
-#######################
-class MSSQLException(Exception):
-    """
-    Base exception class for the MSSQL driver.
-    """
-
-class MSSQLDriverException(MSSQLException):
-    """
-    Inherits from the base class and raised when an error is caused within
-    the driver itself.
-    """
-
-class MSSQLDatabaseException(MSSQLException):
-    """
-    Raised when an error occurs within the database.
-    """
-
-    @property
-    def message(self):
-        if self.procname:
-            return 'SQL Server message %d, severity %d, state %d, ' \
-                'procedure %s, line %d:\n%s' % (self.number,
-                self.severity, self.state, self.procname,
-                self.line, self.text)
-        else:
-            return 'SQL Server message %d, severity %d, state %d, ' \
-                'line %d:\n%s' % (self.number, self.severity,
-                self.state, self.line, self.text)
 
 DB_RES_INIT            = 0
 DB_RES_RESULTSET_EMPTY = 1
@@ -417,11 +396,8 @@ class Connection(object):
             return
 
         self.cancel()
-        try:
-            tds_submit_rollback(self.tds_socket, True)
-            self._sqlok()
-        except Exception, e:
-            raise OperationalError('Cannot begin transaction: ' + str(e[0]))
+        tds_submit_rollback(self.tds_socket, True)
+        self._sqlok()
 
     def clr_err(self):
         self.last_msg_no = 0
@@ -568,38 +544,36 @@ class Connection(object):
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
+                maybe_raise_MSSQLDatabaseException(self)
+                assert False
                 raise Exception('FAIL')
             if tds_code == TDS_NO_MORE_RESULTS:
                 return
 
-            elif tds_code == TDS_SUCCESS:
-                if result_type == TDS_ROWFMT_RESULT:
-                    pass
-                elif result_type == TDS_COMPUTEFMT_RESULT:
-                    self._state = _DB_RES_RESULTSET_EMPTY;
-                    logger.debug("dbsqlok() found result token")
-                    break
-                elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
-                    logger.debug("dbsqlok() found result token")
-                    break
-                elif result_type == TDS_DONEINPROC_RESULT:
-                    pass
-                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("dbsqlok() end status is %s", prdbresults_state(self._state))
-                    if done_flags & TDS_DONE_ERROR:
-                        if done_flags & TDS_DONE_MORE_RESULTS:
-                            self._state = DB_RES_NEXT_RESULT
-                        else:
-                            self._state = DB_RES_NO_MORE_RESULTS
-
+            if result_type == TDS_ROWFMT_RESULT:
+                pass
+            elif result_type == TDS_COMPUTEFMT_RESULT:
+                self._state = _DB_RES_RESULTSET_EMPTY;
+                logger.debug("dbsqlok() found result token")
+                break
+            elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
+                logger.debug("dbsqlok() found result token")
+                break
+            elif result_type == TDS_DONEINPROC_RESULT:
+                pass
+            elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                logger.debug("dbsqlok() end status is %s", prdbresults_state(self._state))
+                if done_flags & TDS_DONE_ERROR:
+                    if done_flags & TDS_DONE_MORE_RESULTS:
+                        self._state = DB_RES_NEXT_RESULT
                     else:
-                        logger.debug("dbsqlok() end status was success")
-                        self._state = DB_RES_SUCCEED
+                        self._state = DB_RES_NO_MORE_RESULTS
+
                 else:
-                    logger.debug('logic error: tds_process_tokens result_type %d', result_type);
+                    logger.debug("dbsqlok() end status was success")
+                    self._state = DB_RES_SUCCEED
             else:
-                assert TDS_FAILED(tds_code)
-                raise Exception('FAIL')
+                logger.debug('logic error: tds_process_tokens result_type %d', result_type);
 
     def _start_results(self):
         result_type = 0
@@ -759,42 +733,32 @@ class Cursor(object):
 
     def execute(self, operation, params=()):
         self._results = None
-        try:
-            tds = self._conn._get_connection()
-            if tds.state == TDS_PENDING:
-                rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
-                if rc != TDS_NO_MORE_RESULTS:
-                    raise InterfaceError('Results are still pending on connection')
+        tds = self._conn._get_connection()
+        if tds.state == TDS_PENDING:
+            rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+            if rc != TDS_NO_MORE_RESULTS:
+                raise InterfaceError('Results are still pending on connection')
 
-            # Execute the query
-            if params:
-                if isinstance(params, (list, tuple)):
-                    names = tuple('@P{0}'.format(n) for n in range(len(params)))
-                    if len(names) == 1:
-                        operation = operation % names[0]
-                    else:
-                        operation = operation % names
-                    params = dict(zip(names, params))
-                elif isinstance(params, dict):
-                    # prepend names with @
-                    rename = dict((name, '@{0}'.format(name)) for name in params.keys())
-                    params = dict(('@{0}'.format(name), value) for name, value in params.items())
-                    operation = operation % rename
-                logger.debug('converted query: {0}'.format(operation))
-                logger.debug('params: {0}'.format(params))
-            tds_submit_query(tds, operation, params)
-            self._conn._state = DB_RES_INIT
-            self._conn._sqlok()
-            check_cancel_and_raise(self._conn)
-
-        except MSSQLDatabaseException, e:
-            if e.number in prog_errors:
-                raise ProgrammingError, e[0]
-            if e.number in integrity_errors:
-                raise IntegrityError, e[0]
-            raise OperationalError, e[0]
-        except MSSQLDriverException, e:
-            raise InterfaceError, e[0]
+        # Execute the query
+        if params:
+            if isinstance(params, (list, tuple)):
+                names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                if len(names) == 1:
+                    operation = operation % names[0]
+                else:
+                    operation = operation % names
+                params = dict(zip(names, params))
+            elif isinstance(params, dict):
+                # prepend names with @
+                rename = dict((name, '@{0}'.format(name)) for name in params.keys())
+                params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                operation = operation % rename
+            logger.debug('converted query: {0}'.format(operation))
+            logger.debug('params: {0}'.format(params))
+        tds_submit_query(tds, operation, params)
+        self._conn._state = DB_RES_INIT
+        self._conn._sqlok()
+        check_cancel_and_raise(self._conn)
 
     def executemany(self, operation, params_seq):
         self._results = None
@@ -830,25 +794,17 @@ class Cursor(object):
         return row[0]
 
     def nextset(self):
-        try:
-            self._results = None
-            self._conn.clr_err()
+        self._results = None
+        self._conn.clr_err()
 
+        self._conn._nextrow()
+        check_cancel_and_raise(self._conn)
+
+        while self._conn._state == DB_RES_RESULTSET_ROWS:
             self._conn._nextrow()
             check_cancel_and_raise(self._conn)
-
-            while self._conn._state == DB_RES_RESULTSET_ROWS:
-                self._conn._nextrow()
-                check_cancel_and_raise(self._conn)
-            self._get_results()
-            return self._conn._state != DB_RES_NO_MORE_RESULTS
-
-        except MSSQLDatabaseException, e:
-            raise OperationalError, e[0]
-        except MSSQLDriverException, e:
-            raise InterfaceError, e[0]
-
-        return None
+        self._get_results()
+        return self._conn._state != DB_RES_NO_MORE_RESULTS
 
     def _get_results(self):
         if not self._results:
@@ -876,12 +832,7 @@ class Cursor(object):
         if self.description is None:
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
-        try:
-            return self._conn._getrow(throw=False)
-        except MSSQLDatabaseException, e:
-            raise OperationalError, e[0]
-        except MSSQLDriverException, e:
-            raise InterfaceError, e[0]
+        return self._conn._getrow(throw=False)
 
     def fetchmany(self, size=None):
         if self.description is None:
@@ -891,45 +842,29 @@ class Cursor(object):
             size = self._batchsize
         self.batchsize = size
 
-        try:
-            rows = []
-            for i in xrange(size):
-                row = self._conn._getrow(throw=False)
-                if not row:
-                    break
-                rows.append(row)
-            return rows
-        except MSSQLDatabaseException, e:
-            raise OperationalError, e[0]
-        except MSSQLDriverException, e:
-            raise InterfaceError, e[0]
+        rows = []
+        for i in xrange(size):
+            row = self._conn._getrow(throw=False)
+            if not row:
+                break
+            rows.append(row)
+        return rows
 
     def fetchall(self):
         if self.description is None:
             raise OperationalError('Statement not executed or executed statement has no resultset')
 
-        try:
-            rows = []
-            while True:
-                row = self._conn._getrow(throw=False)
-                if not row:
-                    break
-                rows.append(row)
-            return rows
-        except MSSQLDatabaseException, e:
-            raise OperationalError, e[0]
-        except MSSQLDriverException, e:
-            raise InterfaceError, e[0]
+        rows = []
+        while True:
+            row = self._conn._getrow(throw=False)
+            if not row:
+                break
+            rows.append(row)
+        return rows
 
     def next(self):
-        try:
-            row = self._conn._getrow(throw=True)
-            return row
-
-        except MSSQLDatabaseException, e:
-            raise OperationalError, e[0]
-        except MSSQLDriverException, e:
-            raise InterfaceError, e[0]
+        row = self._conn._getrow(throw=True)
+        return row
 
     def setinputsizes(self, sizes=None):
         """
@@ -988,16 +923,9 @@ def connect(server='.', user='', password='', database='', timeout=0,
     if host:
         server = host
 
-    try:
-        conn = Connection(server, user, password, charset, database,
-            appname, port, tds_version=tds_version, as_dict=as_dict, login_timeout=login_timeout,
-            timeout=timeout, encryption_level=encryption_level)
-
-    except MSSQLDatabaseException, e:
-        raise OperationalError(e[0])
-
-    except MSSQLDriverException, e:
-        raise InterfaceError(e[0])
+    conn = Connection(server, user, password, charset, database,
+        appname, port, tds_version=tds_version, as_dict=as_dict, login_timeout=login_timeout,
+        timeout=timeout, encryption_level=encryption_level)
 
     return conn
 
@@ -1051,7 +979,14 @@ def maybe_raise_MSSQLDatabaseException(conn):
     if len(error_msg) == 0:
         error_msg = "Unknown error"
 
-    ex = MSSQLDatabaseException((get_last_msg_no(conn), error_msg))
+    msg_no = get_last_msg_no(conn)
+    if msg_no in prog_errors:
+        ex = ProgrammingError(error_msg)
+    elif msg_no in integrity_errors:
+        ex = IntegrityError(error_msg)
+    else:
+        ex = OperationalError(error_msg)
+    ex.msg_no = msg_no
     ex.text = error_msg
     ex.srvname = get_last_msg_srv(conn)
     ex.procname = get_last_msg_proc(conn)
