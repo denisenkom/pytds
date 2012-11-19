@@ -182,22 +182,10 @@ def tds_put_cancel(tds):
 
     logger.debug("Sending packet {0}".format(repr(out_buf)))
 
-    oldsig = None
-    try:
-        oldsig = signal.signal(signal.SIGPIPE, signal.SIG_IGN)
-    except:
-        logger.exception("TDS: Warning: Couldn't set SIGPIPE signal to be ignored")
-
     if tds_conn(tds).tls_session:
         sent = tds_conn(tds).tls_session.send(out_buf)
     else:
         sent = tds_goodwrite(tds, out_buf, len(out_buf), 1)
-
-    if oldsig:
-        try:
-            signal.signal(signal.SIGPIPE, oldsig)
-        except:
-            logger.exception("TDS: Warning: Couldn't reset SIGPIPE signal to previous value")
 
     if sent > 0:
         tds.in_cancel = 1
