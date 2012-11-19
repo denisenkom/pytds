@@ -179,29 +179,13 @@ def prdbresults_state(retcode):
     elif retcode == DB_RES_SUCCEED:            return "DB_RES_SUCCEED"
     else: return "oops: %d ??" % retcode
 
-REG_ROW         = -1
-MORE_ROWS       = -1
-NO_MORE_ROWS    = -2
-BUF_FULL        = -3
-NO_MORE_RESULTS = 2
-SUCCEED         = 1
-FAIL            = 0
-
-def prdbretcode(retcode):
-    if retcode == REG_ROW:            return "REG_ROW/MORE_ROWS"
-    elif retcode == NO_MORE_ROWS:       return "NO_MORE_ROWS"
-    elif retcode == BUF_FULL:           return "BUF_FULL"
-    elif retcode == NO_MORE_RESULTS:    return "NO_MORE_RESULTS"
-    elif retcode == SUCCEED:            return "SUCCEED"
-    elif retcode == FAIL:               return "FAIL"
-    else: return "oops: %u ??" % retcode
-
 def prretcode(retcode):
     if retcode == TDS_SUCCESS or retcode is None:return "TDS_SUCCESS"
     elif retcode == TDS_FAIL:                   return "TDS_FAIL"
     elif retcode == TDS_NO_MORE_RESULTS:        return "TDS_NO_MORE_RESULTS"
     elif retcode == TDS_CANCELLED:              return "TDS_CANCELLED"
     else: return "oops: %u ??" % retcode
+
 
 def prresult_type(result_type):
     if result_type == TDS_ROW_RESULT:          return "TDS_ROW_RESULT"
@@ -531,50 +515,36 @@ class Connection(object):
             cur.close()
 
     def _nextrow(self):
-        result = FAIL
         logger.debug("_nextrow()")
         tds = self.tds_socket
         resinfo = tds.res_info
         if not resinfo or self._state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
-            logger.debug("leaving _nextrow() returning %d (NO_MORE_ROWS)", NO_MORE_ROWS)
-            return NO_MORE_ROWS
+            logger.debug("leaving _nextrow() returning NO_MORE_ROWS")
+            return
 
         #
         # Try to get the self->row_buf.current item from the buffered rows, if any.  
         # Else read from the stream, unless the buffer is exhausted.  
         # If no rows are read, DBROWTYPE() will report NO_MORE_ROWS. 
         #/
-        computeid = REG_ROW
         mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
 
         # Get the row from the TDS stream.
         rc, res_type, _ = tds_process_tokens(tds, mask)
         if rc == TDS_SUCCESS:
             if res_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
-                if res_type == TDS_COMPUTE_RESULT:
-                    computeid = tds.current_results.computeid
                 # Add the row to the row buffer, whose capacity is always at least 1
                 resinfo = tds.current_results
-                result = REG_ROW if res_type == TDS_ROW_RESULT else computeid
                 #_, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
             else:
                 self._state = DB_RES_NEXT_RESULT
-                result = NO_MORE_ROWS
         elif rc == TDS_NO_MORE_RESULTS:
             self._state = DB_RES_NEXT_RESULT
-            result = NO_MORE_ROWS
         else:
             raise Exception("unexpected result from tds_process_tokens")
 
-        if res_type == TDS_COMPUTE_RESULT:
-            logger.debug("leaving _nextrow() returning compute_id %d\n", result)
-        else:
-            logger.debug("leaving _nextrow() returning %s\n", prdbretcode(result))
-        return result
-
     def _sqlok(self):
-        return_code = SUCCEED
         logger.debug("dbsqlok()")
         #CHECK_CONN(FAIL);
 
@@ -598,9 +568,9 @@ class Connection(object):
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
-                return_code = FAIL
+                raise Exception('FAIL')
             if tds_code == TDS_NO_MORE_RESULTS:
-                return SUCCEED
+                return
 
             elif tds_code == TDS_SUCCESS:
                 if result_type == TDS_ROWFMT_RESULT:
@@ -608,39 +578,28 @@ class Connection(object):
                 elif result_type == TDS_COMPUTEFMT_RESULT:
                     self._state = _DB_RES_RESULTSET_EMPTY;
                     logger.debug("dbsqlok() found result token")
-                    return SUCCEED;
+                    break
                 elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
                     logger.debug("dbsqlok() found result token")
-                    return SUCCEED;
+                    break
                 elif result_type == TDS_DONEINPROC_RESULT:
                     pass
                 elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("dbsqlok() end status is %s", prdbretcode(return_code))
-                    if True:
-                        if done_flags & TDS_DONE_ERROR:
-                            if done_flags & TDS_DONE_MORE_RESULTS:
-                                self._state = DB_RES_NEXT_RESULT
-                            else:
-                                self._state = DB_RES_NO_MORE_RESULTS
-
+                    logger.debug("dbsqlok() end status is %s", prdbresults_state(self._state))
+                    if done_flags & TDS_DONE_ERROR:
+                        if done_flags & TDS_DONE_MORE_RESULTS:
+                            self._state = DB_RES_NEXT_RESULT
                         else:
-                            logger.debug("dbsqlok() end status was success")
-                            self._state = DB_RES_SUCCEED
-                        return return_code
+                            self._state = DB_RES_NO_MORE_RESULTS
+
                     else:
-                        retcode = FAIL if done_flags & TDS_DONE_ERROR else SUCCEED;
-                        self._state = DB_RES_NEXT_RESULT if done_flags & TDS_DONE_MORE_RESULTS else _DB_RES_NO_MORE_RESULTS
-                        logger.debug("dbsqlok: returning %s with %s (%#x)", 
-                                        prdbretcode(retcode), prdbresults_state(self._state), done_flags)
-                        if retcode == SUCCEED and (done_flags & TDS_DONE_MORE_RESULTS):
-                            continue
-                        return retcode
+                        logger.debug("dbsqlok() end status was success")
+                        self._state = DB_RES_SUCCEED
                 else:
                     logger.debug('logic error: tds_process_tokens result_type %d', result_type);
             else:
                 assert TDS_FAILED(tds_code)
-                return FAIL
-        return SUCCEED
+                raise Exception('FAIL')
 
     def _start_results(self):
         result_type = 0
@@ -722,11 +681,11 @@ class Connection(object):
                 raise StopIteration
             return None
 
-        rtc = self._nextrow()
+        self._nextrow()
 
         check_cancel_and_raise(self)
 
-        if rtc == NO_MORE_ROWS:
+        if self._state != DB_RES_RESULTSET_ROWS:
             logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
             # 'rows_affected' is nonzero only after all records are read
             tds_socket = self.tds_socket
@@ -878,11 +837,11 @@ class Cursor(object):
             self._conn._nextrow()
             check_cancel_and_raise(self._conn)
 
-            while rtc != NO_MORE_ROWS:
+            while self._conn._state == DB_RES_RESULTSET_ROWS:
                 self._conn._nextrow()
                 check_cancel_and_raise(self._conn)
             self._get_results()
-            return not self._conn._state == DB_RES_NO_MORE_RESULTS
+            return self._conn._state != DB_RES_NO_MORE_RESULTS
 
         except MSSQLDatabaseException, e:
             raise OperationalError, e[0]
@@ -1103,12 +1062,6 @@ def maybe_raise_MSSQLDatabaseException(conn):
     conn.cancel()
     conn.clr_err()
     raise ex
-
-def check_and_raise(rtc, conn):
-    if rtc == FAIL:
-        return maybe_raise_MSSQLDatabaseException(conn)
-    elif get_last_msg_str(conn):
-        return maybe_raise_MSSQLDatabaseException(conn)
 
 def check_cancel_and_raise(conn):
     return maybe_raise_MSSQLDatabaseException(conn)

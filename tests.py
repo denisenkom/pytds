@@ -133,6 +133,14 @@ class CursorCloseTestCase(unittest.TestCase):
         cur2.execute('select 20')
         cur2.fetchone()
 
+class MultipleRecordsetsTestCase(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute('select 10; select 12')
+        self.assertEqual((10,), cur.fetchone())
+        cur.nextset()
+        self.assertEqual((12,), cur.fetchone())
+
 
 if __name__ == '__main__':
     unittest.main()
