@@ -486,7 +486,7 @@ def tds_process_tokens(tds, flag):
         rc = TDS_SUCCESS
         while True:
             marker = tds_get_byte(tds)
-            logger.debug("processing result tokens.  marker is  {0:x}({1})".format(marker, tds_token_name(marker)))
+            logger.info("processing result tokens.  marker is  {0:x}({1})".format(marker, tds_token_name(marker)))
             if marker == TDS7_RESULT_TOKEN:
                 #
                 # If we're processing the results of a cursor fetch

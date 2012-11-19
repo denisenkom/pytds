@@ -725,6 +725,13 @@ class Cursor(object):
         check_cancel_and_raise(self._source)
         logger.debug('callproc end')
 
+    def get_proc_return_status(self):
+        self._get_results()
+        tds = self._conn.tds_socket
+        if not tds.has_status:
+            tds_process_tokens(tds, TDS_RETURN_PROC)
+        return tds.ret_status if tds.has_status else None
+
     def close(self):
         """
         Closes the cursor. The cursor is unusable from this point.

@@ -13,6 +13,7 @@ except:
     sys.exit(1)
 
 #logging.basicConfig(level='DEBUG')
+#logging.basicConfig(level='INFO')
 logging.basicConfig()
 
 conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, tds_version='7.3')
@@ -100,28 +101,32 @@ class TableTestCase(unittest.TestCase):
         cur.execute(u'drop table testtable')
 
 class StoredProcsTestCase(unittest.TestCase):
-    def setUp(self):
+    def _drop_sp(self):
         cur = conn.cursor()
         cur.execute('''
         if object_id('testproc') is not null
             drop procedure testproc
         ''')
+    def setUp(self):
+        self._drop_sp()
+        cur = conn.cursor()
         cur.execute('''
-        create procedure testproc (@param datetime)
+        create procedure testproc (@param int)
         as
         begin
             select @param
+            return @param + 1
         end
         ''')
     def tearDown(self):
-        cur = conn.cursor()
-        cur.execute(u'drop procedure testproc')
+        self._drop_sp()
 
     def runTest(self):
         cur = conn.cursor()
-        val = datetime(2011, 2, 3, 10, 11, 12, 3000)
+        val = 45
         cur.callproc('testproc', {'@param': val})
         self.assertEqual(cur.fetchall(), [(val,)])
+        self.assertEqual(val + 1, cur.get_proc_return_status())
 
 class CursorCloseTestCase(unittest.TestCase):
     def runTest(self):
@@ -138,8 +143,9 @@ class MultipleRecordsetsTestCase(unittest.TestCase):
         cur = conn.cursor()
         cur.execute('select 10; select 12')
         self.assertEqual((10,), cur.fetchone())
-        cur.nextset()
+        self.assertTrue(cur.nextset())
         self.assertEqual((12,), cur.fetchone())
+        self.assertFalse(cur.nextset())
 
 class TransactionsTestCase(unittest.TestCase):
     def _create_table(self):
