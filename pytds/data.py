@@ -307,7 +307,7 @@ def tds_data_put_info(tds, col):
     elif vs in (4, 5):
         tds_put_int(tds, size)
     elif vs == 8:
-        tds_put_smallint(tds, 0xffff)
+        tds_put_smallint(tds, -1)
 
     # TDS7.1 output collate information
     if IS_TDS71_PLUS(tds) and is_collate_type(col.on_server.column_type):

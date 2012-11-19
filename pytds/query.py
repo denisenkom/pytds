@@ -60,6 +60,7 @@ def make_param(tds, name, value, output=False):
     if value is None:
         col_type = SYBINTN
         size = 4
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, int):
         if -2**31 <= value <= 2**31 -1:
             col_type = SYBINTN
@@ -67,32 +68,37 @@ def make_param(tds, name, value, output=False):
         else:
             col_type = SYBINT8
             size = 8
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, float):
         col_type = SYBFLTN
         size = 8
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, (str, unicode)):
         if len(value) > 4000:
             col_type = XSYBNVARCHAR
+            column.column_varint_size = 8 # nvarchar(max)
         else:
             col_type = XSYBNCHAR
+            column.column_varint_size = tds_get_varint_size(tds, col_type)
         size = len(value) * 2
         column.char_conv = tds.char_convs[client2ucs2]
     elif isinstance(value, datetime):
         col_type = SYBDATETIMN
         size = 8
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
         col_type = SYBDECIMAL
         _, digits, exp = value.as_tuple()
         size = 12
         column.column_scale = -exp
         column.column_prec = len(digits)
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     else:
         raise Exception('NotSupportedError: Unable to determine database type')
     column.on_server.column_type = col_type
     column.on_server.column_size = size
     column.value = value
     column.funcs = tds_get_column_funcs(tds, col_type)
-    column.column_varint_size = tds_get_varint_size(tds, col_type)
     return column
 
 def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):

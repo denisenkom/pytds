@@ -180,5 +180,12 @@ class TransactionsTestCase(unittest.TestCase):
         ''')
         conn.commit()
 
+class MultiPacketRequest(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        param = 'x' * (len(conn.tds_socket.out_buf)*10)
+        cur.execute('select %s', (param,))
+        self.assertEqual([(param, )], cur.fetchall())
+
 if __name__ == '__main__':
     unittest.main()

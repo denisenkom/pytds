@@ -147,7 +147,8 @@ def tds_goodwrite(tds, buf, size, last):
             if hasattr(socket, 'MSG_NOSIGNAL'):
                 flags |= socket.MSG_NOSIGNAL
             if not last:
-                flags |= socket.MSG_MORE
+                if hasattr(socket, 'MSG_MORE'):
+                    flags |= socket.MSG_MORE
             nput = tds._sock.send(buf[pos:size], flags)
         except socket.error as e:
             if e.errno != errno.EWOULDBLOCK:
@@ -161,7 +162,7 @@ def tds_goodwrite(tds, buf, size, last):
 
 def tds_write_packet(tds, final):
     tds.out_buf[0] = tds.out_flag
-    tds.out_buf[1] = final
+    tds.out_buf[1] = 1 if final else 0
     struct.pack_into('>H', tds.out_buf, 2, tds.out_pos)
     if tds.tds_version >= 0x700 and not tds.login:
         tds.out_buf[6] = 1
