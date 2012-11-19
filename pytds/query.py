@@ -70,16 +70,13 @@ def make_param(tds, name, value, output=False):
     elif isinstance(value, float):
         col_type = SYBFLTN
         size = 8
-    elif isinstance(value, unicode):
+    elif isinstance(value, (str, unicode)):
         if len(value) > 4000:
             col_type = XSYBNVARCHAR
         else:
             col_type = XSYBNCHAR
         size = len(value) * 2
         column.char_conv = tds.char_convs[client2ucs2]
-    elif isinstance(value, str):
-        col_type = XSYBBINARY
-        size = len(value)
     elif isinstance(value, datetime):
         col_type = SYBDATETIMN
         size = 8
