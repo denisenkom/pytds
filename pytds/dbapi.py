@@ -395,9 +395,10 @@ class Connection(object):
         if self._autocommit:
             return
 
-        self.cancel()
-        tds_submit_rollback(self.tds_socket, True)
-        self._sqlok()
+        if not self.tds_socket.is_dead():
+            self.cancel()
+            tds_submit_rollback(self.tds_socket, True)
+            self._sqlok()
 
     def clr_err(self):
         self.last_msg_no = 0

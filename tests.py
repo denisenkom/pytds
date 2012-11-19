@@ -141,6 +141,37 @@ class MultipleRecordsetsTestCase(unittest.TestCase):
         cur.nextset()
         self.assertEqual((12,), cur.fetchone())
 
+class TransactionsTestCase(unittest.TestCase):
+    def _create_table(self):
+        cur = conn.cursor()
+        cur.execute('''
+        if object_id('testtable') is not null
+            drop table testtable
+        ''')
+        conn.commit()
+        cur.execute('''
+        create table testtable (field datetime)
+        ''')
+
+    def runTest(self):
+        self._create_table()
+        cur = conn.cursor()
+        cur.execute("select object_id('testtable')")
+        self.assertNotEquals((None,), cur.fetchone())
+        conn.rollback()
+        cur.execute("select object_id('testtable')")
+        self.assertEquals((None,), cur.fetchone())
+        self._create_table()
+        conn.commit()
+        self.assertNotEquals((None,), cur.fetchone())
+
+    def tearDown(self):
+        cur = conn.cursor()
+        cur.execute('''
+        if object_id('testtable') is not null
+            drop table testtable
+        ''')
+        conn.commit()
 
 if __name__ == '__main__':
     unittest.main()
