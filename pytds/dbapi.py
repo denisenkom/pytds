@@ -833,6 +833,11 @@ class Cursor(object):
         return self._results
 
     @property
+    def rowcount(self):
+        self._get_results()
+        return self._rows_affected
+
+    @property
     def description(self):
         return self._get_results()['description']
 
