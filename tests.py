@@ -80,6 +80,7 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
         self._test_val(Decimal('1234000'))
         self._test_val(None)
         self._test_val('hello')
+        self._test_val('')
 
 class TableTestCase(unittest.TestCase):
     def setUp(self):

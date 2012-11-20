@@ -82,7 +82,7 @@ def make_param(tds, name, value, output=False):
                 col_type = SYBNTEXT
                 column.column_varint_size = tds_get_varint_size(tds, col_type)
         else:
-            col_type = XSYBNCHAR
+            col_type = XSYBNVARCHAR
             column.column_varint_size = tds_get_varint_size(tds, col_type)
         size = len(value) * 2
         column.char_conv = tds.char_convs[client2ucs2]
@@ -100,7 +100,7 @@ def make_param(tds, name, value, output=False):
     else:
         raise Exception('NotSupportedError: Unable to determine database type')
     column.on_server.column_type = col_type
-    column.on_server.column_size = size
+    column.column_size = column.on_server.column_size = size
     column.value = value
     column.funcs = tds_get_column_funcs(tds, col_type)
     return column
