@@ -381,10 +381,12 @@ def tds_data_put(tds, curcol):
             tds_put_s(tds, value)
         elif column_type in (SYBDATETIME, SYBDATETIMN):
             days = (value - _base_date).days
-            time = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
-            tds_put_s(tds, TDS_DATETIME.pack(days, time))
+            tm = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
+            tds_put_s(tds, TDS_DATETIME.pack(days, tm))
         elif column_type == SYBFLTN and size == 8 or column_type == SYBFLT8:
             tds_put_s(tds, _SYBFLT8_STRUCT.pack(value))
+        elif column_type == SYBNTEXT:
+            tds_put_s(tds, value)
         else:
             raise Exception('not implemented')
         # finish chunk for varchar/varbinary(max)

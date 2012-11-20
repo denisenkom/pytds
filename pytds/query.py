@@ -75,8 +75,12 @@ def make_param(tds, name, value, output=False):
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, (str, unicode)):
         if len(value) > 4000:
-            col_type = XSYBNVARCHAR
-            column.column_varint_size = 8 # nvarchar(max)
+            if IS_TDS72_PLUS(tds):
+                col_type = XSYBNVARCHAR
+                column.column_varint_size = 8 # nvarchar(max)
+            else:
+                col_type = SYBNTEXT
+                column.column_varint_size = tds_get_varint_size(tds, col_type)
         else:
             col_type = XSYBNCHAR
             column.column_varint_size = tds_get_varint_size(tds, col_type)
