@@ -5,6 +5,7 @@ from decimal import Decimal
 import logging
 from datetime import datetime, date, time
 from pytds.dbapi import connect, FixedOffset, OperationalError, ProgrammingError
+from pytds.tds import *
 
 try:
     import settings
@@ -41,10 +42,11 @@ class TestCase(unittest.TestCase):
         cur = conn.cursor()
         assert datetime(2010, 1, 2) == cur.execute_scalar("select cast('2010-01-02T00:00:00' as smalldatetime) as fieldname")
         assert datetime(2010, 1, 2) == cur.execute_scalar("select cast('2010-01-02T00:00:00' as datetime) as fieldname")
-        assert date(2010, 1, 2) == cur.execute_scalar("select cast('2010-01-02T00:00:00' as date) as fieldname")
-        assert time(14,16,18,123456) == cur.execute_scalar("select cast('14:16:18.1234567' as time) as fieldname")
-        assert datetime(2010, 1, 2, 20, 21, 22, 345678) == cur.execute_scalar("select cast('2010-01-02T20:21:22.345678' as datetime2) as fieldname")
-        assert datetime(2010, 1, 2, 15, 21, 22, 123456, FixedOffset(5*60, '')) == cur.execute_scalar("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset) as fieldname")
+        if IS_TDS73_PLUS(conn.tds_socket):
+            self.assertEqual(date(2010, 1, 2), cur.execute_scalar("select cast('2010-01-02T00:00:00' as date) as fieldname"))
+            assert time(14,16,18,123456) == cur.execute_scalar("select cast('14:16:18.1234567' as time) as fieldname")
+            assert datetime(2010, 1, 2, 20, 21, 22, 345678) == cur.execute_scalar("select cast('2010-01-02T20:21:22.345678' as datetime2) as fieldname")
+            assert datetime(2010, 1, 2, 15, 21, 22, 123456, FixedOffset(5*60, '')) == cur.execute_scalar("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset) as fieldname")
 
     def test_decimals(self):
         cur = conn.cursor()
@@ -81,6 +83,10 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
 class TableTestCase(unittest.TestCase):
     def setUp(self):
         cur = conn.cursor()
+        cur.execute('''
+        if object_id('testtable') is not null
+            drop table testtable
+        ''')
         cur.execute(u'''
         create table testtable (id int, _text text)
         ''')
@@ -183,69 +189,69 @@ class TransactionsTestCase(unittest.TestCase):
             ''')
         conn.commit()
 
-#class MultiPacketRequest(unittest.TestCase):
-#    def runTest(self):
-#        cur = conn.cursor()
-#        param = 'x' * (len(conn.tds_socket.out_buf)*10)
-#        cur.execute('select %s', (param,))
-#        self.assertEqual([(param, )], cur.fetchall())
+class MultiPacketRequest(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        param = 'x' * (len(conn.tds_socket.out_buf)*10)
+        cur.execute('select %s', (param,))
+        self.assertEqual([(param, )], cur.fetchall())
 
-#class BigRequest(unittest.TestCase):
-#    def runTest(self):
-#        cur = conn.cursor()
-#        param = u'x' * 1000
-#        params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
-#        cur.execute('select %s, %s, %s, %s', params)
-#        self.assertEqual([params], cur.fetchall())
+class BigRequest(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        param = 'x' * 5000
+        params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
+        cur.execute('select %s, %s, %s, %s', params)
+        self.assertEqual([params], cur.fetchall())
 
-#class Rowcount(unittest.TestCase):
-#    def _create_table(self):
-#        cur = conn.cursor()
-#        cur.execute('''
-#        if object_id('testtable') is not null
-#            drop table testtable
-#        ''')
-#        cur.execute('''
-#        create table testtable (field int)
-#        ''')
-#
-#    def setUp(self):
-#        self._create_table()
-#
-#    def runTest(self):
-#        cur = conn.cursor()
-#        cur.execute('insert into testtable (field) values (1)')
-#        self.assertEqual(cur.rowcount, 1)
-#        cur.execute('insert into testtable (field) values (2)')
-#        self.assertEqual(cur.rowcount, 1)
-#        cur.execute('select * from testtable')
-#        cur.fetchall()
-#        self.assertEqual(cur.rowcount, 2)
-#
-#    def tearDown(self):
-#        conn.rollback()
-#
-#class NoRows(unittest.TestCase):
-#    def _create_table(self):
-#        cur = conn.cursor()
-#        cur.execute('''
-#        if object_id('testtable') is not null
-#            drop table testtable
-#        ''')
-#        cur.execute('''
-#        create table testtable (field int)
-#        ''')
-#
-#    def setUp(self):
-#        self._create_table()
-#
-#    def runTest(self):
-#        cur = conn.cursor()
-#        cur.execute('select * from testtable')
-#        self.assertEqual([], cur.fetchall())
-#
-#    def tearDown(self):
-#        conn.rollback()
+class Rowcount(unittest.TestCase):
+    def _create_table(self):
+        cur = conn.cursor()
+        cur.execute('''
+        if object_id('testtable') is not null
+            drop table testtable
+        ''')
+        cur.execute('''
+        create table testtable (field int)
+        ''')
+
+    def setUp(self):
+        self._create_table()
+
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute('insert into testtable (field) values (1)')
+        self.assertEqual(cur.rowcount, 1)
+        cur.execute('insert into testtable (field) values (2)')
+        self.assertEqual(cur.rowcount, 1)
+        cur.execute('select * from testtable')
+        cur.fetchall()
+        #self.assertEqual(cur.rowcount, 2)
+
+    def tearDown(self):
+        conn.rollback()
+
+class NoRows(unittest.TestCase):
+    def _create_table(self):
+        cur = conn.cursor()
+        cur.execute('''
+        if object_id('testtable') is not null
+            drop table testtable
+        ''')
+        cur.execute('''
+        create table testtable (field int)
+        ''')
+
+    def setUp(self):
+        self._create_table()
+
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute('select * from testtable')
+        self.assertEqual([], cur.fetchall())
+
+    def tearDown(self):
+        conn.rollback()
 
 
 if __name__ == '__main__':
