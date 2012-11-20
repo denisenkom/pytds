@@ -1,4 +1,5 @@
 import logging
+from BitVector import BitVector
 from read import *
 from tdsproto import *
 from iconv import *
@@ -134,9 +135,7 @@ def tds_process_default_tokens(tds, marker):
         logger.warning("Eating %s token", tds_token_name(marker))
         tds_skip_n(tds, tds_get_int(tds))
     elif marker == TDS_NBC_ROW_TOKEN:
-        logger.error("error: cannot process TDS_NBC_ROW_TOKEN %d(%x)!", marker, marker)
-        tds_close_socket(tds)
-        raise Exception('TDSEBTOK')
+        return tds_process_nbcrow(tds)
     else:
         tds_close_socket(tds)
         logger.error('Unknown marker: {0}({0:x})'.format(marker))
@@ -160,6 +159,25 @@ def tds_process_row(tds):
         curcol.funcs.get_data(tds, curcol)
     return TDS_SUCCESS
 
+# NBC=null bitmap compression row
+# http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
+def tds_process_nbcrow(tds):
+    info = tds.current_results
+    if not info:
+        raise Exception('TDS_FAIL')
+    assert info.num_cols > 0
+    info.row_count += 1
+
+    # reading bitarray for nulls, 1 represent null values for
+    # corresponding fields
+    nbc = tds_get_n(tds, len(info.columns) + 7 / 8)
+    nbc = BitVector(bitstring=(ord(b) for b in nbc))
+    for i, curcol in enumerate(info.columns):
+        if nbc[i]:
+            curcol.value = None
+        else:
+            curcol.funcs.get_data(tds, curcol)
+    return TDS_SUCCESS
 #
 # tds_process_end() processes any of the DONE, DONEPROC, or DONEINPROC
 # tokens.
@@ -562,7 +580,7 @@ def tds_process_tokens(tds, flag):
             elif marker == TDS7_COMPUTE_RESULT_TOKEN:
                 if SET_RETURN(TDS_COMPUTEFMT_RESULT, 'COMPUTEFMT'):
                     rc = tds7_process_compute_result(tds)
-            elif marker == TDS_ROW_TOKEN:
+            elif marker in (TDS_ROW_TOKEN, TDS_NBC_ROW_TOKEN):
                 # overstepped the mark...
                 if tds.cur_cursor:
                     cursor = tds.cur_cursor
@@ -577,7 +595,10 @@ def tds_process_tokens(tds, flag):
                 if tds.current_results:
                     tds.current_results.rows_exist = 1
                 if SET_RETURN(TDS_ROW_RESULT, 'ROW'):
-                    rc = tds_process_row(tds)
+                    if marker == TDS_NBC_ROW_TOKEN:
+                        rc = tds_process_nbcrow(tds)
+                    else:
+                        rc = tds_process_row(tds)
             elif marker == TDS_CMP_ROW_TOKEN:
                 # I don't know when this it's false but it happened, also server can send garbage...
                 if tds.res_info:

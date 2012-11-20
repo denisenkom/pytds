@@ -79,6 +79,7 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
         self._test_val(Decimal('1234.567'))
         self._test_val(Decimal('1234000'))
         self._test_val(None)
+        self._test_val('hello')
 
 class TableTestCase(unittest.TestCase):
     def setUp(self):
@@ -88,10 +89,10 @@ class TableTestCase(unittest.TestCase):
             drop table testtable
         ''')
         cur.execute(u'''
-        create table testtable (id int, _text text)
+        create table testtable (id int, _text text, _xml xml)
         ''')
         cur.execute(u'''
-        insert into testtable (id, _text) values (1, 'text')
+        insert into testtable (id, _text, _xml) values (1, 'text', '<root/>')
         ''')
 
     def runTest(self):
@@ -102,6 +103,13 @@ class TableTestCase(unittest.TestCase):
         cur = conn.cursor()
         cur.execute('select _text from testtable order by id')
         self.assertEqual([(u'text',)], cur.fetchall())
+
+        cur = conn.cursor()
+        cur.execute('select _xml from testtable order by id')
+        self.assertEqual([('<root/>',)], cur.fetchall())
+
+        cur = conn.cursor()
+        cur.execute('insert into testtable (_xml) values (%s)', ('<some/>',))
 
     def tearDown(self):
         cur = conn.cursor()
@@ -282,6 +290,12 @@ class BadConnection(unittest.TestCase):
         with self.assertRaises(LoginError):
             conn = connect(server=settings.HOST, database=settings.DATABASE+'x', user=settings.USER, password=settings.PASSWORD)
             conn.cursor().execute('select 1')
+
+class NullXml(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute('select cast(NULL as xml)')
+        self.assertEqual([(None,)], cur.fetchall())
 
 if __name__ == '__main__':
     unittest.main()
