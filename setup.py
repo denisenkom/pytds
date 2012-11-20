@@ -1,7 +1,8 @@
 from distutils.core import setup
+import pytds
 
 setup(name='python-tds',
-        version='0.1',
+        version=pytds.__version__,
         description='Python DBAPI driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation',
         author='Mikhail Denisenko',
         author_email='denisenkom@gmail.com',
