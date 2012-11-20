@@ -50,7 +50,10 @@ def tds_connect(tds, login):
             tds_conn(tds).emul_little_endian = True
         connect_timeout = login.connect_timeout
         tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
-        tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
+        try:
+            tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
+        except socket.error as e:
+            raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
         tds_set_state(tds, TDS_IDLE)
         db_selected = False
         if login.tds_version >= 0x701:
@@ -64,7 +67,7 @@ def tds_connect(tds, login):
             tds.out_flag = TDS_LOGIN
             tds_send_login(tds, login)
         if not tds_process_login_tokens(tds):
-            raise Exception('Login failed')
+            raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
         text_size = login.text_size
         if text_size or not db_selected and login.database:
             q = []
@@ -81,8 +84,11 @@ def tds_connect(tds, login):
             login.tds_version = tds_version
             try:
                 return tds_connect(tds, login)
-            except:
+            except LoginError:
+                raise
+            except Exception as e:
                 pass
+        raise e
 
 import socket
 this_host_name = socket.gethostname()

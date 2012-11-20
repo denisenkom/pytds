@@ -25,64 +25,6 @@ threadsafety = 1
 # this module uses extended python format codes
 paramstyle = 'pyformat'
 
-# store a tuple of programming error codes
-prog_errors = (
-    102,    # syntax error
-    207,    # invalid column name
-    208,    # invalid object name
-    2812,   # unknown procedure
-    4104    # multi-part identifier could not be bound
-)
-
-# store a tuple of integrity error codes
-integrity_errors = (
-    515,    # NULL insert
-    547,    # FK related
-    2601,   # violate unique index
-    2627,   # violate UNIQUE KEY constraint
-)
-
-# exception hierarchy
-class Warning(StandardError):
-    pass
-
-class Error(StandardError):
-    pass
-
-class InterfaceError(Error):
-    pass
-
-class DatabaseError(Error):
-    @property
-    def message(self):
-        if self.procname:
-            return 'SQL Server message %d, severity %d, state %d, ' \
-                'procedure %s, line %d:\n%s' % (self.number,
-                self.severity, self.state, self.procname,
-                self.line, self.text)
-        else:
-            return 'SQL Server message %d, severity %d, state %d, ' \
-                'line %d:\n%s' % (self.number, self.severity,
-                self.state, self.line, self.text)
-
-class DataError(Error):
-    pass
-
-class OperationalError(DatabaseError):
-    pass
-
-class IntegrityError(DatabaseError):
-    pass
-
-class InternalError(DatabaseError):
-    pass
-
-class ProgrammingError(DatabaseError):
-    pass
-
-class NotSupportedError(DatabaseError):
-    pass
-
 # stored procedure output parameter
 class output:
     #property

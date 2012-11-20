@@ -254,3 +254,64 @@ def tds_quote_id(tds, id):
 def TDS_IS_SYBASE(x): return not tds_conn(x).product_version & 0x80000000
 # Check if product is Microsft SQL Server. x should be a TDSSOCKET*.
 def TDS_IS_MSSQL(x): return tds_conn(x).product_version & 0x80000000
+
+# store a tuple of programming error codes
+prog_errors = (
+    102,    # syntax error
+    207,    # invalid column name
+    208,    # invalid object name
+    2812,   # unknown procedure
+    4104    # multi-part identifier could not be bound
+)
+
+# store a tuple of integrity error codes
+integrity_errors = (
+    515,    # NULL insert
+    547,    # FK related
+    2601,   # violate unique index
+    2627,   # violate UNIQUE KEY constraint
+)
+
+# exception hierarchy
+class Warning(StandardError):
+    pass
+
+class Error(StandardError):
+    pass
+
+class InterfaceError(Error):
+    pass
+
+class DatabaseError(Error):
+    @property
+    def message(self):
+        if self.procname:
+            return 'SQL Server message %d, severity %d, state %d, ' \
+                'procedure %s, line %d:\n%s' % (self.number,
+                self.severity, self.state, self.procname,
+                self.line, self.text)
+        else:
+            return 'SQL Server message %d, severity %d, state %d, ' \
+                'line %d:\n%s' % (self.number, self.severity,
+                self.state, self.line, self.text)
+
+class DataError(Error):
+    pass
+
+class OperationalError(DatabaseError):
+    pass
+
+class LoginError(OperationalError):
+    pass
+
+class IntegrityError(DatabaseError):
+    pass
+
+class InternalError(DatabaseError):
+    pass
+
+class ProgrammingError(DatabaseError):
+    pass
+
+class NotSupportedError(DatabaseError):
+    pass

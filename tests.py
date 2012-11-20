@@ -270,5 +270,18 @@ class SqlVariant(unittest.TestCase):
 
         cur.execute("select cast(cast('test' as varbinary) as sql_variant)")
         self.assertEqual([('test',)], cur.fetchall())
+
+class BadConnection(unittest.TestCase):
+    def runTest(self):
+        with self.assertRaises(LoginError):
+            conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
+            conn.cursor().execute('select 1')
+        with self.assertRaises(LoginError):
+            conn = connect(server=settings.HOST+'bad', database=settings.DATABASE, user=settings.USER+'bad', password=settings.PASSWORD)
+            conn.cursor().execute('select 1')
+        with self.assertRaises(LoginError):
+            conn = connect(server=settings.HOST, database=settings.DATABASE+'x', user=settings.USER, password=settings.PASSWORD)
+            conn.cursor().execute('select 1')
+
 if __name__ == '__main__':
     unittest.main()
