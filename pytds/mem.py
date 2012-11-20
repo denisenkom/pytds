@@ -169,7 +169,7 @@ def tds_alloc_row(res_info):
 class _TdsLogin:
     def __init__(self):
         self.option_flag2 = 0
-        self.tds_version = 0x700
+        self.tds_version = None
         self.emul_little_endian = False
         self.port = 1433
         self.block_size = 4096

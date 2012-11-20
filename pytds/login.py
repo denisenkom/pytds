@@ -80,7 +80,7 @@ def tds_connect(tds, login):
         for tds_version in versions:
             login.tds_version = tds_version
             try:
-                return tds_connect(host, login)
+                return tds_connect(tds, login)
             except:
                 pass
 
