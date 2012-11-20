@@ -134,6 +134,11 @@ class _Column(object):
         self.char_conv = None
         self.column_nullbind = None
         self.column_varaddr = 0
+        self.column_name = ''
+        self.value = None
+
+    def __repr__(self):
+        return '<_Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
 
 class _Results(object):
     pass
