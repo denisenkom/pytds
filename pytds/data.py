@@ -10,6 +10,8 @@ from tds_checks import *
 
 logger = logging.getLogger(__name__)
 
+COLLATION_SIZE = 5
+
 #/**
 # * Set type of column initializing all dependency 
 # * @param curcol column to set
@@ -80,7 +82,7 @@ def tds_data_get_info(tds, col):
         # other 2 bytes ???
         # last bytes is id in syscharsets
         #
-        col.column_collation = tds_get_n(tds, 5)
+        col.column_collation = tds_get_n(tds, COLLATION_SIZE)
         col.char_conv = tds_iconv_from_collate(tds, col.column_collation)
 
     # Only read table_name for blob columns (eg. not for SYBLONGBINARY)
@@ -145,7 +147,10 @@ def to_python(tds, data, type, length):
     elif type in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
         return tds_datecrack(type, data)
 
-    elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY):
+    elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
+            SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\
+            XSYBVARBINARY, XSYBBINARY):
+
         return data
 
     elif type == SYBUNIQUE and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
@@ -480,6 +485,16 @@ def tds_numeric_row_len(col):
 class _Numeric:
     pass
 
+MAX_NUMERIC = 33
+
+def ms_parse_numeric(positive, buf, scale):
+    val = reduce(lambda acc, val: acc*256 + ord(val), reversed(buf), 0)
+    val = Decimal(val)
+    if not positive:
+        val *= -1
+    val /= 10 ** scale
+    return val
+
 def tds_numeric_get(tds,  curcol):
     CHECK_TDS_EXTRA(tds)
     CHECK_COLUMN_EXTRA(curcol)
@@ -502,18 +517,13 @@ def tds_numeric_get(tds,  curcol):
 
     # server is going to crash freetds ??
     # TODO close connection it server try to do so ??
-    if colsize > 33:
+    if colsize > MAX_NUMERIC:
         raise Exception('TDS_FAIL')
     positive = tds_get_byte(tds)
     buf = tds_get_n(tds, colsize - 1)
 
     if IS_TDS7_PLUS(tds):
-        val = reduce(lambda acc, val: acc*256 + ord(val), reversed(buf), 0)
-        val = Decimal(val)
-        if not positive:
-            val *= -1
-        val /= 10 ** scale
-        curcol.value = val
+        curcol.value = ms_parse_numeric(positive, buf, scale)
     else:
         raise Exception('not supported')
 
@@ -556,6 +566,86 @@ def tds_numeric_put(tds, col):
     assert val == 0
 
 DEFINE_FUNCS('numeric', 'numeric')
+
+
+#
+# This strange type has following structure
+# 0 len (int32) -- NULL
+# len (int32), type (int8), data -- ints, date, etc
+# len (int32), type (int8), 7 (int8), collation, column size (int16) -- [n]char, [n]varchar, binary, varbinary
+# BLOBS (text/image) not supported
+#
+def tds_variant_get(tds, curcol):
+    colsize = tds_get_int(tds)
+
+    # NULL
+    try:
+        curcol.value = None
+        if colsize < 2:
+            tds_skip_n(tds, colsize)
+            return
+
+        type = tds_get_byte(tds);
+        info_len = tds_get_byte(tds)
+        colsize -= 2
+        if info_len > colsize:
+            raise Exception('TDS_FAIL')
+        if is_collate_type(type):
+            if COLLATION_SIZE > info_len:
+                raise Exception('TDS_FAIL')
+            curcol.collation = collation = tds_get_n(tds, COLLATION_SIZE)
+            colsize -= COLLATION_SIZE
+            info_len -= COLLATION_SIZE
+            curcol.char_conv = tds.char_convs[client2ucs2] if is_unicode_type(type) else\
+                    tds_iconv_from_collate(tds, collation)
+        # special case for numeric
+        if is_numeric_type(type):
+            if info_len != 2:
+                raise Exception('TDS_FAIL')
+            curcol.precision = precision = tds_get_byte(tds)
+            curcol.scale     = scale     = tds_get_byte(tds)
+            colsize -= 2
+            # FIXME check prec/scale, don't let server crash us
+            if colsize > MAX_NUMERIC:
+                raise Exception('TDS_FAIL')
+            positive = tds_get_byte(tds)
+            buf = tds_get_n(tds, colsize - 1)
+            curcol.value = ms_parse_numeric(positive, buf, scale)
+            return
+        varint = 0 if type == SYBUNIQUE else tds_get_varint_size(tds, type)
+        if varint != info_len:
+            raise Exception('TDS_FAIL')
+        if varint == 0:
+            size = tds_get_size_by_type(type)
+        elif varint == 1:
+            size = tds_get_byte(tds)
+        elif varint == 2:
+            size = tds_get_smallint(tds)
+        else:
+            raise Exception('TDS_FAIL')
+        colsize -= info_len
+        if colsize:
+            if USE_ICONV(tds) and curcol.char_conv:
+                data = tds_get_char_data(tds, colsize, curcol)
+            else:
+                data = tds_get_n(tds, colsize)
+        colsize = 0
+        curcol.value = to_python(tds, data, type, colsize)
+    except:
+        tds_skip_n(tds, colsize)
+        raise
+
+tds_variant_get_info = tds_data_get_info
+tds_variant_row_len = tds_data_row_len
+
+def tds_variant_put_info(tds, col):
+    raise Exception('not implemented')
+
+def tds_variant_put(tds, col):
+    raise Exception('not implemented')
+
+DEFINE_FUNCS('variant', 'variant')
+
 def gen_get_varint_size():
     table = '''\
 name	vendor	varint	fixed	nullable	variable	blob	numeric	unicode	ascii	size	nullable type

@@ -253,6 +253,22 @@ class NoRows(unittest.TestCase):
     def tearDown(self):
         conn.rollback()
 
+class SqlVariant(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        cur.execute("select cast('test' as sql_variant)")
+        self.assertEqual([('test',)], cur.fetchall())
 
+        cur.execute("select cast(N'test' as sql_variant)")
+        self.assertEqual([('test',)], cur.fetchall())
+
+        cur.execute("select cast(100 as sql_variant)")
+        self.assertEqual([(100,)], cur.fetchall())
+
+        cur.execute("select cast(cast(100.55555 as decimal(8,5)) as sql_variant)")
+        self.assertEqual([(Decimal('100.55555'),)], cur.fetchall())
+
+        cur.execute("select cast(cast('test' as varbinary) as sql_variant)")
+        self.assertEqual([('test',)], cur.fetchall())
 if __name__ == '__main__':
     unittest.main()
