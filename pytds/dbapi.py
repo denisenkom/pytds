@@ -834,7 +834,7 @@ class Cursor(object):
         """
         pass
 
-def connect(server='.', user='', password='', database='', timeout=0,
+def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, charset=None, as_dict=False,
         host='', appname=None, port='1433', tds_version='',
         encryption_level=TDS_ENCRYPTION_OFF):
