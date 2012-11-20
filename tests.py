@@ -296,6 +296,8 @@ class NullXml(unittest.TestCase):
         cur = conn.cursor()
         cur.execute('select cast(NULL as xml)')
         self.assertEqual([(None,)], cur.fetchall())
+        cur.execute('select cast(%s as xml)', (None,))
+        self.assertEqual([(None,)], cur.fetchall())
 
 if __name__ == '__main__':
     unittest.main()
