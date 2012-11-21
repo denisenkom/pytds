@@ -224,6 +224,7 @@ class Connection(object):
         self.last_msg_srv = ''
         self.last_msg_proc = ''
         self._as_dict = as_dict
+        self._state = DB_RES_NO_MORE_RESULTS
 
         # support MS methods of connecting locally
         instance = ""
@@ -384,8 +385,10 @@ class Connection(object):
         logger.debug("MSSQLConnection.cancel()")
         self.clr_err()
 
-        tds_send_cancel(self.tds_socket)
-        tds_process_cancel(self.tds_socket)
+        tds = self.tds_socket
+        if not tds.is_dead():
+            tds_send_cancel(tds)
+            tds_process_cancel(tds)
 
     def close(self):
         """

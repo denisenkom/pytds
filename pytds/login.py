@@ -55,31 +55,35 @@ def tds_connect(tds, login):
         except socket.error as e:
             raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
         tds_set_state(tds, TDS_IDLE)
-        db_selected = False
-        if login.tds_version >= 0x701:
-            tds71_do_login(tds, login)
-            db_selected = True
-        elif login.tds_version >= 0x700:
-            tds7_send_login(tds, login)
-            db_selected = True
-        else:
-            raise Exception('This TDS version is not supported')
-            tds.out_flag = TDS_LOGIN
-            tds_send_login(tds, login)
-        if not tds_process_login_tokens(tds):
-            raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
-        text_size = login.text_size
-        if text_size or not db_selected and login.database:
-            q = []
-            if text_size:
-                q.append('set textsize {0}'.format(int(text_size)))
-            if not db_selected and login.database:
-                q.append('use ' + tds_quote_id(tds, login.database))
-            tds_submit_query(tds, ''.join(q))
-            tds_process_simple_query(tds)
-        return tds
+        try:
+            db_selected = False
+            if login.tds_version >= 0x701:
+                tds71_do_login(tds, login)
+                db_selected = True
+            elif login.tds_version >= 0x700:
+                tds7_send_login(tds, login)
+                db_selected = True
+            else:
+                raise Exception('This TDS version is not supported')
+                tds.out_flag = TDS_LOGIN
+                tds_send_login(tds, login)
+            if not tds_process_login_tokens(tds):
+                raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
+            text_size = login.text_size
+            if text_size or not db_selected and login.database:
+                q = []
+                if text_size:
+                    q.append('set textsize {0}'.format(int(text_size)))
+                if not db_selected and login.database:
+                    q.append('use ' + tds_quote_id(tds, login.database))
+                tds_submit_query(tds, ''.join(q))
+                tds_process_simple_query(tds)
+            return tds
+        except:
+            tds_close_socket(tds)
+            raise
     else:
-        versions = [0x702, 0x701, 0x700, 0x500, 0x402]
+        versions = [0x702, 0x701, 0x700]
         for tds_version in versions:
             login.tds_version = tds_version
             try:
@@ -88,6 +92,7 @@ def tds_connect(tds, login):
                 raise
             except Exception as e:
                 pass
+        logger.exception('connection failed')
         raise e
 
 import socket

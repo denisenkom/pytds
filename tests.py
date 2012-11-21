@@ -305,6 +305,17 @@ class ConnectionClosing(unittest.TestCase):
         for x in xrange(10000):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, tds_version='7.3').close()
 
+class Bug1(unittest.TestCase):
+    def runTest(self):
+        conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
+        cur = conn.cursor()
+        try:
+            cur.execute('select 1')
+        except:
+            pass
+        cur.fetchall()
+        cur.close()
+        conn.rollback()
 
 if __name__ == '__main__':
     unittest.main()

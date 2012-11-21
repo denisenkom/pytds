@@ -1,5 +1,6 @@
 import logging
 from BitVector import BitVector
+import traceback
 from read import *
 from tdsproto import *
 from iconv import *
@@ -138,7 +139,7 @@ def tds_process_default_tokens(tds, marker):
         return tds_process_nbcrow(tds)
     else:
         tds_close_socket(tds)
-        logger.error('Unknown marker: {0}({0:x})'.format(marker))
+        logger.error('Unknown marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
         raise Exception('TDSEBTOK')
 
 #
