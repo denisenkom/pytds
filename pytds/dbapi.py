@@ -164,13 +164,6 @@ class Connection(object):
         return self._autocommit
 
     @property
-    def connected(self):
-        """
-        True if the connection to a database is open.
-        """
-        return self._connected
-
-    @property
     def rows_affected(self):
         """
         Number of rows affected by last query. For SELECT statements this
@@ -223,7 +216,6 @@ class Connection(object):
             as_dict, encryption_level, login_timeout, timeout):
         self._autocommit = False
         logger.debug("Connection.__init__()")
-        self._connected = 0
         self._charset = ''
         self.last_msg_no = 0
         self.last_msg_severity = 0
@@ -404,20 +396,10 @@ class Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.close()")
-        if self == None:
-            return None
-
-        if not self._connected:
-            return None
-
         self.clr_err()
-
         tds = self.tds_socket
-        if tds:
-            tds_free_socket(tds)
-
-        self._connected = 0
-
+        tds_close_socket(tds)
+        tds_free_socket(tds)
 
     def select_db(self, dbname):
         """

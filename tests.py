@@ -300,5 +300,11 @@ class NullXml(unittest.TestCase):
         cur.execute('select cast(%s as xml)', (None,))
         self.assertEqual([(None,)], cur.fetchall())
 
+class ConnectionClosing(unittest.TestCase):
+    def runTest(self):
+        for x in xrange(10000):
+            connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, tds_version='7.3').close()
+
+
 if __name__ == '__main__':
     unittest.main()
