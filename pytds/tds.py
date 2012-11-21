@@ -15,17 +15,26 @@ TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
+# tds protocol versions
+TDS70       = 0x07000000
+TDS71       = 0x07010000
+TDS71rev1   = 0x71000001
+TDS72       = 0x72090002
+TDS73A      = 0x730A0003
+TDS73B      = 0x730B0003
+TDS74       = 0x74000004
+
 def IS_TDS42(x): return x.tds_version==0x402
 def IS_TDS46(x): return x.tds_version==0x406
 def IS_TDS50(x): return x.tds_version==0x500
-def IS_TDS70(x): return x.tds_version==0x700
-def IS_TDS71(x): return x.tds_version==0x701
-def IS_TDS72(x): return x.tds_version==0x702
-def IS_TDS73(x): return x.tds_version==0x703
-def IS_TDS7_PLUS(x): return x.tds_version>=0x700
-def IS_TDS71_PLUS(x): return x.tds_version>=0x701
-def IS_TDS72_PLUS(x): return x.tds_version>=0x702
-def IS_TDS73_PLUS(x): return x.tds_version>=0x703
+def IS_TDS70(x): return x.tds_version==TDS70
+def IS_TDS71(x): return x.tds_version in (TDS71, TDS71rev1)
+def IS_TDS72(x): return x.tds_version==TDS72
+def IS_TDS73(x): return x.tds_version in (TDS73A, TDS73B)
+def IS_TDS7_PLUS(x): return x.tds_version>=TDS70
+def IS_TDS71_PLUS(x): return x.tds_version>=TDS71
+def IS_TDS72_PLUS(x): return x.tds_version>=TDS72
+def IS_TDS73_PLUS(x): return x.tds_version>=TDS73A
 
 client2ucs2             = 0
 client2server_chardata  = 1

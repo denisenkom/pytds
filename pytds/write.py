@@ -8,6 +8,9 @@ def tds_put_smallint(tds, value):
     else:
         tds_put_s(tds, struct.pack('>h', value))
 
+def tds_put_smallint_be(tds, value):
+    tds_put_s(tds, struct.pack('>h', value))
+
 def tds_put_s(tds, value):
     while value:
         left = len(tds.out_buf) - tds.out_pos
@@ -36,6 +39,15 @@ def tds_put_int(tds, value):
         tds_put_s(tds, struct.pack('<l', value))
     else:
         tds_put_s(tds, struct.pack('>l', value))
+
+def tds_put_uint(tds, value):
+    if tds_conn(tds).emul_little_endian:
+        tds_put_s(tds, struct.pack('<L', value))
+    else:
+        tds_put_s(tds, struct.pack('>L', value))
+
+def tds_put_int_be(tds, value):
+    tds_put_s(tds, struct.pack('>l', value))
 
 TDS_PUT_INT = tds_put_int
 

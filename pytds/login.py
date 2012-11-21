@@ -41,59 +41,46 @@ def tds_set_server(tds_login, server):
 # instance_name, encryption, block_size, bulk_copy, option_flag2
 # connect_timeout, query_timeout
 def tds_connect(tds, login):
-    if login.tds_version:
-        tds.login = login
-        tds.tds_version = login.tds_version
-        tds_conn(tds).emul_little_endian = login.emul_little_endian
-        if login.tds_version >= 0x700:
-            # TDS 7/8 only supports little endian
-            tds_conn(tds).emul_little_endian = True
-        connect_timeout = login.connect_timeout
-        tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
-        try:
-            tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
-        except socket.error as e:
-            raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
-        tds_set_state(tds, TDS_IDLE)
-        try:
-            db_selected = False
-            if login.tds_version >= 0x701:
-                tds71_do_login(tds, login)
-                db_selected = True
-            elif login.tds_version >= 0x700:
-                tds7_send_login(tds, login)
-                db_selected = True
-            else:
-                raise Exception('This TDS version is not supported')
-                tds.out_flag = TDS_LOGIN
-                tds_send_login(tds, login)
-            if not tds_process_login_tokens(tds):
-                raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
-            text_size = login.text_size
-            if text_size or not db_selected and login.database:
-                q = []
-                if text_size:
-                    q.append('set textsize {0}'.format(int(text_size)))
-                if not db_selected and login.database:
-                    q.append('use ' + tds_quote_id(tds, login.database))
-                tds_submit_query(tds, ''.join(q))
-                tds_process_simple_query(tds)
-            return tds
-        except:
-            tds_close_socket(tds)
-            raise
-    else:
-        versions = [0x702, 0x701, 0x700]
-        for tds_version in versions:
-            login.tds_version = tds_version
-            try:
-                return tds_connect(tds, login)
-            except LoginError:
-                raise
-            except Exception as e:
-                pass
-        logger.exception('connection failed')
-        raise e
+    tds.login = login
+    tds.tds_version = login.tds_version
+    tds_conn(tds).emul_little_endian = login.emul_little_endian
+    if IS_TDS7_PLUS(tds):
+        # TDS 7/8 only supports little endian
+        tds_conn(tds).emul_little_endian = True
+    connect_timeout = login.connect_timeout
+    tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
+    try:
+        tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
+    except socket.error as e:
+        raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
+    tds_set_state(tds, TDS_IDLE)
+    try:
+        db_selected = False
+        if IS_TDS71_PLUS(tds):
+            tds71_do_login(tds, login)
+            db_selected = True
+        elif IS_TDS7_PLUS(tds):
+            tds7_send_login(tds, login)
+            db_selected = True
+        else:
+            raise Exception('This TDS version is not supported')
+            tds.out_flag = TDS_LOGIN
+            tds_send_login(tds, login)
+        if not tds_process_login_tokens(tds):
+            raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
+        text_size = login.text_size
+        if text_size or not db_selected and login.database:
+            q = []
+            if text_size:
+                q.append('set textsize {0}'.format(int(text_size)))
+            if not db_selected and login.database:
+                q.append('use ' + tds_quote_id(tds, login.database))
+            tds_submit_query(tds, ''.join(q))
+            tds_process_simple_query(tds)
+        return tds
+    except:
+        tds_close_socket(tds)
+        raise
 
 import socket
 this_host_name = socket.gethostname()
@@ -105,8 +92,9 @@ def tds7_send_login(tds, login):
     tds.authentication = None
     if len(login.password) > 128:
         login.password = login.password[:128]
-    current_pos = 86 + 8 if tds.tds_version >= 0x702 else 86
-    packet_size = current_pos + (len(login.client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
+    current_pos = 86 + 8 if IS_TDS72_PLUS(tds) else 86
+    client_host_name = login.client_host_name or this_host_name
+    packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
     auth_len = 0
     if False:
         if user_name.find('\\') != -1 or not user_name:
@@ -119,19 +107,7 @@ def tds7_send_login(tds, login):
         else:
             packet_size += (len(user_name) + len(login.password))*2
     tds_put_int(tds, packet_size)
-    if login.tds_version == 0x700:
-        tds_put_s(tds, b'\x00\x00\x00\x70')
-    elif login.tds_version == 0x701:
-        tds_put_s(tds, b'\x01\x00\x00\x71')
-    elif login.tds_version == 0x702:
-        tds_put_s(tds, b'\x02\x00\x09\x72')
-    elif login.tds_version == 0x703:
-        if SUPPORT_NBCROW:
-            tds_put_s(tds, b'\x03\x00\x0b\x73')
-        else:
-            tds_put_s(tds, b'\x03\x00\x0a\x73')
-    else:
-        assert False, 'tds7_send_login called with invalid tds_version'
+    tds_put_uint(tds, login.tds_version)
     block_size = 4096
     if login.block_size < 512 or 1000000 < login.block_size:
         block_size = login.block_size
@@ -149,12 +125,12 @@ def tds7_send_login(tds, login):
     tds_put_byte(tds, option_flag2)
     tds_put_byte(tds, 0) # sql_type_flag
     option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
-    tds_put_byte(tds, option_flag3 if tds.tds_version >= 0x703 else 0)
+    tds_put_byte(tds, option_flag3 if IS_TDS73_PLUS(tds) else 0)
     tds_put_s(tds, b'\x88\xff\xff\xff') # time zone
     tds_put_s(tds, b'\x36\x04\x00\x00') # time zone
     tds_put_smallint(tds, current_pos)
-    tds_put_smallint(tds, len(login.client_host_name))
-    current_pos += len(login.client_host_name) * 2
+    tds_put_smallint(tds, len(client_host_name))
+    current_pos += len(client_host_name) * 2
     if tds.authentication:
         tds_put_smallint(tds, 0)
         tds_put_smallint(tds, 0)
@@ -198,13 +174,13 @@ def tds7_send_login(tds, login):
     # db file
     tds_put_smallint(tds, current_pos)
     tds_put_smallint(tds, 0)
-    if tds.tds_version >= 0x702:
+    if IS_TDS72_PLUS(tds):
         # new password
         tds_put_smallint(tds, current_pos)
         tds_put_smallint(tds, 0)
         # sspi long
         tds_put_int(tds, 0)
-    tds_put_string(tds, login.client_host_name)
+    tds_put_string(tds, client_host_name)
     if not tds.authentication:
         tds_put_string(tds, user_name)
         tds_put_s(tds, tds7_crypt_pass(login.password))
@@ -225,37 +201,44 @@ def tds7_crypt_pass(password):
     return encoded
 
 def tds71_do_login(tds, login):
+    VERSION = 0
+    ENCRYPTION = 1
+    INSTOPT = 2
+    THREADID = 3
+    MARS = 4
+    TRACEID = 5
+    TERMINATOR = 0xff
     instance_name = login.instance_name or 'MSSQLServer'
     encryption_level = login.encryption_level
-    if tds.tds_version < 0x702:
-        START_POS = 21
-        buf = bytearray(struct.pack('>BHHBHHBHHBHHB',
-                #netlib version
-                0, START_POS, 6,
-                #encryption
-                1, START_POS + 6, 1,
-                #instance
-                2, START_POS + 6 + 1, len(instance_name)+1,
-                # process id
-                3, START_POS + 6 + 1 + len(instance_name)+1, 4,
-                # end
-                0xff
-                ))
-    else:
+    if IS_TDS72_PLUS(tds):
         START_POS = 26
         buf = bytearray(struct.pack('>BHHBHHBHHBHHBHHB',
                 #netlib version
-                0, START_POS, 6,
+                VERSION, START_POS, 6,
                 #encryption
-                1, START_POS + 6, 1,
+                ENCRYPTION, START_POS + 6, 1,
                 #instance
-                2, START_POS + 6 + 1, len(instance_name)+1,
+                INSTOPT, START_POS + 6 + 1, len(instance_name)+1,
                 # process id
-                3, START_POS + 6 + 1 + len(instance_name)+1, 4,
+                THREADID, START_POS + 6 + 1 + len(instance_name)+1, 4,
                 # MARS enabled
-                4, START_POS + 6 + 1 + len(instance_name)+1 + 4, 1,
+                MARS, START_POS + 6 + 1 + len(instance_name)+1 + 4, 1,
                 # end
-                0xff
+                TERMINATOR
+                ))
+    else:
+        START_POS = 21
+        buf = bytearray(struct.pack('>BHHBHHBHHBHHB',
+                #netlib version
+                VERSION, START_POS, 6,
+                #encryption
+                ENCRYPTION, START_POS + 6, 1,
+                #instance
+                INSTOPT, START_POS + 6 + 1, len(instance_name)+1,
+                # thread id
+                THREADID, START_POS + 6 + 1 + len(instance_name)+1, 4,
+                # end
+                TERMINATOR
                 ))
     assert START_POS == len(buf)
     assert buf[START_POS-1] == 0xff
@@ -272,7 +255,7 @@ def tds71_do_login(tds, login):
         tds_put_byte(tds, 2)
     tds_put_s(tds, instance_name.encode('ascii'))
     tds_put_byte(tds, 0) # zero terminate instance_name
-    tds_put_int(tds, os.getpid())
+    tds_put_int(tds, os.getpid()) # TODO: change this to thread id
     if IS_TDS72_PLUS(tds):
         # MARS (1 enabled)
         tds_put_byte(tds, 0)
@@ -296,8 +279,12 @@ def tds71_do_login(tds, login):
         off, l = struct.unpack('>HH', bytes(p[i+1:i+1+4]))
         if off > size or off + l > size:
             raise TdsError(TDS_FAIL)
-        if type == 1 and l >= 1:
+        if type == VERSION:
+            tds.product_version = struct.unpack_from('>LH', str(p), off)
+        elif type == ENCRYPTION and l >= 1:
             crypt_flag = p[off]
+        elif type == MARS:
+            tds.mars_enabled = bool(p[off])
         i += 5
     # we readed all packet
     tds.in_pos += size
@@ -312,10 +299,3 @@ def tds71_do_login(tds, login):
 
 def tds_connect_and_login(tds, login):
     return tds_connect(tds, login)
-
-if __name__ == '__main__':
-    logging.basicConfig(level='DEBUG')
-    #tds_connect('subportal_dev', 'SubmissionPortal', 'sra_sa', 'sra_sa_pw')
-    tds = tds_connect('localhost', u'Учет', 'voroncova', 'voroncova', tds_version=0x700)
-    from query import tds_submit_query
-    tds_submit_query(tds, 'select 1')

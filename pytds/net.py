@@ -164,7 +164,7 @@ def tds_write_packet(tds, final):
     tds.out_buf[0] = tds.out_flag
     tds.out_buf[1] = 1 if final else 0
     struct.pack_into('>H', tds.out_buf, 2, tds.out_pos)
-    if tds.tds_version >= 0x700 and not tds.login:
+    if IS_TDS7_PLUS(tds) and not tds.login:
         tds.out_buf[6] = 1
     logger.debug('Sending packet {0}'.format(repr(tds.out_buf[0:tds.out_pos])))
     sent = tds_goodwrite(tds, tds.out_buf, tds.out_pos, final)

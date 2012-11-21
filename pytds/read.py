@@ -40,6 +40,14 @@ def tds_get_int(tds):
     else:
         return struct.unpack('>l', bytes(buf))[0]
 
+def tds_get_int_be(tds):
+    buf = tds_get_n(tds, 4)
+    return struct.unpack('>l', bytes(buf))[0]
+
+def tds_get_uint_be(tds):
+    buf = tds_get_n(tds, 4)
+    return struct.unpack('>L', bytes(buf))[0]
+
 def tds_get_int8(tds):
     buf = tds_get_n(tds, 8)
     if tds_conn(tds).emul_little_endian:

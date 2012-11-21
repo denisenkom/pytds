@@ -202,7 +202,7 @@ def tds_process_end(tds, marker):
         tds.res_info.more_results = more_results
         if not tds.current_results:
             tds.current_results = tds.res_info
-    rows_affected = tds_get_int8(tds) if tds.tds_version >= 0x702 else tds_get_int(tds)
+    rows_affected = tds_get_int8(tds) if IS_TDS72_PLUS(tds) else tds_get_int(tds)
     logger.debug('\t\trows_affected = {0}'.format(rows_affected))
     if was_cancelled or (not more_results and not tds.in_cancel):
         logger.debug('tds_process_end() state set to TDS_IDLE')
@@ -313,7 +313,7 @@ def tds_process_msg(tds, marker):
         msg['server'] = tds.server_name
     # stored proc name if available
     msg['proc_name'] = tds_get_string(tds, tds_get_byte(tds))
-    msg['line_number'] = tds_get_int(tds) if tds.tds_version >= 0x702 else tds_get_smallint(tds)
+    msg['line_number'] = tds_get_int(tds) if IS_TDS72_PLUS(tds) else tds_get_smallint(tds)
     if not msg['sql_state']:
         #msg['sql_state'] = tds_alloc_lookup_sqlstate(tds, msg['msgno'])
         pass
@@ -358,11 +358,9 @@ def tds_process_login_tokens(tds):
             tds.tds71rev1 = 0
             size = tds_get_smallint(tds)
             ack = tds_get_byte(tds)
-            ver['major'] = tds_get_byte(tds)
-            ver['minor'] = tds_get_byte(tds)
-            ver['tiny0'] = tds_get_byte(tds)
-            ver['tiny1'] = tds_get_byte(tds)
-            ver['reported'] = (ver['major'] << 24) | (ver['minor'] << 16) | (ver['tiny0'] << 8) | ver['tiny1']
+            version = tds_get_uint_be(tds)
+            ver['reported'] = version
+            tds.tds_version = version
             if ver['reported'] == 0x07010000:
                 tds.tds71rev1 = 1
             if ver['reported'] == 0x07000000:
@@ -379,30 +377,22 @@ def tds_process_login_tokens(tds):
                 ver['name'] = '2008'
             else:
                 ver['name'] = 'unknown'
-            logger.debug('server reports TDS version {major:x}.{minor:x}.{tiny0:x}.{tiny1:x}'.format(**ver))
-            logger.debug('Product name for {reported:x} is {name}'.format(**ver))
+            logger.debug('server reports TDS version {0:x}'.format(version))
             # get server product name
             # ignore product name length, some servers seem to set it incorrectly
             tds_get_byte(tds)
             product_version = 0
             size -= 10
-            if ver['major'] >= 7:
+            if IS_TDS7_PLUS(tds):
                 product_version = 0x80000000
                 tds.product_name = tds_get_string(tds, size/2)
-            elif ver['major'] >= 5:
+            elif IS_TDS5_PLUS(tds):
                 tds.product_name = tds_get_string(tds, size)
             else:
                 tds.product_name = tds_get_string(tds, size)
-                if tds.product_name and tds.product_name.find('Microsoft') != -1:
-                    product_version = 0x80000000
-            product_version |= tds_get_byte(tds) << 24
-            product_version |= tds_get_byte(tds) << 16
-            product_version |= tds_get_byte(tds) << 8
-            product_version |= tds_get_byte(tds)
+            product_version = tds_get_uint_be(tds)
             # MSSQL 6.5 and 7.0 seem to return strange values for this
             # using TDS 4.2, something like 5F 06 32 FF for 6.50
-            if ver['major'] == 4 and ver['minor'] == 2 and (product_version & 0xff0000ff) == 0x5f0000ff:
-                product_version = (product_version & 0xffff00 | 0x800000) << 8
             tds_conn(tds).product_version = product_version
             logger.debug('Product version {0:x}'.format(product_version))
             # TDS 5.0 reports 5 on success 6 on failure

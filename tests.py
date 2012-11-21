@@ -17,7 +17,7 @@ except:
 #logging.basicConfig(level='INFO')
 logging.basicConfig()
 
-conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, tds_version='7.3')
+conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD)
 
 class TestCase(unittest.TestCase):
     def test_all(self):
@@ -306,7 +306,7 @@ class NullXml(unittest.TestCase):
 class ConnectionClosing(unittest.TestCase):
     def runTest(self):
         for x in xrange(10000):
-            connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, tds_version='7.3').close()
+            connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
 
 class Bug1(unittest.TestCase):
     def runTest(self):
@@ -314,11 +314,18 @@ class Bug1(unittest.TestCase):
         cur = conn.cursor()
         try:
             cur.execute('select 1')
+            cur.fetchall()
         except:
             pass
-        cur.fetchall()
         cur.close()
         conn.rollback()
+
+#class Bug2(unittest.TestCase):
+#    def runTest(self):
+#        conn = connect(server='nihms2', database='SRA_Main', user='sra_websub', password='sra_websub_ps')
+#        cur = conn.cursor()
+#        import pudb; pudb.set_trace()
+#        cur.execute('select 1')
 
 if __name__ == '__main__':
     unittest.main()

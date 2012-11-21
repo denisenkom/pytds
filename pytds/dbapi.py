@@ -247,7 +247,7 @@ class Connection(object):
         login.password = password or ''
         login.app = appname
         if tds_version:
-            login.tds_version = _tds_ver_str_to_constant(tds_version)
+            login.tds_version = tds_version
         login.database = database
 
         # override the HOST to be the portion without the server, otherwise
@@ -821,7 +821,7 @@ class Cursor(object):
 
 def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, charset=None, as_dict=False,
-        host='', appname=None, port='1433', tds_version='',
+        host='', appname=None, port='1433', tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF):
     """
     Constructor for creating a connection to the database. Returns a
@@ -869,26 +869,6 @@ def connect(server='.', database='', user='', password='', timeout=0,
         timeout=timeout, encryption_level=encryption_level)
 
     return conn
-
-
-def _tds_ver_str_to_constant(verstr):
-    """
-        http://www.freetds.org/userguide/choosingtdsprotocol.htm
-    """
-    if verstr == u'4.2':
-        return 0x402
-    elif verstr == u'7.0':
-        return 0x700
-    elif verstr == u'7.1':
-        return 0x701
-    elif verstr == u'7.2':
-        return 0x702
-    elif verstr == '7.3':
-        return 0x703
-    #elif verstr == u'8.0':
-    #    return 0x800
-    else:
-        raise MSSQLException('unrecognized tds version: %s' % verstr)
 
 def get_last_msg_str(conn):
     return conn.last_msg_str

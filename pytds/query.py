@@ -148,7 +148,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
             # send it
             tds_query_flush_packet(tds)
             # emulate it for TDS4.x, send RPC for mssql
-            if tds.tds_version < 0x500:
+            if not IS_TDS5_PLUS(tds):
                 return tds_send_emulated_rpc(tds, rpc_name, params)
     except:
         tds_set_state(tds, TDS_IDLE)
