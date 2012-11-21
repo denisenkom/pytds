@@ -243,8 +243,8 @@ class Connection(object):
         appname = appname or "pytds"
 
         login.encryption_level = encryption_level
-        login.user_name = user
-        login.password = password
+        login.user_name = user or ''
+        login.password = password or ''
         login.app = appname
         if tds_version:
             login.tds_version = _tds_ver_str_to_constant(tds_version)

@@ -291,6 +291,9 @@ class BadConnection(unittest.TestCase):
         with self.assertRaises(LoginError):
             conn = connect(server=settings.HOST, database=settings.DATABASE+'x', user=settings.USER, password=settings.PASSWORD)
             conn.cursor().execute('select 1')
+        with self.assertRaises(LoginError):
+            conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=None)
+            conn.cursor().execute('select 1')
 
 class NullXml(unittest.TestCase):
     def runTest(self):
