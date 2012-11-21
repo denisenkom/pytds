@@ -16,13 +16,15 @@ TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
 # tds protocol versions
-TDS70       = 0x07000000
-TDS71       = 0x07010000
+TDS70       = 0x70000000
+TDS71       = 0x71000000
 TDS71rev1   = 0x71000001
 TDS72       = 0x72090002
 TDS73A      = 0x730A0003
 TDS73B      = 0x730B0003
 TDS74       = 0x74000004
+
+
 
 def IS_TDS42(x): return x.tds_version==0x402
 def IS_TDS46(x): return x.tds_version==0x406

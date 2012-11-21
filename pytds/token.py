@@ -346,6 +346,15 @@ def tds_process_msg(tds, marker):
         elif msg['msgno']:
             logger.warn(u'Msg {msgno}, Severity {severity}, State {state}, Server {server}, Line {line_number}\n{message}'.format(**msg))
 
+_SERVER_TO_CLIENT_MAPPING = {
+    0x07000000: TDS70,
+    0x07010000: TDS71,
+    0x71000001: TDS71rev1,
+    TDS72: TDS72,
+    TDS73A: TDS73A,
+    TDS73B: TDS73B,
+    TDS74: TDS74,
+    }
 
 def tds_process_login_tokens(tds):
     succeed = False
@@ -360,21 +369,23 @@ def tds_process_login_tokens(tds):
             ack = tds_get_byte(tds)
             version = tds_get_uint_be(tds)
             ver['reported'] = version
-            tds.tds_version = version
-            if ver['reported'] == 0x07010000:
-                tds.tds71rev1 = 1
-            if ver['reported'] == 0x07000000:
+            tds.tds_version = _SERVER_TO_CLIENT_MAPPING[version]
+            if tds.tds_version == TDS71rev1:
+                tds.tds71rev1 = True
+            if ver['reported'] == TDS70:
                 ver['name'] = '7.0'
-            elif ver['reported'] == 0x07010000:
+            elif ver['reported'] == TDS71:
                 ver['name'] = '2000'
-            elif ver['reported'] == 0x71000001:
+            elif ver['reported'] == TDS71rev1:
                 ver['name'] = '2000 SP1'
-            elif ver['reported'] == 0x72090002:
+            elif ver['reported'] == TDS72:
                 ver['name'] = '2005'
-            elif ver['reported'] == 0x730A0003:
+            elif ver['reported'] == TDS73A:
                 ver['name'] = '2008 (no NBCROW of fSparseColumnSet)'
-            elif ver['reported'] == 0x730B0003:
+            elif ver['reported'] == TDS73B:
                 ver['name'] = '2008'
+            elif version == TDS74:
+                ver['name'] = '2012'
             else:
                 ver['name'] = 'unknown'
             logger.debug('server reports TDS version {0:x}'.format(version))
