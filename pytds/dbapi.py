@@ -235,8 +235,6 @@ class Connection(object):
         if server in (".", "(local)"):
             server = "localhost"
 
-        server = server + "\\" + instance if instance else server
-
         self._login = login = tds_alloc_login(1)
         # set default values for loginrec
         login.library = "Python TDS Library"
@@ -247,21 +245,10 @@ class Connection(object):
         login.user_name = user or ''
         login.password = password or ''
         login.app = appname
+        login.port = port
         if tds_version:
             login.tds_version = tds_version
         login.database = database
-
-        # override the HOST to be the portion without the server, otherwise
-        # FreeTDS chokes when server still has the port definition.
-        # BUT, a patch on the mailing list fixes the need for this.  I am
-        # leaving it here just to remind us how to fix the problem if the bug
-        # doesn't get fixed for a while.  But if it does get fixed, this code
-        # can be deleted.
-        # patch: http://lists.ibiblio.org/pipermail/freetds/2011q2/026997.html
-        #if ':' in server:
-        #    os.environ['TDSHOST'] = server.split(':', 1)[0]
-        #else:
-        #    os.environ['TDSHOST'] = server
 
         # Set the character set name
         if charset:
@@ -270,7 +257,8 @@ class Connection(object):
             login.charset = self._charset
 
         # Connect to the server
-        tds_set_server(login, server)
+        login.server_name = server
+        login.instance_name = instance
         ctx = tds_alloc_context()
         ctx.msg_handler = self._msg_handler
         ctx.err_handler = self._err_handler
@@ -823,7 +811,7 @@ class Cursor(object):
 
 def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, charset=None, as_dict=False,
-        host='', appname=None, port='1433', tds_version=TDS74,
+        host='', appname=None, port=None, tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF):
     """
     Constructor for creating a connection to the database. Returns a

@@ -55,7 +55,8 @@ def tds_alloc_socket(context, bufsize):
     tds_init_write_buf(tds_socket)
     tds_set_s(tds_socket, None)
     import socket
-    tds_conn(tds_socket).s_signal, tds_conn(tds_socket).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    if hasattr(socket, 'socketpair'):
+        tds_conn(tds_socket).s_signal, tds_conn(tds_socket).s_signaled = socket.socketpair(type=socket.SOCK_DGRAM)
     tds_socket.state = TDS_DEAD
     tds_socket.env_chg_func = None
     from threadsafe import TDS_MUTEX_INIT
@@ -95,8 +96,10 @@ def tds_free_socket(tds):
         from net import tds_ssl_deinit, tds_close_socket
         tds_ssl_deinit(tds)
         tds_close_socket(tds);
-        tds_conn(tds).s_signal.close()
-        tds_conn(tds).s_signaled.close()
+        if tds_conn(tds).s_signal is not None:
+            tds_conn(tds).s_signal.close()
+        if tds_conn(tds).s_signaled is not None:
+            tds_conn(tds).s_signaled.close()
         #tds_iconv_free(tds);
         #free(tds_conn(tds)->product_name);
         #free(tds);

@@ -47,6 +47,14 @@ def tds_connect(tds, login):
     if IS_TDS7_PLUS(tds):
         # TDS 7/8 only supports little endian
         tds_conn(tds).emul_little_endian = True
+    if not IS_TDS50(tds) and login.instance_name and not login.port:
+        instances = tds7_get_instances(login.ip_addr or login.server_name)
+        if login.instance_name not in instances:
+            raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
+        insdict = instances[loin.instance_name]
+        if 'tcp' not in instdict:
+            raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
+        login.port = int(instdict['tcp'])
     connect_timeout = login.connect_timeout
     tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
     try:
