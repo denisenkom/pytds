@@ -243,14 +243,24 @@ def tds7_get_instances(ip_addr):
             s.sendto('\x03', (ip_addr, 1434))
             msg = s.recv(16*1024-1)
             # got data, read and parse
-            if len(msg) > 3 and msg[0] == 5:
-                tokens = msg[3:].split(';\x00')
+            if len(msg) > 3 and msg[0] == '\x05':
+                tokens = msg[3:].split(';')
                 results = {}
-                while tokens:
-                    insttoks = tokens[:7*2]
-                    tokens = tokens[7*2:]
-                    instdict = dict(zip(insttoks[::2], insttoks[1::2]))
-                    results[instdict['InstanceName']] = instdict
+                instdict = {}
+                got_name = False
+                for token in tokens:
+                    if got_name:
+                        instdict[name] = token
+                        got_name = False
+                    else:
+                        name = token
+                        if not name:
+                            if not instdict:
+                                break
+                            results[instdict['InstanceName']] = instdict
+                            instdict = {}
+                            continue
+                        got_name = True
                 return results
 
     finally:

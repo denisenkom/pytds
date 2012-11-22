@@ -28,8 +28,8 @@ class TdsError(Exception):
 # variables TDSQUERY and DSQUERY are used, in that order.  If they don't exist, the "default default" servername
 # is "SYBASE" (although the utility of that choice is a bit murky).  
 #
-# \param tds_login	points to a TDSLOGIN structure
-# \param server	the servername, or NULL, or a zero-length string
+# \param tds_login  points to a TDSLOGIN structure
+# \param server the servername, or NULL, or a zero-length string
 # \todo open the log file earlier, so these messages can be seen.  
 #
 def tds_set_server(tds_login, server):
@@ -51,7 +51,7 @@ def tds_connect(tds, login):
         instances = tds7_get_instances(login.ip_addr or login.server_name)
         if login.instance_name not in instances:
             raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
-        insdict = instances[loin.instance_name]
+        instdict = instances[login.instance_name]
         if 'tcp' not in instdict:
             raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
         login.port = int(instdict['tcp'])
