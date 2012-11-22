@@ -225,6 +225,7 @@ class Connection(object):
         self.last_msg_proc = ''
         self._as_dict = as_dict
         self._state = DB_RES_NO_MORE_RESULTS
+        self.tds_socket = None
 
         # support MS methods of connecting locally
         instance = ""
@@ -401,8 +402,9 @@ class Connection(object):
         logger.debug("MSSQLConnection.close()")
         self.clr_err()
         tds = self.tds_socket
-        tds_close_socket(tds)
-        tds_free_socket(tds)
+        if tds is not None:
+            tds_close_socket(tds)
+            tds_free_socket(tds)
 
     def select_db(self, dbname):
         """
