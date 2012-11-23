@@ -13,5 +13,5 @@ setup(name='python-tds',
             'Programming Language :: Python :: 2.7',
         ],
         zip_safe=True,
-        install_requires=['BitVector'],
+        install_requires=[],
         )

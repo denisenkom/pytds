@@ -1,5 +1,4 @@
 import logging
-from BitVector import BitVector
 import traceback
 from read import *
 from tdsproto import *
@@ -171,10 +170,9 @@ def tds_process_nbcrow(tds):
 
     # reading bitarray for nulls, 1 represent null values for
     # corresponding fields
-    nbc = tds_get_n(tds, len(info.columns) + 7 / 8)
-    nbc = BitVector(bitstring=(ord(b) for b in nbc))
+    nbc = tds_get_n(tds, (len(info.columns) + 7) / 8)
     for i, curcol in enumerate(info.columns):
-        if nbc[i]:
+        if ord(nbc[i/8]) & (1 << i%8):
             curcol.value = None
         else:
             curcol.funcs.get_data(tds, curcol)
