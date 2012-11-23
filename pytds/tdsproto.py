@@ -248,3 +248,7 @@ SYBAOPSTDEVP		= 0x31
 SYBAOPVAR		= 0x32
 SYBAOPVARP		= 0x33
 SYBAOPCHECKSUM_AGG	= 0x72
+
+# param flags
+fByRefValue = 1
+fDefaultValue = 2

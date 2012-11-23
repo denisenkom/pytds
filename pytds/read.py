@@ -33,12 +33,26 @@ def tds_get_smallint(tds):
     else:
         return struct.unpack('>h', bytes(buf))[0]
 
+def tds_get_usmallint(tds):
+    buf = tds_get_n(tds, 2)
+    if tds_conn(tds).emul_little_endian:
+        return struct.unpack('<H', bytes(buf))[0]
+    else:
+        return struct.unpack('>H', bytes(buf))[0]
+
 def tds_get_int(tds):
     buf = tds_get_n(tds, 4)
     if tds_conn(tds).emul_little_endian:
         return struct.unpack('<l', bytes(buf))[0]
     else:
         return struct.unpack('>l', bytes(buf))[0]
+
+def tds_get_uint(tds):
+    buf = tds_get_n(tds, 4)
+    if tds_conn(tds).emul_little_endian:
+        return struct.unpack('<L', bytes(buf))[0]
+    else:
+        return struct.unpack('>L', bytes(buf))[0]
 
 def tds_get_int_be(tds):
     buf = tds_get_n(tds, 4)
@@ -54,6 +68,10 @@ def tds_get_int8(tds):
         return struct.unpack('<q', bytes(buf))[0]
     else:
         return struct.unpack('>q', bytes(buf))[0]
+
+def tds_get_ucs2str(tds, length):
+    raw = tds_get_n(tds, length*2)
+    return tds.char_convs[client2ucs2]['from_wire'](raw)
 
 def tds_get_string(tds, size):
     buf = tds_get_n(tds, size*2)

@@ -453,6 +453,48 @@ class Connection(object):
         self._sqlok()
         return None if self._state == DB_RES_NO_MORE_RESULTS else True
 
+    def _callproc(self, procname, parameters):
+        logger.debug('callproc begin')
+        tds = self._get_connection()
+        if tds.state == TDS_PENDING:
+            rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+            if rc != TDS_NO_MORE_RESULTS:
+                raise InterfaceError('Results are still pending on connection')
+        tds_submit_rpc(tds, procname, parameters)
+        tds.output_params = {}
+        self._state = DB_RES_INIT
+        while True:
+            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+            #
+            # The error flag may be set for any intervening DONEINPROC packet, in particular
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            #/
+            if done_flags & TDS_DONE_ERROR:
+                maybe_raise_MSSQLDatabaseException(self)
+                assert False
+                raise Exception('FAIL')
+            if result_type == TDS_ROWFMT_RESULT:
+                self._state = DB_RES_RESULTSET_ROWS
+                break
+            elif result_type == TDS_DONEINPROC_RESULT:
+                self._state = DB_RES_RESULTSET_EMPTY
+            elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                if done_flags & TDS_DONE_MORE_RESULTS:
+                    self._state = DB_RES_NEXT_RESULT
+                else:
+                    self._state = DB_RES_NO_MORE_RESULTS
+                break
+            elif result_type == TDS_STATUS_RESULT:
+                continue
+            else:
+                logger.error('logic error: tds_process_tokens result_type %d', result_type);
+        check_cancel_and_raise(self)
+        logger.debug('callproc end')
+        results = list(parameters)
+        for key, param in tds.output_params.items():
+            results[key] = param.value
+        return results
+
 ##################
 ## Cursor class ##
 ##################
@@ -461,12 +503,6 @@ class Cursor(object):
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
     """
-    @property
-    def _source(self):
-        if self._conn == None:
-            raise InterfaceError('Cursor is closed.')
-        return self._conn
-
     def __init__(self, conn):
         self._conn = conn
         self._batchsize = 1
@@ -494,18 +530,7 @@ class Cursor(object):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        logger.debug('callproc begin')
-        tds = self._conn._get_connection()
-        if tds.state == TDS_PENDING:
-            rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
-            if rc != TDS_NO_MORE_RESULTS:
-                raise InterfaceError('Results are still pending on connection')
-        tds_submit_rpc(tds, procname, parameters)
-        self._source._state = DB_RES_INIT
-        self._source._sqlok()
-        check_cancel_and_raise(self._source)
-        logger.debug('callproc end')
-        return parameters
+        return self._conn._callproc(procname, parameters)
 
     @property
     def return_value(self):

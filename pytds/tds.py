@@ -361,3 +361,8 @@ class output:
 class Binary(str):
     def __repr__(self):
         return 'Binary({0})'.format(super(Binary, self).__repr__())
+
+class _Default:
+    pass
+
+default = _Default()

@@ -4,6 +4,7 @@ from read import *
 from tdsproto import *
 from iconv import *
 from mem import *
+from mem import _Column
 from tds_checks import *
 from data import *
 
@@ -807,17 +808,7 @@ def tds7_process_result(tds):
     CHECK_TDS_EXTRA(tds)
     return result
 
-#/**
-# * Read data information from wire
-# * \param tds state information for the socket and the TDS protocol
-# * \param curcol column where to store information
-# */
-def tds7_get_data_info(tds, curcol):
-    #int colnamelen;
-
-    CHECK_TDS_EXTRA(tds)
-    CHECK_COLUMN_EXTRA(curcol)
-
+def tds_get_type_info(tds, curcol):
     # User defined data type of the column
     curcol.column_usertype = tds_get_int(tds) if IS_TDS72_PLUS(tds) else tds_get_smallint(tds)
 
@@ -832,6 +823,19 @@ def tds7_get_data_info(tds, curcol):
     curcol.column_timestamp = (curcol.column_type == SYBBINARY and curcol.column_usertype == TDS_UT_TIMESTAMP)
 
     curcol.funcs.get_info(tds, curcol)
+
+#/**
+# * Read data information from wire
+# * \param tds state information for the socket and the TDS protocol
+# * \param curcol column where to store information
+# */
+def tds7_get_data_info(tds, curcol):
+    #int colnamelen;
+
+    CHECK_TDS_EXTRA(tds)
+    CHECK_COLUMN_EXTRA(curcol)
+
+    tds_get_type_info(tds, curcol)
 
     # Adjust column size according to client's encoding
     #curcol.on_server.column_size = curcol.column_size
@@ -961,3 +965,19 @@ def tds_swap_numeric(num):
     arr_prec = tds_swap_bytes(num.array[1:], tds_numeric_bytes_per_prec[num.precision] - 1)
     arr_rest = num.array[1+tds_numeric_bytes_per_prec[num.precision] - 1:]
     return ''.join([arr_sign, arr_prec, arr_rest])
+
+def tds_process_param_result_tokens(tds):
+    while True:
+        token = tds_get_byte(tds)
+        if token == TDS_PARAM_TOKEN:
+            ordinal = tds_get_usmallint(tds)
+            name = tds_get_ucs2str(tds, tds_get_byte(tds))
+            status = tds_get_byte(tds) # 1 - OUTPUT of sp, 2 - result of udf
+            param = _Column()
+            param.column_name = name
+            tds_get_type_info(tds, param)
+            param.funcs.get_data(tds, param)
+            tds.output_params[ordinal] = param
+        else:
+            tds_unget_byte(tds)
+            return

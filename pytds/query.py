@@ -53,11 +53,20 @@ def convert_params(tds, parameters):
                 params.append(make_param(tds, '', parameter))
         return params
 
-def make_param(tds, name, value, output=False):
+def make_param(tds, name, value):
     column = _Column()
     column.column_name = name
-    column.column_output = 1 if output else 0
-    if value is None:
+    column.flags = 0
+    if isinstance(value, output):
+        column.flags |= fByRefValue
+        value = value.value
+    if value is default:
+        column.flags = fDefaultValue
+        col_type = XSYBVARCHAR
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+        value = None
+    elif value is None:
         col_type = XSYBVARCHAR
         size = 1
         column.column_varint_size = tds_get_varint_size(tds, col_type)
@@ -336,7 +345,7 @@ def tds_put_data_info(tds, curcol):
     #
 
     logger.debug("tds_put_data_info putting status")
-    tds_put_byte(tds, curcol.column_output) # status (input)
+    tds_put_byte(tds, curcol.flags)
     if not IS_TDS7_PLUS(tds):
         tds_put_int(tds, curcol.column_usertype) # usertype
     # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
