@@ -604,6 +604,7 @@ class Cursor(object):
         self._conn = conn
         self._batchsize = 1
         self._results = None
+        self.arraysize = 1
 
     def __enter__(self):
         return self
@@ -774,8 +775,7 @@ class Cursor(object):
     def fetchmany(self, size=None):
         self._get_results()
         if size == None:
-            size = self._batchsize
-        self.batchsize = size
+            size = self.arraysize
 
         rows = []
         for i in xrange(size):
