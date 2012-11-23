@@ -744,14 +744,21 @@ class Cursor(object):
             self._rows_affected = tds.rows_affected if tds.rows_affected != TDS_NO_COUNT else -1
             if self._conn._state == DB_RES_NO_MORE_RESULTS:
                 descr = None
+                native_descr = None
             else:
                 header_tuple = []
                 for col in tds.res_info.columns:
                     coltype = get_api_coltype(col.column_type)
-                    header_tuple.append((col.column_name, coltype, None, None, None, None, None))
+                    precision = col.column_prec if hasattr(col, 'column_prec') else None
+                    scale = col.column_scale if hasattr(col, 'column_scale') else None
+                    header_tuple.append((col.column_name, coltype, None, None, precision, scale, col.column_nullable))
                 descr = tuple(header_tuple)
+                native_descr = tuple((col.column_name, col.column_type)
+                        for col in tds.res_info.columns)
             logger.debug('_get_results set description: %s', descr)
-            self._results = {'description': descr}
+            self._results = {'description': descr,
+                    'native_description': native_descr,
+                    }
         return self._results
 
     @property
@@ -762,6 +769,10 @@ class Cursor(object):
     @property
     def description(self):
         return self._get_results()['description']
+
+    @property
+    def native_description(self):
+        return self._get_results()['native_description']
 
     def fetchone(self):
         self._get_results()

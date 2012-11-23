@@ -4,7 +4,7 @@ import sys
 from decimal import Decimal
 import logging
 from datetime import datetime, date, time
-from pytds.dbapi import connect, FixedOffset, OperationalError, ProgrammingError
+from pytds import *
 from pytds.tds import *
 
 try:
@@ -307,6 +307,15 @@ class ConnectionClosing(unittest.TestCase):
     def runTest(self):
         for x in xrange(10000):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
+
+class Description(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute('select cast(12.65 as decimal(4,2)) as testname')
+            self.assertEqual(cur.description[0][0], 'testname')
+            self.assertEqual(cur.description[0][1], DECIMAL)
+            self.assertEqual(cur.description[0][4], 4)
+            self.assertEqual(cur.description[0][5], 2)
 
 class Bug1(unittest.TestCase):
     def runTest(self):
