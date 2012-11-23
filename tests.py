@@ -320,12 +320,5 @@ class Bug1(unittest.TestCase):
         cur.close()
         conn.rollback()
 
-#class Bug2(unittest.TestCase):
-#    def runTest(self):
-#        conn = connect(server='nihms2', database='SRA_Main', user='sra_websub', password='sra_websub_ps')
-#        cur = conn.cursor()
-#        import pudb; pudb.set_trace()
-#        cur.execute('select 1')
-
 if __name__ == '__main__':
     unittest.main()

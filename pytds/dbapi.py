@@ -265,9 +265,6 @@ class Connection(object):
         ctx.int_handler = self._int_handler
         self.tds_socket = tds_alloc_socket(ctx, 512)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()
-        self.tds_socket.env_chg_func = self._db_env_chg
-        self._curdb = ''
-        self._servcharset = ''
         login.option_flag2 &= ~0x02 # we're not an ODBC driver
         tds_fix_login(login) # initialize from Environment variables
 
@@ -346,18 +343,6 @@ class Connection(object):
             self.last_msg_str = msg['message']
             self.last_msg_srv = msg['server']
             self.last_msg_proc = msg['proc_name']
-
-    def _db_env_chg(self, tds, type, oldval, newval):
-        assert oldval is not None and newval is not None
-        if oldval == '\x01':
-            oldval = "(0x1)"
-
-        logger.debug("db_env_chg(%d, %s, %s)", type, oldval, newval)
-
-        if type == TDS_ENV_DATABASE:
-            self._curdb = newval
-        elif type == TDS_ENV_CHARSET:
-            self._servcharset = newval
 
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")

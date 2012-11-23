@@ -233,33 +233,17 @@ def tds_process_env_chg(tds):
         logger.debug("tds.collation now {0}".format(tds.collation));
         # discard old one
         tds_get_n(tds, tds_get_byte(tds))
-        return TDS_SUCCESS
     elif type == TDS_ENV_BEGINTRANS:
         size = tds_get_byte(tds)
         tds.tds72_transaction = tds_get_n(tds, 8)
         tds_get_n(tds, tds_get_byte(tds))
-        return TDS_SUCCESS
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
         tds.tds72_transaction = None
         tds_get_n(tds, tds_get_byte(tds))
         tds_get_n(tds, tds_get_byte(tds))
-        return TDS_SUCCESS
-    # discard byte values, not still supported
-    # TODO support them
-    elif IS_TDS71_PLUS(tds) and type > TDS_ENV_PACKSIZE:
-        # discard new one
-        tds_get_n(tds, tds_get_byte(tds))
-        # discard old one
-        tds_get_n(tds, tds_get_byte(tds))
-        return TDS_SUCCESS
-
-    # fetch the new value
-    newval = tds_get_string(tds, tds_get_byte(tds))
-
-    # fetch the old value
-    oldval = tds_get_string(tds, tds_get_byte(tds))
-
-    if type == TDS_ENV_PACKSIZE:
+    elif type == TDS_ENV_PACKSIZE:
+        newval = tds_get_string(tds, tds_get_byte(tds))
+        oldval = tds_get_string(tds, tds_get_byte(tds))
         new_block_size = int(newval)
         if new_block_size >= 512:
             logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
@@ -270,15 +254,30 @@ def tds_process_env_chg(tds):
             # Reallocate buffer if possible (strange values from server or out of memory) use older buffer */
             tds_realloc_socket(tds, new_block_size)
     elif type == TDS_ENV_DATABASE:
+        newval = tds_get_string(tds, tds_get_byte(tds))
+        oldval = tds_get_string(tds, tds_get_byte(tds))
         tds.env.database = newval
     elif type == TDS_ENV_LANG:
+        newval = tds_get_string(tds, tds_get_byte(tds))
+        oldval = tds_get_string(tds, tds_get_byte(tds))
         tds.env.language = newval
     elif type == TDS_ENV_CHARSET:
+        newval = tds_get_string(tds, tds_get_byte(tds))
+        oldval = tds_get_string(tds, tds_get_byte(tds))
         logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
         tds.env.charset = newval
         tds_srv_charset_changed(tds, newval)
-    if tds.env_chg_func:
-        tds.env_chg_func(tds, type, oldval, newval);
+    elif type == TDS_ENV_DB_MIRRORING_PARTNER:
+        newval = tds_get_string(tds, tds_get_byte(tds))
+        oldval = tds_get_string(tds, tds_get_byte(tds))
+
+    else:
+        # discard byte values, not still supported
+        # TODO support them
+        # discard new one
+        tds_get_n(tds, tds_get_byte(tds))
+        # discard old one
+        tds_get_n(tds, tds_get_byte(tds))
 
 
 def tds_process_msg(tds, marker):

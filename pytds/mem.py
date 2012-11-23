@@ -25,7 +25,6 @@ class _TdsSocket(object):
         self.in_cancel = False
         #self.env = {'block_size': len(self.out_buf)}
         self.env = _TdsEnv()
-        self.env_chg_func = None
         self.wire_mtx = None
         self.current_results = None
         self.param_info = None
@@ -56,9 +55,8 @@ def tds_alloc_socket(context, bufsize):
     tds_set_s(tds_socket, None)
     import socket
     if hasattr(socket, 'socketpair'):
-        tds_conn(tds_socket).s_signal, tds_conn(tds_socket).s_signaled = socket.socketpair(type=socket.SOCK_DGRAM)
+        tds_conn(tds_socket).s_signal, tds_conn(tds_socket).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
     tds_socket.state = TDS_DEAD
-    tds_socket.env_chg_func = None
     from threadsafe import TDS_MUTEX_INIT
     tds_socket.write_mtx = TDS_MUTEX_INIT(tds_socket.wire_mtx)
     return tds_socket
