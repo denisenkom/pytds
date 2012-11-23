@@ -6,7 +6,6 @@ __version__ = '0.4.0'
 
 import logging
 import decimal
-import datetime
 import re
 from tds import *
 from mem import *
@@ -772,3 +771,23 @@ def maybe_raise_MSSQLDatabaseException(conn):
 
 def check_cancel_and_raise(conn):
     return maybe_raise_MSSQLDatabaseException(conn)
+
+def Date(year, month, day):
+    return date(year, month, day)
+
+def DateFromTicks(ticks):
+    return date.fromtimestamp(ticks)
+
+def Time(hour, minute, second):
+    from datetime import time
+    return time(hour, minute, second)
+
+def TimeFromTicks(ticks):
+    import time
+    return Time(*time.localtime(ticks)[3:6])
+
+def Timestamp(year, month, day, hour, minute, second):
+    return datetime(year, month, day, hour, minute, second)
+
+def TimestampFromTicks(ticks):
+    return datetime.fromtimestamp(ticks)
