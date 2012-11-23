@@ -46,45 +46,6 @@ class output:
         self._type = param_type
         self._value = value
 
-#############################
-## DB-API type definitions ##
-#############################
-STRING = 1
-BINARY = 2
-NUMBER = 3
-DATETIME = 4
-DECIMAL = 5
-ROWID = 6
-
-##################
-## DB-LIB types ##
-##################
-SQLBIT = SYBBIT
-SQLBITN = 104
-SQLCHAR = SYBCHAR
-SQLDATETIME = SYBDATETIME
-SQLDATETIM4 = SYBDATETIME4
-SQLDATETIMN = SYBDATETIMN
-SQLDECIMAL = SYBDECIMAL
-SQLFLT4 = SYBREAL
-SQLFLT8 = SYBFLT8
-SQLFLTN = SYBFLTN
-SQLIMAGE = SYBIMAGE
-SQLINT1 = SYBINT1
-SQLINT2 = SYBINT2
-SQLINT4 = SYBINT4
-SQLINT8 = SYBINT8
-SQLINTN = SYBINTN
-SQLMONEY = SYBMONEY
-SQLMONEY4 = SYBMONEY4
-SQLMONEYN = SYBMONEYN
-SQLNUMERIC = SYBNUMERIC
-SQLREAL = SYBREAL
-SQLTEXT = SYBTEXT
-SQLVARBINARY = SYBVARBINARY
-SQLVARCHAR = SYBVARCHAR
-SQLUUID = 36
-
 DB_RES_INIT            = 0
 DB_RES_RESULTSET_EMPTY = 1
 DB_RES_RESULTSET_ROWS  = 2
@@ -306,6 +267,8 @@ class Connection(object):
         try:
             tds_submit_commit(self.tds_socket, True)
             self._sqlok()
+            while self._nextset():
+                pass
         except Exception, e:
             raise OperationalError('Cannot commit transaction: ' + str(e[0]))
 
@@ -327,6 +290,8 @@ class Connection(object):
             self.cancel()
             tds_submit_rollback(self.tds_socket, True)
             self._sqlok()
+            while self._nextset():
+                pass
 
     def clr_err(self):
         self.last_msg_no = 0
@@ -435,127 +400,36 @@ class Connection(object):
         #CHECK_CONN(FAIL);
 
         tds = self.tds_socket
-        # See what the next packet from the server is.
-        # We want to skip any messages which are not processable. 
-        # We're looking for a result token or a done token.
         #
-        while True:
-            #
-            # If we hit an end token -- e.g. if the command
-            # submitted returned no data (like an insert) -- then
-            # we process the end token to extract the status code. 
-            #
-            logger.debug("dbsqlok() not done, calling tds_process_tokens()")
+        # If we hit an end token -- e.g. if the command
+        # submitted returned no data (like an insert) -- then
+        # we process the end token to extract the status code. 
+        #
+        logger.debug("dbsqlok() not done, calling tds_process_tokens()")
 
-            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+        tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
 
-            #
-            # The error flag may be set for any intervening DONEINPROC packet, in particular
-            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
-            #/
-            if done_flags & TDS_DONE_ERROR:
-                maybe_raise_MSSQLDatabaseException(self)
-                assert False
-                raise Exception('FAIL')
-            if tds_code == TDS_NO_MORE_RESULTS:
-                return
-
-            if result_type == TDS_ROWFMT_RESULT:
-                pass
-            elif result_type == TDS_COMPUTEFMT_RESULT:
-                self._state = _DB_RES_RESULTSET_EMPTY;
-                logger.debug("dbsqlok() found result token")
-                break
-            elif result_type in (TDS_COMPUTE_RESULT, TDS_ROW_RESULT):
-                logger.debug("dbsqlok() found result token")
-                break
-            elif result_type == TDS_DONEINPROC_RESULT:
-                break
-            elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                logger.debug("dbsqlok() end status is %s", prdbresults_state(self._state))
-                if done_flags & TDS_DONE_ERROR:
-                    if done_flags & TDS_DONE_MORE_RESULTS:
-                        self._state = DB_RES_NEXT_RESULT
-                    else:
-                        self._state = DB_RES_NO_MORE_RESULTS
-
-                else:
-                    logger.debug("dbsqlok() end status was success")
-                    self._state = DB_RES_SUCCEED
-            else:
-                logger.debug('logic error: tds_process_tokens result_type %d', result_type);
-
-    def _start_results(self):
-        result_type = 0
-
-        tds = self.tds_socket
-
-        logger.debug("_start_results begin: _state is %d (%s)\n", 
-                                        self._state, prdbresults_state(self._state))
-        if self._state == DB_RES_RESULTSET_ROWS:
+        #
+        # The error flag may be set for any intervening DONEINPROC packet, in particular
+        # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+        #/
+        if done_flags & TDS_DONE_ERROR:
+            maybe_raise_MSSQLDatabaseException(self)
+            assert False
             raise Exception('FAIL')
-        elif self._state == DB_RES_NO_MORE_RESULTS:
-            return
-
-        while True:
-            retcode, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
-
-            logger.debug("_start_results() tds_process_tokens returned %d (%s),\n\t\t\tresult_type %s\n", 
-                                            retcode, prretcode(retcode), prresult_type(result_type))
-
-            if retcode == TDS_SUCCESS:
-                if result_type == TDS_ROWFMT_RESULT:
-                    self._state = DB_RES_RESULTSET_EMPTY
-
-                elif result_type == TDS_COMPUTEFMT_RESULT:
-                    pass
-
-                elif result_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
-                    self._state = DB_RES_RESULTSET_ROWS
-                    return
-
-                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    logger.debug("_start_results() got done token _state is %d (%s)",
-                                    self._state, prdbresults_state(self._state))
-
-                    # A done token signifies the end of a logical command.
-                    # There are three possibilities:
-                    # 1. Simple command with no result set, i.e. update, delete, insert
-                    # 2. Command with result set but no rows
-                    # 3. Command with result set and rows
-                    #
-                    if self._state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
-                        self._state = DB_RES_NEXT_RESULT
-                        if done_flags & TDS_DONE_ERROR:
-                            raise Exception('FAIL')
-
-                    elif self._state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
-                        self._state = DB_RES_NEXT_RESULT
-                        return
-                    else:
-                        assert False
-
-                elif result_type == TDS_DONEINPROC_RESULT:
-                        #
-                        # Return SUCCEED on a command within a stored procedure
-                        # only if the command returned a result set. 
-                        #
-                        if self._state in (DB_RES_INIT, DB_RES_NEXT_RESULT):
-                            self._state = DB_RES_NEXT_RESULT
-                        elif self._state in (DB_RES_RESULTSET_EMPTY, DB_RES_RESULTSET_ROWS):
-                            self._state = DB_RES_NEXT_RESULT
-                            return
-                        elif self._state in (DB_RES_NO_MORE_RESULTS, DB_RES_SUCCEED):
-                            pass
-
-            elif retcode == TDS_NO_MORE_RESULTS:
-                self._state = DB_RES_NO_MORE_RESULTS
-                return
+        if result_type == TDS_ROWFMT_RESULT:
+            self._state = DB_RES_RESULTSET_ROWS
+        elif result_type == TDS_DONEINPROC_RESULT:
+            self._state = DB_RES_RESULTSET_EMPTY
+        elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+            if done_flags & TDS_DONE_MORE_RESULTS:
+                self._state = DB_RES_NEXT_RESULT
             else:
-                self._state = DB_RES_INIT
-                raise Exception('FAIL')
+                self._state = DB_RES_NO_MORE_RESULTS
+        else:
+            logger.error('logic error: tds_process_tokens result_type %d', result_type);
 
-    def _getrow(self, throw):
+    def _fetchone(self):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
@@ -564,9 +438,6 @@ class Connection(object):
             raise Error("Previous statement didn't produce any results")
 
         if self._state == DB_RES_NO_MORE_RESULTS:
-            logger.debug("MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
-            if throw:
-                raise StopIteration
             return None
 
         self._nextrow()
@@ -574,18 +445,23 @@ class Connection(object):
         check_cancel_and_raise(self)
 
         if self._state != DB_RES_RESULTSET_ROWS:
-            logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
-            if throw:
-                raise StopIteration
             return None
 
-        cols = self.tds_socket.res_info.columns
+        cols = tds.res_info.columns
         row = tuple(col.value for col in cols)
         if self.as_dict:
             row_dict = dict(enumerate(cols))
             row_dict.update(dict((col.column_name, col.value) for col in cols if col.column_name))
             row = row_dict
         return row
+
+    def _nextset(self):
+        self.clr_err()
+        while self._state == DB_RES_RESULTSET_ROWS:
+            self._nextrow()
+            check_cancel_and_raise(self)
+        self._sqlok()
+        return None if self._state == DB_RES_NO_MORE_RESULTS else True
 
 ##################
 ## Cursor class ##
@@ -642,8 +518,11 @@ class Cursor(object):
         check_cancel_and_raise(self._source)
         logger.debug('callproc end')
 
+    @property
+    def return_value(self):
+        return get_proc_return_status()
+
     def get_proc_return_status(self):
-        self._get_results()
         tds = self._conn.tds_socket
         if not tds.has_status:
             tds_process_tokens(tds, TDS_RETURN_PROC)
@@ -719,86 +598,51 @@ class Cursor(object):
         return row[0]
 
     def nextset(self):
-        self._results = None
-        self._conn.clr_err()
-
-        self._conn._nextrow()
-        check_cancel_and_raise(self._conn)
-
-        while self._conn._state == DB_RES_RESULTSET_ROWS:
-            self._conn._nextrow()
-            check_cancel_and_raise(self._conn)
-        self._get_results()
-        return None if self._conn._state == DB_RES_NO_MORE_RESULTS else True
-
-    def _get_results(self):
-        if not self._results:
-            tds = self._conn.tds_socket
-            self._conn._start_results()
-            check_cancel_and_raise(self._conn)
-            if self._conn._state == DB_RES_NO_MORE_RESULTS:
-                descr = None
-                native_descr = None
-            else:
-                header_tuple = []
-                for col in tds.res_info.columns:
-                    coltype = get_api_coltype(col.column_type)
-                    precision = col.column_prec if hasattr(col, 'column_prec') else None
-                    scale = col.column_scale if hasattr(col, 'column_scale') else None
-                    header_tuple.append((col.column_name, coltype, None, None, precision, scale, col.column_nullable))
-                descr = tuple(header_tuple)
-                native_descr = tuple((col.column_name, col.column_type)
-                        for col in tds.res_info.columns)
-            logger.debug('_get_results set description: %s', descr)
-            self._results = {'description': descr,
-                    'native_description': native_descr,
-                    }
-        return self._results
+        return self._conn._nextset()
 
     @property
     def rowcount(self):
-        self._get_results()
         tds = self._conn.tds_socket
         return tds.rows_affected
 
     @property
     def description(self):
-        return self._get_results()['description']
+        res = self._conn.tds_socket.res_info
+        if res:
+            return res.description
+        else:
+            return None
 
     @property
     def native_description(self):
-        return self._get_results()['native_description']
+        res = self._conn.tds_socket.res_info
+        if res:
+            return res.native_descr
+        else:
+            return None
 
     def fetchone(self):
-        self._get_results()
-        return self._conn._getrow(throw=False)
+        return self._conn._fetchone()
 
     def fetchmany(self, size=None):
-        self._get_results()
         if size == None:
             size = self.arraysize
 
         rows = []
         for i in xrange(size):
-            row = self._conn._getrow(throw=False)
+            row = self.fetchone()
             if not row:
                 break
             rows.append(row)
         return rows
 
     def fetchall(self):
-        self._get_results()
-        rows = []
-        while True:
-            row = self._conn._getrow(throw=False)
-            if not row:
-                break
-            rows.append(row)
-        return rows
+        return list(row for row in self)
 
     def next(self):
-        self._get_results()
-        row = self._conn._getrow(throw=True)
+        row = self.fetchone()
+        if row is None:
+            raise StopIteration
         return row
 
     def setinputsizes(self, sizes=None):
@@ -915,20 +759,3 @@ def maybe_raise_MSSQLDatabaseException(conn):
 
 def check_cancel_and_raise(conn):
     return maybe_raise_MSSQLDatabaseException(conn)
-
-######################
-## Helper Functions ##
-######################
-def get_api_coltype(coltype):
-    if coltype in (SQLBIT, SQLINT1, SQLINT2, SQLINT4, SQLINT8, SQLINTN,
-            SQLFLT4, SQLFLT8, SQLFLTN):
-        return NUMBER
-    elif coltype in (SQLMONEY, SQLMONEY4, SQLMONEYN, SQLNUMERIC,
-            SQLDECIMAL):
-        return DECIMAL
-    elif coltype in (SQLDATETIME, SQLDATETIM4, SQLDATETIMN):
-        return DATETIME
-    elif coltype in (SQLVARCHAR, SQLCHAR, SQLTEXT):
-        return STRING
-    else:
-        return BINARY

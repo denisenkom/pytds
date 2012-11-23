@@ -735,6 +735,20 @@ def tds_process_cancel(tds):
         elif rc in (TDS_CANCELLED, TDS_SUCCESS, TDS_NO_MORE_RESULTS):
             return TDS_SUCCESS
 
+def get_api_coltype(coltype):
+    if coltype in (SYBBIT, SYBINT1, SYBINT2, SYBINT4, SYBINT8, SYBINTN,
+            SYBREAL, SYBFLT8, SYBFLTN):
+        return NUMBER
+    elif coltype in (SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC,
+            SYBDECIMAL):
+        return DECIMAL
+    elif coltype in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
+        return DATETIME
+    elif coltype in (SYBVARCHAR, SYBCHAR, SYBTEXT):
+        return STRING
+    else:
+        return BINARY
+
 #/**
 # * tds7_process_result() is the TDS 7.0 result set processing routine.  It 
 # * is responsible for populating the tds->res_info structure.
@@ -776,23 +790,17 @@ def tds7_process_result(tds):
     # server response
     #
     logger.debug("setting up {0} columns".format(num_cols))
+    header_tuple = []
     for col in range(num_cols):
         curcol = info.columns[col]
         tds7_get_data_info(tds, curcol)
-    if num_cols > 0:
-        dashes = "------------------------------"
-        #tdsdump_log(TDS_DBG_INFO1, " %-20s %-15s %-15s %-7s\n", "name", "size/wsize", "type/wtype", "utype");
-        #tdsdump_log(TDS_DBG_INFO1, " %-20s %15s %15s %7s\n", dashes+10, dashes+30-15, dashes+30-15, dashes+30-7);
-    for col in range(num_cols):
-        curcol = info.columns[col]
-
-        if curcol.column_name:
-            name = curcol.column_name
-        #tdsdump_log(TDS_DBG_INFO1, " %-20s %7d/%-7d %7d/%-7d %7d\n", 
-        #                                name, 
-        #                                curcol->column_size, curcol->on_server.column_size, 
-        #                                curcol->column_type, curcol->on_server.column_type, 
-        #                                curcol->column_usertype);
+        coltype = get_api_coltype(curcol.column_type)
+        precision = curcol.column_prec if hasattr(curcol, 'column_prec') else None
+        scale = curcol.column_scale if hasattr(curcol, 'column_scale') else None
+        header_tuple.append((curcol.column_name, coltype, None, None, precision, scale, curcol.column_nullable))
+    info.native_descr = tuple((col.column_name, col.column_type)
+            for col in tds.res_info.columns)
+    info.description = tuple(header_tuple)
 
     # all done now allocate a row for tds_process_row to use
     result = tds_alloc_row(info)
