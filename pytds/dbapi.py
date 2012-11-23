@@ -54,6 +54,7 @@ BINARY = 2
 NUMBER = 3
 DATETIME = 4
 DECIMAL = 5
+ROWID = 6
 
 ##################
 ## DB-LIB types ##

@@ -95,7 +95,7 @@ def make_param(tds, name, value, output=False):
         _, digits, exp = value.as_tuple()
         size = 12
         column.column_scale = -exp
-        column.column_prec = len(digits)
+        column.column_prec = max(len(digits), column.column_scale)
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     else:
         raise Exception('NotSupportedError: Unable to determine database type')
