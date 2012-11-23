@@ -366,3 +366,25 @@ class _Default:
     pass
 
 default = _Default()
+
+def raise_db_exception(tds):
+    msg = tds.messages[-1]
+    msg_no = msg['msgno']
+    error_msg = msg['message']
+    if msg_no in prog_errors:
+        ex = ProgrammingError(error_msg)
+    elif msg_no in integrity_errors:
+        ex = IntegrityError(error_msg)
+    else:
+        ex = OperationalError(error_msg)
+    ex.msg_no = msg['msgno']
+    ex.text = msg['message']
+    ex.srvname = msg['server']
+    ex.procname = msg['proc_name']
+    ex.number = msg['msgno']
+    ex.severity = msg['severity']
+    ex.state = msg['state']
+    ex.line = msg['line_number']
+    #self.cancel()
+    tds.messages = []
+    raise ex

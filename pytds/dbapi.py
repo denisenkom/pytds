@@ -147,12 +147,6 @@ class Connection(object):
         self._autocommit = False
         logger.debug("Connection.__init__()")
         self._charset = ''
-        self.last_msg_no = 0
-        self.last_msg_severity = 0
-        self.last_msg_state = 0
-        self.last_msg_str = ''
-        self.last_msg_srv = ''
-        self.last_msg_proc = ''
         self._as_dict = as_dict
         self._state = DB_RES_NO_MORE_RESULTS
         self.tds_socket = None
@@ -199,8 +193,6 @@ class Connection(object):
         login.server_name = server
         login.instance_name = instance
         ctx = tds_alloc_context()
-        ctx.msg_handler = self._msg_handler
-        ctx.err_handler = self._err_handler
         ctx.int_handler = self._int_handler
         self.tds_socket = tds_alloc_socket(ctx, 512)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()
@@ -264,28 +256,8 @@ class Connection(object):
             while self._nextset(None):
                 pass
 
-    def clr_err(self):
-        self.last_msg_no = 0
-        self.last_msg_severity = 0
-        self.last_msg_state = 0
-
     def _int_handler(self):
         raise Exception('not implemented')
-
-    def _err_handler(self, tds_ctx, tds, msg):
-        self._msg_handler(tds_ctx, tds, msg)
-
-    def _msg_handler(self, tds_ctx, tds, msg):
-        if msg['severity'] < min_error_severity:
-            return
-        if msg['severity'] > self.last_msg_severity:
-            self.last_msg_severity = msg['severity']
-            self.last_msg_no = msg['msgno']
-            self.last_msg_state = msg['state']
-            self.last_msg_line = msg['line_number']
-            self.last_msg_str = msg['message']
-            self.last_msg_srv = msg['server']
-            self.last_msg_proc = msg['proc_name']
 
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
@@ -300,8 +272,6 @@ class Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.cancel()")
-        self.clr_err()
-
         tds = self.tds_socket
         if not tds.is_dead():
             tds_send_cancel(tds)
@@ -318,7 +288,6 @@ class Connection(object):
         logger.debug("MSSQLConnection.close()")
         if self._closed:
             raise Error('Connection closed')
-        self.clr_err()
         self._closed = True
         tds = self.tds_socket
         if tds is not None:
@@ -356,7 +325,11 @@ class Connection(object):
         mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
 
         # Get the row from the TDS stream.
-        rc, res_type, _ = tds_process_tokens(tds, mask)
+        rc, res_type, done_flags = tds_process_tokens(tds, mask)
+        if done_flags & TDS_DONE_ERROR:
+            raise_db_exception(tds)
+            assert False
+            raise Exception('FAIL')
         if rc == TDS_SUCCESS:
             if res_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
                 # Add the row to the row buffer, whose capacity is always at least 1
@@ -388,7 +361,7 @@ class Connection(object):
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
-                maybe_raise_MSSQLDatabaseException(self)
+                raise_db_exception(tds)
                 assert False
                 raise Exception('FAIL')
             if result_type == TDS_ROWFMT_RESULT:
@@ -423,8 +396,6 @@ class Connection(object):
 
         self._nextrow()
 
-        check_cancel_and_raise(self)
-
         if self._state != DB_RES_RESULTSET_ROWS:
             return None
 
@@ -440,10 +411,8 @@ class Connection(object):
         if cursor is not self._active_cursor:
             raise Error('This cursor is not active')
 
-        self.clr_err()
         while self._state == DB_RES_RESULTSET_ROWS:
             self._nextrow()
-            check_cancel_and_raise(self)
         self._sqlok()
         return None if self._state == DB_RES_NO_MORE_RESULTS else True
 
@@ -501,7 +470,6 @@ class Connection(object):
         tds_submit_query(tds, operation, params)
         self._state = DB_RES_INIT
         self._sqlok()
-        check_cancel_and_raise(self)
 
     def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
@@ -517,7 +485,7 @@ class Connection(object):
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
-                maybe_raise_MSSQLDatabaseException(self)
+                raise_db_exception(tds)
                 assert False
                 raise Exception('FAIL')
             if result_type == TDS_ROWFMT_RESULT:
@@ -535,7 +503,6 @@ class Connection(object):
                 continue
             else:
                 logger.error('logic error: tds_process_tokens result_type %d', result_type);
-        check_cancel_and_raise(self)
         logger.debug('callproc end')
         results = list(parameters)
         for key, param in tds.output_params.items():
@@ -749,58 +716,6 @@ def connect(server='.', database='', user='', password='', timeout=0,
         timeout=timeout, encryption_level=encryption_level)
 
     return conn
-
-def get_last_msg_str(conn):
-    return conn.last_msg_str
-
-def get_last_msg_srv(conn):
-    return conn.last_msg_srv
-
-def get_last_msg_proc(conn):
-    return conn.last_msg_proc
-
-def get_last_msg_no(conn):
-    return conn.last_msg_no
-
-def get_last_msg_severity(conn):
-    return conn.last_msg_severity
-
-def get_last_msg_state(conn):
-    return conn.last_msg_state
-
-def get_last_msg_line(conn):
-    return conn.last_msg_line
-
-def maybe_raise_MSSQLDatabaseException(conn):
-
-    if get_last_msg_severity(conn) < min_error_severity:
-        return 0
-
-    error_msg = get_last_msg_str(conn)
-    if len(error_msg) == 0:
-        error_msg = "Unknown error"
-
-    msg_no = get_last_msg_no(conn)
-    if msg_no in prog_errors:
-        ex = ProgrammingError(error_msg)
-    elif msg_no in integrity_errors:
-        ex = IntegrityError(error_msg)
-    else:
-        ex = OperationalError(error_msg)
-    ex.msg_no = msg_no
-    ex.text = error_msg
-    ex.srvname = get_last_msg_srv(conn)
-    ex.procname = get_last_msg_proc(conn)
-    ex.number = get_last_msg_no(conn)
-    ex.severity = get_last_msg_severity(conn)
-    ex.state = get_last_msg_state(conn)
-    ex.line = get_last_msg_line(conn)
-    conn.cancel()
-    conn.clr_err()
-    raise ex
-
-def check_cancel_and_raise(conn):
-    return maybe_raise_MSSQLDatabaseException(conn)
 
 def Date(year, month, day):
     return date(year, month, day)

@@ -75,7 +75,8 @@ def tds_connect(tds, login):
             tds.out_flag = TDS_LOGIN
             tds_send_login(tds, login)
         if not tds_process_login_tokens(tds):
-            raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
+            raise_db_exception(tds)
+            #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
         text_size = login.text_size
         if text_size or not db_selected and login.database:
             q = []
