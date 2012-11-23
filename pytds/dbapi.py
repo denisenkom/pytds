@@ -155,6 +155,7 @@ class Connection(object):
                 cur.execute(query)
             finally:
                 cur.close()
+            self._try_activate_cursor(None)
             tds_submit_begin_tran(self.tds_socket)
             self._sqlok()
         return self.tds_socket
@@ -175,6 +176,7 @@ class Connection(object):
         self._state = DB_RES_NO_MORE_RESULTS
         self.tds_socket = None
         self._closed = False
+        self._active_cursor = None
 
         # support MS methods of connecting locally
         instance = ""
@@ -244,12 +246,12 @@ class Connection(object):
         if self._autocommit:
             return
 
-        self.cancel()
         tds = self._get_connection()
         try:
+            self._try_activate_cursor(None)
             tds_submit_commit(tds, True)
             self._sqlok()
-            while self._nextset():
+            while self._nextset(None):
                 pass
         except Exception, e:
             raise OperationalError('Cannot commit transaction: ' + str(e[0]))
@@ -269,10 +271,10 @@ class Connection(object):
             return
 
         if not self.tds_socket.is_dead():
-            self.cancel()
+            self._try_activate_cursor(None)
             tds_submit_rollback(self.tds_socket, True)
             self._sqlok()
-            while self._nextset():
+            while self._nextset(None):
                 pass
 
     def clr_err(self):
@@ -419,7 +421,9 @@ class Connection(object):
             else:
                 logger.error('logic error: tds_process_tokens result_type %d', result_type);
 
-    def _fetchone(self):
+    def _fetchone(self, cursor):
+        if self._active_cursor is not cursor:
+            raise Error('This cursor is not active')
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
@@ -445,7 +449,10 @@ class Connection(object):
             row = row_dict
         return row
 
-    def _nextset(self):
+    def _nextset(self, cursor):
+        if cursor is not self._active_cursor:
+            raise Error('This cursor is not active')
+
         self.clr_err()
         while self._state == DB_RES_RESULTSET_ROWS:
             self._nextrow()
@@ -453,13 +460,66 @@ class Connection(object):
         self._sqlok()
         return None if self._state == DB_RES_NO_MORE_RESULTS else True
 
-    def _callproc(self, procname, parameters):
+    def _rowcount(self, cursor):
+        if cursor is not self._active_cursor:
+            return -1
+        tds = self.tds_socket
+        return tds.rows_affected
+
+    def _get_proc_return_status(self, cursor):
+        if cursor is not self._active_cursor:
+            return None
+        tds = self.tds_socket
+        if not tds.has_status:
+            tds_process_tokens(tds, TDS_RETURN_PROC)
+        return tds.ret_status if tds.has_status else None
+
+    def _description(self, cursor):
+        if cursor is not self._active_cursor:
+            return None
+        res = self.tds_socket.res_info
+        if res:
+            return res.description
+        else:
+            return None
+
+    def _native_description(self):
+        if cursor is not self._active_cursor:
+            return None
+        res = self._conn.tds_socket.res_info
+        if res:
+            return res.native_descr
+        else:
+            return None
+
+    def _close_cursor(self, cursor):
+        if cursor is self._active_cursor:
+            self._active_cursor = None
+        cursor._conn = None
+
+    def _try_activate_cursor(self, cursor):
+        tds = self._get_connection()
+        if cursor is self._active_cursor or self._active_cursor is None:
+            self.cancel()
+        else:
+            if tds.state == TDS_PENDING:
+                rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+                if rc != TDS_NO_MORE_RESULTS:
+                    raise InterfaceError('Results are still pending on connection')
+        self._active_cursor = cursor
+
+    def _execute(self, cursor, operation, params):
+        tds = self._get_connection()
+        self._try_activate_cursor(cursor)
+        tds_submit_query(tds, operation, params)
+        self._state = DB_RES_INIT
+        self._sqlok()
+        check_cancel_and_raise(self)
+
+    def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
         tds = self._get_connection()
-        if tds.state == TDS_PENDING:
-            rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
-            if rc != TDS_NO_MORE_RESULTS:
-                raise InterfaceError('Results are still pending on connection')
+        self._try_activate_cursor(cursor)
         tds_submit_rpc(tds, procname, parameters)
         tds.output_params = {}
         self._state = DB_RES_INIT
@@ -530,32 +590,22 @@ class Cursor(object):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        return self._conn._callproc(procname, parameters)
+        return self._conn._callproc(self, procname, parameters)
 
     @property
     def return_value(self):
         return self.get_proc_return_status()
 
     def get_proc_return_status(self):
-        tds = self._conn.tds_socket
-        if not tds.has_status:
-            tds_process_tokens(tds, TDS_RETURN_PROC)
-        return tds.ret_status if tds.has_status else None
+        return self._conn._get_proc_return_status(self)
 
     def close(self):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        self._conn.cancel()
-        self._conn = None
+        self._conn._close_cursor(self)
 
     def execute(self, operation, params=()):
-        tds = self._conn._get_connection()
-        if tds.state == TDS_PENDING:
-            rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
-            if rc != TDS_NO_MORE_RESULTS:
-                raise InterfaceError('Results are still pending on connection')
-
         # Execute the query
         if params:
             if isinstance(params, (list, tuple)):
@@ -572,10 +622,7 @@ class Cursor(object):
                 operation = operation % rename
             logger.debug('converted query: {0}'.format(operation))
             logger.debug('params: {0}'.format(params))
-        tds_submit_query(tds, operation, params)
-        self._conn._state = DB_RES_INIT
-        self._conn._sqlok()
-        check_cancel_and_raise(self._conn)
+        self._conn._execute(self, operation, params)
 
     def executemany(self, operation, params_seq):
         counts = []
@@ -615,31 +662,22 @@ class Cursor(object):
         return row[0]
 
     def nextset(self):
-        return self._conn._nextset()
+        return self._conn._nextset(self)
 
     @property
     def rowcount(self):
-        tds = self._conn.tds_socket
-        return tds.rows_affected
+        return self._conn._rowcount(self)
 
     @property
     def description(self):
-        res = self._conn.tds_socket.res_info
-        if res:
-            return res.description
-        else:
-            return None
+        return self._conn._description(self)
 
     @property
     def native_description(self):
-        res = self._conn.tds_socket.res_info
-        if res:
-            return res.native_descr
-        else:
-            return None
+        return self._conn._native_description(self)
 
     def fetchone(self):
-        return self._conn._fetchone()
+        return self._conn._fetchone(self)
 
     def fetchmany(self, size=None):
         if size == None:
