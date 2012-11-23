@@ -211,7 +211,7 @@ def tds_process_end(tds, marker):
     if done_count_valid:
         tds.rows_affected = rows_affected
     else:
-        tds.rows_affected = None
+        tds.rows_affected = -1
     return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), tmp
 
 def tds_process_env_chg(tds):

@@ -177,6 +177,7 @@ def tds_submit_query(tds, query, params=()):
     if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
         raise Exception('TDS_FAIL')
     try:
+        tds.res_info = None
         if IS_TDS50(tds):
             new_query = None
             # are there '?' style parameters ?
@@ -291,6 +292,7 @@ def tds_send_cancel(tds):
         TDS_MUTEX_UNLOCK(tds.wire_mtx)
         return TDS_SUCCESS
 
+    tds.res_info = None
     rc = tds_put_cancel(tds)
     TDS_MUTEX_UNLOCK(tds.wire_mtx)
 

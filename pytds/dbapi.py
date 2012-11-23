@@ -164,14 +164,6 @@ class Connection(object):
         return self._autocommit
 
     @property
-    def rows_affected(self):
-        """
-        Number of rows affected by last query. For SELECT statements this
-        value is only meaningful after reading all rows.
-        """
-        return self._rows_affected
-
-    @property
     def chunk_handler(self):
         '''
         Returns current chunk handler
@@ -477,7 +469,7 @@ class Connection(object):
                 logger.debug("dbsqlok() found result token")
                 break
             elif result_type == TDS_DONEINPROC_RESULT:
-                pass
+                break
             elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
                 logger.debug("dbsqlok() end status is %s", prdbresults_state(self._state))
                 if done_flags & TDS_DONE_ERROR:
@@ -566,6 +558,10 @@ class Connection(object):
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
+        tds = self.tds_socket
+        if tds.res_info is None:
+            raise Error("Previous statement didn't produce any results")
+
         if self._state == DB_RES_NO_MORE_RESULTS:
             logger.debug("MSSQLConnection.fetch_next_row(): NO MORE RESULTS")
             if throw:
@@ -578,9 +574,6 @@ class Connection(object):
 
         if self._state != DB_RES_RESULTSET_ROWS:
             logger.debug("MSSQLConnection.fetch_next_row(): NO MORE ROWS")
-            # 'rows_affected' is nonzero only after all records are read
-            tds_socket = self.tds_socket
-            self._rows_affected = tds_socket.rows_affected
             if throw:
                 raise StopIteration
             return None
@@ -741,7 +734,6 @@ class Cursor(object):
             tds = self._conn.tds_socket
             self._conn._start_results()
             check_cancel_and_raise(self._conn)
-            self._rows_affected = tds.rows_affected if tds.rows_affected != TDS_NO_COUNT else -1
             if self._conn._state == DB_RES_NO_MORE_RESULTS:
                 descr = None
                 native_descr = None
@@ -764,7 +756,8 @@ class Cursor(object):
     @property
     def rowcount(self):
         self._get_results()
-        return self._rows_affected
+        tds = self._conn.tds_socket
+        return tds.rows_affected
 
     @property
     def description(self):
