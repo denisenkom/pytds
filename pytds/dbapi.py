@@ -406,28 +406,33 @@ class Connection(object):
         # we process the end token to extract the status code. 
         #
         logger.debug("dbsqlok() not done, calling tds_process_tokens()")
+        while True:
+            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
 
-        tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
-
-        #
-        # The error flag may be set for any intervening DONEINPROC packet, in particular
-        # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
-        #/
-        if done_flags & TDS_DONE_ERROR:
-            maybe_raise_MSSQLDatabaseException(self)
-            assert False
-            raise Exception('FAIL')
-        if result_type == TDS_ROWFMT_RESULT:
-            self._state = DB_RES_RESULTSET_ROWS
-        elif result_type == TDS_DONEINPROC_RESULT:
-            self._state = DB_RES_RESULTSET_EMPTY
-        elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-            if done_flags & TDS_DONE_MORE_RESULTS:
-                self._state = DB_RES_NEXT_RESULT
+            #
+            # The error flag may be set for any intervening DONEINPROC packet, in particular
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            #/
+            if done_flags & TDS_DONE_ERROR:
+                maybe_raise_MSSQLDatabaseException(self)
+                assert False
+                raise Exception('FAIL')
+            if result_type == TDS_ROWFMT_RESULT:
+                self._state = DB_RES_RESULTSET_ROWS
+                break
+            elif result_type == TDS_DONEINPROC_RESULT:
+                self._state = DB_RES_RESULTSET_EMPTY
+                break
+            elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                if done_flags & TDS_DONE_MORE_RESULTS:
+                    self._state = DB_RES_NEXT_RESULT
+                else:
+                    self._state = DB_RES_NO_MORE_RESULTS
+                break
+            elif result_type == TDS_STATUS_RESULT:
+                continue
             else:
-                self._state = DB_RES_NO_MORE_RESULTS
-        else:
-            logger.error('logic error: tds_process_tokens result_type %d', result_type);
+                logger.error('logic error: tds_process_tokens result_type %d', result_type);
 
     def _fetchone(self):
         """
