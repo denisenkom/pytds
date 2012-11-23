@@ -152,6 +152,8 @@ class Connection(object):
         return self.tds_socket.product_version
 
     def _get_connection(self):
+        if self._closed:
+            raise Error('Connection is closed')
         if self.tds_socket.is_dead():
             # clear transaction
             self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
@@ -194,6 +196,7 @@ class Connection(object):
         self._as_dict = as_dict
         self._state = DB_RES_NO_MORE_RESULTS
         self.tds_socket = None
+        self._closed = False
 
         # support MS methods of connecting locally
         instance = ""
@@ -264,8 +267,9 @@ class Connection(object):
             return
 
         self.cancel()
+        tds = self._get_connection()
         try:
-            tds_submit_commit(self.tds_socket, True)
+            tds_submit_commit(tds, True)
             self._sqlok()
             while self._nextset():
                 pass
@@ -345,7 +349,10 @@ class Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.close()")
+        if self._closed:
+            raise Error('Connection closed')
         self.clr_err()
+        self._closed = True
         tds = self.tds_socket
         if tds is not None:
             tds_close_socket(tds)
