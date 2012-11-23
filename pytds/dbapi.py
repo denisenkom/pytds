@@ -485,7 +485,6 @@ class Cursor(object):
     def __init__(self, conn):
         self._conn = conn
         self._batchsize = 1
-        self._results = None
         self.arraysize = 1
 
     def __enter__(self):
@@ -511,7 +510,6 @@ class Cursor(object):
         :type parameters: sequence
         """
         logger.debug('callproc begin')
-        self._results = None
         tds = self._conn._get_connection()
         if tds.state == TDS_PENDING:
             rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
@@ -541,7 +539,6 @@ class Cursor(object):
         self._conn = None
 
     def execute(self, operation, params=()):
-        self._results = None
         tds = self._conn._get_connection()
         if tds.state == TDS_PENDING:
             rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
@@ -570,10 +567,14 @@ class Cursor(object):
         check_cancel_and_raise(self._conn)
 
     def executemany(self, operation, params_seq):
-        self._results = None
+        counts = []
+        tds = self._conn.tds_socket
         for params in params_seq:
             self.execute(operation, params)
-            # support correct rowcount across multiple executes
+            if tds.rows_affected != -1:
+                counts.append(tds.rows_affected)
+        if counts:
+            tds.rows_affected = sum(counts)
 
     def execute_scalar(self, query_string, params=None):
         """
