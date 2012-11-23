@@ -149,7 +149,7 @@ def to_python(tds, data, type, length):
 
     elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
             SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\
-            XSYBVARBINARY, XSYBBINARY):
+            XSYBVARBINARY, XSYBBINARY, SYBVARBINARY):
 
         return data
 
@@ -347,6 +347,8 @@ def tds_data_put(tds, curcol):
         # TODO this can be a waste of memory...
         value = tds_convert_string(tds, curcol.char_conv, value)
         colsize = len(value)
+    else:
+        colsize = curcol.column_size
 
     #
     # TODO here we limit data sent with MIN, should mark somewhere

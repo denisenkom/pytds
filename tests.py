@@ -329,5 +329,12 @@ class Bug1(unittest.TestCase):
         cur.close()
         conn.rollback()
 
+class BinaryTest(unittest.TestCase):
+    def runTest(self):
+        binary = '\x00\x01\x02'
+        cur = conn.cursor()
+        cur.execute('select %s', (Binary(binary),))
+        self.assertEqual([(binary,)], cur.fetchall())
+
 if __name__ == '__main__':
     unittest.main()

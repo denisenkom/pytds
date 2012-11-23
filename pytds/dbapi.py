@@ -752,10 +752,6 @@ def maybe_raise_MSSQLDatabaseException(conn):
 def check_cancel_and_raise(conn):
     return maybe_raise_MSSQLDatabaseException(conn)
 
-class Binary(object):
-    def __init__(self, bs):
-        self._bytes = bs
-
 def Date(year, month, day):
     return date(year, month, day)
 

@@ -73,6 +73,18 @@ def make_param(tds, name, value, output=False):
         col_type = SYBFLTN
         size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, Binary):
+        if len(value) > 8000:
+            if IS_TDS72_PLUS(tds):
+                col_type = XSYBVARBINARY
+                column.column_varint_size = 8 # nvarchar(max)
+            else:
+                col_type = SYBIMAGE
+                column.column_varint_size = tds_get_varint_size(tds, col_type)
+        else:
+            col_type = XSYBVARBINARY
+            column.column_varint_size = tds_get_varint_size(tds, col_type)
+        size = len(value)
     elif isinstance(value, (str, unicode)):
         if len(value) > 4000:
             if IS_TDS72_PLUS(tds):
@@ -473,9 +485,9 @@ def tds_get_column_declaration(tds, curcol):
         return "SMALLDATETIME"
     elif t == SYBREAL:
         return "REAL"
-    elif t == (SYBBINARY, XSYBBINARY):
+    elif t in (SYBBINARY, XSYBBINARY):
         return "BINARY(%d)" % min(size, max_len)
-    elif t == (SYBVARBINARY, XSYBVARBINARY):
+    elif t in (SYBVARBINARY, XSYBVARBINARY):
         if curcol.column_varint_size == 8:
             return "VARBINARY(MAX)"
         else:
@@ -515,9 +527,7 @@ def tds_get_column_declaration(tds, curcol):
         assert False
         # TODO...
     else:
-        logger.error("Unknown type %d", t)
-
-    return ''
+        raise Exception("Unknown type %d", t)
 
 def tds7_put_params_definition(tds, param_definition):
     logger.debug('tds7_put_params_definition(%s)', param_definition)

@@ -358,3 +358,6 @@ class output:
         self._type = param_type
         self._value = value
 
+class Binary(str):
+    def __repr__(self):
+        return 'Binary({0})'.format(super(Binary, self).__repr__())
