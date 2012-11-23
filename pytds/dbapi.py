@@ -183,6 +183,20 @@ class Connection(object):
     def chunk_handler_set(self, value):
         self.tds_socket.chunk_handler = value
 
+    @property
+    def tds_version(self):
+        '''
+        Returns version of tds protocol that is being used by this connection
+        '''
+        return self.tds_socket.tds_version
+
+    @property
+    def product_version(self):
+        '''
+        Returns version of the server
+        '''
+        return self.tds_socket.product_version
+
     def _get_connection(self):
         if self.tds_socket.is_dead():
             # clear transaction
