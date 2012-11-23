@@ -136,25 +136,6 @@ class Connection(object):
             # clear transaction
             self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
             tds_connect_and_login(self.tds_socket, self._login)
-            # Set some connection properties to some reasonable values
-            # textsize - http://msdn.microsoft.com/en-us/library/aa259190%28v=sql.80%29.aspx
-            query = '''
-                SET ARITHABORT ON;
-                SET CONCAT_NULL_YIELDS_NULL ON;
-                SET ANSI_NULLS ON;
-                SET ANSI_NULL_DFLT_ON ON;
-                SET ANSI_PADDING ON;
-                SET ANSI_WARNINGS ON;
-                SET ANSI_NULL_DFLT_ON ON;
-                SET CURSOR_CLOSE_ON_COMMIT ON;
-                SET QUOTED_IDENTIFIER ON;
-                SET TEXTSIZE 2147483647;
-            '''
-            cur = self.cursor()
-            try:
-                cur.execute(query)
-            finally:
-                cur.close()
             self._try_activate_cursor(None)
             tds_submit_begin_tran(self.tds_socket)
             self._sqlok()
@@ -201,6 +182,13 @@ class Connection(object):
             login.tds_version = tds_version
         login.database = database
 
+        # that will set:
+        # ANSI_DEFAULTS to ON,
+        # IMPLICIT_TRANSACTIONS to OFF,
+        # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
+        # and ROWCOUNT to infinite
+        login.option_flag2 = TDS_ODBC_ON
+
         # Set the character set name
         if charset:
             _charset = charset
@@ -216,7 +204,6 @@ class Connection(object):
         ctx.int_handler = self._int_handler
         self.tds_socket = tds_alloc_socket(ctx, 512)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()
-        login.option_flag2 &= ~0x02 # we're not an ODBC driver
         tds_fix_login(login) # initialize from Environment variables
 
         login.connect_timeout = login_timeout
