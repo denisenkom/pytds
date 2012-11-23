@@ -336,3 +336,25 @@ NUMBER = 3
 DATETIME = 4
 DECIMAL = 5
 ROWID = 6
+
+# stored procedure output parameter
+class output:
+    #property
+    def type(self):
+        """
+        This is the type of the parameter.
+        """
+        return self._type
+
+    @property
+    def value(self):
+        """
+        This is the value of the parameter.
+        """
+        return self._value
+
+
+    def __init__(self, param_type, value=None):
+        self._type = param_type
+        self._value = value
+

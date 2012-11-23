@@ -32,6 +32,7 @@ class _TdsSocket(object):
         self.use_iconv = True
         self.collation = None
         self.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
+        self.has_status = False
     def is_dead(self):
         return self.state == TDS_DEAD
 

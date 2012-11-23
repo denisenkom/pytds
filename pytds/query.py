@@ -50,7 +50,7 @@ def convert_params(tds, parameters):
             elif isinstance(parameter, _Column):
                 params.append(parameter)
             else:
-                params.append(make_param('', parameter))
+                params.append(make_param(tds, '', parameter))
         return params
 
 def make_param(tds, name, value, output=False):

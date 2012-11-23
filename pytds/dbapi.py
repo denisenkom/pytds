@@ -24,27 +24,6 @@ threadsafety = 1
 # this module uses extended python format codes
 paramstyle = 'pyformat'
 
-# stored procedure output parameter
-class output:
-    #property
-    def type(self):
-        """
-        This is the type of the parameter.
-        """
-        return self._type
-
-    @property
-    def value(self):
-        """
-        This is the value of the parameter.
-        """
-        return self._value
-
-
-    def __init__(self, param_type, value=None):
-        self._type = param_type
-        self._value = value
-
 DB_RES_INIT            = 0
 DB_RES_RESULTSET_EMPTY = 1
 DB_RES_RESULTSET_ROWS  = 2
@@ -526,10 +505,11 @@ class Cursor(object):
         self._source._sqlok()
         check_cancel_and_raise(self._source)
         logger.debug('callproc end')
+        return parameters
 
     @property
     def return_value(self):
-        return get_proc_return_status()
+        return self.get_proc_return_status()
 
     def get_proc_return_status(self):
         tds = self._conn.tds_socket
@@ -771,6 +751,10 @@ def maybe_raise_MSSQLDatabaseException(conn):
 
 def check_cancel_and_raise(conn):
     return maybe_raise_MSSQLDatabaseException(conn)
+
+class Binary(object):
+    def __init__(self, bs):
+        self._bytes = bs
 
 def Date(year, month, day):
     return date(year, month, day)

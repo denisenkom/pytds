@@ -615,7 +615,7 @@ def tds_process_tokens(tds, flag):
                         # TODO optimize
                         flag &= ~TDS_STOPAT_PROC
                         if SET_RETURN(TDS_STATUS_RESULT, 'PROC'):
-                            tds.has_status = 1
+                            tds.has_status = True
                             tds.ret_status = ret_status
                             logger.debug("tds_process_tokens: return status is {0}".format(tds.ret_status))
                             rc = TDS_SUCCESS
