@@ -720,7 +720,7 @@ class Cursor(object):
             self._conn._nextrow()
             check_cancel_and_raise(self._conn)
         self._get_results()
-        return self._conn._state != DB_RES_NO_MORE_RESULTS
+        return None if self._conn._state == DB_RES_NO_MORE_RESULTS else True
 
     def _get_results(self):
         if not self._results:
