@@ -1,5 +1,4 @@
 from datetime import datetime
-from write import *
 from tds_checks import *
 from tds import *
 from util import *
@@ -25,11 +24,12 @@ tds72_query_start = str(bytearray([
     1, 0, 0, 0]))
 
 def tds_start_query(tds):
-    tds_put_s(tds, tds72_query_start[:10])
+    w = tds._writer
+    w.write(tds72_query_start[:10])
     assert len(tds.tds72_transaction) == 8
-    tds_put_s(tds, tds.tds72_transaction)
+    w.write(tds.tds72_transaction)
     assert len(tds72_query_start[10 + 8:]) == 4
-    tds_put_s(tds, tds72_query_start[10 + 8:])
+    w.write(tds72_query_start[10 + 8:])
 
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
@@ -134,10 +134,9 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
         w = tds._writer
         if IS_TDS7_PLUS(tds):
             w.begin_packet(TDS_RPC)
-            converted_name = tds_convert_string(tds, tds.char_convs[client2ucs2], rpc_name)
             START_QUERY(tds)
-            TDS_PUT_SMALLINT(tds, len(converted_name)/2)
-            tds_put_s(tds, converted_name)
+            w.put_smallint(len(rpc_name))
+            w.write_ucs2(rpc_name)
             #
             # TODO support flags
             # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
@@ -147,31 +146,30 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
             flags = 0
             if recompile:
                 flags |= 1
-            tds_put_smallint(tds, flags)
+            w.put_smallint(flags)
             params = convert_params(tds, params)
             for param in params:
-                column_type = param.on_server.column_type
                 tds_put_data_info(tds, param)
                 param.funcs.put_data(tds, param)
             tds_query_flush_packet(tds)
-        elif IS_TDS50(tds):
+        elif IS_TDS5_PLUS(tds):
             w.begin_packet(TDS_NORMAL)
-            tds_put_byte(tds, TDS_DBRPC_TOKEN)
+            w.put_byte(TDS_DBRPC_TOKEN)
             # TODO ICONV convert rpc name
-            tds_put_smallint(tds, len(rpc_name) + 3)
-            tds_put_byte(tds, len(rpc_name))
-            tds_put_s(tds, rpc_name)
+            w.put_smallint(len(rpc_name) + 3)
+            w.put_byte(len(rpc_name))
+            w.write(rpc_name)
             # TODO flags
-            tds_put_smallint(tds, 2 if params else 0)
+            w.put_smallint(2 if params else 0)
 
             if params:
                 tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME)
 
             # send it
             tds_query_flush_packet(tds)
+        else:
             # emulate it for TDS4.x, send RPC for mssql
-            if not IS_TDS5_PLUS(tds):
-                return tds_send_emulated_rpc(tds, rpc_name, params)
+            return tds_send_emulated_rpc(tds, rpc_name, params)
     except:
         tds_set_state(tds, TDS_IDLE)
         raise
@@ -186,7 +184,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
 # \param params parameters of query
 # \return TDS_FAIL or TDS_SUCCESS
 #
-def tds_submit_query(tds, query, params=()):
+def tds_submit_query(tds, query, params=(), flags=0):
     logger.info('tds_submit_query(%s, %s)', query, params)
     #size_t query_len;
     CHECK_TDS_EXTRA(tds)
@@ -209,65 +207,58 @@ def tds_submit_query(tds, query, params=()):
                 query = new_query
 
             w.begin_packet(TDS_NORMAL)
-            tds_put_byte(tds, TDS_LANGUAGE_TOKEN)
+            w.put_byte(TDS_LANGUAGE_TOKEN)
             # TODO ICONV use converted size, not input size and convert string
-            TDS_PUT_INT(tds, len(query) + 1)
-            tds_put_byte(tds, 1 if params else 0) # 1 if there are params, 0 otherwise
-            tds_put_s(tds, query)
+            w.put_int(len(query) + 1)
+            w.put_byte(1 if params else 0) # 1 if there are params, 0 otherwise
+            w.write(tds, query)
             if params:
                 # add on parameters
                 tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
         elif not IS_TDS7_PLUS(tds) or not params:
             w.begin_packet(TDS_QUERY)
             START_QUERY(tds)
-            tds_put_string(tds, query)
+            w.write_ucs2(query)
         else:
-            #TDSCOLUMN *param;
-            #size_t definition_len;
-            #int count, i;
-            #char *param_definition;
-            #size_t converted_query_len;
-            #const char *converted_query;
-
             converted_query = tds_convert_string(tds, tds.char_convs[client2ucs2], query)
-            count = tds_count_placeholders_ucs2le(converted_query)
             params = convert_params(tds, params)
 
-            if count:
-                #
-                # TODO perhaps functions that calls tds7_build_param_def_from_query
-                # should call also tds7_build_param_def_from_params ??
-                #
-                param_definition = tds7_build_param_def_from_query(tds, converted_query, params)
-            else:
-                param_definition = tds7_build_param_def_from_params(tds, converted_query, params)
+            param_definition = ','.join('{0} {1}'.format(\
+                    p.column_name, tds_get_column_declaration(tds, p))
+                for p in params)
 
             w.begin_packet(TDS_RPC)
             START_QUERY(tds)
             # procedure name
             if IS_TDS71_PLUS(tds):
-                tds_put_smallint(tds, -1)
-                tds_put_smallint(tds, TDS_SP_EXECUTESQL)
+                w.put_smallint(-1)
+                w.put_smallint(TDS_SP_EXECUTESQL)
             else:
                 sp_name = 'sp_executesql'
-                tds_put_smallint(tds, len(sp_name))
-                tds_put_s(tds, tds.char_convs[client2ucs2]['to_wire'](sp_name))
-            tds_put_smallint(tds, 0)
+                w.put_smallint(len(sp_name))
+                w.write_ucs2(sp_name)
+            w.put_usmallint(flags)
 
-            # string with sql statement
-            if count:
-                tds7_put_query_params(tds, converted_query)
-            else:
-                tds_put_byte(tds, 0)
-                tds_put_byte(tds, 0)
-                tds_put_byte(tds, SYBNTEXT) # must be Ntype
-                TDS_PUT_INT(tds, len(converted_query))
-                if IS_TDS71_PLUS(tds):
-                    tds_put_s(tds, tds.collation)
-                TDS_PUT_INT(tds, len(converted_query))
-                tds_put_s(tds, converted_query)
-            # parameters definition
-            tds7_put_params_definition(tds, param_definition)
+            # param 1: string with sql statement
+            w.put_byte(0)
+            w.put_byte(0)
+            w.put_byte(SYBNTEXT) # must be Ntype
+            w.put_int(len(converted_query))
+            if IS_TDS71_PLUS(tds):
+                w.write(tds.collation)
+            w.put_int(len(converted_query))
+            w.write(converted_query)
+            # param 2: parameters definition
+            w.put_byte(0)
+            w.put_byte(0)
+            w.put_byte(SYBNTEXT) # must be Ntype
+            param_definition = tds.char_convs[client2ucs2]['to_wire'](param_definition)
+            param_length = len(param_definition)
+            w.put_int(param_length)
+            if IS_TDS71_PLUS(tds):
+                w.write(tds.collation)
+            w.put_int(param_length if param_length else -1)
+            w.write(param_definition)
             # parameter values
             for param in params:
                 tds_put_data_info(tds, param)
@@ -330,16 +321,14 @@ def tds_send_cancel(tds):
 #
 def tds_put_data_info(tds, curcol):
     logger.debug("tds_put_data_info putting param_name")
-
+    w = tds._writer
     if IS_TDS7_PLUS(tds):
-        # TODO use a fixed buffer to avoid error ?
-        converted_param = tds_convert_string(tds, tds.char_convs[client2ucs2], curcol.column_name)
-        TDS_PUT_BYTE(tds, len(converted_param) / 2)
-        tds_put_s(tds, converted_param)
+        w.put_byte(len(curcol.column_name))
+        w.write_ucs2(curcol.column_name)
     else:
         # TODO ICONV convert
-        tds_put_byte(tds, len(curcol.column_name))
-        tds_put_s(tds, curcol.column_name)
+        w.put_byte(len(curcol.column_name))
+        w.write(curcol.column_name)
     #
     # TODO support other flags (use defaul null/no metadata)
     # bit 1 (2 as flag) in TDS7+ is "default value" bit 
@@ -347,17 +336,17 @@ def tds_put_data_info(tds, curcol):
     #
 
     logger.debug("tds_put_data_info putting status")
-    tds_put_byte(tds, curcol.flags)
+    w.put_byte(curcol.flags)
     if not IS_TDS7_PLUS(tds):
-        tds_put_int(tds, curcol.column_usertype) # usertype
+        w.put_int(curcol.column_usertype) # usertype
     # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
-    tds_put_byte(tds, curcol.on_server.column_type)
+    w.put_byte(curcol.on_server.column_type)
 
     curcol.funcs.put_info(tds, curcol)
 
     # TODO needed in TDS4.2 ?? now is called only is TDS >= 5
     if not IS_TDS7_PLUS(tds):
-        tds_put_byte(tds, 0x00) # locale info length
+        w.put_byte(0) # locale info length
 
 #
 # Output params types and query (required by sp_prepare/sp_executesql/sp_prepexec)
@@ -400,53 +389,6 @@ def tds_put_data_info(tds, curcol):
 #    }
 #}
 
-def tds_count_placeholders_ucs2le(converted_query):
-    return 0
-
-#
-# Return string with parameters definition, useful for TDS7+
-# \param tds     state information for the socket and the TDS protocol
-# \param params  parameters to build declaration
-# \param out_len length output buffer in bytes
-# \return allocated and filled string or NULL on failure (coded in ucs2le charset )
-#
-# TODO find a better name for this function
-def tds7_build_param_def_from_params(tds, query, params):
-    assert IS_TDS7_PLUS(tds)
-
-    # try to detect missing names
-    #if (params->num_cols) {
-    #        ids = (struct tds_ids *) calloc(params->num_cols, sizeof(struct tds_ids));
-    #        if (!ids)
-    #                goto Cleanup;
-    #        if (!params->columns[0]->column_name[0]) {
-    #                const char *s = query, *e, *id_end;
-    #                const char *query_end = query + query_len;
-
-    #                for (i = 0;  i < params->num_cols; s = e + 2) {
-    #                        e = tds_next_placeholder_ucs2le(s, query_end, 1);
-    #                        if (e == query_end)
-    #                                break;
-    #                        if (e[0] != '@')
-    #                                continue;
-    #                        /* find end of param name */
-    #                        for (id_end = e + 2; id_end != query_end; id_end += 2)
-    #                                if (!id_end[1] && (id_end[0] != '_' && id_end[1] != '#' && !isalnum((unsigned char) id_end[0])))
-    #                                        break;
-    #                        ids[i].p = e;
-    #                        ids[i].len = id_end - e;
-    #                        ++i;
-    #                }
-    #        }
-    #}
-
-    param_strs = []
-    param_fmt = '{0} {1}'
-
-    for param in params:
-        # this part of buffer can be not-ascii compatible, use all ucs2...
-        param_strs.append(param_fmt.format(param.column_name, tds_get_column_declaration(tds, param)))
-    return ','.join(param_strs)
 
 #
 # Return declaration for column (like "varchar(20)")
@@ -540,22 +482,6 @@ def tds_get_column_declaration(tds, curcol):
     else:
         raise Exception("Unknown type %d", t)
 
-def tds7_put_params_definition(tds, param_definition):
-    logger.debug('tds7_put_params_definition(%s)', param_definition)
-    # string with parameters types
-    tds_put_byte(tds, 0)
-    tds_put_byte(tds, 0)
-    tds_put_byte(tds, SYBNTEXT) # must be Ntype
-
-    # put parameters definitions
-    param_definition = tds.char_convs[client2ucs2]['to_wire'](param_definition)
-    param_length = len(param_definition)
-    TDS_PUT_INT(tds, param_length)
-    if IS_TDS71_PLUS(tds):
-        tds_put_s(tds, tds.collation)
-    TDS_PUT_INT(tds, param_length if param_length else -1)
-    tds_put_s(tds, param_definition)
-
 def tds_submit_begin_tran(tds):
     logger.debug('tds_submit_begin_tran()')
     if IS_TDS72(tds):
@@ -567,9 +493,9 @@ def tds_submit_begin_tran(tds):
         tds_start_query(tds)
 
         # begin transaction
-        tds_put_smallint(tds, 5)
-        tds_put_byte(tds, 0) # new transaction level TODO
-        tds_put_byte(tds, 0) # new transaction name
+        w.put_smallint(5)
+        w.put_byte(0) # new transaction level TODO
+        w.put_byte(0) # new transaction name
 
         tds_query_flush_packet(tds)
     else:
@@ -584,14 +510,14 @@ def tds_submit_rollback(tds, cont):
         w = tds._writer
         w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
-        tds_put_smallint(tds, 8) # rollback
-        tds_put_byte(tds, 0) # name
+        w.put_smallint(8) # rollback
+        w.put_byte(0) # name
         if cont:
-            tds_put_byte(tds, 1)
-            tds_put_byte(tds, 0) # new transaction level TODO
-            tds_put_byte(tds, 0) # new transaction name
+            w.put_byte(1)
+            w.put_byte(0) # new transaction level TODO
+            w.put_byte(0) # new transaction name
         else:
-            tds_put_byte(tds, 0) # do not continue
+            w.put_byte(0) # do not continue
         tds_query_flush_packet(tds);
     else:
         tds_submit_query(tds, "IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
@@ -605,14 +531,14 @@ def tds_submit_commit(tds, cont):
         w = tds._writer
         w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
-        tds_put_smallint(tds, 7) # commit
-        tds_put_byte(tds, 0) # name
+        w.put_smallint(7) # commit
+        w.put_byte(0) # name
         if cont:
-            tds_put_byte(tds, 1)
-            tds_put_byte(tds, 0) # new transaction level TODO
-            tds_put_byte(tds, 0) # new transaction name
+            w.put_byte(1)
+            w.put_byte(0) # new transaction level TODO
+            w.put_byte(0) # new transaction name
         else:
-            tds_put_byte(tds, 0) # do not continue
+            w.put_byte(0) # do not continue
         tds_query_flush_packet(tds)
     else:
         tds_submit_query(tds, "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")

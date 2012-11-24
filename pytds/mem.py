@@ -147,6 +147,12 @@ class _TdsWriter(object):
         else:
             self.pack(_smallint_be, value)
 
+    def put_usmallint(self, value):
+        if self._le():
+            self.pack(_usmallint_le, value)
+        else:
+            self.pack(_usmallint_be, value)
+
     def tds_put_smallint_be(tds, value):
         tds_put_s(tds, struct.pack('>h', value))
 
@@ -182,6 +188,16 @@ class _TdsWriter(object):
                 self._buf[self._pos:self._pos+to_write] = data[data_off:data_off+to_write]
                 self._pos += to_write
                 data_off += to_write
+
+    def write_ucs2(self, s):
+        self.write_string(s, self._tds.char_convs[client2ucs2]['codec'])
+
+    def write_string(self, s, codec):
+        for i in xrange(0, len(s), self.bufsize):
+            chunk = s[i:i+self.bufsize]
+            buf, consumed = codec.encode(chunk)
+            assert consumed == len(chunk)
+            self.write(buf)
 
     def flush(self):
         return self._write_packet(final=True)
