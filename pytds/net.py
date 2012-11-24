@@ -87,66 +87,10 @@ def tds_select(tds, tds_sel, timeout_seconds):
         seconds -= poll_seconds
     return 0
 
-def tds_goodwrite(tds, buf, size, last):
-    pos = 0
-    while pos < size:
-        res = tds_select(tds, TDSSELWRITE, tds.query_timeout)
-        if not res:
-            #timeout
-            raise Exception('timeout')
-        try:
-            flags = 0
-            if hasattr(socket, 'MSG_NOSIGNAL'):
-                flags |= socket.MSG_NOSIGNAL
-            if not last:
-                if hasattr(socket, 'MSG_MORE'):
-                    flags |= socket.MSG_MORE
-            nput = tds._sock.send(buf[pos:size], flags)
-        except socket.error as e:
-            if e.errno != errno.EWOULDBLOCK:
-                tds_close_socket(tds)
-                raise
-        pos += nput
-    if last and USE_CORK:
-        tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
-        tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
-    return size
-
-def tds_write_packet(tds, final):
-    tds.out_buf[0] = tds.out_flag
-    tds.out_buf[1] = 1 if final else 0
-    struct.pack_into('>H', tds.out_buf, 2, tds.out_pos)
-    if IS_TDS7_PLUS(tds) and not tds.login:
-        tds.out_buf[6] = 1
-    logger.debug('Sending packet {0}'.format(repr(tds.out_buf[0:tds.out_pos])))
-    sent = tds_goodwrite(tds, tds.out_buf, tds.out_pos, final)
-    tds.out_pos = 8
-    if sent <= 0:
-        raise Exception('TDS_FAIL')
-
 def tds_put_cancel(tds):
-    out_buf = bytearray(8)
-    out_buf[0] = TDS_CANCEL  # out_flag
-    out_buf[1] = 1 # final
-    out_buf[2] = 0
-    out_buf[3] = 8
-    if IS_TDS7_PLUS(tds) and not tds.login:
-        out_buf[6] = 0x01
-
-    logger.debug("Sending packet {0}".format(repr(out_buf)))
-
-    if tds_conn(tds).tls_session:
-        sent = tds_conn(tds).tls_session.send(out_buf)
-    else:
-        sent = tds_goodwrite(tds, out_buf, len(out_buf), 1)
-
-    if sent > 0:
-        tds.in_cancel = 1
-
-    # GW added in check for write() returning <0 and SIGPIPE checking
-    if sent <= 0:
-        raise Exception('TDS_FAIL')
-    return TDS_SUCCESS
+    tds._writer.begin_packet(TDS_CANCEL)
+    tds._writer.flush()
+    tds.in_cancel = 1
 
 def tds_ssl_deinit(tds):
     if tds_conn(tds).tls_session:

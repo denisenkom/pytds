@@ -201,7 +201,7 @@ class TransactionsTestCase(unittest.TestCase):
 class MultiPacketRequest(unittest.TestCase):
     def runTest(self):
         cur = conn.cursor()
-        param = 'x' * (len(conn.tds_socket.out_buf)*10)
+        param = 'x' * (conn.tds_socket._writer.bufsize*10)
         cur.execute('select %s', (param,))
         self.assertEqual([(param, )], cur.fetchall())
 

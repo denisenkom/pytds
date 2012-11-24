@@ -34,7 +34,7 @@ def tds_start_query(tds):
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
     tds_set_state(tds, TDS_PENDING)
-    tds_flush_packet(tds)
+    tds._writer.flush()
 
 def convert_params(tds, parameters):
     if isinstance(parameters, dict):
@@ -131,8 +131,9 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
         raise Exception('TDS_FAIL')
     try:
         tds.cur_dyn = None
+        w = tds._writer
         if IS_TDS7_PLUS(tds):
-            tds.out_flag = TDS_RPC
+            w.begin_packet(TDS_RPC)
             converted_name = tds_convert_string(tds, tds.char_convs[client2ucs2], rpc_name)
             START_QUERY(tds)
             TDS_PUT_SMALLINT(tds, len(converted_name)/2)
@@ -154,7 +155,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
                 param.funcs.put_data(tds, param)
             tds_query_flush_packet(tds)
         elif IS_TDS50(tds):
-            tds.out_flag = TDS_NORMAL
+            w.begin_packet(TDS_NORMAL)
             tds_put_byte(tds, TDS_DBRPC_TOKEN)
             # TODO ICONV convert rpc name
             tds_put_smallint(tds, len(rpc_name) + 3)
@@ -199,6 +200,7 @@ def tds_submit_query(tds, query, params=()):
         raise Exception('TDS_FAIL')
     try:
         tds.res_info = None
+        w = tds._writer
         if IS_TDS50(tds):
             new_query = None
             # are there '?' style parameters ?
@@ -206,7 +208,7 @@ def tds_submit_query(tds, query, params=()):
                 new_query = tds5_fix_dot_query(query, params)
                 query = new_query
 
-            tds.out_flag = TDS_NORMAL
+            w.begin_packet(TDS_NORMAL)
             tds_put_byte(tds, TDS_LANGUAGE_TOKEN)
             # TODO ICONV use converted size, not input size and convert string
             TDS_PUT_INT(tds, len(query) + 1)
@@ -216,7 +218,7 @@ def tds_submit_query(tds, query, params=()):
                 # add on parameters
                 tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
         elif not IS_TDS7_PLUS(tds) or not params:
-            tds.out_flag = TDS_QUERY
+            w.begin_packet(TDS_QUERY)
             START_QUERY(tds)
             tds_put_string(tds, query)
         else:
@@ -240,7 +242,7 @@ def tds_submit_query(tds, query, params=()):
             else:
                 param_definition = tds7_build_param_def_from_params(tds, converted_query, params)
 
-            tds.out_flag = TDS_RPC
+            w.begin_packet(TDS_RPC)
             START_QUERY(tds)
             # procedure name
             if IS_TDS71_PLUS(tds):
@@ -560,7 +562,8 @@ def tds_submit_begin_tran(tds):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
-        tds.out_flag = TDS7_TRANS
+        w = tds._writer
+        w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
 
         # begin transaction
@@ -578,7 +581,8 @@ def tds_submit_rollback(tds, cont):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
-        tds.out_flag = TDS7_TRANS
+        w = tds._writer
+        w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
         tds_put_smallint(tds, 8) # rollback
         tds_put_byte(tds, 0) # name
@@ -598,7 +602,8 @@ def tds_submit_commit(tds, cont):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
-        tds.out_flag = TDS7_TRANS
+        w = tds._writer
+        w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
         tds_put_smallint(tds, 7) # commit
         tds_put_byte(tds, 0) # name

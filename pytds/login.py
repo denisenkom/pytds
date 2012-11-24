@@ -72,7 +72,7 @@ def tds_connect(tds, login):
             db_selected = True
         else:
             raise Exception('This TDS version is not supported')
-            tds.out_flag = TDS_LOGIN
+            tds._writer.begin_packet(TDS_LOGIN)
             tds_send_login(tds, login)
         if not tds_process_login_tokens(tds):
             raise_db_exception(tds)
@@ -97,7 +97,8 @@ this_host_name = socket.gethostname()
 def tds7_send_login(tds, login):
     option_flag2 = login.option_flag2
     user_name = login.user_name
-    tds.out_flag = TDS7_LOGIN
+    w = tds._writer
+    w.begin_packet(TDS7_LOGIN)
     tds.authentication = None
     if len(login.password) > 128:
         login.password = login.password[:128]
@@ -200,7 +201,7 @@ def tds7_send_login(tds, login):
     tds_put_string(tds, login.database)
     if tds.authentication:
         tds_put_s(tds, tds.authentication.packet)
-    tds_flush_packet(tds)
+    w.flush()
     #tdsdump_on()
 
 def tds7_crypt_pass(password):
@@ -251,7 +252,8 @@ def tds71_do_login(tds, login):
                 ))
     assert START_POS == len(buf)
     assert buf[START_POS-1] == 0xff
-    tds.out_flag = TDS71_PRELOGIN
+    w = tds._writer
+    w.begin_packet(TDS71_PRELOGIN)
     tds_put_s(tds, buf)
     netlib8 = b'\x08\x00\x01\x55\x00\x00'
     netlib9 = b'\x09\x00\x00\x00\x00\x00'
@@ -268,7 +270,7 @@ def tds71_do_login(tds, login):
     if IS_TDS72_PLUS(tds):
         # MARS (1 enabled)
         tds_put_byte(tds, 0)
-    tds_flush_packet(tds)
+    w.flush()
     p = tds._reader.read_whole_packet()
     size = len(p)
     if size <= 0 or tds._reader.packet_type != 4:

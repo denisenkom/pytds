@@ -98,19 +98,68 @@ class _TdsReader(object):
         self._read_packet()
         return self.readall(self._size - _header.size)
 
+class _TdsWriter(object):
+    def __init__(self, tds, bufsize):
+        self._tds = tds
+        self._pos = 0
+        self._buf = bytearray(bufsize)
+
+    @property
+    def bufsize(self):
+        return len(self._buf)
+
+    @bufsize.setter
+    def bufsize(self, bufsize):
+        if len(self._buf) == bufsize:
+            return
+
+        if bufsize > len(self._buf):
+            self._buf.extend('\0'*(bufsize - len(self._buf)))
+        else:
+            self._buf = self._buf[0:bufsize]
+
+    def begin_packet(self, packet_type):
+        self._type = packet_type
+        self._pos = 8
+
+    def pack(self, struct, *args):
+        self.write(struct.pack(*args))
+
+    def put_byte(self, value):
+        self.pack(_byte, value)
+
+    def write(self, data):
+        data_off = 0
+        while data_off < len(data):
+            left = len(self._buf) - self._pos
+            if left <= 0:
+                self._write_packet(final=False)
+            else:
+                to_write = min(left, len(data) - data_off)
+                self._buf[self._pos:self._pos+to_write] = data[data_off:data_off+to_write]
+                self._pos += to_write
+                data_off += to_write
+
+    def flush(self):
+        return self._write_packet(final=True)
+
+    def _write_packet(self, final):
+        status = 1 if final else 0
+        _header.pack_into(self._buf, 0, self._type, status, self._pos, 0)
+        if IS_TDS7_PLUS(self._tds) and not self._tds.login:
+            self._buf[6] = 0x01
+        self._tds._write(self._buf[:self._pos], final)
+        self._pos = 8
 
 class _TdsSocket(object):
-    def __init__(self):
+    def __init__(self, context, bufsize):
         self.conn = _TdsConn()
         self.out_pos = 8
         self.login = None
         self.int_handler = None
-        #self.in_pos = 0
-        #self.in_len = 0
         self.msg_handler = None
         self.res_info = None
         self.in_cancel = False
-        #self.env = {'block_size': len(self.out_buf)}
         self.env = _TdsEnv()
         self.wire_mtx = None
         self.current_results = None
@@ -122,6 +171,22 @@ class _TdsSocket(object):
         self.has_status = False
         self.messages = []
         self._reader = _TdsReader(self)
+        self._writer = _TdsWriter(self, bufsize)
+        tds_set_ctx(self, context)
+        self.in_buf_max = 0
+        tds_conn(self).s_signal = tds_conn(self).s_signaled = None
+        tds_conn(self).use_iconv = True
+        tds_iconv_alloc(self)
+
+        # Jeff's hack, init to no timeout
+        self.query_timeout = 0
+        tds_set_s(self, None)
+        import socket
+        if hasattr(socket, 'socketpair'):
+            tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.state = TDS_DEAD
+        from threadsafe import TDS_MUTEX_INIT
+        self.write_mtx = TDS_MUTEX_INIT(self.wire_mtx)
 
     def is_dead(self):
         return self.state == TDS_DEAD
@@ -145,48 +210,33 @@ class _TdsSocket(object):
             tds_close_socket(self)
             raise Error('Timeout')
 
+    def _write(self, data, final):
+        pos = 0
+        while pos < len(data):
+            res = tds_select(self, TDSSELWRITE, self.query_timeout)
+            if not res:
+                #timeout
+                raise Error('Timeout')
+            try:
+                flags = 0
+                if hasattr(socket, 'MSG_NOSIGNAL'):
+                    flags |= socket.MSG_NOSIGNAL
+                if not final:
+                    if hasattr(socket, 'MSG_MORE'):
+                        flags |= socket.MSG_MORE
+                nput = self._sock.send(data[pos:], flags)
+            except socket.error as e:
+                if e.errno != errno.EWOULDBLOCK:
+                    tds_close_socket(self)
+                    raise
+            pos += nput
+        if final and USE_CORK:
+            self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
+            self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
+
+
 def tds_alloc_socket(context, bufsize):
-    tds_socket = _TdsSocket()
-    tds_set_ctx(tds_socket, context)
-    tds_socket.in_buf_max = 0
-    tds_conn(tds_socket).s_signal = tds_conn(tds_socket).s_signaled = None
-    tds_socket.out_buf = bytearray(bufsize + TDS_ADDITIONAL_SPACE)
-
-    tds_set_parent(tds_socket, None)
-    tds_socket.env.block_size = bufsize
-
-    tds_conn(tds_socket).use_iconv = True
-    tds_iconv_alloc(tds_socket)
-
-    # Jeff's hack, init to no timeout
-    tds_socket.query_timeout = 0
-    from write import tds_init_write_buf
-    tds_init_write_buf(tds_socket)
-    tds_set_s(tds_socket, None)
-    import socket
-    if hasattr(socket, 'socketpair'):
-        tds_conn(tds_socket).s_signal, tds_conn(tds_socket).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
-    tds_socket.state = TDS_DEAD
-    from threadsafe import TDS_MUTEX_INIT
-    tds_socket.write_mtx = TDS_MUTEX_INIT(tds_socket.wire_mtx)
-    return tds_socket
-
-def tds_realloc_socket(tds, bufsize):
-    #unsigned char *new_out_buf;
-
-    assert tds and tds.out_buf
-
-    if tds.env.block_size == bufsize:
-        return tds
-
-    if tds.out_pos <= bufsize and bufsize > 0:
-        if bufsize > tds.env.block_size:
-            tds.out_buf.extend('\0'*(bufsize - len(tds.out_buf)))
-        else:
-            tds.out_buf = tds.out_buf[0:bufsize]
-        tds.env.block_size = bufsize
-        return tds
-    return None
+    return _TdsSocket(context, bufsize)
 
 def tds_free_socket(tds):
     if tds:
@@ -200,7 +250,6 @@ def tds_free_socket(tds):
         #while (tds->cursors)
         #    tds_cursor_deallocated(tds, tds->cursors);
         #free(tds->in_buf)
-        #free(tds->out_buf)
         from net import tds_ssl_deinit, tds_close_socket
         tds_ssl_deinit(tds)
         tds_close_socket(tds);

@@ -251,7 +251,7 @@ def tds_process_env_chg(tds):
             # size more than what we specified
             #
             # Reallocate buffer if possible (strange values from server or out of memory) use older buffer */
-            tds_realloc_socket(tds, new_block_size)
+            tds._writer.bufsize = new_block_size
     elif type == TDS_ENV_DATABASE:
         newval = tds_get_string(tds, tds_get_byte(tds))
         oldval = tds_get_string(tds, tds_get_byte(tds))
