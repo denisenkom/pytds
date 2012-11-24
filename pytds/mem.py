@@ -16,6 +16,16 @@ class _TdsEnv:
 
 _header = struct.Struct('>BBHHxx')
 _byte = struct.Struct('B')
+_smallint_le = struct.Struct('<h')
+_smallint_be = struct.Struct('>h')
+_usmallint_le = struct.Struct('<H')
+_usmallint_be = struct.Struct('>H')
+_int_le = struct.Struct('<l')
+_int_be = struct.Struct('>l')
+_uint_le = struct.Struct('<L')
+_uint_be = struct.Struct('>L')
+_int8_le = struct.Struct('<q')
+_int8_be = struct.Struct('>q')
 
 class _TdsReader(object):
     def __init__(self, tds):
@@ -127,6 +137,39 @@ class _TdsWriter(object):
 
     def put_byte(self, value):
         self.pack(_byte, value)
+
+    def _le(self):
+        return tds_conn(self._tds).emul_little_endian
+
+    def put_smallint(self, value):
+        if self._le():
+            self.pack(_smallint_le, value)
+        else:
+            self.pack(_smallint_be, value)
+
+    def tds_put_smallint_be(tds, value):
+        tds_put_s(tds, struct.pack('>h', value))
+
+    def put_int(self, value):
+        if self._le():
+            self.pack(_int_le, value)
+        else:
+            self.pack(_int_be, value)
+
+    def put_uint(self, value):
+        if self._le:
+            self.pack(_uint_le, value)
+        else:
+            self.pack(_uint_be, value)
+
+    def put_int_be(self, value):
+        self.pack(_int_be, value)
+
+    def put_int8(self, value):
+        if self._le():
+            self.pack(_int8_le, value)
+        else:
+            self.pack(_int8_be, value)
 
     def write(self, data):
         data_off = 0

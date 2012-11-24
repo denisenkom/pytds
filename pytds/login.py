@@ -116,91 +116,91 @@ def tds7_send_login(tds, login):
             raise Exception('requested GSS authentication but it is not implemented')
         else:
             packet_size += (len(user_name) + len(login.password))*2
-    tds_put_int(tds, packet_size)
-    tds_put_uint(tds, login.tds_version)
+    w.put_int(packet_size)
+    w.put_uint(login.tds_version)
     block_size = 4096
     if login.block_size < 512 or 1000000 < login.block_size:
         block_size = login.block_size
-    tds_put_int(tds, block_size)
-    tds_put_s(tds, b'\x06\x83\xf2\xf8') # client progver
-    tds_put_int(tds, os.getpid())
-    tds_put_s(tds, b'\x00\x00\x00\x00') # connection_id
+    w.put_int(block_size)
+    w.write(b'\x06\x83\xf2\xf8') # client progver
+    w.put_int(os.getpid())
+    w.write(b'\x00\x00\x00\x00') # connection_id
     option_flag1 = TDS_SET_LANG_ON | TDS_USE_DB_NOTIFY | TDS_INIT_DB_FATAL
     if not login.bulk_copy:
         option_flag1 |= TDS_DUMPLOAD_OFF
-    tds_put_byte(tds, option_flag1)
+    w.put_byte(option_flag1)
     if False:
         if tds.authentication:
             option_flag2 |= TDS_INTEGRATED_SECURITY_ON
-    tds_put_byte(tds, option_flag2)
-    tds_put_byte(tds, 0) # sql_type_flag
+    w.put_byte(option_flag2)
+    w.put_byte(0) # sql_type_flag
     option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
-    tds_put_byte(tds, option_flag3 if IS_TDS73_PLUS(tds) else 0)
-    tds_put_s(tds, b'\x88\xff\xff\xff') # time zone
-    tds_put_s(tds, b'\x36\x04\x00\x00') # time zone
-    tds_put_smallint(tds, current_pos)
-    tds_put_smallint(tds, len(client_host_name))
+    w.put_byte(option_flag3 if IS_TDS73_PLUS(tds) else 0)
+    w.write(b'\x88\xff\xff\xff') # time zone
+    w.write(b'\x36\x04\x00\x00') # time zone
+    w.put_smallint(current_pos)
+    w.put_smallint(len(client_host_name))
     current_pos += len(client_host_name) * 2
     if tds.authentication:
-        tds_put_smallint(tds, 0)
-        tds_put_smallint(tds, 0)
-        tds_put_smallint(tds, 0)
-        tds_put_smallint(tds, 0)
+        w.put_smallint(0)
+        w.put_smallint(0)
+        w.put_smallint(0)
+        w.put_smallint(0)
     else:
-        tds_put_smallint(tds, current_pos)
-        tds_put_smallint(tds, len(user_name))
+        w.put_smallint(current_pos)
+        w.put_smallint(len(user_name))
         current_pos += len(user_name) * 2
-        tds_put_smallint(tds, current_pos)
-        tds_put_smallint(tds, len(login.password))
+        w.put_smallint(current_pos)
+        w.put_smallint(len(login.password))
         current_pos += len(login.password) * 2
-    tds_put_smallint(tds, current_pos)
-    tds_put_smallint(tds, len(login.app_name))
+    w.put_smallint(current_pos)
+    w.put_smallint(len(login.app_name))
     current_pos += len(login.app_name) * 2
     # server name
-    TDS_PUT_SMALLINT(tds, current_pos);
-    TDS_PUT_SMALLINT(tds, len(login.server_name))
+    w.put_smallint(current_pos);
+    w.put_smallint(len(login.server_name))
     current_pos += len(login.server_name) * 2
     # unknown
-    tds_put_smallint(tds, 0)
-    tds_put_smallint(tds, 0)
+    w.put_smallint(0)
+    w.put_smallint(0)
     # library name
-    TDS_PUT_SMALLINT(tds, current_pos)
-    TDS_PUT_SMALLINT(tds, len(login.library))
+    w.put_smallint(current_pos)
+    w.put_smallint(len(login.library))
     current_pos += len(login.library) * 2
     # language  - kostya@warmcat.excom.spb.su
-    TDS_PUT_SMALLINT(tds, current_pos);
-    TDS_PUT_SMALLINT(tds, len(login.language));
+    w.put_smallint(current_pos);
+    w.put_smallint(len(login.language));
     current_pos += len(login.language) * 2;
     # database name
-    TDS_PUT_SMALLINT(tds, current_pos);
-    TDS_PUT_SMALLINT(tds, len(login.database));
+    w.put_smallint(current_pos);
+    w.put_smallint(len(login.database));
     current_pos += len(login.database) * 2;
     import uuid
-    tds_put_s(tds, struct.pack('>Q', uuid.getnode())[:6])
+    w.write(struct.pack('>Q', uuid.getnode())[:6])
     # authentication
-    tds_put_smallint(tds, current_pos)
-    tds_put_smallint(tds, auth_len)
+    w.put_smallint(current_pos)
+    w.put_smallint(auth_len)
     current_pos += auth_len
     # db file
-    tds_put_smallint(tds, current_pos)
-    tds_put_smallint(tds, 0)
+    w.put_smallint(current_pos)
+    w.put_smallint(0)
     if IS_TDS72_PLUS(tds):
         # new password
-        tds_put_smallint(tds, current_pos)
-        tds_put_smallint(tds, 0)
+        w.put_smallint(current_pos)
+        w.put_smallint(0)
         # sspi long
-        tds_put_int(tds, 0)
+        w.put_int( 0)
     tds_put_string(tds, client_host_name)
     if not tds.authentication:
         tds_put_string(tds, user_name)
-        tds_put_s(tds, tds7_crypt_pass(login.password))
+        w.write(tds7_crypt_pass(login.password))
     tds_put_string(tds, login.app_name)
     tds_put_string(tds, login.server_name)
     tds_put_string(tds, login.library)
     tds_put_string(tds, login.language)
     tds_put_string(tds, login.database)
     if tds.authentication:
-        tds_put_s(tds, tds.authentication.packet)
+        w.write(tds.authentication.packet)
     w.flush()
     #tdsdump_on()
 
@@ -222,7 +222,7 @@ def tds71_do_login(tds, login):
     encryption_level = login.encryption_level
     if IS_TDS72_PLUS(tds):
         START_POS = 26
-        buf = bytearray(struct.pack('>BHHBHHBHHBHHBHHB',
+        buf = struct.pack('>BHHBHHBHHBHHBHHB',
                 #netlib version
                 VERSION, START_POS, 6,
                 #encryption
@@ -235,10 +235,10 @@ def tds71_do_login(tds, login):
                 MARS, START_POS + 6 + 1 + len(instance_name)+1 + 4, 1,
                 # end
                 TERMINATOR
-                ))
+                )
     else:
         START_POS = 21
-        buf = bytearray(struct.pack('>BHHBHHBHHBHHB',
+        buf = struct.pack('>BHHBHHBHHBHHB',
                 #netlib version
                 VERSION, START_POS, 6,
                 #encryption
@@ -249,27 +249,27 @@ def tds71_do_login(tds, login):
                 THREADID, START_POS + 6 + 1 + len(instance_name)+1, 4,
                 # end
                 TERMINATOR
-                ))
+                )
     assert START_POS == len(buf)
-    assert buf[START_POS-1] == 0xff
+    assert buf[START_POS-1] == b'\xff'
     w = tds._writer
     w.begin_packet(TDS71_PRELOGIN)
-    tds_put_s(tds, buf)
+    w.write(buf)
     netlib8 = b'\x08\x00\x01\x55\x00\x00'
     netlib9 = b'\x09\x00\x00\x00\x00\x00'
-    tds_put_s(tds, netlib9 if IS_TDS72_PLUS(tds) else netlib8)
+    w.write(netlib9 if IS_TDS72_PLUS(tds) else netlib8)
     # encryption
     if ENCRYPTION_ENABLED and encryption_supported:
-        tds_put_byte(tds, 1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
+        w.put_byte(1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
     else:
         # not supported
-        tds_put_byte(tds, 2)
-    tds_put_s(tds, instance_name.encode('ascii'))
-    tds_put_byte(tds, 0) # zero terminate instance_name
-    tds_put_int(tds, os.getpid()) # TODO: change this to thread id
+        w.put_byte(2)
+    w.write(instance_name.encode('ascii'))
+    w.put_byte(0) # zero terminate instance_name
+    w.put_int(os.getpid()) # TODO: change this to thread id
     if IS_TDS72_PLUS(tds):
         # MARS (1 enabled)
-        tds_put_byte(tds, 0)
+        w.put_byte(0)
     w.flush()
     p = tds._reader.read_whole_packet()
     size = len(p)
