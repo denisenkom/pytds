@@ -1,14 +1,9 @@
 import struct
-from StringIO import StringIO
 from net import *
 from iconv import *
 
 def tds_get_byte(tds):
-    while tds.in_pos >= tds.in_len:
-        tds_read_packet(tds)
-    result = tds.in_buf[tds.in_pos]
-    tds.in_pos += 1
-    return result
+    return tds._reader.get_byte()
 
 #
 # Unget will always work as long as you don't call it twice in a row.  It
@@ -17,14 +12,10 @@ def tds_get_byte(tds):
 # the token stream.
 #
 def tds_unget_byte(tds):
-    # this is a one trick pony...don't call it twice
-    tds.in_pos -= 1
+    tds._reader.unget_byte()
 
 def tds_peek(tds):
-    result = tds_get_byte(tds)
-    if tds.in_pos > 0:
-        tds.in_pos -= 1
-    return result
+    return tds._reader.peek()
 
 def tds_get_smallint(tds):
     buf = tds_get_n(tds, 2)
@@ -78,32 +69,10 @@ def tds_get_string(tds, size):
     return buf.decode('utf16')
 
 def tds_skip_n(tds, need):
-    pos = 0
-    while True:
-        have = tds.in_len - tds.in_pos
-        if need <= have:
-            break
-        pos += have
-        need -= have
-        tds_read_packet(tds)
-    if need > 0:
-        tds.in_pos += need
+    tds._reader.skip(need)
 
 def tds_get_n(tds, need):
-    result = StringIO()
-    pos = 0
-    while True:
-        have = tds.in_len - tds.in_pos
-        if need <= have:
-            break
-        result.write(tds.in_buf[tds.in_pos:tds.in_pos+have])
-        pos += have
-        need -= have
-        tds_read_packet(tds)
-    if need > 0:
-        result.write(tds.in_buf[tds.in_pos:tds.in_pos+need])
-        tds.in_pos += need
-    return result.getvalue()
+    return tds._reader.readall(need)
 
 #
 # Fetch character data the wire.

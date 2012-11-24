@@ -269,34 +269,35 @@ def tds71_do_login(tds, login):
         # MARS (1 enabled)
         tds_put_byte(tds, 0)
     tds_flush_packet(tds)
-    size = tds_read_packet(tds)
-    if size <= 0 or tds.in_flag != 4:
+    p = tds._reader.read_whole_packet()
+    size = len(p)
+    if size <= 0 or tds._reader.packet_type != 4:
         raise TdsError(TDS_FAIL)
-    size = tds.in_len - tds.in_pos
     # default 2, no certificate, no encryptption
     crypt_flag = 2
-    p = tds.in_buf[tds.in_pos:]
     i = 0
+    byte_struct = struct.Struct('B')
+    off_len_struct = struct.Struct('>HH')
+    prod_version_struct = struct.Struct('>LH')
     while True:
         if i >= size:
             raise TdsError(TDS_FAIL)
-        type = p[i]
+        type, = byte_struct.unpack_from(p, i)
         if type == 0xff:
             break
         if i + 4 > size:
             raise TdsError(TDS_FAIL)
-        off, l = struct.unpack('>HH', bytes(p[i+1:i+1+4]))
+        off, l = off_len_struct.unpack_from(p, i + 1)
         if off > size or off + l > size:
             raise TdsError(TDS_FAIL)
         if type == VERSION:
-            tds.product_version = struct.unpack_from('>LH', str(p), off)
+            tds.product_version = prod_version_struct.unpack_from(p, off)
         elif type == ENCRYPTION and l >= 1:
-            crypt_flag = p[off]
+            crypt_flag, = byte_struct.unpack_from(p, off)
         elif type == MARS:
-            tds.mars_enabled = bool(p[off])
+            tds.mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
         i += 5
     # we readed all packet
-    tds.in_pos += size
     logger.debug('detected flag %d', crypt_flag)
     # if server do not has certificate do normal login
     if crypt_flag == 2:

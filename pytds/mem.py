@@ -1,4 +1,6 @@
+from StringIO import StringIO
 from tds import *
+from net import *
 from iconv import tds_iconv_alloc
 import logging
 
@@ -12,14 +14,99 @@ class _TdsConn:
 class _TdsEnv:
     pass
 
+_header = struct.Struct('>BBHHxx')
+_byte = struct.Struct('B')
+
+class _TdsReader(object):
+    def __init__(self, tds):
+        self._buf = ''
+        self._pos = 0 # position in the buffer
+        self._have = 0 # number of bytes read from packet
+        self._size = 0 # size of current packet
+        self._tds = tds
+        self._type = None
+        self._status = None
+
+    @property
+    def packet_type(self):
+        return self._type
+
+    def unpack(self, struct):
+        return struct.unpack(self.readall(struct.size))
+
+    def get_byte(self):
+        return self.unpack(_byte)[0]
+
+    def unget_byte(self):
+        # this is a one trick pony...don't call it twice
+        assert self._pos > 0
+        self._pos -= 1
+
+    def peek(self):
+        res = self.get_byte()
+        self.unget_byte()
+        return res
+
+    def skip(self, size):
+        left = size
+        while left:
+            buf = self.read(left)
+            left -= len(buf)
+
+    def readall(self, size):
+        res = self.read(size)
+        if len(res) == size:
+            return res
+        result = StringIO(res)
+        left = size - len(res)
+        while left:
+            buf = self.read(left)
+            result.write(buf)
+            left -= len(buf)
+        return result.getvalue()
+
+    def read(self, size):
+        if self._pos >= len(self._buf):
+            if self._have >= self._size:
+                self._read_packet()
+            else:
+                self._buf = self._tds._read(self._size - self._have)
+                self._pos = 0
+                self._have += len(self._buf)
+        res = self._buf[self._pos:self._pos+size]
+        self._pos += len(res)
+        return res
+
+    def _read_packet(self):
+        if self._tds.is_dead():
+            raise Exception('Read attempt when state is TDS_DEAD')
+        header = self._tds._read(_header.size)
+        if len(header) < _header.size:
+            tds._pos = 0
+            if self._tds.state != TDS_IDLE and len(header) == 0:
+                tds_close_socket(self._tds)
+            raise Exception('Reading header error')
+        logger.debug('Received header')
+        self._type, self._status, self._size, self._spid = _header.unpack(header)
+        self._have = _header.size
+        assert self._size > self._have, 'Empty packet doesn make any sense'
+        self._buf = self._tds._read(self._size - self._have)
+        self._have += len(self._buf)
+        self._pos = 0
+
+    def read_whole_packet(self):
+        self._read_packet()
+        return self.readall(self._size - _header.size)
+
+
 class _TdsSocket(object):
     def __init__(self):
         self.conn = _TdsConn()
         self.out_pos = 8
         self.login = None
         self.int_handler = None
-        self.in_pos = 0
-        self.in_len = 0
+        #self.in_pos = 0
+        #self.in_len = 0
         self.msg_handler = None
         self.res_info = None
         self.in_cancel = False
@@ -34,8 +121,29 @@ class _TdsSocket(object):
         self.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
         self.has_status = False
         self.messages = []
+        self._reader = _TdsReader(self)
+
     def is_dead(self):
         return self.state == TDS_DEAD
+
+    def _read(self, size):
+        if self.is_dead():
+            raise Exception('Tds is dead')
+        events = tds_select(self, TDSSELREAD, self.query_timeout)
+        if events & TDSPOLLURG:
+            buf = tds_conn(self).s_signaled.read(size)
+            if not self.in_cancel:
+                tds_put_cancel(self)
+            return buf
+        elif events:
+            buf = self._sock.recv(size)
+            if len(buf) == 0:
+                tds_close_socket(self)
+                raise Error('Server closed connection')
+            return buf
+        else:
+            tds_close_socket(self)
+            raise Error('Timeout')
 
 def tds_alloc_socket(context, bufsize):
     tds_socket = _TdsSocket()

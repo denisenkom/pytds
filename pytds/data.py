@@ -295,10 +295,13 @@ def tds72_get_varmax(tds, curcol):
                 val = decoder.decode('', True)
                 chunk_handler.new_chunk(val)
             return chunk_handler.end()
-        val = tds_get_n(tds, chunk_len)
-        if decoder:
-            val = decoder.decode(val)
-        chunk_handler.new_chunk(val)
+        left = chunk_len
+        while left:
+            val = tds._reader.read(left)
+            left -= len(val)
+            if decoder:
+                val = decoder.decode(val)
+            chunk_handler.new_chunk(val)
 
 def tds_data_put_info(tds, col):
     size = tds_fix_column_size(tds, col)
