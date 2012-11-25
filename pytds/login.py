@@ -15,7 +15,6 @@ from tds import *
 from util import *
 from net import *
 from token import *
-from iconv import _utf16_le_codec
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +188,7 @@ def tds7_send_login(tds, login):
     w.flush()
 
 def tds7_crypt_pass(password):
-    encoded = bytearray(_utf16_le_codec.encode(password)[0])
+    encoded = bytearray(ucs2_codec.encode(password)[0])
     for i, ch in enumerate(encoded):
         encoded[i] = ((ch << 4)&0xff | (ch >> 4)) ^ 0xA5
     return encoded

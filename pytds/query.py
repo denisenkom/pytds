@@ -106,7 +106,7 @@ def make_param(tds, name, value):
             col_type = XSYBNVARCHAR
             column.column_varint_size = tds_get_varint_size(tds, col_type)
         size = len(value) * 2
-        column.char_conv = tds.char_convs[client2ucs2]
+        column.char_codec = ucs2_codec
     elif isinstance(value, datetime):
         col_type = SYBDATETIMN
         size = 8

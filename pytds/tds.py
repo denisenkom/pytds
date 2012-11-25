@@ -1,5 +1,5 @@
 import struct
-from collate import Collation
+from collate import *
 from tdsproto import *
 
 
@@ -38,15 +38,6 @@ def IS_TDS7_PLUS(x): return x.tds_version>=TDS70
 def IS_TDS71_PLUS(x): return x.tds_version>=TDS71
 def IS_TDS72_PLUS(x): return x.tds_version>=TDS72
 def IS_TDS73_PLUS(x): return x.tds_version>=TDS73A
-
-client2ucs2             = 0
-client2server_chardata  = 1
-iso2server_metadata     = 2
-initial_char_conv_count = 3 # keep last
-
-TDS_ENCODING_INDIRECT   = 1
-TDS_ENCODING_SWAPBYTE   = 2
-TDS_ENCODING_MEMCPY     = 4
 
 TDS_NO_COUNT = -1
 

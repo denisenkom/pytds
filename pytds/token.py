@@ -2,7 +2,6 @@ import logging
 import traceback
 from read import *
 from tdsproto import *
-from iconv import *
 from mem import *
 from mem import _Column
 from tds_checks import *
@@ -225,7 +224,7 @@ def tds_process_env_chg(tds):
         logger.debug("tds.collation was {0}".format(tds.collation))
         tds.collation = r.get_collation()
         r.skip(size - 5)
-        tds7_srv_charset_changed(tds, tds.collation)
+        #tds7_srv_charset_changed(tds, tds.collation)
         logger.debug("tds.collation now {0}".format(tds.collation))
         # discard old one
         r.skip(r.get_byte())
@@ -233,14 +232,14 @@ def tds_process_env_chg(tds):
         size = r.get_byte()
         # TODO: parse transaction
         tds.tds72_transaction = r.readall(8)
-        r.skip(tds_get_byte(tds))
+        r.skip(r.get_byte())
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
         tds.tds72_transaction = None
         r.skip(r.get_byte())
         r.skip(r.get_byte())
     elif type == TDS_ENV_PACKSIZE:
-        newval = tds_get_string(tds, tds_get_byte(tds))
-        oldval = tds_get_string(tds, tds_get_byte(tds))
+        newval = r.read_ucs2(r.get_byte())
+        oldval = r.read_ucs2(r.get_byte())
         new_block_size = int(newval)
         if new_block_size >= 512:
             logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
@@ -251,39 +250,40 @@ def tds_process_env_chg(tds):
             # Reallocate buffer if possible (strange values from server or out of memory) use older buffer */
             tds._writer.bufsize = new_block_size
     elif type == TDS_ENV_DATABASE:
-        newval = tds_get_string(tds, tds_get_byte(tds))
-        oldval = tds_get_string(tds, tds_get_byte(tds))
+        newval = r.read_ucs2(r.get_byte())
+        oldval = r.read_ucs2(r.get_byte())
         tds.env.database = newval
     elif type == TDS_ENV_LANG:
-        newval = tds_get_string(tds, tds_get_byte(tds))
-        oldval = tds_get_string(tds, tds_get_byte(tds))
+        newval = r.read_ucs2(r.get_byte())
+        oldval = r.read_ucs2(r.get_byte())
         tds.env.language = newval
     elif type == TDS_ENV_CHARSET:
-        newval = tds_get_string(tds, tds_get_byte(tds))
-        oldval = tds_get_string(tds, tds_get_byte(tds))
+        newval = r.read_ucs2(r.get_byte())
+        oldval = r.read_ucs2(r.get_byte())
         logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
         tds.env.charset = newval
         tds_srv_charset_changed(tds, newval)
     elif type == TDS_ENV_DB_MIRRORING_PARTNER:
-        newval = tds_get_string(tds, tds_get_byte(tds))
-        oldval = tds_get_string(tds, tds_get_byte(tds))
+        newval = r.read_ucs2(r.get_byte())
+        oldval = r.read_ucs2(r.get_byte())
 
     else:
         # discard byte values, not still supported
         # TODO support them
         # discard new one
-        tds_get_n(tds, tds_get_byte(tds))
+        r.skip(r.get_byte())
         # discard old one
-        tds_get_n(tds, tds_get_byte(tds))
+        r.skip(r.get_byte())
 
 
 def tds_process_msg(tds, marker):
-    size = tds_get_smallint(tds)
+    r = tds._reader
+    size = r.get_smallint()
     msg = {}
     msg['marker'] = marker
-    msg['msgno'] = tds_get_int(tds)
-    msg['state'] = tds_get_byte(tds)
-    msg['severity'] = tds_get_byte(tds)
+    msg['msgno'] = r.get_int()
+    msg['state'] = r.get_byte()
+    msg['severity'] = r.get_byte()
     msg['sql_state'] = None
     has_eed = False
     if marker == TDS_EED_TOKEN:
@@ -291,11 +291,11 @@ def tds_process_msg(tds, marker):
             msg['priv_msg_type'] = 0
         else:
             msg['priv_msg_type'] = 1
-        len_sqlstate = tds_get_byte(tds)
-        msg['sql_state'] = tds_get_n(tds, len_sqlstate)
-        has_eed = tds_get_byte(tds)
+        len_sqlstate = r.get_byte()
+        msg['sql_state'] = r.readall(len_sqlstate)
+        has_eed = r.get_byte()
         # junk status and transaction state
-        tds_get_smallint(tds)
+        r.get_smallint()
     elif marker == TDS_INFO_TOKEN:
         msg['priv_msg_type'] = 0
     elif marker == TDS_ERROR_TOKEN:
@@ -303,26 +303,26 @@ def tds_process_msg(tds, marker):
     else:
         logger.error('tds_process_msg() called with unknown marker "{0}"'.format(marker))
     logger.debug('tds_process_msg() reading message {0} from server'.format(msg['msgno']))
-    msg['message'] = tds_get_string(tds, tds_get_smallint(tds))
+    msg['message'] = r.read_ucs2(r.get_smallint())
     # server name
-    msg['server'] = tds_get_string(tds, tds_get_byte(tds))
+    msg['server'] = r.read_ucs2(r.get_byte())
     if not msg['server'] and tds.login:
         msg['server'] = tds.server_name
     # stored proc name if available
-    msg['proc_name'] = tds_get_string(tds, tds_get_byte(tds))
-    msg['line_number'] = tds_get_int(tds) if IS_TDS72_PLUS(tds) else tds_get_smallint(tds)
+    msg['proc_name'] = r.read_ucs2(r.get_byte())
+    msg['line_number'] = r.get_int() if IS_TDS72_PLUS(tds) else r.get_smallint()
     if not msg['sql_state']:
         #msg['sql_state'] = tds_alloc_lookup_sqlstate(tds, msg['msgno'])
         pass
     # in case extended error data is sent, we just try to discard it
     if has_eed:
         while True:
-            next_marker = tds_get_byte(tds)
+            next_marker = r.get_byte()
             if next_marker in (TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN, TDS5_PARAMS_TOKEN):
                 tds_process_default_tokens(tds, next_marker)
             else:
                 break
-        tds_unget_byte(tds)
+        r.unget_byte()
 
     # call msg_handler
 
@@ -350,17 +350,18 @@ _SERVER_TO_CLIENT_MAPPING = {
     }
 
 def tds_process_login_tokens(tds):
+    r = tds._reader
     succeed = False
     logger.debug('tds_process_login_tokens()')
     ver = {}
     while True:
-        marker = tds_get_byte(tds)
+        marker = r.get_byte()
         logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
         if marker == TDS_LOGINACK_TOKEN:
             tds.tds71rev1 = 0
-            size = tds_get_smallint(tds)
-            ack = tds_get_byte(tds)
-            version = tds_get_uint_be(tds)
+            size = r.get_smallint()
+            ack = r.get_byte()
+            version = r.get_uint_be()
             ver['reported'] = version
             tds.tds_version = _SERVER_TO_CLIENT_MAPPING[version]
             if tds.tds_version == TDS71rev1:
@@ -384,17 +385,19 @@ def tds_process_login_tokens(tds):
             logger.debug('server reports TDS version {0:x}'.format(version))
             # get server product name
             # ignore product name length, some servers seem to set it incorrectly
-            tds_get_byte(tds)
+            r.get_byte()
             product_version = 0
             size -= 10
             if IS_TDS7_PLUS(tds):
                 product_version = 0x80000000
-                tds.product_name = tds_get_string(tds, size/2)
+                tds.product_name = r.read_ucs2(size/2)
             elif IS_TDS5_PLUS(tds):
-                tds.product_name = tds_get_string(tds, size)
+                raise NotImplementedError()
+                #tds.product_name = tds_get_string(tds, size)
             else:
-                tds.product_name = tds_get_string(tds, size)
-            product_version = tds_get_uint_be(tds)
+                raise NotImplementedError()
+                #tds.product_name = tds_get_string(tds, size)
+            product_version = r.get_uint_be()
             # MSSQL 6.5 and 7.0 seem to return strange values for this
             # using TDS 4.2, something like 5F 06 32 FF for 6.50
             tds_conn(tds).product_version = product_version
@@ -468,13 +471,10 @@ def tds_process_login_tokens(tds):
 def tds_process_tokens(tds, flag):
     parent = {'result_type': 0, 'return_flag': 0}
     done_flags = 0
-    #TDSPARAMINFO *pinfo = NULL;
-    #TDSCOLUMN   *curcol;
-    #TDSRET rc;
     saved_rows_affected = tds.rows_affected
-    #TDS_INT ret_status;
     cancel_seen = 0
     import tds as tdsflags
+    r = tds._reader
 
     def SET_RETURN(ret, f):
         parent['result_type'] = ret
@@ -498,7 +498,7 @@ def tds_process_tokens(tds, flag):
     try:
         rc = TDS_SUCCESS
         while True:
-            marker = tds_get_byte(tds)
+            marker = r.get_byte()
             logger.info("processing result tokens.  marker is  {0:x}({1})".format(marker, tds_token_name(marker)))
             if marker == TDS7_RESULT_TOKEN:
                 #
@@ -508,18 +508,18 @@ def tds_process_tokens(tds, flag):
                 #
                 if tds.internal_sp_called == TDS_SP_CURSORFETCH:
                     rc = tds7_process_result(tds)
-                    marker = tds_get_byte(tds)
+                    marker = r.get_byte()
                     if marker != TDS_TABNAME_TOKEN:
-                        tds_unget_byte(tds);
+                        r.unget_byte();
                     else:
                         rc = tds_process_tabname(tds);
                 else:
                     if SET_RETURN(TDS_ROWFMT_RESULT, 'ROWFMT'):
                         rc = tds7_process_result(tds)
                         # handle browse information (if presents)
-                        marker = tds_get_byte(tds)
+                        marker = r.get_byte()
                         if marker != TDS_TABNAME_TOKEN:
-                            tds_unget_byte(tds)
+                            r.unget_byte()
                             rc = TDS_SUCCESS
                         else:
                             rc = tds_process_tabname(tds)
@@ -535,22 +535,22 @@ def tds_process_tokens(tds, flag):
                 if SET_RETURN(TDS_ROWFMT_RESULT, 'ROWFMT'):
                     rc = tds_process_col_fmt(tds)
                     # handle browse information (if present)
-                    marker = tds_get_byte(tds)
+                    marker = r.get_byte()
                     if marker == TDS_TABNAME_TOKEN:
                         rc = tds_process_tabname(tds)
                     else:
-                        tds_unget_byte(tds)
+                        r.unget_byte()
             elif marker == TDS_PARAM_TOKEN:
                 tds_unget_byte(tds)
                 if tds.internal_sp_called:
                     logger.debug("processing parameters for sp {0}".formst(tds.internal_sp_called))
                     while True:
-                        marker = tds_get_byte(tds)
+                        marker = r.get_byte()
                         if marker != TDS_PARAM_TOKEN:
                             break
                         logger.debug("calling tds_process_param_result")
                         pinfo = tds_process_param_result(tds)
-                    tds_unget_byte(tds)
+                    r.unget_byte()
                     logger.debug("{0} hidden return parameters".format(pinfo.num_cols if pinfo else -1))
                     if pinfo and pinfo.num_cols > 0:
                         curcol = pinfo.columns[0]
@@ -601,8 +601,8 @@ def tds_process_tokens(tds, flag):
                 if SET_RETURN(TDS_COMPUTE_RESULT, 'COMPUTE'):
                     rc = tds_process_compute(tds, NULL)
             elif marker == TDS_RETURNSTATUS_TOKEN:
-                ret_status = tds_get_int(tds)
-                marker = tds_peek(tds)
+                ret_status = r.get_int()
+                marker = r.peek()
                 if marker in (TDS_PARAM_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONE_TOKEN, TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN):
                     if tds.internal_sp_called:
                         # TODO perhaps we should use ret_status ??
@@ -620,20 +620,20 @@ def tds_process_tokens(tds, flag):
                 tds.cur_dyn = tds_process_dynamic(tds)
                 # special case, prepared statement cannot be prepared
                 if tds.cur_dyn and not tds.cur_dyn.emulated:
-                    marker = tds_get_byte(tds);
+                    marker = r.get_byte();
                     if marker == TDS_EED_TOKEN:
                         tds_process_msg(tds, marker)
                         if tds.cur_dyn and tds.cur_dyn.emulated:
-                            marker = tds_get_byte(tds)
+                            marker = r.get_byte()
                             if marker == TDS_DONE_TOKEN:
                                 rc, done_flags = tds_process_end(tds, marker)
                                 done_flags &= ~TDS_DONE_ERROR
                                 # FIXME warning to macro expansion
                                 SET_RETURN(TDS_DONE_RESULT, 'DONE')
                             else:
-                                tds_unget_byte(tds);
+                                r.unget_byte()
                     else:
-                        tds_unget_byte(tds);
+                        r.unget_byte()
             elif marker == TDS5_PARAMFMT_TOKEN:
                 if SET_RETURN(TDS_DESCRIBE_RESULT, 'PARAMFMT'):
                     rc = tds_process_dyn_result(tds)
@@ -825,24 +825,20 @@ def tds_get_type_info(tds, curcol):
 # * \param curcol column where to store information
 # */
 def tds7_get_data_info(tds, curcol):
-    #int colnamelen;
-
-    CHECK_TDS_EXTRA(tds)
-    CHECK_COLUMN_EXTRA(curcol)
-
+    r = tds._reader
     tds_get_type_info(tds, curcol)
 
     # Adjust column size according to client's encoding
     #curcol.on_server.column_size = curcol.column_size
 
-    # NOTE adjustements must be done after curcol->char_conv initialization
+    # NOTE adjustements must be done after curcol.char_codec initialization
     adjust_character_column_size(tds, curcol)
 
     #
     # under 7.0 lengths are number of characters not
-    # number of bytes...tds_get_string handles this
+    # number of bytes... read_ucs2 handles this
     #
-    curcol.column_name = tds_get_string(tds, tds_get_byte(tds))
+    curcol.column_name = r.read_ucs2(r.get_byte())
 
     logger.debug("tds7_get_data_info: \n"
                 "\tcolname = %s (%d bytes)\n"
@@ -854,8 +850,6 @@ def tds7_get_data_info(tds, curcol):
                 curcol.on_server.column_type, tds_prtype(curcol.on_server.column_type),
                 curcol.column_varint_size))
 
-    CHECK_COLUMN_EXTRA(curcol)
-
     return TDS_SUCCESS
 
 #
@@ -866,41 +860,24 @@ def adjust_character_column_size(tds, curcol):
     CHECK_COLUMN_EXTRA(curcol)
 
     if is_unicode_type(curcol.on_server.column_type):
-        curcol.char_conv = tds.char_convs[client2ucs2]
+        curcol.char_codec = ucs2_codec
 
     # Sybase UNI(VAR)CHAR fields are transmitted via SYBLONGBINARY and in UTF-16
     if curcol.on_server.column_type == SYBLONGBINARY and \
             curcol.column_usertype in (USER_UNICHAR_TYPE, USER_UNIVARCHAR_TYPE):
-        sybase_utf = "UTF-16LE"
 
-        curcol.char_conv = tds_iconv_get(tds, tds.char_convs[client2ucs2].client_charset.name, sybase_utf)
-
-        # fallback to UCS-2LE
-        # FIXME should be useless. Does not works always
-        if not curcol.char_conv:
-            curcol.char_conv = tds.char_convs[client2ucs2]
-
+        curcol.char_codec = ucs2_codec
     # FIXME: and sybase ??
-    if not curcol.char_conv and IS_TDS7_PLUS(tds) and is_ascii_type(curcol.on_server.column_type):
-        curcol.char_conv = tds.char_convs[client2server_chardata]
+    if not curcol.char_codec and IS_TDS7_PLUS(tds) and is_ascii_type(curcol.on_server.column_type):
+        curcol.char_codec = tds.collation.get_codec()
 
-    if not USE_ICONV(tds) or not curcol.char_conv:
+    if not curcol.char_codec:
         return
 
     curcol.on_server.column_size = curcol.column_size;
-    curcol.column_size = determine_adjusted_size(curcol.char_conv, curcol.column_size)
+    curcol.column_size = determine_adjusted_size(curcol.char_codec, curcol.column_size)
 
-    logger.debug("adjust_character_column_size:\n"
-                 "\tServer charset: %s\n"
-                 "\tServer column_size: %d\n"
-                 "\tClient charset: %s\n"
-                 "\tClient column_size: %d\n", 
-                 curcol.char_conv['server_charset']['name'], 
-                 curcol.on_server.column_size, 
-                 curcol.char_conv['client_charset']['name'],
-                 curcol.column_size)
-
-def determine_adjusted_size(char_conv, column_size):
+def determine_adjusted_size(char_codec, column_size):
     return column_size
 
 _prtype_map = dict((
@@ -962,17 +939,18 @@ def tds_swap_numeric(num):
     return ''.join([arr_sign, arr_prec, arr_rest])
 
 def tds_process_param_result_tokens(tds):
+    r = tds._reader
     while True:
-        token = tds_get_byte(tds)
+        token = r.get_byte()
         if token == TDS_PARAM_TOKEN:
-            ordinal = tds_get_usmallint(tds)
-            name = tds_get_ucs2str(tds, tds_get_byte(tds))
-            status = tds_get_byte(tds) # 1 - OUTPUT of sp, 2 - result of udf
+            ordinal = r.get_usmallint()
+            name = r.read_ucs2(r.get_byte())
+            status = r.get_byte() # 1 - OUTPUT of sp, 2 - result of udf
             param = _Column()
             param.column_name = name
             tds_get_type_info(tds, param)
             param.funcs.get_data(tds, param)
             tds.output_params[ordinal] = param
         else:
-            tds_unget_byte(tds)
+            r.unget_byte()
             return

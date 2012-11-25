@@ -2,7 +2,6 @@ from StringIO import StringIO
 import lcid
 from tds import *
 from net import *
-from iconv import tds_iconv_alloc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,14 @@ class _TdsReader(object):
         if self._le():
             return self.unpack(_uint_le)[0]
         else:
-            return self.unpack(_uilt_be)[0]
+            return self.unpack(_uint_be)[0]
+
+    def get_uint_be(self):
+        return self.unpack(_uint_be)[0]
+
+    def read_ucs2(self, num_chars):
+        buf = self.readall(num_chars*2)
+        return ucs2_codec.decode(buf)[0]
 
     def get_collation(self):
         buf = self.readall(Collation.wire_size)
@@ -231,7 +237,7 @@ class _TdsWriter(object):
                 data_off += to_write
 
     def write_ucs2(self, s):
-        self.write_string(s, self._tds.char_convs[client2ucs2]['codec'])
+        self.write_string(s, ucs2_codec)
 
     def write_string(self, s, codec):
         for i in xrange(0, len(s), self.bufsize):
@@ -265,7 +271,6 @@ class _TdsSocket(object):
         self.current_results = None
         self.param_info = None
         self.cur_cursor = None
-        self.use_iconv = True
         self.collation = None
         self.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
         self.has_status = False
@@ -275,8 +280,6 @@ class _TdsSocket(object):
         tds_set_ctx(self, context)
         self.in_buf_max = 0
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
-        tds_conn(self).use_iconv = True
-        tds_iconv_alloc(self)
 
         # Jeff's hack, init to no timeout
         self.query_timeout = 0
@@ -357,7 +360,6 @@ def tds_free_socket(tds):
             tds_conn(tds).s_signal.close()
         if tds_conn(tds).s_signaled is not None:
             tds_conn(tds).s_signaled.close()
-        #tds_iconv_free(tds);
         #free(tds_conn(tds)->product_name);
         #free(tds);
 
@@ -391,7 +393,7 @@ class _OnServer(object):
 class _Column(object):
     def __init__(self):
         self.on_server = _OnServer()
-        self.char_conv = None
+        self.char_codec = None
         self.column_nullbind = None
         self.column_varaddr = 0
         self.column_name = ''

@@ -72,37 +72,32 @@ class DefaultHandler(object):
                 col.column_size = 0x3fffffff
                 col.column_varint_size = 8
         elif vs == 1:
-            col.column_size = tds_get_byte(tds)
+            col.column_size = r.get_byte()
         elif vs == 0:
             col.column_size = tds_get_size_by_type(col.column_type)
 
         if IS_TDS71_PLUS(tds) and is_collate_type(col.on_server.column_type):
             # based on true type as sent by server
-            #
-            # first 2 bytes are windows code (such as 0x409 for english)
-            # other 2 bytes ???
-            # last bytes is id in syscharsets
-            #
             col.column_collation = r.get_collation()
-            col.char_conv = col.column_collation.get_iconv(tds)
+            col.char_codec = col.column_collation.get_codec()
 
         # Only read table_name for blob columns (eg. not for SYBLONGBINARY)
         if is_blob_type(col.on_server.column_type):
             # discard this additional byte
             if IS_TDS72_PLUS(tds):
-                num_parts = tds_get_byte(tds)
+                num_parts = r.get_byte()
                 # TODO do not discard first ones
                 for _ in range(num_parts):
-                    col.table_name = tds_get_string(tds, tds_get_smallint(tds))
+                    col.table_name = r.read_ucs2(r.get_smallint())
             else:
-                col.table_name = tds_get_string(tds, tds_get_smallint(tds))
+                col.table_name = r.read_ucs2(r.get_smallint())
         elif IS_TDS72_PLUS(tds) and col.on_server.column_type == SYBMSXML:
-            has_schema = tds_get_byte(tds)
+            has_schema = r.get_byte()
             if has_schema:
                 # discard schema informations
-                tds_get_string(tds, tds_get_byte(tds))        # dbname
-                tds_get_string(tds, tds_get_byte(tds))        # schema owner
-                tds_get_string(tds, tds_get_smallint(tds))    # schema collection
+                r.read_ucs2(r.get_byte())        # dbname
+                r.read_ucs2(r.get_byte())        # schema owner
+                r.read_ucs2(r.get_smallint())    # schema collection
         return TDS_SUCCESS
 
     @staticmethod
@@ -116,8 +111,8 @@ class DefaultHandler(object):
         chunk_handler = tds.chunk_handler
         chunk_handler.begin(curcol, size)
         decoder = None
-        if curcol.char_conv:
-            decoder = curcol.char_conv['codec'].incrementaldecoder()
+        if curcol.char_codec:
+            decoder = curcol.char_codec.incrementaldecoder()
         while True:
             chunk_len = tds_get_int(tds)
             if chunk_len <= 0:
@@ -197,17 +192,17 @@ class DefaultHandler(object):
                 return
 
             # read the data
-            if USE_ICONV(tds) and curcol.char_conv:
+            if curcol.char_codec:
                 curcol.value = tds_get_char_data(tds, colsize, curcol)
             else:
                 assert colsize == new_blob_size
                 curcol.value = tds_get_n(tds, colsize)
         else: # non-numeric and non-blob
-            if USE_ICONV(tds) and curcol.char_conv:
+            if curcol.char_codec:
                 if colsize == 0:
                     curcol.value= u''
-                elif curcol.char_conv:
-                    curcol.value= read_and_convert(tds, curcol.char_conv, colsize)
+                elif curcol.char_codec:
+                    curcol.value= read_and_convert(tds, curcol.char_codec, colsize)
                 else:
                     curcol.value = tds_get_n(tds, colsize)
                 curcol.cur_size = len(curcol.value)
@@ -283,10 +278,10 @@ class DefaultHandler(object):
 
         # convert string if needed
         value = curcol.value
-        if curcol.char_conv:
+        if curcol.char_codec:
             # we need to convert data before
             # TODO this can be a waste of memory...
-            value = tds_convert_string(tds, curcol.char_conv, value)
+            value = tds_convert_string(tds, curcol.char_codec, value)
             colsize = len(value)
         else:
             colsize = curcol.column_size
@@ -522,8 +517,8 @@ class VariantHandler(object):
                 curcol.collation = collation = r.get_collation()
                 colsize -= Collation.wire_size
                 info_len -= Collation.wire_size
-                curcol.char_conv = tds.char_convs[client2ucs2] if is_unicode_type(type) else\
-                        collation.get_iconv(tds)
+                curcol.char_codec = ucs2_codec if is_unicode_type(type) else\
+                        collation.get_codec()
             # special case for numeric
             if is_numeric_type(type):
                 if info_len != 2:
@@ -551,7 +546,7 @@ class VariantHandler(object):
                 raise Exception('TDS_FAIL')
             colsize -= info_len
             if colsize:
-                if USE_ICONV(tds) and curcol.char_conv:
+                if curcol.char_codec:
                     data = tds_get_char_data(tds, colsize, curcol)
                 else:
                     data = tds_get_n(tds, colsize)
@@ -672,8 +667,6 @@ def tds_get_conversion_type(srctype, colsize):
 
 exec(gen_get_varint_size())
 
-def USE_ICONV(tds): return tds_conn(tds).use_iconv
-
 #
 # Get column size for wire
 #
@@ -704,8 +697,8 @@ def tds_fix_column_size(tds, curcol):
     #return curcol->on_server.column_size = size
     return size
 
-def tds_convert_string(tds, char_conv, s):
-    return char_conv['to_wire'](s)
+def tds_convert_string(tds, char_codec, s):
+    return char_codec.encode(s)[0]
 
 ZERO = timedelta(0)
 

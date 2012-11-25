@@ -1,6 +1,5 @@
 import struct
 from net import *
-from iconv import *
 
 def tds_get_byte(tds):
     return tds._reader.get_byte()
@@ -60,14 +59,6 @@ def tds_get_int8(tds):
     else:
         return struct.unpack('>q', bytes(buf))[0]
 
-def tds_get_ucs2str(tds, length):
-    raw = tds_get_n(tds, length*2)
-    return tds.char_convs[client2ucs2]['from_wire'](raw)
-
-def tds_get_string(tds, size):
-    buf = tds_get_n(tds, size*2)
-    return buf.decode('utf16')
-
 def tds_skip_n(tds, need):
     tds._reader.skip(need)
 
@@ -95,7 +86,7 @@ def tds_get_char_data(tds, wire_size, curcol):
     if wire_size == 0:
         return ''
 
-    if curcol.char_conv:
+    if curcol.char_codec:
         #
         # TODO The conversion should be selected from curcol and tds version
         # TDS7.1/single -> use curcol collation
@@ -105,18 +96,18 @@ def tds_get_char_data(tds, wire_size, curcol):
         # TDS5/UTF-8 -> use server
         # TDS5/UTF-16 -> use UTF-16
         #
-        result = read_and_convert(tds, curcol.char_conv, wire_size)
+        result = read_and_convert(tds, curcol.char_codec, wire_size)
         return result
     else:
         return tds_get_n(tds, wire_size)
 
 #
-# For UTF-8 and similar, tds_iconv() may encounter a partial sequence when the chunk boundary
+# For UTF-8 and similar, decode() may encounter a partial sequence when the chunk boundary
 # is not aligned with the character boundary.  In that event, it will return an error, and
 # some number of bytes (less than a character) will remain in the tail end of temp[].  They are  
 # moved to the beginning, ptemp is adjusted to point just behind them, and the next chunk is read.
 #
-def read_and_convert(tds, char_conv, wire_size):
+def read_and_convert(tds, char_codec, wire_size):
     #
     # temp (above) is the "preconversion" buffer, the place where the UCS-2 data 
     # are parked before converting them to ASCII.  It has to have a size, 
@@ -128,4 +119,4 @@ def read_and_convert(tds, char_conv, wire_size):
     buf = tds_get_n(tds, wire_size)
 
     # Convert chunk and write to dest.
-    return tds_iconv(tds, char_conv, to_client, buf)
+    return char_codec.decode(buf)[0]
