@@ -3,12 +3,12 @@ import struct
 import os
 import logging
 ENCRYPTION_ENABLED = False
-encryption_supported = False
 try:
     import ssl
-    encryption_supported = True
 except:
-    pass
+    encryption_supported = False
+else:
+    encryption_supported = True
 from tdsproto import *
 from write import *
 from tds import *
@@ -51,7 +51,7 @@ def tds_connect_and_login(tds, login):
             tds7_send_login(tds, login)
             db_selected = True
         else:
-            raise Exception('This TDS version is not supported')
+            raise NotImplementedError('This TDS version is not supported')
             tds._writer.begin_packet(TDS_LOGIN)
             tds_send_login(tds, login)
         if not tds_process_login_tokens(tds):
@@ -93,12 +93,12 @@ def tds7_send_login(tds, login):
     # TODO: support sspi login
     if False:
         if user_name.find('\\') != -1 or not user_name:
-            raise Exception('sspi not implemented')
+            raise NotImplementedError('sspi not implemented')
     else:
         if user_name.find('\\') != -1:
-            raise Exception('ntlm not implemented')
+            raise NotImplementedError('ntlm not implemented')
         elif not user_name:
-            raise Exception('requested GSS authentication but it is not implemented')
+            raise NotImplementedError('requested GSS authentication but it is not implemented')
         else:
             packet_size += (len(user_name) + len(login.password))*2
     w.put_int(packet_size)
@@ -213,7 +213,7 @@ def tds71_do_login(tds, login):
                 ENCRYPTION, START_POS + 6, 1,
                 #instance
                 INSTOPT, START_POS + 6 + 1, len(instance_name)+1,
-                # process id
+                # thread id
                 THREADID, START_POS + 6 + 1 + len(instance_name)+1, 4,
                 # MARS enabled
                 MARS, START_POS + 6 + 1 + len(instance_name)+1 + 4, 1,
