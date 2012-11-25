@@ -4,7 +4,6 @@ from decimal import Decimal
 import uuid
 from tds import *
 from tdsproto import *
-from write import *
 from tds_checks import *
 
 logger = logging.getLogger(__name__)
@@ -257,22 +256,23 @@ class DefaultHandler(object):
 
     @staticmethod
     def put_data(tds, curcol):
+        w = tds._writer
         logger.debug("tds_data_put")
         if curcol.value is None:
             logger.debug("tds_data_put: null param")
             vs = curcol.column_varint_size
             if vs == 5:
-                tds_put_int(tds, 0)
+                w.put_int(0)
             elif vs == 4:
-                tds_put_int(tds, -1)
+                w.put_int(-1)
             elif vs == 2:
-                tds_put_smallint(tds, -1)
+                w.put_smallint(-1)
             elif vs == 8:
-                tds_put_int8(tds, -1)
+                w.put_int8(-1)
             else:
                 assert curcol.column_varint_size
                 # FIXME not good for SYBLONGBINARY/SYBLONGCHAR (still not supported)
-                tds_put_byte(tds, 0)
+                w.put_byte(0)
             return
 
         size = tds_fix_column_size(tds, curcol)
@@ -298,17 +298,17 @@ class DefaultHandler(object):
 
             vs = curcol.column_varint_size
             if vs == 8:
-                tds_put_int8(tds, colsize);
-                tds_put_int(tds, colsize);
+                w.put_int8(colsize);
+                w.put_int(colsize);
             elif vs == 4: # It's a BLOB...
                 colsize = min(colsize, size)
                 # mssql require only size
-                tds_put_int(tds, colsize)
+                w.put_int(colsize)
             elif vs == 2:
                 colsize = min(colsize, size)
-                tds_put_smallint(tds, colsize)
+                w.put_smallint(colsize)
             elif vs == 1:
-                tds_put_byte(tds, size)
+                w.put_byte(size)
             elif vs == 0:
                 # TODO should be column_size
                 colsize = tds_get_size_by_type(curcol.on_server.column_type)
@@ -316,28 +316,28 @@ class DefaultHandler(object):
             # put real data
             column_type = curcol.on_server.column_type
             if column_type == SYBINTN and size == 4 or column_type == SYBINT4:
-                tds_put_int(tds, value)
+                w.put_int(value)
             elif column_type == SYBINTN and size == 8 or column_type == SYBINT8:
-                tds_put_int8(tds, value)
+                w.put_int8(value)
             elif column_type in (XSYBNVARCHAR, XSYBNCHAR):
-                tds_put_s(tds, value)
+                w.write(value)
             elif column_type in (XSYBVARBINARY, XSYBBINARY):
-                tds_put_s(tds, value)
+                w.write(value)
             elif column_type in (SYBDATETIME, SYBDATETIMN):
                 days = (value - MsDatetimeHandler._base_date).days
                 tm = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
-                tds_put_s(tds, TDS_DATETIME.pack(days, tm))
+                w.write(TDS_DATETIME.pack(days, tm))
             elif column_type == SYBFLTN and size == 8 or column_type == SYBFLT8:
-                tds_put_s(tds, _SYBFLT8_STRUCT.pack(value))
+                w.write(_SYBFLT8_STRUCT.pack(value))
             elif column_type == SYBNTEXT:
-                tds_put_s(tds, value)
+                w.write(value)
             elif column_type == SYBUNIQUE:
-                tds_put_s(tds, value.bytes_le)
+                w.write(value.bytes_le)
             else:
                 raise Exception('not implemented')
             # finish chunk for varchar/varbinary(max)
             if curcol.column_varint_size == 8 and colsize:
-                tds_put_int(tds, 0)
+                w.put_int(0)
         else:
             raise Exception('not implemented')
 
@@ -794,16 +794,18 @@ class MsDatetimeHandler(object):
 
     @staticmethod
     def put_info(tds, col):
+        w = tds._writer
         # TODO precision
         if col.on_server.column_type != SYBMSDATE:
-            tds_put_byte(tds, 7)
+            w.put_byte(7)
 
     _base_date = datetime(1900, 1, 1)
 
     @staticmethod
     def put_data(tds, col):
+        w = tds._writer
         if col.value is None:
-            tds_put_byte(tds, 0)
+            w.put_byte(0)
             return
 
         # TODO precision
@@ -818,7 +820,7 @@ class MsDatetimeHandler(object):
             parts.append(struct.pack('<H', value.utcoffset()))
         size = reduce(lambda a, b: a + len(b), parts, 0)
         parts.insert(0, chr(size))
-        tds_put_s(tds, b''.join(parts))
+        w.write(b''.join(parts))
 
 #
 # Fetch character data the wire.

@@ -10,7 +10,6 @@ except:
 else:
     encryption_supported = True
 from tdsproto import *
-from write import *
 from tds import *
 from util import *
 from net import *
@@ -173,7 +172,7 @@ def tds7_send_login(tds, login):
         w.put_smallint(0)
         # sspi long
         w.put_int(0)
-    tds_put_string(tds, client_host_name)
+    w.write_ucs2(client_host_name)
     if not tds.authentication:
         w.write_ucs2(user_name)
         w.write(tds7_crypt_pass(login.password))
