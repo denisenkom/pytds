@@ -1,4 +1,5 @@
 from StringIO import StringIO
+import lcid
 from tds import *
 from net import *
 from iconv import tds_iconv_alloc
@@ -180,8 +181,11 @@ class _TdsWriter(object):
         else:
             self.pack(_usmallint_be, value)
 
-    def tds_put_smallint_be(tds, value):
-        tds_put_s(tds, struct.pack('>h', value))
+    def put_smallint_be(self, value):
+        self.pack(_smallint_be, value)
+
+    def put_usmallint_be(self, value):
+        self.pack(_usmallint_be, value)
 
     def put_int(self, value):
         if self._le():
@@ -197,6 +201,9 @@ class _TdsWriter(object):
 
     def put_int_be(self, value):
         self.pack(_int_be, value)
+
+    def put_uint_be(self, value):
+        self.pack(_uint_be, value)
 
     def put_int8(self, value):
         if self._le():
@@ -427,26 +434,27 @@ class _TdsLogin:
         self.bulk_copy = False
         self.text_size = 0
         self.encryption_level = 0
+        self.client_lcid = lcid.LANGID_ENGLISH_US
 
 def tds_alloc_login(use_environment):
     server_name = TDS_DEF_SERVER
 
     login = _TdsLogin()
     login.server_name = ''
-    login.language = ''
+    login.language = '' # if empty use database default
     login.server_charset = ''
-    login.client_host_name = ''
     login.server_host_name = ''
     login.app_name = ''
     login.user_name = ''
     login.password = ''
-    login.library = ''
+    login.library = 'python-tds'
     login.ip_addr = ''
     login.database = ''
     login.dump_file = ''
     login.client_charset = ''
     login.instance_name = ''
     login.server_realm_name = ''
+    login.attach_db_file = ''
 
     if use_environment:
         import os

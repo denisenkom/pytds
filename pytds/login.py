@@ -15,39 +15,19 @@ from tds import *
 from util import *
 from net import *
 from token import *
+from iconv import _utf16_le_codec
 
 logger = logging.getLogger(__name__)
 
-class TdsError(Exception):
-    pass
 
-#
-# \brief Set the servername in a TDSLOGIN structure
-#
-# Normally copies \a server into \a tds_login.  If \a server does not point to a plausible name, the environment 
-# variables TDSQUERY and DSQUERY are used, in that order.  If they don't exist, the "default default" servername
-# is "SYBASE" (although the utility of that choice is a bit murky).  
-#
-# \param tds_login  points to a TDSLOGIN structure
-# \param server the servername, or NULL, or a zero-length string
-# \todo open the log file earlier, so these messages can be seen.  
-#
-def tds_set_server(tds_login, server):
-    if server:
-        tds_login.server_name = server
-
-
-# additional args: app_name, server_name, client_host_name, text_size, tds_version
-# instance_name, encryption, block_size, bulk_copy, option_flag2
-# connect_timeout, query_timeout
-def tds_connect(tds, login):
+def tds_connect_and_login(tds, login):
     tds.login = login
     tds.tds_version = login.tds_version
     tds_conn(tds).emul_little_endian = login.emul_little_endian
     if IS_TDS7_PLUS(tds):
         # TDS 7/8 only supports little endian
         tds_conn(tds).emul_little_endian = True
-    if not IS_TDS50(tds) and login.instance_name and not login.port:
+    if IS_TDS7_PLUS(tds) and login.instance_name and not login.port:
         instances = tds7_get_instances(login.ip_addr or login.server_name)
         if login.instance_name not in instances:
             raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
@@ -93,6 +73,10 @@ def tds_connect(tds, login):
 
 import socket
 this_host_name = socket.gethostname()
+from dateutil.tz import tzlocal
+mins_fix = tzlocal().utcoffset(datetime.now()).total_seconds()/60
+import uuid
+mac_address = struct.pack('>Q', uuid.getnode())[:6]
 
 def tds7_send_login(tds, login):
     option_flag2 = login.option_flag2
@@ -101,11 +85,12 @@ def tds7_send_login(tds, login):
     w.begin_packet(TDS7_LOGIN)
     tds.authentication = None
     if len(login.password) > 128:
-        login.password = login.password[:128]
+        raise Error('Password should be not more than 128 characters')
     current_pos = 86 + 8 if IS_TDS72_PLUS(tds) else 86
-    client_host_name = login.client_host_name or this_host_name
+    client_host_name = this_host_name
     packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
     auth_len = 0
+    # TODO: support sspi login
     if False:
         if user_name.find('\\') != -1 or not user_name:
             raise Exception('sspi not implemented')
@@ -118,13 +103,11 @@ def tds7_send_login(tds, login):
             packet_size += (len(user_name) + len(login.password))*2
     w.put_int(packet_size)
     w.put_uint(login.tds_version)
-    block_size = 4096
-    if login.block_size < 512 or 1000000 < login.block_size:
-        block_size = login.block_size
-    w.put_int(block_size)
-    w.write(b'\x06\x83\xf2\xf8') # client progver
+    w.put_int(w.bufsize)
+    from pytds import intversion
+    w.put_uint(intversion)
     w.put_int(os.getpid())
-    w.write(b'\x00\x00\x00\x00') # connection_id
+    w.put_uint(0) # connection id
     option_flag1 = TDS_SET_LANG_ON | TDS_USE_DB_NOTIFY | TDS_INIT_DB_FATAL
     if not login.bulk_copy:
         option_flag1 |= TDS_DUMPLOAD_OFF
@@ -136,8 +119,8 @@ def tds7_send_login(tds, login):
     w.put_byte(0) # sql_type_flag
     option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
     w.put_byte(option_flag3 if IS_TDS73_PLUS(tds) else 0)
-    w.write(b'\x88\xff\xff\xff') # time zone
-    w.write(b'\x36\x04\x00\x00') # time zone
+    w.put_int(mins_fix)
+    w.put_int(login.client_lcid)
     w.put_smallint(current_pos)
     w.put_smallint(len(client_host_name))
     current_pos += len(client_host_name) * 2
@@ -160,14 +143,14 @@ def tds7_send_login(tds, login):
     w.put_smallint(current_pos);
     w.put_smallint(len(login.server_name))
     current_pos += len(login.server_name) * 2
-    # unknown
+    # reserved
     w.put_smallint(0)
     w.put_smallint(0)
     # library name
     w.put_smallint(current_pos)
     w.put_smallint(len(login.library))
     current_pos += len(login.library) * 2
-    # language  - kostya@warmcat.excom.spb.su
+    # language
     w.put_smallint(current_pos);
     w.put_smallint(len(login.language));
     current_pos += len(login.language) * 2;
@@ -175,37 +158,38 @@ def tds7_send_login(tds, login):
     w.put_smallint(current_pos);
     w.put_smallint(len(login.database));
     current_pos += len(login.database) * 2;
-    import uuid
-    w.write(struct.pack('>Q', uuid.getnode())[:6])
+    # ClientID
+    w.write(mac_address)
     # authentication
     w.put_smallint(current_pos)
     w.put_smallint(auth_len)
     current_pos += auth_len
     # db file
     w.put_smallint(current_pos)
-    w.put_smallint(0)
+    w.put_smallint(len(login.attach_db_file))
+    current_pos += len(login.attach_db_file) * 2;
     if IS_TDS72_PLUS(tds):
         # new password
         w.put_smallint(current_pos)
         w.put_smallint(0)
         # sspi long
-        w.put_int( 0)
+        w.put_int(0)
     tds_put_string(tds, client_host_name)
     if not tds.authentication:
-        tds_put_string(tds, user_name)
+        w.write_ucs2(user_name)
         w.write(tds7_crypt_pass(login.password))
-    tds_put_string(tds, login.app_name)
-    tds_put_string(tds, login.server_name)
-    tds_put_string(tds, login.library)
-    tds_put_string(tds, login.language)
-    tds_put_string(tds, login.database)
+    w.write_ucs2(login.app_name)
+    w.write_ucs2(login.server_name)
+    w.write_ucs2(login.library)
+    w.write_ucs2(login.language)
+    w.write_ucs2(login.database)
     if tds.authentication:
         w.write(tds.authentication.packet)
+    w.write_ucs2(login.attach_db_file)
     w.flush()
-    #tdsdump_on()
 
 def tds7_crypt_pass(password):
-    encoded = bytearray(password.encode('utf16')[2:])
+    encoded = bytearray(_utf16_le_codec.encode(password)[0])
     for i, ch in enumerate(encoded):
         encoded[i] = ((ch << 4)&0xff | (ch >> 4)) ^ 0xA5
     return encoded
@@ -255,9 +239,9 @@ def tds71_do_login(tds, login):
     w = tds._writer
     w.begin_packet(TDS71_PRELOGIN)
     w.write(buf)
-    netlib8 = b'\x08\x00\x01\x55\x00\x00'
-    netlib9 = b'\x09\x00\x00\x00\x00\x00'
-    w.write(netlib9 if IS_TDS72_PLUS(tds) else netlib8)
+    from pytds import intversion
+    w.put_uint_be(intversion)
+    w.put_usmallint_be(0)
     # encryption
     if ENCRYPTION_ENABLED and encryption_supported:
         w.put_byte(1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
@@ -274,7 +258,7 @@ def tds71_do_login(tds, login):
     p = tds._reader.read_whole_packet()
     size = len(p)
     if size <= 0 or tds._reader.packet_type != 4:
-        raise TdsError(TDS_FAIL)
+        raise Error('TDS_FAIL')
     # default 2, no certificate, no encryptption
     crypt_flag = 2
     i = 0
@@ -283,15 +267,15 @@ def tds71_do_login(tds, login):
     prod_version_struct = struct.Struct('>LH')
     while True:
         if i >= size:
-            raise TdsError(TDS_FAIL)
+            raise Error('TDS_FAIL')
         type, = byte_struct.unpack_from(p, i)
         if type == 0xff:
             break
         if i + 4 > size:
-            raise TdsError(TDS_FAIL)
+            raise Error('TDS_FAIL')
         off, l = off_len_struct.unpack_from(p, i + 1)
         if off > size or off + l > size:
-            raise TdsError(TDS_FAIL)
+            raise Error('TDS_FAIL')
         if type == VERSION:
             tds.product_version = prod_version_struct.unpack_from(p, off)
         elif type == ENCRYPTION and l >= 1:
@@ -304,10 +288,7 @@ def tds71_do_login(tds, login):
     # if server do not has certificate do normal login
     if crypt_flag == 2:
         if encryption_level >= TDS_ENCRYPTION_REQUIRE:
-            raise TdsError(TDS_FAIL)
+            raise Error('TDS_FAIL')
         return tds7_send_login(tds, login)
     tds_set_s(ssl.wrap_socket(tds_get_s(tds), ssl_version=ssl.PROTOCOL_TLSv1))
     return tds7_send_login(tds, login)
-
-def tds_connect_and_login(tds, login):
-    return tds_connect(tds, login)
