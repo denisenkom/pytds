@@ -255,7 +255,6 @@ def tds_submit_query(tds, query, params=(), flags=0):
 # *	to cancel again, we wait some more.  
 # */
 def tds_send_cancel(tds):
-    #TDSRET rc;
     if TDS_MUTEX_TRYLOCK(tds.wire_mtx):
         # TODO check
         # signal other socket
@@ -314,48 +313,6 @@ def tds_put_data_info(tds, curcol):
     # TODO needed in TDS4.2 ?? now is called only is TDS >= 5
     if not IS_TDS7_PLUS(tds):
         w.put_byte(0) # locale info length
-
-#
-# Output params types and query (required by sp_prepare/sp_executesql/sp_prepexec)
-# \param tds       state information for the socket and the TDS protocol
-# \param query     query (in ucs2le codings)
-# \param query_len query length in bytes
-#
-#def tds7_put_query_params(tds, query):
-#    assert IS_TDS7_PLUS(tds)
-#
-#    # we use all "@PX" for parameters
-#    num_placeholders = tds_count_placeholders_ucs2le(query, query_end);
-#    len = num_placeholders * 2;
-#    # adjust for the length of X
-#    for (i = 10; i <= num_placeholders; i *= 10) {
-#            len += num_placeholders - i + 1;
-#    }
-#
-#    # string with sql statement
-#    # replace placeholders with dummy parametes
-#    tds_put_byte(tds, 0)
-#    tds_put_byte(tds, 0)
-#    tds_put_byte(tds, SYBNTEXT) # must be Ntype
-#    len = 2u * len + query_len;
-#    TDS_PUT_INT(tds, len)
-#    if (IS_TDS71_PLUS(tds))
-#        tds_put_n(tds, tds->collation, 5)
-#    TDS_PUT_INT(tds, len);
-#    s = query;
-#    # TODO do a test with "...?" and "...?)"
-#    for (i = 1;; ++i)
-#        e = tds_next_placeholder_ucs2le(s, query_end, 0);
-#        assert(e && query <= e && e <= query_end);
-#        tds_put_n(tds, s, e - s);
-#        if (e == query_end)
-#                break;
-#        sprintf(buf, "@P%d", i);
-#        tds_put_string(tds, buf, -1);
-#        s = e + 2;
-#    }
-#}
-
 
 #
 # Return declaration for column (like "varchar(20)")
