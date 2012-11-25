@@ -75,6 +75,10 @@ class _TdsReader(object):
         else:
             return self.unpack(_uilt_be)[0]
 
+    def get_collation(self):
+        buf = self.readall(Collation.wire_size)
+        return Collation.unpack(buf)
+
     def unget_byte(self):
         # this is a one trick pony...don't call it twice
         assert self._pos > 0
@@ -210,6 +214,9 @@ class _TdsWriter(object):
             self.pack(_int8_le, value)
         else:
             self.pack(_int8_be, value)
+
+    def put_collation(self, collation):
+        self.write(collation.pack())
 
     def write(self, data):
         data_off = 0

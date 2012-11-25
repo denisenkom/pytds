@@ -1,4 +1,5 @@
 import struct
+from collate import Collation
 from tdsproto import *
 
 
@@ -42,13 +43,6 @@ client2ucs2             = 0
 client2server_chardata  = 1
 iso2server_metadata     = 2
 initial_char_conv_count = 3 # keep last
-
-TDS_CHARSET_ISO_8859_1  = 1
-TDS_CHARSET_CP1251      = 2
-TDS_CHARSET_CP1252      = 3
-TDS_CHARSET_UCS_2LE     = 4
-
-TDS_CHARSET_UNICODE     = 5
 
 TDS_ENCODING_INDIRECT   = 1
 TDS_ENCODING_SWAPBYTE   = 2
@@ -397,3 +391,4 @@ class InternalProc(object):
         return self.name
 
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
+

@@ -216,30 +216,28 @@ def tds_process_end(tds, marker):
     return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), tmp
 
 def tds_process_env_chg(tds):
-    size = tds_get_smallint(tds)
-    type = tds_get_byte(tds)
+    r = tds._reader
+    size = r.get_smallint()
+    type = r.get_byte()
     if type == TDS_ENV_SQLCOLLATION:
-        size = tds_get_byte(tds)
+        size = r.get_byte()
         logger.debug("tds_process_env_chg(): {0} bytes of collation data received".format(size))
-        logger.debug("tds.collation was {0}".format(tds.collation));
-        if size < 5:
-            tds.collation = tds_get_n(tds, size)
-        else:
-            tds.collation = tds_get_n(tds, 5)
-            tds_get_n(tds, size - 5)
-            lcid = (ord(tds.collation[0]) + (ord(tds.collation[1]) << 8) + (ord(tds.collation[2]) << 16)) & 0xfffff
-            tds7_srv_charset_changed(tds, ord(tds.collation[4]), lcid)
-        logger.debug("tds.collation now {0}".format(tds.collation));
+        logger.debug("tds.collation was {0}".format(tds.collation))
+        tds.collation = r.get_collation()
+        r.skip(size - 5)
+        tds7_srv_charset_changed(tds, tds.collation)
+        logger.debug("tds.collation now {0}".format(tds.collation))
         # discard old one
-        tds_get_n(tds, tds_get_byte(tds))
+        r.skip(r.get_byte())
     elif type == TDS_ENV_BEGINTRANS:
-        size = tds_get_byte(tds)
-        tds.tds72_transaction = tds_get_n(tds, 8)
-        tds_get_n(tds, tds_get_byte(tds))
+        size = r.get_byte()
+        # TODO: parse transaction
+        tds.tds72_transaction = r.readall(8)
+        r.skip(tds_get_byte(tds))
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
         tds.tds72_transaction = None
-        tds_get_n(tds, tds_get_byte(tds))
-        tds_get_n(tds, tds_get_byte(tds))
+        r.skip(r.get_byte())
+        r.skip(r.get_byte())
     elif type == TDS_ENV_PACKSIZE:
         newval = tds_get_string(tds, tds_get_byte(tds))
         oldval = tds_get_string(tds, tds_get_byte(tds))

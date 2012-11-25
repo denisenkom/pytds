@@ -10,8 +10,6 @@ from tds_checks import *
 
 logger = logging.getLogger(__name__)
 
-COLLATION_SIZE = 5
-
 #/**
 # * Set type of column initializing all dependency 
 # * @param curcol column to set
@@ -85,8 +83,8 @@ class DefaultHandler(object):
             # other 2 bytes ???
             # last bytes is id in syscharsets
             #
-            col.column_collation = tds_get_n(tds, COLLATION_SIZE)
-            col.char_conv = tds_iconv_from_collate(tds, col.column_collation)
+            col.column_collation = r.get_collation()
+            col.char_conv = col.column_collation.get_iconv(tds)
 
         # Only read table_name for blob columns (eg. not for SYBLONGBINARY)
         if is_blob_type(col.on_server.column_type):
@@ -243,22 +241,23 @@ class DefaultHandler(object):
 
     @staticmethod
     def put_info(tds, col):
+        w = tds._writer
         size = tds_fix_column_size(tds, col)
         vs = col.column_varint_size
         if vs == 0:
             pass
         elif vs == 1:
-            tds_put_byte(tds, size)
+            w.put_byte(size)
         elif vs == 2:
-            tds_put_smallint(tds, size)
+            w.put_smallint(size)
         elif vs in (4, 5):
-            tds_put_int(tds, size)
+            w.put_int(size)
         elif vs == 8:
-            tds_put_smallint(tds, -1)
+            w.put_smallint(-1)
 
         # TDS7.1 output collate information
         if IS_TDS71_PLUS(tds) and is_collate_type(col.on_server.column_type):
-            tds_put_s(tds, tds.collation)
+            w.put_collation(tds.collation)
 
     @staticmethod
     def put_data(tds, curcol):
@@ -502,7 +501,8 @@ class VariantHandler(object):
 
     @staticmethod
     def get_data(tds, curcol):
-        colsize = tds_get_int(tds)
+        r = tds._reader
+        colsize = r.get_int()
 
         # NULL
         try:
@@ -517,13 +517,13 @@ class VariantHandler(object):
             if info_len > colsize:
                 raise Exception('TDS_FAIL')
             if is_collate_type(type):
-                if COLLATION_SIZE > info_len:
+                if Collation.wire_size > info_len:
                     raise Exception('TDS_FAIL')
-                curcol.collation = collation = tds_get_n(tds, COLLATION_SIZE)
-                colsize -= COLLATION_SIZE
-                info_len -= COLLATION_SIZE
+                curcol.collation = collation = r.get_collation()
+                colsize -= Collation.wire_size
+                info_len -= Collation.wire_size
                 curcol.char_conv = tds.char_convs[client2ucs2] if is_unicode_type(type) else\
-                        tds_iconv_from_collate(tds, collation)
+                        collation.get_iconv(tds)
             # special case for numeric
             if is_numeric_type(type):
                 if info_len != 2:
