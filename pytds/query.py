@@ -1,5 +1,4 @@
 from datetime import datetime
-from tds_checks import *
 from tds import *
 from util import *
 from tdsproto import *
@@ -194,11 +193,6 @@ def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
 #
 def tds_submit_query(tds, query, params=(), flags=0):
     logger.info('tds_submit_query(%s, %s)', query, params)
-    #size_t query_len;
-    CHECK_TDS_EXTRA(tds)
-    if params:
-        CHECK_PARAMINFO_EXTRA(params)
-
     if not query:
         raise Exception('TDS_FAIL')
 
@@ -265,8 +259,6 @@ def tds_send_cancel(tds):
         raise Exception('not implemented')
         #tds_conn(tds).s_signal.send((void*) &tds, sizeof(tds))
         return TDS_SUCCESS
-
-    CHECK_TDS_EXTRA(tds);
 
     logger.debug("tds_send_cancel: %sin_cancel and %sidle".format(
                             ('' if tds.in_cancel else "not "), ('' if tds.state == TDS_IDLE else "not ")))

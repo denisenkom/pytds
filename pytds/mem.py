@@ -492,19 +492,6 @@ class _TdsContext:
     pass
 
 def tds_alloc_context(parent=None):
-    from locale import tds_get_locale
-    locale = tds_get_locale()
-    if locale is None:
-        return None
-
     context = _TdsContext()
-    context.locale = locale
     context.parent = parent
     return context
-
-class _TdsLocale:
-    def __init__(self):
-        self.date_fmt = None
-
-def tds_alloc_locale():
-    return _TdsLocale()

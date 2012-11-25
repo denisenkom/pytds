@@ -4,7 +4,6 @@ from decimal import Decimal
 import uuid
 from tds import *
 from tdsproto import *
-from tds_checks import *
 
 logger = logging.getLogger(__name__)
 

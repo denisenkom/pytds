@@ -3,7 +3,6 @@ import traceback
 from tdsproto import *
 from mem import *
 from mem import _Column
-from tds_checks import *
 from data import *
 
 logger = logging.getLogger(__name__)
@@ -145,8 +144,6 @@ def tds_process_default_tokens(tds, marker):
 # tds_process_row() processes rows and places them in the row buffer.
 #
 def tds_process_row(tds):
-    CHECK_TDS_EXTRA(tds)
-
     info = tds.current_results
     if not info:
         raise Exception('TDS_FAIL')
@@ -487,10 +484,6 @@ def tds_process_tokens(tds, flag):
             return False
         return True
 
-    CHECK_TDS_EXTRA(tds)
-
-    #tdsdump_log(TDS_DBG_FUNC, "tds_process_tokens(%p, %p, %p, 0x%x)\n", tds, result_type, done_flags, flag)
-
     if tds.state == TDS_IDLE:
         logger.debug("tds_process_tokens() state is COMPLETED")
         return TDS_NO_MORE_RESULTS, TDS_DONE_RESULT, done_flags
@@ -715,8 +708,6 @@ def tds_process_tokens(tds, flag):
 # * At that point the connection should be ready to handle a new query.
 # */
 def tds_process_cancel(tds):
-    CHECK_TDS_EXTRA(tds);
-
     # silly cases, nothing to do
     if not tds.in_cancel:
         return TDS_SUCCESS
@@ -798,7 +789,6 @@ def tds7_process_result(tds):
 
     # all done now allocate a row for tds_process_row to use
     result = tds_alloc_row(info)
-    CHECK_TDS_EXTRA(tds)
     return result
 
 def tds_get_type_info(tds, curcol):
@@ -855,9 +845,6 @@ def tds7_get_data_info(tds, curcol):
 # Adjust column size according to client's encoding 
 #
 def adjust_character_column_size(tds, curcol):
-    CHECK_TDS_EXTRA(tds)
-    CHECK_COLUMN_EXTRA(curcol)
-
     if is_unicode_type(curcol.on_server.column_type):
         curcol.char_codec = ucs2_codec
 

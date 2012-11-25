@@ -10,7 +10,6 @@ import re
 from tds import *
 from mem import *
 from login import *
-from config import *
 from query import *
 
 logger = logging.getLogger(__name__)
@@ -196,7 +195,6 @@ class Connection(object):
         ctx.int_handler = self._int_handler
         self.tds_socket = tds_alloc_socket(ctx, 512)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()
-        tds_fix_login(login) # initialize from Environment variables
 
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
