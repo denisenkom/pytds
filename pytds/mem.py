@@ -77,6 +77,12 @@ class _TdsReader(object):
     def get_uint_be(self):
         return self.unpack(_uint_be)[0]
 
+    def get_int8(self):
+        if self._le():
+            return self.unpack(_int8_le)[0]
+        else:
+            return self.unpack(_int8_be)[0]
+
     def read_ucs2(self, num_chars):
         buf = self.readall(num_chars*2)
         return ucs2_codec.decode(buf)[0]

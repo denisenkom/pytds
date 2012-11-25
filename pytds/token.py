@@ -1,6 +1,5 @@
 import logging
 import traceback
-from read import *
 from tdsproto import *
 from mem import *
 from mem import _Column
@@ -52,6 +51,7 @@ def tds_token_name(marker):
     return token_names.get(marker, '')
 
 def tds_process_default_tokens(tds, marker):
+    r = tds._reader
     logger.debug('tds_process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
     if tds.is_dead():
         logger.debug('leaving tds_process_login_tokens() connection dead')
@@ -68,7 +68,7 @@ def tds_process_default_tokens(tds, marker):
         tds_process_msg(tds, marker)
     elif marker == TDS_CAPABILITY_TOKEN:
         # TODO split two part of capability and use it
-        tok_size = tds_get_smallint(tds)
+        tok_size = r.get_smallint()
         # vicm
         #
         # Sybase 11.0 servers return the wrong length in the capability packet, causing use to read
@@ -80,8 +80,8 @@ def tds_process_default_tokens(tds, marker):
             #pend = tds_conn(tds)->capabilities + TDS_MAX_CAPABILITY;
 
             #while True:
-            #    type = tds_get_byte(tds)
-            #    size = tds_get_byte(tds)
+            #    type = r.get_byte()
+            #    size = r.get_byte()
             #    if ((p + 2) > pend)
             #        break
             #    *p++ = type;
@@ -93,10 +93,10 @@ def tds_process_default_tokens(tds, marker):
             #    if type == 2:
             #        break
         else:
-            tds_conn(tds).capabilities = tds_get_n(tds, min(tok_size, TDS_MAX_CAPABILITY))
+            tds_conn(tds).capabilities = r.readall(min(tok_size, TDS_MAX_CAPABILITY))
             # PARAM_TOKEN can be returned inserting text in db, to return new timestamp
     elif marker == TDS_PARAM_TOKEN:
-        tds_unget_byte(tds)
+        r.unget_byte()
         return tds_process_param_result_tokens(tds)
     elif marker == TDS7_RESULT_TOKEN:
         return tds7_process_result(tds)
@@ -126,14 +126,14 @@ def tds_process_default_tokens(tds, marker):
         return tds_process_cursor_tokens(tds)
     elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
         logger.debug("Eating %s token", tds_token_name(marker))
-        tds_skip_n(tds, tds_get_smallint(tds))
+        r.skip(r.get_smallint())
     elif marker == TDS_TABNAME_TOKEN: # used for FOR BROWSE query
         return tds_process_tabname(tds)
     elif marker == TDS_COLINFO_TOKEN:
         return tds_process_colinfo(tds, None, 0)
     elif marker == TDS_ORDERBY2_TOKEN:
         logger.debug("Eating %s token", tds_token_name(marker))
-        tds_skip_n(tds, tds_get_int(tds))
+        r.skip(r.get_int())
     elif marker == TDS_NBC_ROW_TOKEN:
         return tds_process_nbcrow(tds)
     else:
@@ -162,6 +162,7 @@ def tds_process_row(tds):
 # NBC=null bitmap compression row
 # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
 def tds_process_nbcrow(tds):
+    r = tds._reader
     info = tds.current_results
     if not info:
         raise Exception('TDS_FAIL')
@@ -170,7 +171,7 @@ def tds_process_nbcrow(tds):
 
     # reading bitarray for nulls, 1 represent null values for
     # corresponding fields
-    nbc = tds_get_n(tds, (len(info.columns) + 7) / 8)
+    nbc = r.readall((len(info.columns) + 7) / 8)
     for i, curcol in enumerate(info.columns):
         if ord(nbc[i/8]) & (1 << i%8):
             curcol.value = None
@@ -186,8 +187,9 @@ def tds_process_nbcrow(tds):
 #        Is NULL nothing is returned
 #
 def tds_process_end(tds, marker):
-    tmp = tds_get_smallint(tds)
-    state = tds_get_smallint(tds)
+    r = tds._reader
+    tmp = r.get_smallint()
+    state = r.get_smallint()
     more_results = tmp & TDS_DONE_MORE_RESULTS != 0
     was_cancelled = tmp & TDS_DONE_CANCELLED != 0
     error = tmp & TDS_DONE_ERROR != 0
@@ -200,7 +202,7 @@ def tds_process_end(tds, marker):
         tds.res_info.more_results = more_results
         if not tds.current_results:
             tds.current_results = tds.res_info
-    rows_affected = tds_get_int8(tds) if IS_TDS72_PLUS(tds) else tds_get_int(tds)
+    rows_affected = r.get_int8() if IS_TDS72_PLUS(tds) else r.get_int()
     logger.debug('\t\trows_affected = {0}'.format(rows_affected))
     if was_cancelled or (not more_results and not tds.in_cancel):
         logger.debug('tds_process_end() state set to TDS_IDLE')
@@ -480,7 +482,7 @@ def tds_process_tokens(tds, flag):
         parent['result_type'] = ret
         parent['return_flag'] = getattr(tdsflags, 'TDS_RETURN_' + f) | getattr(tdsflags, 'TDS_STOPAT_' + f)
         if flag & getattr(tdsflags, 'TDS_STOPAT_' + f):
-            tds_unget_byte(tds)
+            r.unget_byte()
             logger.debug("tds_process_tokens::SET_RETURN stopping on current token")
             return False
         return True
@@ -541,7 +543,7 @@ def tds_process_tokens(tds, flag):
                     else:
                         r.unget_byte()
             elif marker == TDS_PARAM_TOKEN:
-                tds_unget_byte(tds)
+                r.unget_byte()
                 if tds.internal_sp_called:
                     logger.debug("processing parameters for sp {0}".formst(tds.internal_sp_called))
                     while True:
@@ -751,16 +753,12 @@ def get_api_coltype(coltype):
 # * This is a TDS 7.0 only function
 # */
 def tds7_process_result(tds):
-    #int col, num_cols;
-    #TDSRET result;
-    #TDSRESULTINFO *info;
-
-    CHECK_TDS_EXTRA(tds)
+    r = tds._reader
     logger.debug("processing TDS7 result metadata.")
 
     # read number of columns and allocate the columns structure
 
-    num_cols = tds_get_smallint(tds)
+    num_cols = r.get_smallint()
 
     # This can be a DUMMY results token from a cursor fetch
 
@@ -804,16 +802,17 @@ def tds7_process_result(tds):
     return result
 
 def tds_get_type_info(tds, curcol):
+    r = tds._reader
     # User defined data type of the column
-    curcol.column_usertype = tds_get_int(tds) if IS_TDS72_PLUS(tds) else tds_get_smallint(tds)
+    curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(tds) else r.get_usmallint()
 
-    curcol.column_flags = tds_get_smallint(tds) # Flags
+    curcol.column_flags = r.get_usmallint() # Flags
 
     curcol.column_nullable = curcol.column_flags & 0x01;
     curcol.column_writeable = (curcol.column_flags & 0x08) > 0
     curcol.column_identity = (curcol.column_flags & 0x10) > 0
 
-    tds_set_column_type(tds, curcol, tds_get_byte(tds)) # sets "cardinal" type
+    tds_set_column_type(tds, curcol, r.get_byte()) # sets "cardinal" type
 
     curcol.column_timestamp = (curcol.column_type == SYBBINARY and curcol.column_usertype == TDS_UT_TIMESTAMP)
 

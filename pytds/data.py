@@ -4,7 +4,6 @@ from decimal import Decimal
 import uuid
 from tds import *
 from tdsproto import *
-from read import *
 from write import *
 from tds_checks import *
 
@@ -102,7 +101,8 @@ class DefaultHandler(object):
 
     @staticmethod
     def _tds72_get_varmax(tds, curcol):
-        size = tds_get_int8(tds);
+        r = tds._reader
+        size = r.get_int8()
 
         # NULL
         if size == -1:
@@ -114,7 +114,7 @@ class DefaultHandler(object):
         if curcol.char_codec:
             decoder = curcol.char_codec.incrementaldecoder()
         while True:
-            chunk_len = tds_get_int(tds)
+            chunk_len = r.get_int()
             if chunk_len <= 0:
                 if decoder:
                     val = decoder.decode('', True)
@@ -122,7 +122,7 @@ class DefaultHandler(object):
                 return chunk_handler.end()
             left = chunk_len
             while left:
-                val = tds._reader.read(left)
+                val = r.read(left)
                 left -= len(val)
                 if decoder:
                     val = decoder.decode(val)
@@ -131,6 +131,7 @@ class DefaultHandler(object):
     @staticmethod
     def get_data(tds, curcol):
         logger.debug("tds_get_data: type %d, varint size %d" % (curcol.column_type, curcol.column_varint_size))
+        r = tds._reader
         cvs = curcol.column_varint_size
         if cvs == 4:
             #
@@ -138,27 +139,27 @@ class DefaultHandler(object):
             # This type just stores a 4-byte length
             #
             if curcol.column_type == SYBLONGBINARY:
-                colsize = tds_get_int(tds)
+                colsize = r.get_int()
             else:
                 # It's a BLOB...
-                size = tds_get_byte(tds)
+                size = r.get_byte()
                 if size == 16: # Jeff's hack
-                    textptr = tds_get_n(tds, 16)
-                    timestamp = tds_get_n(tds, 8)
-                    colsize = tds_get_int(tds)
+                    textptr = r.readall(16)
+                    timestamp = r.readall(8)
+                    colsize = r.get_int()
                 else:
                     colsize = -1
         elif cvs == 5:
-            colsize = tds_get_int(tds)
+            colsize = r.get_int()
             if colsize == 0:
                 colsize = -1;
         elif cvs == 8:
             curcol.value = DefaultHandler._tds72_get_varmax(tds, curcol)
             return
         elif cvs == 2:
-            colsize = tds_get_smallint(tds)
+            colsize = r.get_smallint()
         elif cvs == 1:
-            colsize = tds_get_byte(tds)
+            colsize = r.get_byte()
             if colsize == 0:
                 colsize = -1
         elif cvs == 0:
@@ -196,15 +197,15 @@ class DefaultHandler(object):
                 curcol.value = tds_get_char_data(tds, colsize, curcol)
             else:
                 assert colsize == new_blob_size
-                curcol.value = tds_get_n(tds, colsize)
+                curcol.value = r.readall(colsize)
         else: # non-numeric and non-blob
             if curcol.char_codec:
                 if colsize == 0:
-                    curcol.value= u''
+                    curcol.value = u''
                 elif curcol.char_codec:
-                    curcol.value= read_and_convert(tds, curcol.char_codec, colsize)
+                    curcol.value = curcol.char_codec.decode(r.readall(colsize))[0]
                 else:
-                    curcol.value = tds_get_n(tds, colsize)
+                    curcol.value = r.readall(colsize)
                 curcol.cur_size = len(curcol.value)
             else:
                 #
@@ -215,9 +216,9 @@ class DefaultHandler(object):
                 if colsize > curcol.column_size:
                     discard_len = colsize - curcol.column_size
                     colsize = curcol.column_size
-                curcol.value= tds_get_n(tds, colsize)
+                curcol.value = r.readall(colsize)
                 if discard_len > 0:
-                    tds_get_n(tds, discard_len)
+                    r.skip(discard_len)
 
             # pad (UNI)CHAR and BINARY types
             fillchar = '\0'
@@ -396,9 +397,10 @@ def to_python(tds, data, type, length):
 class NumericHandler(object):
     @staticmethod
     def get_info(tds, col):
-        col.column_size = tds_get_byte(tds)
-        col.column_prec = tds_get_byte(tds)
-        col.column_scale = tds_get_byte(tds)
+        r = tds._reader
+        col.column_size = r.get_byte()
+        col.column_prec = r.get_byte()
+        col.column_scale = r.get_byte()
         # FIXME check prec/scale, don't let server crash us
 
 
@@ -415,7 +417,8 @@ class NumericHandler(object):
 
     @staticmethod
     def get_data(tds,  curcol):
-        colsize = tds_get_byte(tds)
+        r = tds._reader
+        colsize = r.get_byte()
 
         # set NULL flag in the row buffer
         if colsize <= 0:
@@ -435,8 +438,8 @@ class NumericHandler(object):
         # TODO close connection it server try to do so ??
         if colsize > NumericHandler.MAX_NUMERIC:
             raise Exception('TDS_FAIL')
-        positive = tds_get_byte(tds)
-        buf = tds_get_n(tds, colsize - 1)
+        positive = r.get_byte()
+        buf = r.readall(colsize - 1)
 
         if IS_TDS7_PLUS(tds):
             curcol.value = NumericHandler.ms_parse_numeric(positive, buf, scale)
@@ -461,24 +464,26 @@ class NumericHandler(object):
 
     @staticmethod
     def put_info(tds, col):
-        tds_put_byte(tds, NumericHandler.tds_numeric_bytes_per_prec[col.column_prec])
-        tds_put_byte(tds, col.column_prec)
-        tds_put_byte(tds, col.column_scale)
+        w = tds._writer
+        w.put_byte(NumericHandler.tds_numeric_bytes_per_prec[col.column_prec])
+        w.put_byte(col.column_prec)
+        w.put_byte(col.column_scale)
 
     @staticmethod
     def put_data(tds, col):
+        w = tds._writer
         scale = col.column_scale
         size = NumericHandler.tds_numeric_bytes_per_prec[col.column_prec]
-        tds_put_byte(tds, size)
+        w.put_byte(size)
         val = col.value
         positive = 1 if val > 0 else 0
-        tds_put_byte(tds, positive) # sign
+        w.put_byte(positive) # sign
         if not positive:
             val *= -1
         size -= 1
         val = long(val * (10 ** scale))
         for i in range(size):
-            tds_put_byte(tds, val % 256)
+            w.put_byte(val % 256)
             val /= 256
         assert val == 0
 
@@ -503,11 +508,11 @@ class VariantHandler(object):
         try:
             curcol.value = None
             if colsize < 2:
-                tds_skip_n(tds, colsize)
+                r.skip(colsize)
                 return
 
-            type = tds_get_byte(tds);
-            info_len = tds_get_byte(tds)
+            type = r.get_byte();
+            info_len = r.get_byte()
             colsize -= 2
             if info_len > colsize:
                 raise Exception('TDS_FAIL')
@@ -523,14 +528,14 @@ class VariantHandler(object):
             if is_numeric_type(type):
                 if info_len != 2:
                     raise Exception('TDS_FAIL')
-                curcol.precision = precision = tds_get_byte(tds)
-                curcol.scale     = scale     = tds_get_byte(tds)
+                curcol.precision = precision = r.get_byte()
+                curcol.scale     = scale     = r.get_byte()
                 colsize -= 2
                 # FIXME check prec/scale, don't let server crash us
                 if colsize > NumericHandler.MAX_NUMERIC:
                     raise Exception('TDS_FAIL')
-                positive = tds_get_byte(tds)
-                buf = tds_get_n(tds, colsize - 1)
+                positive = r.get_byte()
+                buf = r.readall(colsize - 1)
                 curcol.value = NumericHandler.ms_parse_numeric(positive, buf, scale)
                 return
             varint = 0 if type == SYBUNIQUE else tds_get_varint_size(tds, type)
@@ -539,9 +544,9 @@ class VariantHandler(object):
             if varint == 0:
                 size = tds_get_size_by_type(type)
             elif varint == 1:
-                size = tds_get_byte(tds)
+                size = r.get_byte()
             elif varint == 2:
-                size = tds_get_smallint(tds)
+                size = r.get_smallint()
             else:
                 raise Exception('TDS_FAIL')
             colsize -= info_len
@@ -549,11 +554,11 @@ class VariantHandler(object):
                 if curcol.char_codec:
                     data = tds_get_char_data(tds, colsize, curcol)
                 else:
-                    data = tds_get_n(tds, colsize)
+                    data = r.readall(colsize)
             colsize = 0
             curcol.value = to_python(tds, data, type, colsize)
         except:
-            tds_skip_n(tds, colsize)
+            r.skip(colsize)
             raise
 
 
@@ -725,15 +730,17 @@ class FixedOffset(tzinfo):
 class MsDatetimeHandler(object):
     @staticmethod
     def get_info(tds, col):
+        r = tds._reader
         col.column_scale = col.column_prec = 0
         if col.column_type != SYBMSDATE:
-            col.column_scale = col.column_prec = tds_get_byte(tds)
+            col.column_scale = col.column_prec = r.get_byte()
             if col.column_prec > 7:
                 raise Exception('TDS_FAIL')
 
     @staticmethod
     def get_data(tds, col):
-        size = tds_get_byte(tds)
+        r = tds._reader
+        size = r.get_byte()
         if size == 0:
             col.value = None
             return
@@ -751,7 +758,7 @@ class MsDatetimeHandler(object):
             assert size >= 3 and size <= 5
             if size < 3 or size > 5:
                 raise Exception('TDS_FAIL')
-            time_buf = tds_get_n(tds, size)
+            time_buf = r.readall(size)
             val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(time_buf), 0)
             for i in range(col.column_prec, 7):
                 val *= 10
@@ -760,14 +767,14 @@ class MsDatetimeHandler(object):
         # get date part
         days = 0
         if col.column_type != SYBMSTIME:
-            date_buf = tds_get_n(tds, 3)
+            date_buf = r.readall(3)
             val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(date_buf), 0)
             days = val - 693595
 
         # get time offset
         tz = None
         if col.column_type == SYBMSDATETIMEOFFSET:
-            offset = tds_get_smallint(tds)
+            offset = r.get_smallint()
             if offset > 840 or offset < -840:
                 raise Exception('TDS_FAIL')
             tz = FixedOffset(offset, '')
@@ -812,3 +819,39 @@ class MsDatetimeHandler(object):
         size = reduce(lambda a, b: a + len(b), parts, 0)
         parts.insert(0, chr(size))
         tds_put_s(tds, b''.join(parts))
+
+#
+# Fetch character data the wire.
+# Output is NOT null terminated.
+# If \a char_conv is not NULL, convert data accordingly.
+# \param tds         state information for the socket and the TDS protocol
+# \param wire_size   size to read from wire (in bytes)
+# \param curcol      column information
+# \return TDS_SUCCESS or TDS_FAIL (probably memory error on text data)
+# \todo put a TDSICONV structure in every TDSCOLUMN
+#
+def tds_get_char_data(tds, wire_size, curcol):
+    r = tds._reader
+    #
+    # dest is usually a column buffer, allocated when the column's metadata are processed 
+    # and reused for each row.  
+    # For blobs, dest is blob->textvalue, and can be reallocated or freed
+    # TODO: reallocate if blob and no space 
+    #
+    # silly case, empty string
+    if wire_size == 0:
+        return ''
+
+    if curcol.char_codec:
+        #
+        # TODO The conversion should be selected from curcol and tds version
+        # TDS7.1/single -> use curcol collation
+        # TDS7/single -> use server single byte
+        # TDS7+/unicode -> use server (always unicode)
+        # TDS5/4.2 -> use server 
+        # TDS5/UTF-8 -> use server
+        # TDS5/UTF-16 -> use UTF-16
+        #
+        return curcol.char_codec.decode(r.readall(wire_size))[0]
+    else:
+        return r.readall(wire_size)
