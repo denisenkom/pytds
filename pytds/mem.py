@@ -47,6 +47,33 @@ class _TdsReader(object):
     def get_byte(self):
         return self.unpack(_byte)[0]
 
+    def _le(self):
+        return tds_conn(self._tds).emul_little_endian
+
+    def get_smallint(self):
+        if self._le():
+            return self.unpack(_smallint_le)[0]
+        else:
+            return self.unpack(_smallint_be)[0]
+
+    def get_usmallint(self):
+        if self._le():
+            return self.unpack(_usmallint_le)[0]
+        else:
+            return self.unpack(_usmallint_be)[0]
+
+    def get_int(self):
+        if self._le():
+            return self.unpack(_int_le)[0]
+        else:
+            return self.unpack(_int_be)[0]
+
+    def get_uint(self):
+        if self._le():
+            return self.unpack(_uint_le)[0]
+        else:
+            return self.unpack(_uilt_be)[0]
+
     def unget_byte(self):
         # this is a one trick pony...don't call it twice
         assert self._pos > 0

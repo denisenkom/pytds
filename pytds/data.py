@@ -60,13 +60,14 @@ class DefaultHandler(object):
     @staticmethod
     def get_info(tds, col):
         vs = col.column_varint_size
+        r = tds._reader
         if vs == 8:
             col.column_size = 0x7fffffff
         elif vs in (4,5):
-            col.column_size = tds_get_int(tds)
+            col.column_size = r.get_int()
         elif vs == 2:
             # assure > 0
-            col.column_size = tds_get_smallint(tds)
+            col.column_size = r.get_smallint()
             # under TDS9 this means ?var???(MAX)
             if col.column_size < 0 and IS_TDS72_PLUS(tds):
                 col.column_size = 0x3fffffff
