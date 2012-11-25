@@ -126,50 +126,54 @@ def make_param(tds, name, value):
     column.funcs = tds_get_column_funcs(tds, col_type)
     return column
 
-def tds_submit_rpc(tds, rpc_name, params=(), recompile=False):
+def _submit_rpc(tds, rpc_name, params, flags):
+    tds.cur_dyn = None
+    w = tds._writer
+    if IS_TDS7_PLUS(tds):
+        w.begin_packet(TDS_RPC)
+        START_QUERY(tds)
+        if IS_TDS71_PLUS(tds) and isinstance(rpc_name, InternalProc):
+            w.put_smallint(-1)
+            w.put_smallint(rpc_name.proc_id)
+        else:
+            w.put_smallint(len(rpc_name))
+            w.write_ucs2(rpc_name)
+        #
+        # TODO support flags
+        # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
+        # bit 1 (2 as flag) in TDS7+ is "no metadata" bit this will prevent sending of column infos
+        #
+        w.put_usmallint(flags)
+        params = convert_params(tds, params)
+        for param in params:
+            tds_put_data_info(tds, param)
+            param.funcs.put_data(tds, param)
+        #tds_query_flush_packet(tds)
+    elif IS_TDS5_PLUS(tds):
+        w.begin_packet(TDS_NORMAL)
+        w.put_byte(TDS_DBRPC_TOKEN)
+        # TODO ICONV convert rpc name
+        w.put_smallint(len(rpc_name) + 3)
+        w.put_byte(len(rpc_name))
+        w.write(rpc_name)
+        # TODO flags
+        w.put_smallint(2 if params else 0)
+
+        if params:
+            tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME)
+
+        # send it
+        #tds_query_flush_packet(tds)
+    else:
+        # emulate it for TDS4.x, send RPC for mssql
+        return tds_send_emulated_rpc(tds, rpc_name, params)
+
+def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
     if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
         raise Exception('TDS_FAIL')
     try:
-        tds.cur_dyn = None
-        w = tds._writer
-        if IS_TDS7_PLUS(tds):
-            w.begin_packet(TDS_RPC)
-            START_QUERY(tds)
-            w.put_smallint(len(rpc_name))
-            w.write_ucs2(rpc_name)
-            #
-            # TODO support flags
-            # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
-            # bit 1 (2 as flag) in TDS7+ is "no metadata" bit 
-            # (I don't know meaning of "no metadata")
-            #
-            flags = 0
-            if recompile:
-                flags |= 1
-            w.put_smallint(flags)
-            params = convert_params(tds, params)
-            for param in params:
-                tds_put_data_info(tds, param)
-                param.funcs.put_data(tds, param)
-            tds_query_flush_packet(tds)
-        elif IS_TDS5_PLUS(tds):
-            w.begin_packet(TDS_NORMAL)
-            w.put_byte(TDS_DBRPC_TOKEN)
-            # TODO ICONV convert rpc name
-            w.put_smallint(len(rpc_name) + 3)
-            w.put_byte(len(rpc_name))
-            w.write(rpc_name)
-            # TODO flags
-            w.put_smallint(2 if params else 0)
-
-            if params:
-                tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME)
-
-            # send it
-            tds_query_flush_packet(tds)
-        else:
-            # emulate it for TDS4.x, send RPC for mssql
-            return tds_send_emulated_rpc(tds, rpc_name, params)
+        _submit_rpc(tds, rpc_name, params, flags)
+        tds_query_flush_packet(tds)
     except:
         tds_set_state(tds, TDS_IDLE)
         raise
@@ -220,49 +224,12 @@ def tds_submit_query(tds, query, params=(), flags=0):
             START_QUERY(tds)
             w.write_ucs2(query)
         else:
-            converted_query = tds_convert_string(tds, tds.char_convs[client2ucs2], query)
             params = convert_params(tds, params)
-
             param_definition = ','.join('{0} {1}'.format(\
                     p.column_name, tds_get_column_declaration(tds, p))
                 for p in params)
-
-            w.begin_packet(TDS_RPC)
-            START_QUERY(tds)
-            # procedure name
-            if IS_TDS71_PLUS(tds):
-                w.put_smallint(-1)
-                w.put_smallint(TDS_SP_EXECUTESQL)
-            else:
-                sp_name = 'sp_executesql'
-                w.put_smallint(len(sp_name))
-                w.write_ucs2(sp_name)
-            w.put_usmallint(flags)
-
-            # param 1: string with sql statement
-            w.put_byte(0)
-            w.put_byte(0)
-            w.put_byte(SYBNTEXT) # must be Ntype
-            w.put_int(len(converted_query))
-            if IS_TDS71_PLUS(tds):
-                w.write(tds.collation)
-            w.put_int(len(converted_query))
-            w.write(converted_query)
-            # param 2: parameters definition
-            w.put_byte(0)
-            w.put_byte(0)
-            w.put_byte(SYBNTEXT) # must be Ntype
-            param_definition = tds.char_convs[client2ucs2]['to_wire'](param_definition)
-            param_length = len(param_definition)
-            w.put_int(param_length)
-            if IS_TDS71_PLUS(tds):
-                w.write(tds.collation)
-            w.put_int(param_length if param_length else -1)
-            w.write(param_definition)
-            # parameter values
-            for param in params:
-                tds_put_data_info(tds, param)
-                param.funcs.put_data(tds, param)
+            _submit_rpc(tds, SP_EXECUTESQL,\
+                    [query, param_definition] + params, 0)
             tds.internal_sp_called = TDS_SP_EXECUTESQL
         tds_query_flush_packet(tds)
     except:

@@ -388,3 +388,12 @@ def raise_db_exception(tds):
     #self.cancel()
     tds.messages = []
     raise ex
+
+class InternalProc(object):
+    def __init__(self, proc_id, name):
+        self.proc_id = proc_id
+        self.name = name
+    def __unicode__(self):
+        return self.name
+
+SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
