@@ -118,6 +118,10 @@ def make_param(tds, name, value):
         column.column_scale = -exp
         column.column_prec = max(len(digits), column.column_scale)
         column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, uuid.UUID):
+        col_type = SYBUNIQUE
+        size = 16
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     else:
         raise Exception('NotSupportedError: Unable to determine database type')
     column.on_server.column_type = col_type

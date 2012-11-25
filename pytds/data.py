@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, date, time, timedelta, tzinfo
 from decimal import Decimal
+import uuid
 from tds import *
 from tdsproto import *
 from read import *
@@ -335,6 +336,8 @@ class DefaultHandler(object):
                 tds_put_s(tds, _SYBFLT8_STRUCT.pack(value))
             elif column_type == SYBNTEXT:
                 tds_put_s(tds, value)
+            elif column_type == SYBUNIQUE:
+                tds_put_s(tds, value.bytes_le)
             else:
                 raise Exception('not implemented')
             # finish chunk for varchar/varbinary(max)
@@ -389,9 +392,8 @@ def to_python(tds, data, type, length):
 
         return data
 
-    elif type == SYBUNIQUE and (PY_MAJOR_VERSION >= 2 and PY_MINOR_VERSION >= 5):
-        raise Exception('not implemented')
-        #return uuid.UUID(bytes_le=(<char *>data)[:length])
+    elif type == SYBUNIQUE:
+        return uuid.UUID(bytes_le=data)
 
     else:
         raise Exception('unknown type {0}'.format(type))

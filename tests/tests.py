@@ -336,5 +336,12 @@ class BinaryTest(unittest.TestCase):
         cur.execute('select %s', (Binary(binary),))
         self.assertEqual([(binary,)], cur.fetchall())
 
+class GuitTest(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        val = uuid.uuid4()
+        cur.execute('select %s', (val,))
+        self.assertEqual([(val,)], cur.fetchall())
+
 if __name__ == '__main__':
     unittest.main()
