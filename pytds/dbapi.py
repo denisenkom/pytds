@@ -78,7 +78,6 @@ class MemoryChunkedHandler(object):
         return self.sio.getvalue()
 
 
-min_error_severity = 6
 ######################
 ## Connection class ##
 ######################

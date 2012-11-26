@@ -343,5 +343,12 @@ class GuitTest(unittest.TestCase):
         cur.execute('select %s', (val,))
         self.assertEqual([(val,)], cur.fetchall())
 
+#class EncryptionTest(unittest.TestCase):
+#    def runTest(self):
+#        conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, encryption_level=TDS_ENCRYPTION_REQUIRE)
+#        cur = conn.cursor()
+#        cur.execute('select 1')
+
+
 if __name__ == '__main__':
     unittest.main()

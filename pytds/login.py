@@ -242,6 +242,8 @@ def tds71_do_login(tds, login):
     if ENCRYPTION_ENABLED and encryption_supported:
         w.put_byte(1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
     else:
+        if encryption_level >= TDS_ENCRYPTION_REQUIRE:
+            raise Error('Client requested encryption but it is not supported')
         # not supported
         w.put_byte(2)
     w.write(instance_name.encode('ascii'))
@@ -284,7 +286,7 @@ def tds71_do_login(tds, login):
     # if server do not has certificate do normal login
     if crypt_flag == 2:
         if encryption_level >= TDS_ENCRYPTION_REQUIRE:
-            raise Error('TDS_FAIL')
+            raise Error('Server required encryption but it is not supported')
         return tds7_send_login(tds, login)
-    tds_set_s(ssl.wrap_socket(tds_get_s(tds), ssl_version=ssl.PROTOCOL_TLSv1))
+    tds_set_s(tds, ssl.wrap_socket(tds._sock, ssl_version=ssl.PROTOCOL_SSLv3))
     return tds7_send_login(tds, login)
