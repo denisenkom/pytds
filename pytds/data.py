@@ -3,6 +3,7 @@ from datetime import datetime, date, time, timedelta, tzinfo
 from decimal import Decimal
 import uuid
 from tds import *
+from tds import _Column
 from tdsproto import *
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,83 @@ def tds_get_cardinal_type(datatype, usertype):
         if usertype in (USER_UNICHAR_TYPE, USER_UNIVARCHAR_TYPE):
             return SYBTEXT
     return datatype
+
+def make_param(tds, name, value):
+    column = _Column()
+    column.column_name = name
+    column.flags = 0
+    if isinstance(value, output):
+        column.flags |= fByRefValue
+        value = value.value
+    if value is default:
+        column.flags = fDefaultValue
+        col_type = XSYBVARCHAR
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+        value = None
+    elif value is None:
+        col_type = XSYBVARCHAR
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, int):
+        if -2**31 <= value <= 2**31 -1:
+            col_type = SYBINTN
+            size = 4
+        else:
+            col_type = SYBINT8
+            size = 8
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, float):
+        col_type = SYBFLTN
+        size = 8
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, Binary):
+        if len(value) > 8000:
+            if IS_TDS72_PLUS(tds):
+                col_type = XSYBVARBINARY
+                column.column_varint_size = 8 # nvarchar(max)
+            else:
+                col_type = SYBIMAGE
+                column.column_varint_size = tds_get_varint_size(tds, col_type)
+        else:
+            col_type = XSYBVARBINARY
+            column.column_varint_size = tds_get_varint_size(tds, col_type)
+        size = len(value)
+    elif isinstance(value, (str, unicode)):
+        if len(value) > 4000:
+            if IS_TDS72_PLUS(tds):
+                col_type = XSYBNVARCHAR
+                column.column_varint_size = 8 # nvarchar(max)
+            else:
+                col_type = SYBNTEXT
+                column.column_varint_size = tds_get_varint_size(tds, col_type)
+        else:
+            col_type = XSYBNVARCHAR
+            column.column_varint_size = tds_get_varint_size(tds, col_type)
+        size = len(value) * 2
+        column.char_codec = ucs2_codec
+    elif isinstance(value, datetime):
+        col_type = SYBDATETIMN
+        size = 8
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, Decimal):
+        col_type = SYBDECIMAL
+        _, digits, exp = value.as_tuple()
+        size = 12
+        column.column_scale = -exp
+        column.column_prec = max(len(digits), column.column_scale)
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, uuid.UUID):
+        col_type = SYBUNIQUE
+        size = 16
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    else:
+        raise Exception('NotSupportedError: Unable to determine database type')
+    column.on_server.column_type = col_type
+    column.column_size = column.on_server.column_size = size
+    column.value = value
+    column.funcs = tds_get_column_funcs(tds, col_type)
+    return column
 
 class DefaultHandler(object):
     @staticmethod
