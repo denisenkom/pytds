@@ -248,8 +248,10 @@ class Connection(object):
             return
 
         if not self.tds_socket.is_dead():
-            self._try_activate_cursor(None)
-            tds_submit_rollback(self.tds_socket, True)
+            tds = self._get_connection()
+            self.cancel()
+            self._active_cursor = None
+            tds_submit_rollback(tds, True)
             self._sqlok()
             while self._nextset(None):
                 pass
