@@ -213,6 +213,13 @@ class BigRequest(unittest.TestCase):
         cur.execute('select %s, %s, %s, %s', params)
         self.assertEqual([params], cur.fetchall())
 
+class ReadAllBug(unittest.TestCase):
+    def runTest(self):
+        cur = conn.cursor()
+        params = ('x' * 5000,)
+        cur.execute('select cast(%s as varchar(5000))', params)
+        self.assertEqual([params], cur.fetchall())
+
 class Rowcount(unittest.TestCase):
     def _create_table(self):
         cur = conn.cursor()

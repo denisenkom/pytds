@@ -561,7 +561,8 @@ class _TdsReader(object):
         res = self.read(size)
         if len(res) == size:
             return res
-        result = StringIO(res)
+        result = StringIO()
+        result.write(res)
         left = size - len(res)
         while left:
             buf = self.read(left)
