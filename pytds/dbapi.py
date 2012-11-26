@@ -9,6 +9,7 @@ import decimal
 import re
 from tds import *
 from mem import *
+from mem import _TdsContext
 from login import *
 from query import *
 
@@ -191,7 +192,7 @@ class Connection(object):
         # Connect to the server
         login.server_name = server
         login.instance_name = instance
-        ctx = tds_alloc_context()
+        ctx = _TdsContext()
         ctx.int_handler = self._int_handler
         self.tds_socket = tds_alloc_socket(ctx, 512)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()

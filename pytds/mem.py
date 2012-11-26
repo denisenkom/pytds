@@ -283,7 +283,7 @@ class _TdsSocket(object):
         self.messages = []
         self._reader = _TdsReader(self)
         self._writer = _TdsWriter(self, bufsize)
-        tds_set_ctx(self, context)
+        self.conn.tds_ctx = context
         self.in_buf_max = 0
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
 
@@ -294,7 +294,6 @@ class _TdsSocket(object):
         if hasattr(socket, 'socketpair'):
             tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
         self.state = TDS_DEAD
-        from threadsafe import TDS_MUTEX_INIT
         self.write_mtx = TDS_MUTEX_INIT(self.wire_mtx)
 
     def is_dead(self):
@@ -485,13 +484,5 @@ def tds_alloc_login(use_environment):
     #login.capabilities = defaultcaps
     return login
 
-def tds_free_login(login):
-    pass
-
 class _TdsContext:
     pass
-
-def tds_alloc_context(parent=None):
-    context = _TdsContext()
-    context.parent = parent
-    return context

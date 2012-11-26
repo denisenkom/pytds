@@ -916,14 +916,6 @@ _prtype_map = dict((
 def tds_prtype(token):
     return _prtype_map.get(token, '')
 
-def tds_swap_numeric(num):
-    # swap the sign
-    arr_sign = chr(0) if ord(num.array[0]) else chr(1)
-    # swap the data
-    arr_prec = tds_swap_bytes(num.array[1:], tds_numeric_bytes_per_prec[num.precision] - 1)
-    arr_rest = num.array[1+tds_numeric_bytes_per_prec[num.precision] - 1:]
-    return ''.join([arr_sign, arr_prec, arr_rest])
-
 def tds_process_param_result_tokens(tds):
     r = tds._reader
     while True:

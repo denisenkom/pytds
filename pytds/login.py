@@ -11,7 +11,6 @@ else:
     encryption_supported = True
 from tdsproto import *
 from tds import *
-from util import *
 from net import *
 from token import *
 

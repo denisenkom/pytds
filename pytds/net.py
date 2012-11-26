@@ -5,7 +5,6 @@ import select
 import logging
 import signal
 from tds import *
-from util import *
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ def tds_select(tds, tds_sel, timeout_seconds):
                         result |= TDSPOLLURG
                 return result
             if tds.int_handler:
-                tds.int_handler(tds_get_parent(tds))
+                tds.int_handler()
         else:
             read = []
             write = []

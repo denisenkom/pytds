@@ -1,6 +1,5 @@
 from datetime import datetime
 from tds import *
-from util import *
 from tdsproto import *
 from net import *
 from mem import _Column
