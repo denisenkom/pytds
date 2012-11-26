@@ -1,8 +1,7 @@
 from datetime import datetime
 from tds import *
 from tdsproto import *
-from net import *
-from mem import _Column
+from tds import _Column
 from data import *
 
 def START_QUERY(tds):

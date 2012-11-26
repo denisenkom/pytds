@@ -1,8 +1,7 @@
 import logging
 import traceback
 from tdsproto import *
-from mem import *
-from mem import _Column
+from tds import _Column
 from data import *
 
 logger = logging.getLogger(__name__)
@@ -763,7 +762,6 @@ def tds7_process_result(tds):
     info = tds_alloc_results(num_cols)
     tds.current_results = info
     if tds.cur_cursor:
-        tds_free_results(tds.cur_cursor.res_info)
         tds.cur_cursor.res_info = info
         logger.debug("set current_results to cursor->res_info")
     else:

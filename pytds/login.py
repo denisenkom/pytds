@@ -11,7 +11,6 @@ else:
     encryption_supported = True
 from tdsproto import *
 from tds import *
-from net import *
 from token import *
 
 logger = logging.getLogger(__name__)

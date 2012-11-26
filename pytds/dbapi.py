@@ -8,8 +8,7 @@ import logging
 import decimal
 import re
 from tds import *
-from mem import *
-from mem import _TdsContext
+from tds import _TdsContext
 from login import *
 from query import *
 
