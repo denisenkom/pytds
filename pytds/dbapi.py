@@ -118,7 +118,8 @@ class Connection(object):
         '''
         Returns version of tds protocol that is being used by this connection
         '''
-        return self.tds_socket.tds_version
+        tds = self._get_connection()
+        return tds.tds_version
 
     @property
     def product_version(self):
@@ -135,14 +136,15 @@ class Connection(object):
             self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
             tds_connect_and_login(self.tds_socket, self._login)
             self._try_activate_cursor(None)
-            tds_submit_begin_tran(self.tds_socket)
+            if not self._autocommit:
+                tds_submit_begin_tran(self.tds_socket)
             self._sqlok()
         return self.tds_socket
 
     def __init__(self, server, user, password,
             charset, database, appname, port, tds_version,
-            as_dict, encryption_level, login_timeout, timeout):
-        self._autocommit = False
+            as_dict, encryption_level, login_timeout, timeout, autocommit):
+        self._autocommit = autocommit
         logger.debug("Connection.__init__()")
         self._charset = ''
         self._as_dict = as_dict
@@ -668,7 +670,7 @@ class Cursor(object):
 def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, charset=None, as_dict=False,
         host='', appname=None, port=None, tds_version=TDS74,
-        encryption_level=TDS_ENCRYPTION_OFF):
+        encryption_level=TDS_ENCRYPTION_OFF, autocommit=True):
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
@@ -712,7 +714,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
 
     conn = Connection(server, user, password, charset, database,
         appname, port, tds_version=tds_version, as_dict=as_dict, login_timeout=login_timeout,
-        timeout=timeout, encryption_level=encryption_level)
+        timeout=timeout, encryption_level=encryption_level, autocommit=autocommit)
 
     return conn
 

@@ -324,7 +324,7 @@ def tds_get_column_declaration(tds, curcol):
 
 def tds_submit_begin_tran(tds):
     logger.debug('tds_submit_begin_tran()')
-    if IS_TDS72(tds):
+    if IS_TDS72_PLUS(tds):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
@@ -343,7 +343,7 @@ def tds_submit_begin_tran(tds):
 
 def tds_submit_rollback(tds, cont):
     logger.debug('tds_submit_rollback(%s, %s)', id(tds), cont)
-    if IS_TDS72(tds):
+    if IS_TDS72_PLUS(tds):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
@@ -364,7 +364,7 @@ def tds_submit_rollback(tds, cont):
 
 def tds_submit_commit(tds, cont):
     logger.debug('tds_submit_commit(%s)', cont)
-    if IS_TDS72(tds):
+    if IS_TDS72_PLUS(tds):
         if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
