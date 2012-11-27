@@ -356,6 +356,35 @@ class GuitTest(unittest.TestCase):
 #        cur = conn.cursor()
 #        cur.execute('select 1')
 
+class Bug2(unittest.TestCase):
+    def _drop_sp(self):
+        cur = conn.cursor()
+        cur.execute('''
+        if object_id('testproc') is not null
+            drop procedure testproc
+        ''')
+    def setUp(self):
+        self._drop_sp()
+        cur = conn.cursor()
+        cur.execute('''
+        create procedure testproc (@param int)
+        as
+        begin
+            set transaction isolation level read uncommitted -- that will produce very empty result (even no rowcount)
+            select @param
+            return @param + 1
+        end
+        ''')
+    def tearDown(self):
+        self._drop_sp()
+
+    def runTest(self):
+        with conn.cursor() as cur:
+            val = 45
+            print 'calling proc'
+            cur.execute('exec testproc @param = 45')
+            self.assertEqual(cur.fetchall(), [(val,)])
+            self.assertEqual(val + 1, cur.get_proc_return_status())
 
 if __name__ == '__main__':
     unittest.main()

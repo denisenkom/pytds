@@ -369,6 +369,9 @@ class Connection(object):
                 self._state = DB_RES_RESULTSET_ROWS
                 break
             elif result_type == TDS_DONEINPROC_RESULT:
+                if not done_flags & TDS_DONE_COUNT:
+                    # skip results that don't event have rowcount
+                    continue
                 self._state = DB_RES_RESULTSET_EMPTY
                 break
             elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):

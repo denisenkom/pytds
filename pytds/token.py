@@ -184,12 +184,12 @@ def tds_process_nbcrow(tds):
 #
 def tds_process_end(tds, marker):
     r = tds._reader
-    tmp = r.get_smallint()
-    state = r.get_smallint()
-    more_results = tmp & TDS_DONE_MORE_RESULTS != 0
-    was_cancelled = tmp & TDS_DONE_CANCELLED != 0
-    error = tmp & TDS_DONE_ERROR != 0
-    done_count_valid = tmp & TDS_DONE_COUNT != 0
+    status = r.get_usmallint()
+    cur_cmd = r.get_usmallint()
+    more_results = status & TDS_DONE_MORE_RESULTS != 0
+    was_cancelled = status & TDS_DONE_CANCELLED != 0
+    error = status & TDS_DONE_ERROR != 0
+    done_count_valid = status & TDS_DONE_COUNT != 0
     logger.debug('tds_process_end: more_results = {0}\n'
             '\t\twas_cancelled = {1}\n'
             '\t\terror = {2}\n'
@@ -210,7 +210,7 @@ def tds_process_end(tds, marker):
         tds.rows_affected = rows_affected
     else:
         tds.rows_affected = -1
-    return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), tmp
+    return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), status
 
 def tds_process_env_chg(tds):
     r = tds._reader
