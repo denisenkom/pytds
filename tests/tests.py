@@ -17,7 +17,7 @@ except:
 #logging.basicConfig(level='INFO')
 logging.basicConfig()
 
-conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD)
+conn = connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
 
 class TestCase(unittest.TestCase):
     def test_all(self):
@@ -381,10 +381,14 @@ class Bug2(unittest.TestCase):
     def runTest(self):
         with conn.cursor() as cur:
             val = 45
-            print 'calling proc'
             cur.execute('exec testproc @param = 45')
             self.assertEqual(cur.fetchall(), [(val,)])
             self.assertEqual(val + 1, cur.get_proc_return_status())
+
+class Bug3(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.close()
 
 if __name__ == '__main__':
     unittest.main()

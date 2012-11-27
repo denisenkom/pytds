@@ -530,7 +530,8 @@ class Cursor(object):
         return self
 
     def __exit__(self, *args):
-        self.close()
+        if self._conn is not None:
+            self.close()
 
     def __iter__(self):
         """
