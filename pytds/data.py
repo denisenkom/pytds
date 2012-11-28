@@ -121,6 +121,7 @@ def make_param(tds, name, value):
     elif isinstance(value, time):
         if IS_TDS73_PLUS(tds):
             col_type = SYBMSTIME
+            column.precision = 7
         else:
             col_type = SYBDATETIME
         size = 1
@@ -893,6 +894,17 @@ class MsDatetimeHandler(object):
     _base_date = datetime(1900, 1, 1)
     _base_date2 = datetime(1, 1, 1)
 
+    _precision_to_len = {
+            0: 3,
+            1: 3,
+            2: 3,
+            3: 4,
+            4: 4,
+            5: 5,
+            6: 5,
+            7: 5,
+            }
+
     @staticmethod
     def put_data(tds, col):
         w = tds._writer
@@ -904,8 +916,10 @@ class MsDatetimeHandler(object):
         value = col.value
         parts = []
         if col.on_server.column_type != SYBMSDATE:
-            # TODO: fix this
-            parts.append(struct.pack('<L', value.second)[:5])
+            t = value
+            secs = t.hour*60*60 + t.minute*60 + t.second
+            val = (secs * 10**7 + t.microsecond*10)/(10**(7-col.precision))
+            parts.append(struct.pack('<Q', val)[:MsDatetimeHandler._precision_to_len[col.precision]])
         if col.on_server.column_type != SYBMSTIME:
             if type(value) == date:
                 value = datetime.combine(value, time(0,0,0))
