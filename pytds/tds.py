@@ -587,7 +587,7 @@ class _TdsReader(object):
             raise Exception('Read attempt when state is TDS_DEAD')
         header = self._tds._read(_header.size)
         if len(header) < _header.size:
-            tds._pos = 0
+            self._pos = 0
             if self._tds.state != TDS_IDLE and len(header) == 0:
                 tds_close_socket(self._tds)
             raise Exception('Reading header error')
