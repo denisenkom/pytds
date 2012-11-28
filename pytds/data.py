@@ -111,6 +111,20 @@ def make_param(tds, name, value):
         col_type = SYBDATETIMN
         size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, date):
+        if IS_TDS73_PLUS(tds):
+            col_type = SYBMSDATE
+        else:
+            col_type = SYBDATETIME
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, time):
+        if IS_TDS73_PLUS(tds):
+            col_type = SYBMSTIME
+        else:
+            col_type = SYBDATETIME
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
         col_type = SYBDECIMAL
         _, digits, exp = value.as_tuple()
@@ -877,6 +891,7 @@ class MsDatetimeHandler(object):
             w.put_byte(7)
 
     _base_date = datetime(1900, 1, 1)
+    _base_date2 = datetime(1, 1, 1)
 
     @staticmethod
     def put_data(tds, col):
@@ -892,7 +907,11 @@ class MsDatetimeHandler(object):
             # TODO: fix this
             parts.append(struct.pack('<L', value.second)[:5])
         if col.on_server.column_type != SYBMSTIME:
-            parts.append(struct.pack('<l', (value - MsDatetimeHandler._base_date).days)[:3])
+            if type(value) == date:
+                value = datetime.combine(value, time(0,0,0))
+            days = (value - MsDatetimeHandler._base_date2).days
+            buf = struct.pack('<l', days)[:3]
+            parts.append(buf)
         if col.on_server.column_type == SYBMSDATETIMEOFFSET:
             parts.append(struct.pack('<H', value.utcoffset()))
         size = reduce(lambda a, b: a + len(b), parts, 0)
