@@ -123,7 +123,7 @@ def make_param(tds, name, value):
         size = 16
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     else:
-        raise Exception('NotSupportedError: Unable to determine database type')
+        raise Exception('NotSupportedError: Unable to determine database type for value: {0}'.format(repr(value)))
     column.on_server.column_type = col_type
     column.column_size = column.on_server.column_size = size
     column.value = value
