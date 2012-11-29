@@ -409,6 +409,34 @@ class DateAndTimeParams(unittest.TestCase):
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 
+class Bug4(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute('''
+            set transaction isolation level read committed
+            select 1
+            ''')
+            self.assertEqual(cur.fetchall(), [(1,)])
+
+class FixedSizeChar(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute('''
+            if object_id('testtable') is not null
+                drop table testtable
+            ''')
+            cur.execute('''
+            create table testtable (chr char(5), nchr nchar(5), bfld binary(5))
+            insert into testtable values ('1', '2', cast('3' as binary(5)))
+            ''')
+            cur.execute('select * from testtable')
+            self.assertEqual(cur.fetchall(), [('1    ', '2    ', '3\x00\x00\x00\x00')])
+    def tearDown(self):
+        with conn.cursor() as cur:
+            cur.execute('''
+            if object_id('testtable') is not null
+                drop table testtable
+            ''')
 
 if __name__ == '__main__':
     unittest.main()

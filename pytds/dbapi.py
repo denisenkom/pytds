@@ -473,7 +473,39 @@ class Connection(object):
         self._try_activate_cursor(cursor)
         tds_submit_query(tds, operation, params)
         self._state = DB_RES_INIT
-        self._sqlok()
+        while True:
+            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+
+            #
+            # The error flag may be set for any intervening DONEINPROC packet, in particular
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            #/
+            if done_flags & TDS_DONE_ERROR:
+                raise_db_exception(tds)
+                assert False
+                raise Exception('FAIL')
+            if result_type == TDS_STATUS_RESULT:
+                continue
+            elif result_type == TDS_DONEINPROC_RESULT:
+                if not done_flags & TDS_DONE_COUNT:
+                    # skip results that don't event have rowcount
+                    continue
+                self._state = DB_RES_RESULTSET_EMPTY
+                break
+            elif result_type == TDS_ROWFMT_RESULT:
+                self._state = DB_RES_RESULTSET_ROWS
+                break
+            elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                if done_flags & TDS_DONE_MORE_RESULTS:
+                    if not done_flags & TDS_DONE_COUNT:
+                        # skip results that don't event have rowcount
+                        continue
+                    self._state = DB_RES_NEXT_RESULT
+                else:
+                    self._state = DB_RES_NO_MORE_RESULTS
+                break
+            else:
+                logger.error('logic error: tds_process_tokens result_type %d', result_type);
 
     def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
@@ -504,6 +536,9 @@ class Connection(object):
                 break
             elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
                 if done_flags & TDS_DONE_MORE_RESULTS:
+                    if not done_flags & TDS_DONE_COUNT:
+                        # skip results that don't event have rowcount
+                        continue
                     self._state = DB_RES_NEXT_RESULT
                 else:
                     self._state = DB_RES_NO_MORE_RESULTS

@@ -231,6 +231,8 @@ SYBUINTN = 68		#/* 0x44 */
 SYBUNITEXT = 174	#/* 0xAE */
 SYBXML = 163		#/* 0xA3 */
 
+TDS_UT_TIMESTAMP = 80
+
 # compute operator
 SYBAOPCNT  = 0x4b
 SYBAOPCNTU = 0x4c

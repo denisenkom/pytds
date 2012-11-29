@@ -317,18 +317,17 @@ class DefaultHandler(object):
                     r.skip(discard_len)
 
             # pad (UNI)CHAR and BINARY types
-            fillchar = '\0'
-            if curcol.column_type in (SYBCHAR, XSYBCHAR) and (curcol.column_size == curcol.on_server.column_size):
-                # FIXME use client charset
-                fillchar = ' '
+            #fillchar = '\0'
+            #if curcol.column_type in (SYBCHAR, XSYBCHAR):
+            #    fillchar = ' '
             # extra handling for SYBLONGBINARY
-            if curcol.column_type == SYBLONGBINARY and curcol.column_usertype == USER_UNICHAR_TYPE or\
-                    curcol.column_type in (SYBCHAR, XSYBCHAR) and (curcol.column_size == curcol.on_server.column_size) or\
-                    curcol.column_type in (SYBBINARY, XSYBBINARY):
+            #if curcol.column_type == SYBLONGBINARY and curcol.column_usertype == USER_UNICHAR_TYPE or\
+            #        curcol.column_type in (SYBCHAR, XSYBCHAR) and (curcol.column_size == curcol.on_server.column_size) or\
+            #        curcol.column_type in (SYBBINARY, XSYBBINARY):
 
-                        if colsize < curcol.column_size:
-                            curcol.value.extend(fillchar*(curcol.column_size - colsize))
-                        colsize = curcol.column_size
+            #            if colsize < curcol.column_size:
+            #                curcol.value.extend(fillchar*(curcol.column_size - colsize))
+            #            colsize = curcol.column_size
             curcol.value = to_python(tds, curcol.value, curcol.column_type, curcol.column_size)
 
     @staticmethod
