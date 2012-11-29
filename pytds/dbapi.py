@@ -492,19 +492,22 @@ class Connection(object):
                 raise_db_exception(tds)
                 assert False
                 raise Exception('FAIL')
-            if result_type == TDS_ROWFMT_RESULT:
-                self._state = DB_RES_RESULTSET_ROWS
-                break
+            if result_type == TDS_STATUS_RESULT:
+                continue
+            elif result_type == TDS_PARAM_RESULT:
+                continue
             elif result_type == TDS_DONEINPROC_RESULT:
                 self._state = DB_RES_RESULTSET_EMPTY
+                continue
+            elif result_type == TDS_ROWFMT_RESULT:
+                self._state = DB_RES_RESULTSET_ROWS
+                break
             elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
                 if done_flags & TDS_DONE_MORE_RESULTS:
                     self._state = DB_RES_NEXT_RESULT
                 else:
                     self._state = DB_RES_NO_MORE_RESULTS
                 break
-            elif result_type == TDS_STATUS_RESULT:
-                continue
             else:
                 logger.error('logic error: tds_process_tokens result_type %d', result_type);
         logger.debug('callproc end')
