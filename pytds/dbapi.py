@@ -2,7 +2,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '0.4.0'
+__version__ = '0.5.0'
 
 import logging
 import decimal
@@ -728,9 +728,9 @@ def Date(year, month, day):
 def DateFromTicks(ticks):
     return date.fromtimestamp(ticks)
 
-def Time(hour, minute, second):
+def Time(hour, minute, second, microsecond=0):
     from datetime import time
-    return time(hour, minute, second)
+    return time(hour, minute, second, microsecond)
 
 def TimeFromTicks(ticks):
     import time

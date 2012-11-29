@@ -390,5 +390,16 @@ class Bug3(unittest.TestCase):
         with conn.cursor() as cur:
             cur.close()
 
+class DateAndTimeParams(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            date = Date(2012, 10, 6)
+            cur.execute('select %s', (date, ))
+            self.assertEqual(cur.fetchall(), [(date,)])
+            time = Time(8, 7, 4, 123456)
+            cur.execute('select %s', (time, ))
+            self.assertEqual(cur.fetchall(), [(time,)])
+
+
 if __name__ == '__main__':
     unittest.main()

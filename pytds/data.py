@@ -111,6 +111,21 @@ def make_param(tds, name, value):
         col_type = SYBDATETIMN
         size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, date):
+        if IS_TDS73_PLUS(tds):
+            col_type = SYBMSDATE
+        else:
+            col_type = SYBDATETIME
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
+    elif isinstance(value, time):
+        if IS_TDS73_PLUS(tds):
+            col_type = SYBMSTIME
+            column.precision = 7
+        else:
+            col_type = SYBDATETIME
+        size = 1
+        column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
         col_type = SYBDECIMAL
         _, digits, exp = value.as_tuple()
@@ -123,7 +138,7 @@ def make_param(tds, name, value):
         size = 16
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     else:
-        raise Exception('NotSupportedError: Unable to determine database type')
+        raise Exception('NotSupportedError: Unable to determine database type for value: {0}'.format(repr(value)))
     column.on_server.column_type = col_type
     column.column_size = column.on_server.column_size = size
     column.value = value
@@ -877,6 +892,18 @@ class MsDatetimeHandler(object):
             w.put_byte(7)
 
     _base_date = datetime(1900, 1, 1)
+    _base_date2 = datetime(1, 1, 1)
+
+    _precision_to_len = {
+            0: 3,
+            1: 3,
+            2: 3,
+            3: 4,
+            4: 4,
+            5: 5,
+            6: 5,
+            7: 5,
+            }
 
     @staticmethod
     def put_data(tds, col):
@@ -889,10 +916,16 @@ class MsDatetimeHandler(object):
         value = col.value
         parts = []
         if col.on_server.column_type != SYBMSDATE:
-            # TODO: fix this
-            parts.append(struct.pack('<L', value.second)[:5])
+            t = value
+            secs = t.hour*60*60 + t.minute*60 + t.second
+            val = (secs * 10**7 + t.microsecond*10)/(10**(7-col.precision))
+            parts.append(struct.pack('<Q', val)[:MsDatetimeHandler._precision_to_len[col.precision]])
         if col.on_server.column_type != SYBMSTIME:
-            parts.append(struct.pack('<l', (value - MsDatetimeHandler._base_date).days)[:3])
+            if type(value) == date:
+                value = datetime.combine(value, time(0,0,0))
+            days = (value - MsDatetimeHandler._base_date2).days
+            buf = struct.pack('<l', days)[:3]
+            parts.append(buf)
         if col.on_server.column_type == SYBMSDATETIMEOFFSET:
             parts.append(struct.pack('<H', value.utcoffset()))
         size = reduce(lambda a, b: a + len(b), parts, 0)
