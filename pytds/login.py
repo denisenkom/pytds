@@ -39,9 +39,9 @@ class _SspiAuthentication(object):
             identity=identity)
 
         # build SPN
-        server_name = login.server_name
-        self._sname = 'MSSQLSvc/{0}:{1}'.format(server_name, login.port)
-        self._buf = ctypes.create_string_buffer(1000)
+        primary_host_name, _, _ = socket.gethostbyname_ex(login.server_name)
+        self._sname = 'MSSQLSvc/{0}:{1}'.format(primary_host_name, login.port)
+        self._buf = ctypes.create_string_buffer(4096)
         bufs = [(sspi.SECBUFFER_TOKEN, self._buf)]
         self._flags = sspi.ISC_REQ_CONFIDENTIALITY|sspi.ISC_REQ_REPLAY_DETECT|sspi.ISC_REQ_CONNECTION
         self._ctx, status, bufs = self._cred.create_context(
@@ -90,6 +90,8 @@ def tds_connect_and_login(tds, login):
         login.port = int(instdict['tcp'])
     connect_timeout = login.connect_timeout
     tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
+    if not login.port:
+        login.port = 1433
     try:
         tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
     except socket.error as e:

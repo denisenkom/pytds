@@ -2,6 +2,7 @@ import unittest
 from pytds.sspi import *
 import settings
 import pytds
+import socket
 
 class SspiTest(unittest.TestCase):
     def test_enum_security_packages(self):
@@ -29,12 +30,14 @@ class SspiTest(unittest.TestCase):
             'Negotiate',
             SECPKG_CRED_OUTBOUND)
 
-        token_buf = create_string_buffer(400)
+        token_buf = create_string_buffer(10000)
         bufs = [(SECBUFFER_TOKEN, token_buf)]
+        host, _, _ = socket.gethostbyname_ex(settings.HOST)
+        target_name = 'MSSQLSvc/{0}:1433'.format(host)
         ctx, status, bufs = cred.create_context(
             flags=ISC_REQ_CONFIDENTIALITY|ISC_REQ_REPLAY_DETECT|ISC_REQ_CONNECTION,
-            byte_ordering='native',
-            target_name='MSSQLSvc/localhost:1433',
+            byte_ordering='network',
+            target_name=target_name,
             output_buffers=bufs)
         if status == Status.SEC_I_COMPLETE_AND_CONTINUE or status == Status.SEC_I_CONTINUE_NEEDED:
             ctx.complete_auth_token(bufs)

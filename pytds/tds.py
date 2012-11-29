@@ -908,8 +908,6 @@ class _TdsContext:
     pass
 
 def tds_open_socket(tds, host, port, timeout=0):
-    if not port:
-        port = 1433
     #tds = _Tds(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0))
     #tds._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, struct.pack('i', 1))
     #tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, struct.pack('i', 1))
