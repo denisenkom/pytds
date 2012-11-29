@@ -70,12 +70,12 @@ def make_param(tds, name, value):
         col_type = XSYBVARCHAR
         size = 1
         column.column_varint_size = tds_get_varint_size(tds, col_type)
-    elif isinstance(value, int):
+    elif isinstance(value, (int, long)):
         if -2**31 <= value <= 2**31 -1:
             col_type = SYBINTN
             size = 4
         else:
-            col_type = SYBINT8
+            col_type = SYBINTN
             size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, float):

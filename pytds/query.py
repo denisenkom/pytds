@@ -256,7 +256,7 @@ def tds_get_column_declaration(tds, curcol):
         return "SMALLINT"
     elif t == SYBINT4 or t == SYBINTN and size == 4:
         return "INT"
-    elif t == SYBINT8:
+    elif t == SYBINT8 or t == SYBINTN and size == 8:
         # TODO even for Sybase ??
         return "BIGINT"
     elif t == SYBFLT8 or t == SYBFLTN and size == 8:

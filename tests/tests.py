@@ -81,6 +81,9 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
         self._test_val(None)
         self._test_val('hello')
         self._test_val('')
+        self._test_val(2**34)
+        self._test_val(2**63 - 1)
+        self._test_val(100L)
 
 class TableTestCase(unittest.TestCase):
     def setUp(self):
@@ -437,6 +440,11 @@ class FixedSizeChar(unittest.TestCase):
             if object_id('testtable') is not null
                 drop table testtable
             ''')
+
+class EdgeCases(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute('select %s', (10**20,))
 
 if __name__ == '__main__':
     unittest.main()
