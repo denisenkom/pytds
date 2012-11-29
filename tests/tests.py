@@ -396,7 +396,12 @@ class DateAndTimeParams(unittest.TestCase):
             date = Date(2012, 10, 6)
             cur.execute('select %s', (date, ))
             self.assertEqual(cur.fetchall(), [(date,)])
+
             time = Time(8, 7, 4, 123456)
+            cur.execute('select %s', (time, ))
+            self.assertEqual(cur.fetchall(), [(time,)])
+
+            time = Timestamp(2013, 7, 9, 8, 7, 4, 123456)
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 

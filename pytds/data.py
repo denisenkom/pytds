@@ -108,23 +108,30 @@ def make_param(tds, name, value):
         size = len(value) * 2
         column.char_codec = ucs2_codec
     elif isinstance(value, datetime):
-        col_type = SYBDATETIMN
-        size = 8
+        if IS_TDS73_PLUS(tds):
+            col_type = SYBMSDATETIME2
+            column.precision = 7
+            size = 1
+        else:
+            col_type = SYBDATETIMN
+            size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, date):
         if IS_TDS73_PLUS(tds):
             col_type = SYBMSDATE
+            size = 1
         else:
-            col_type = SYBDATETIME
-        size = 1
+            col_type = SYBDATETIMN
+            size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, time):
         if IS_TDS73_PLUS(tds):
             col_type = SYBMSTIME
             column.precision = 7
+            size = 1
         else:
-            col_type = SYBDATETIME
-        size = 1
+            col_type = SYBDATETIMN
+            size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
         col_type = SYBDECIMAL
@@ -416,6 +423,8 @@ class DefaultHandler(object):
             elif column_type in (XSYBVARBINARY, XSYBBINARY):
                 w.write(value)
             elif column_type in (SYBDATETIME, SYBDATETIMN):
+                if type(value) == date:
+                    value = datetime.combine(value, time(0,0,0))
                 days = (value - MsDatetimeHandler._base_date).days
                 tm = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
                 w.write(TDS_DATETIME.pack(days, tm))
