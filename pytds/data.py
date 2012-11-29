@@ -125,13 +125,11 @@ def make_param(tds, name, value):
             size = 8
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, time):
-        if IS_TDS73_PLUS(tds):
-            col_type = SYBMSTIME
-            column.precision = 7
-            size = 1
-        else:
-            col_type = SYBDATETIMN
-            size = 8
+        if not IS_TDS73_PLUS(tds):
+            raise DataError('Time type is not supported on MSSQL 2005 and lower')
+        col_type = SYBMSTIME
+        column.precision = 7
+        size = 1
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
         col_type = SYBDECIMAL
@@ -145,7 +143,7 @@ def make_param(tds, name, value):
         size = 16
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     else:
-        raise Exception('NotSupportedError: Unable to determine database type for value: {0}'.format(repr(value)))
+        raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
     column.on_server.column_type = col_type
     column.column_size = column.on_server.column_size = size
     column.value = value
