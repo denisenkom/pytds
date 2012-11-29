@@ -48,6 +48,13 @@ token_names = {
 def tds_token_name(marker):
     return token_names.get(marker, '')
 
+def tds_process_auth(tds):
+    r = tds._reader
+    pdu_size = r.get_smallint()
+    if not tds.authentication:
+        raise Error('Got unexpected token')
+    tds.authentication.handle_next(tds, pdu_size)
+
 def tds_process_default_tokens(tds, marker):
     r = tds._reader
     logger.debug('tds_process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
@@ -405,6 +412,7 @@ def tds_process_login_tokens(tds):
             if ack == 5 or ack == 1:
                 succeed = True
             if tds.authentication:
+                tds.authentication.close()
                 tds.authentication = None
         else:
             tds_process_default_tokens(tds, marker)

@@ -1,4 +1,5 @@
 # vim: set fileencoding=utf8 :
+import sys
 import struct
 import os
 import logging
@@ -15,6 +16,62 @@ from token import *
 
 logger = logging.getLogger(__name__)
 
+class _SspiAuthentication(object):
+    def __init__(self, login):
+        import sspi
+        import ctypes
+        # parse username/password informations
+        user_name = login.user_name
+        pos = user_name.find('\\')
+        identity = None
+        if pos != -1:
+            domain = user_name[:pos]
+            user_name = user_name[pos+1:]
+            identity = sspi.make_winnt_identity(
+                domain,
+                user_name,
+                login.password)
+
+        # using Negotiate system will use proper protocol (either NTLM or Kerberos)
+        self._cred = sspi.SspiCredentials(
+            package='Negotiate',
+            use=sspi.SECPKG_CRED_OUTBOUND,
+            identity=identity)
+
+        # build SPN
+        server_name = login.server_name
+        self._sname = 'MSSQLSvc/{0}:{1}'.format(server_name, login.port)
+        self._buf = ctypes.create_string_buffer(1000)
+        bufs = [(sspi.SECBUFFER_TOKEN, self._buf)]
+        self._flags = sspi.ISC_REQ_CONFIDENTIALITY|sspi.ISC_REQ_REPLAY_DETECT|sspi.ISC_REQ_CONNECTION
+        self._ctx, status, bufs = self._cred.create_context(
+            flags=self._flags,
+            byte_ordering='network',
+            target_name=self._sname,
+            output_buffers=bufs)
+        if status == sspi.Status.SEC_I_COMPLETE_AND_CONTINUE or status == sspi.Status.SEC_I_CONTINUE_NEEDED:
+            self._ctx.complete_auth_token(bufs)
+        self.packet = bufs[0][1]
+
+    def handle_next(self, tds, length):
+        import sspi
+        r = tds._reader
+        token = r.readall(length)
+        status, buffers = self._ctx.next(
+            flags=self._flags,
+            byte_ordering='network',
+            target_name=self._sname,
+            input_buffers=[(sspi.SECBUFFER_TOKEN, token)],
+            output_buffers=[(sspi.SECBUFFER_TOKEN, self._buf)])
+        if len(buffers[0][1]) == 0:
+            return
+        w = tds._writer
+        w.write(buffers[0][1])
+        w.flush()
+    
+    def close(self):
+        self._ctx.close()
+        self._cred.close()
 
 def tds_connect_and_login(tds, login):
     tds.login = login
@@ -86,10 +143,13 @@ def tds7_send_login(tds, login):
     client_host_name = this_host_name
     packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
     auth_len = 0
-    # TODO: support sspi login
-    if False:
+    if sys.platform == 'win32':
         if user_name.find('\\') != -1 or not user_name:
-            raise NotImplementedError('sspi not implemented')
+            tds.authentication = _SspiAuthentication(tds.login)
+            auth_len = len(tds.authentication.packet)
+            packet_size += auth_len
+        else:
+            packet_size += (len(user_name) + len(login.password))*2
     else:
         if user_name.find('\\') != -1:
             raise NotImplementedError('ntlm not implemented')
@@ -108,9 +168,8 @@ def tds7_send_login(tds, login):
     if not login.bulk_copy:
         option_flag1 |= TDS_DUMPLOAD_OFF
     w.put_byte(option_flag1)
-    if False:
-        if tds.authentication:
-            option_flag2 |= TDS_INTEGRATED_SECURITY_ON
+    if tds.authentication:
+        option_flag2 |= TDS_INTEGRATED_SECURITY_ON
     w.put_byte(option_flag2)
     w.put_byte(0) # sql_type_flag
     option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING

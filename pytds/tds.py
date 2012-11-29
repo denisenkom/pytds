@@ -736,6 +736,7 @@ class _TdsSocket(object):
         self._writer = _TdsWriter(self, bufsize)
         self.conn.tds_ctx = context
         self.in_buf_max = 0
+        self.authentication = None
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
 
         # Jeff's hack, init to no timeout
@@ -799,9 +800,9 @@ def tds_alloc_socket(context, bufsize):
 
 def tds_free_socket(tds):
     if tds:
-        #if tds_conn(tds).authentication:
-        #    tds_conn(tds).authentication.free(tds, tds_conn(tds).authentication)
-        #tds_conn(tds).authentication = None
+        if tds.authentication:
+            tds.authentication.close()
+            tds.authentication = None
         #tds_free_all_results(tds)
         #tds_free_env(tds)
         #while (tds->dyns)
