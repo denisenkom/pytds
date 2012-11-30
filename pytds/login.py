@@ -73,6 +73,22 @@ class _SspiAuthentication(object):
         self._ctx.close()
         self._cred.close()
 
+class _NtlmAuth(object):
+    def __init__(self, login):
+        self._login = login
+        from ntlm import ntlm
+        self._domain, self._user = login.user_name.split('\\', 1)
+        self.packet = ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(login.client_host_name, self._domain)
+    def close(self):
+        pass
+    def handle_next(self, tds, length):
+        from ntlm import ntlm
+        packet = tds._reader.readall(length)
+        nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
+        w = tds._writer
+        w.write(ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags))
+        w.flush()
+
 def tds_connect_and_login(tds, login):
     tds.login = login
     tds.tds_version = login.tds_version
@@ -143,6 +159,7 @@ def tds7_send_login(tds, login):
         raise Error('Password should be not more than 128 characters')
     current_pos = 86 + 8 if IS_TDS72_PLUS(tds) else 86
     client_host_name = this_host_name
+    login.client_host_name = client_host_name
     packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
     auth_len = 0
     if sys.platform == 'win32':
@@ -154,7 +171,9 @@ def tds7_send_login(tds, login):
             packet_size += (len(user_name) + len(login.password))*2
     else:
         if user_name.find('\\') != -1:
-            raise NotImplementedError('ntlm not implemented')
+            tds.authentication = _NtlmAuth(tds.login)
+            auth_len = len(tds.authentication.packet)
+            packet_size += auth_len
         elif not user_name:
             raise NotImplementedError('requested GSS authentication but it is not implemented')
         else:
