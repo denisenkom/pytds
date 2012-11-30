@@ -1,7 +1,8 @@
 *.pyc
+*.py~
 *.swp
 settings.py
 build
 dist
 MANIFEST
-pytds.egg-info
+python_tds.egg-info
