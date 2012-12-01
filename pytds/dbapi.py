@@ -96,21 +96,19 @@ class Connection(object):
         if self._closed:
             raise Error('Connection is closed')
         if self.tds_socket.is_dead():
-            # clear transaction
-            self.tds_socket.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
+            self.tds_socket.tds72_transaction = None
             tds_connect_and_login(self.tds_socket, self._login)
             self._try_activate_cursor(None)
             if not self._autocommit:
-                tds_submit_begin_tran(self.tds_socket)
+                tds_submit_query(self.tds_socket, 'set implicit_transactions on')
             self._sqlok()
         return self.tds_socket
 
     def __init__(self, server, user, password,
-            charset, database, appname, port, tds_version,
+            database, appname, port, tds_version,
             as_dict, encryption_level, login_timeout, timeout, autocommit):
         self._autocommit = autocommit
         logger.debug("Connection.__init__()")
-        self._charset = ''
         self._as_dict = as_dict
         self._state = DB_RES_NO_MORE_RESULTS
         self.tds_socket = None
@@ -125,17 +123,17 @@ class Connection(object):
         if server in (".", "(local)"):
             server = "localhost"
 
-        self._login = login = tds_alloc_login(1)
+        from tds import _TdsLogin
+        self._login = login = _TdsLogin()
         # set default values for loginrec
         login.library = "Python TDS Library"
-
-        appname = appname or "pytds"
-
         login.encryption_level = encryption_level
         login.user_name = user or ''
         login.password = password or ''
-        login.app = appname
+        login.app_name = appname or 'pytds'
         login.port = port
+        login.language = '' # use database default
+        login.attach_db_file = ''
         if tds_version:
             login.tds_version = tds_version
         login.database = database
@@ -146,12 +144,6 @@ class Connection(object):
         # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
         # and ROWCOUNT to infinite
         login.option_flag2 = TDS_ODBC_ON
-
-        # Set the character set name
-        if charset:
-            _charset = charset
-            self._charset = _charset
-            login.charset = self._charset
 
         # Connect to the server
         login.server_name = server
@@ -164,31 +156,17 @@ class Connection(object):
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
 
-    def autocommit(self, status):
-        """
-        Turn autocommit ON or OFF.
-        """
-
-        if status == self._autocommit:
-            return
-
-        self.cancel()
-        if status:
-            tds_submit_rollback(self.tds_socket, False)
-        else:
-            tds_submit_begin_tran(self.tds_socket)
-        self._sqlok()
-        self._autocommit = status
-
     def commit(self):
         """
         Commit transaction which is currently in progress.
         """
-
         if self._autocommit:
             return
 
         tds = self._get_connection()
+        if not tds.tds72_transaction:
+            return
+
         try:
             self._try_activate_cursor(None)
             tds_submit_commit(tds, True)
@@ -678,7 +656,7 @@ class Cursor(object):
         pass
 
 def connect(server='.', database='', user='', password='', timeout=0,
-        login_timeout=60, charset=None, as_dict=False,
+        login_timeout=60, as_dict=False,
         host='', appname=None, port=None, tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF, autocommit=True):
     """
@@ -697,8 +675,6 @@ def connect(server='.', database='', user='', password='', timeout=0,
     :type timeout: int
     :param login_timeout: timeout for connection and login in seconds, default 60
     :type login_timeout: int
-    :param charset: character set with which to connect to the database
-    :type charset: string
     :keyword as_dict: whether rows should be returned as dictionaries instead of tuples.
     :type as_dict: boolean
     :keyword appname: Set the application name to use for the connection
@@ -722,7 +698,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
     if host:
         server = host
 
-    conn = Connection(server, user, password, charset, database,
+    conn = Connection(server, user, password, database,
         appname, port, tds_version=tds_version, as_dict=as_dict, login_timeout=login_timeout,
         timeout=timeout, encryption_level=encryption_level, autocommit=autocommit)
 

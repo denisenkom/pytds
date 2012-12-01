@@ -21,11 +21,15 @@ tds72_query_start = str(bytearray([
 
 def tds_start_query(tds):
     w = tds._writer
-    w.write(tds72_query_start[:10])
-    assert len(tds.tds72_transaction) == 8
-    w.write(tds.tds72_transaction)
-    assert len(tds72_query_start[10 + 8:]) == 4
-    w.write(tds72_query_start[10 + 8:])
+    w.put_uint(0x16) # total length
+    w.put_uint(0x12) # length
+    w.put_usmallint(2) # type
+    if tds.tds72_transaction:
+        assert len(tds.tds72_transaction) == 8
+        w.write(tds.tds72_transaction)
+    else:
+        w.write('\x00\x00\x00\x00\x00\x00\x00\x00')
+    w.put_uint(1) # request count
 
 def tds_query_flush_packet(tds):
     # TODO depend on result ??

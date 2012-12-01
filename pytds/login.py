@@ -97,7 +97,7 @@ def tds_connect_and_login(tds, login):
         # TDS 7/8 only supports little endian
         tds_conn(tds).emul_little_endian = True
     if IS_TDS7_PLUS(tds) and login.instance_name and not login.port:
-        instances = tds7_get_instances(login.ip_addr or login.server_name)
+        instances = tds7_get_instances(login.server_name)
         if login.instance_name not in instances:
             raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
         instdict = instances[login.instance_name]
@@ -109,7 +109,7 @@ def tds_connect_and_login(tds, login):
     if not login.port:
         login.port = 1433
     try:
-        tds_open_socket(tds, login.ip_addr or login.server_name, login.port, connect_timeout)
+        tds_open_socket(tds, login.server_name, login.port, connect_timeout)
     except socket.error as e:
         raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
     tds_set_state(tds, TDS_IDLE)

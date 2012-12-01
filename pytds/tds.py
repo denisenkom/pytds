@@ -895,7 +895,6 @@ def tds_alloc_login(use_environment):
     login.user_name = ''
     login.password = ''
     login.library = 'python-tds'
-    login.ip_addr = ''
     login.database = ''
     login.dump_file = ''
     login.client_charset = ''
