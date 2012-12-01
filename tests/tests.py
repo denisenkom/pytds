@@ -451,5 +451,11 @@ class EdgeCases(unittest.TestCase):
                 cur.execute('select %s', (-10**38,))
             #cur.execute('select %s', '\x00'*(2**31))
 
+class Extensions(unittest.TestCase):
+    def runTest(self):
+        with conn.cursor() as cur:
+            self.assertEqual(cur.connection, conn)
+
+
 if __name__ == '__main__':
     unittest.main()

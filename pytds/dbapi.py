@@ -30,42 +30,6 @@ DB_RES_NEXT_RESULT     = 3
 DB_RES_NO_MORE_RESULTS = 4
 DB_RES_SUCCEED         = 5
 
-def prdbresults_state(retcode):
-    if retcode == DB_RES_INIT:                 return "DB_RES_INIT"
-    elif retcode == DB_RES_RESULTSET_EMPTY:    return "DB_RES_RESULTSET_EMPTY"
-    elif retcode == DB_RES_RESULTSET_ROWS:     return "DB_RES_RESULTSET_ROWS"
-    elif retcode == DB_RES_NEXT_RESULT:        return "DB_RES_NEXT_RESULT"
-    elif retcode == DB_RES_NO_MORE_RESULTS:    return "DB_RES_NO_MORE_RESULTS"
-    elif retcode == DB_RES_SUCCEED:            return "DB_RES_SUCCEED"
-    else: return "oops: %d ??" % retcode
-
-def prretcode(retcode):
-    if retcode == TDS_SUCCESS or retcode is None:return "TDS_SUCCESS"
-    elif retcode == TDS_FAIL:                   return "TDS_FAIL"
-    elif retcode == TDS_NO_MORE_RESULTS:        return "TDS_NO_MORE_RESULTS"
-    elif retcode == TDS_CANCELLED:              return "TDS_CANCELLED"
-    else: return "oops: %u ??" % retcode
-
-
-def prresult_type(result_type):
-    if result_type == TDS_ROW_RESULT:          return "TDS_ROW_RESULT"
-    elif result_type == TDS_PARAM_RESULT:      return "TDS_PARAM_RESULT"
-    elif result_type == TDS_STATUS_RESULT:     return "TDS_STATUS_RESULT"
-    elif result_type == TDS_MSG_RESULT:        return "TDS_MSG_RESULT"
-    elif result_type == TDS_COMPUTE_RESULT:    return "TDS_COMPUTE_RESULT"
-    elif result_type == TDS_CMD_DONE:          return "TDS_CMD_DONE"
-    elif result_type == TDS_CMD_SUCCEED:       return "TDS_CMD_SUCCEED"
-    elif result_type == TDS_CMD_FAIL:          return "TDS_CMD_FAIL"
-    elif result_type == TDS_ROWFMT_RESULT:     return "TDS_ROWFMT_RESULT"
-    elif result_type == TDS_COMPUTEFMT_RESULT: return "TDS_COMPUTEFMT_RESULT"
-    elif result_type == TDS_DESCRIBE_RESULT:   return "TDS_DESCRIBE_RESULT"
-    elif result_type == TDS_DONE_RESULT:       return "TDS_DONE_RESULT"
-    elif result_type == TDS_DONEPROC_RESULT:   return "TDS_DONEPROC_RESULT"
-    elif result_type == TDS_DONEINPROC_RESULT: return "TDS_DONEINPROC_RESULT"
-    elif result_type == TDS_OTHERS_RESULT:     return "TDS_OTHERS_RESULT"
-    else: "oops: %u ??" % result_type
-
-
 class MemoryChunkedHandler(object):
     def begin(self, column, size):
         logger.debug('MemoryChunkedHandler.begin(sz=%d)', size)
@@ -592,6 +556,10 @@ class Cursor(object):
     @property
     def return_value(self):
         return self.get_proc_return_status()
+
+    @property
+    def connection(self):
+        return self._conn
 
     def get_proc_return_status(self):
         return self._conn._get_proc_return_status(self)
