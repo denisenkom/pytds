@@ -94,7 +94,7 @@ class _Connection(object):
         return self.tds_socket.product_version
 
     def _get_connection(self):
-        if self._closed:
+        if not self.tds_socket:
             raise Error('Connection is closed')
         if self.tds_socket.is_dead():
             self.tds_socket.tds72_transaction = None
@@ -110,7 +110,6 @@ class _Connection(object):
         self._as_dict = as_dict
         self._autocommit = autocommit
         self._state = DB_RES_NO_MORE_RESULTS
-        self._closed = False
         self._active_cursor = None
         from tds import _TdsSocket
         self.tds_socket = _TdsSocket(login.blocksize)
@@ -161,8 +160,8 @@ class _Connection(object):
 
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
-        if not self._closed:
-            self.close()
+        if self.tds_socket:
+            self.tds_socket.close()
 
     def cancel(self):
         """
@@ -187,13 +186,10 @@ class _Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.close()")
-        if self._closed:
+        if not self.tds_socket:
             raise Error('Connection closed')
-        self._closed = True
-        tds = self.tds_socket
-        if tds is not None:
-            tds.close()
-            self.tds_socket = None
+        self.tds_socket.close()
+        self.tds_socket = None
 
     def select_db(self, dbname):
         """

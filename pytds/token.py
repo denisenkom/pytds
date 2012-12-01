@@ -745,6 +745,8 @@ def get_api_coltype(coltype):
     else:
         return BINARY
 
+from tds import _Results
+
 #/**
 # * tds7_process_result() is the TDS 7.0 result set processing routine.  It 
 # * is responsible for populating the tds->res_info structure.
@@ -771,7 +773,7 @@ def tds7_process_result(tds):
     tds.current_results = None
     tds.rows_affected = TDS_NO_COUNT
 
-    info = tds_alloc_results(num_cols)
+    info = _Results(num_cols)
     tds.current_results = info
     if tds.cur_cursor:
         tds.cur_cursor.res_info = info
@@ -798,8 +800,9 @@ def tds7_process_result(tds):
     info.description = tuple(header_tuple)
 
     # all done now allocate a row for tds_process_row to use
-    result = tds_alloc_row(info)
-    return result
+    info.row_size = len(info.columns)
+    info.current_row = []
+    return info 
 
 def tds_get_type_info(tds, curcol):
     r = tds._reader

@@ -817,31 +817,14 @@ class _Column(object):
         return '<_Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
 
 class _Results(object):
-    pass
-
-def tds_alloc_results(num_cols):
-    res_info = _Results()
-    res_info.ref_count = 1
-    res_info.columns = []
-    for col in range(num_cols):
-        res_info.columns.append(tds_alloc_column())
-    res_info.num_cols = num_cols
-    res_info.row_size = 0
-    res_info.row_count = 0
-    return res_info
-
-def tds_alloc_column():
-    return _Column()
-
-#
-# Allocate space for row store
-# return NULL on out of memory
-#
-def tds_alloc_row(res_info):
-    # compute row size
-    res_info.row_size = len(res_info.columns)
-
-    res_info.current_row = []
+    def __init__(self, num_cols):
+        self.ref_count = 1
+        self.columns = []
+        for col in range(num_cols):
+            self.columns.append(_Column())
+        self.num_cols = num_cols
+        self.row_size = 0
+        self.row_count = 0
 
 def tds_open_socket(tds, host, port, timeout=0):
     #tds = _Tds(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0))
