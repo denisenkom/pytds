@@ -492,8 +492,15 @@ def to_python(tds, data, type, length):
         val = Decimal(val)/10000
         return val
 
-    elif type in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
-        return tds_datecrack(type, data)
+    elif type == SYBDATETIME or type == SYBDATETIMN and len(data) == 8:
+        days, time = TDS_DATETIME.unpack(data)
+        ms = time*3 % 1000
+        secs = time//300
+        return MsDatetimeHandler._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
+
+    elif type == SYBDATETIME4 or type == SYBDATETIMN and len(data) == 4:
+        days, time = TDS_DATETIME4.unpack(data)
+        return MsDatetimeHandler._base_date + timedelta(days=days, minutes=time)
 
     elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
             SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\

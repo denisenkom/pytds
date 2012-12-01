@@ -43,8 +43,6 @@ class TestCase(unittest.TestCase):
 
     def test_dates(self):
         cur = conn.cursor()
-        assert datetime(2010, 1, 2) == cur.execute_scalar("select cast('2010-01-02T00:00:00' as smalldatetime) as fieldname")
-        assert datetime(2010, 1, 2) == cur.execute_scalar("select cast('2010-01-02T00:00:00' as datetime) as fieldname")
         if IS_TDS73_PLUS(conn.tds_socket):
             self.assertEqual(date(2010, 1, 2), cur.execute_scalar("select cast('2010-01-02T00:00:00' as date) as fieldname"))
             assert time(14,16,18,123456) == cur.execute_scalar("select cast('14:16:18.1234567' as time) as fieldname")
@@ -474,6 +472,36 @@ class Extensions(unittest.TestCase):
     def runTest(self):
         with conn.cursor() as cur:
             self.assertEqual(cur.connection, conn)
+
+class SmallDateTime(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select cast(%s as smalldatetime)', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        self._testval(Timestamp(2010, 2, 1, 10, 12, 0))
+        self._testval(Timestamp(1900, 1, 1, 0, 0, 0))
+        self._testval(Timestamp(2079, 6, 6, 23, 59, 0))
+        with self.assertRaises(Error):
+            self._testval(Timestamp(1899, 1, 1, 0, 0, 0))
+        with self.assertRaises(Error):
+            self._testval(Timestamp(2080, 1, 1, 0, 0, 0))
+
+class DateTime(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select cast(%s as datetime)', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0))
+        self._testval(Timestamp(1753, 1, 1, 0, 0, 0))
+        self._testval(Timestamp(9999, 12, 31, 0, 0, 0))
+        with conn.cursor() as cur:
+            cur.execute("select cast('9999-12-31T23:59:59.997' as datetime)")
+            self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 997000),)])
+        self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 997000))
+        with self.assertRaises(Error):
+            self._testval(Timestamp(1752, 1, 1, 0, 0, 0))
 
 
 if __name__ == '__main__':
