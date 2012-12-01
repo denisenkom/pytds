@@ -154,7 +154,7 @@ def tds_process_row(tds):
     if not info:
         raise Exception('TDS_FAIL')
 
-    assert info.num_cols > 0
+    assert len(info.columns) > 0
 
     info.row_count += 1
     for i, curcol in enumerate(info.columns):
@@ -169,7 +169,7 @@ def tds_process_nbcrow(tds):
     info = tds.current_results
     if not info:
         raise Exception('TDS_FAIL')
-    assert info.num_cols > 0
+    assert len(info.columns) > 0
     info.row_count += 1
 
     # reading bitarray for nulls, 1 represent null values for
@@ -747,6 +747,7 @@ def get_api_coltype(coltype):
 
 from tds import _Results
 
+
 #/**
 # * tds7_process_result() is the TDS 7.0 result set processing routine.  It 
 # * is responsible for populating the tds->res_info structure.
@@ -773,8 +774,7 @@ def tds7_process_result(tds):
     tds.current_results = None
     tds.rows_affected = TDS_NO_COUNT
 
-    info = _Results(num_cols)
-    tds.current_results = info
+    tds.current_results = info = _Results()
     if tds.cur_cursor:
         tds.cur_cursor.res_info = info
         logger.debug("set current_results to cursor->res_info")
@@ -789,7 +789,8 @@ def tds7_process_result(tds):
     logger.debug("setting up {0} columns".format(num_cols))
     header_tuple = []
     for col in range(num_cols):
-        curcol = info.columns[col]
+        curcol = _Column()
+        info.columns.append(curcol)
         tds7_get_data_info(tds, curcol)
         coltype = get_api_coltype(curcol.column_type)
         precision = curcol.column_prec if hasattr(curcol, 'column_prec') else None
@@ -798,10 +799,6 @@ def tds7_process_result(tds):
     info.native_descr = tuple((col.column_name, col.column_type)
             for col in tds.res_info.columns)
     info.description = tuple(header_tuple)
-
-    # all done now allocate a row for tds_process_row to use
-    info.row_size = len(info.columns)
-    info.current_row = []
     return info 
 
 def tds_get_type_info(tds, curcol):

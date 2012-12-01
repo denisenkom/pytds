@@ -808,8 +808,6 @@ class _Column(object):
     def __init__(self):
         self.on_server = _OnServer()
         self.char_codec = None
-        self.column_nullbind = None
-        self.column_varaddr = 0
         self.column_name = ''
         self.value = None
 
@@ -817,13 +815,8 @@ class _Column(object):
         return '<_Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
 
 class _Results(object):
-    def __init__(self, num_cols):
-        self.ref_count = 1
+    def __init__(self):
         self.columns = []
-        for col in range(num_cols):
-            self.columns.append(_Column())
-        self.num_cols = num_cols
-        self.row_size = 0
         self.row_count = 0
 
 def tds_open_socket(tds, host, port, timeout=0):
