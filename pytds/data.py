@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, date, time, timedelta, tzinfo
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import uuid
 from tds import *
 from tds import _Column
@@ -139,11 +139,20 @@ def make_param(tds, name, value):
         size = 1
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
+        if not (-10**38+1 <= value <= 10**38-1):
+            raise DataError('Decimal value is out of range')
+        value = value.normalize()
         col_type = SYBDECIMAL
+        size = 1
         _, digits, exp = value.as_tuple()
-        size = 12
-        column.column_scale = -exp
-        column.column_prec = max(len(digits), column.column_scale)
+        if exp > 0:
+            column.column_scale = 0
+            column.column_prec = len(digits) + exp
+        else:
+            column.column_scale = -exp
+            column.column_prec = max(len(digits), column.column_scale)
+        if column.column_prec > 38:
+            raise DataError('Precision of decimal value is out of range')
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, uuid.UUID):
         col_type = SYBUNIQUE
@@ -430,7 +439,7 @@ class DefaultHandler(object):
                 if type(value) == date:
                     value = datetime.combine(value, time(0,0,0))
                 days = (value - MsDatetimeHandler._base_date).days
-                tm = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond/1000/3
+                tm = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + value.microsecond//1000//3
                 w.write(TDS_DATETIME.pack(days, tm))
             elif column_type == SYBFLTN and size == 8 or column_type == SYBFLT8:
                 w.write(_SYBFLT8_STRUCT.pack(value))
@@ -515,9 +524,11 @@ class NumericHandler(object):
     def ms_parse_numeric(positive, buf, scale):
         val = reduce(lambda acc, val: acc*256 + ord(val), reversed(buf), 0)
         val = Decimal(val)
-        if not positive:
-            val *= -1
-        val /= 10 ** scale
+        with localcontext() as ctx:
+            ctx.prec = 38
+            if not positive:
+                val *= -1
+            val /= 10 ** scale
         return val
 
     @staticmethod
@@ -583,13 +594,15 @@ class NumericHandler(object):
         val = col.value
         positive = 1 if val > 0 else 0
         w.put_byte(positive) # sign
-        if not positive:
-            val *= -1
-        size -= 1
-        val = long(val * (10 ** scale))
+        with localcontext() as ctx:
+            ctx.prec = 38
+            if not positive:
+                val *= -1
+            size -= 1
+            val = long(val * (10 ** scale))
         for i in range(size):
             w.put_byte(val % 256)
-            val /= 256
+            val //= 256
         assert val == 0
 
 #
@@ -885,17 +898,17 @@ class MsDatetimeHandler(object):
             tz = FixedOffset(offset, '')
 
         if col.column_type == SYBMSTIME:
-            hours = nanoseconds/1000000000/60/60
+            hours = nanoseconds//1000000000//60//60
             nanoseconds -= hours*60*60*1000000000
-            minutes = nanoseconds/1000000000/60
+            minutes = nanoseconds/1000000000//60
             nanoseconds -= minutes*60*1000000000
-            seconds = nanoseconds/1000000000
+            seconds = nanoseconds//1000000000
             nanoseconds -= seconds*1000000000
-            col.value = time(hours, minutes, seconds, nanoseconds/1000)
+            col.value = time(hours, minutes, seconds, nanoseconds//1000)
         elif col.column_type == SYBMSDATE:
             col.value = date(1900, 1, 1) + timedelta(days=days)
         else:
-            col.value = datetime(1900, 1, 1, tzinfo=tz) + timedelta(days=days, microseconds=nanoseconds/1000)
+            col.value = datetime(1900, 1, 1, tzinfo=tz) + timedelta(days=days, microseconds=nanoseconds//1000)
 
     @staticmethod
     def put_info(tds, col):
@@ -931,7 +944,7 @@ class MsDatetimeHandler(object):
         if col.on_server.column_type != SYBMSDATE:
             t = value
             secs = t.hour*60*60 + t.minute*60 + t.second
-            val = (secs * 10**7 + t.microsecond*10)/(10**(7-col.precision))
+            val = (secs * 10**7 + t.microsecond*10)//(10**(7-col.precision))
             parts.append(struct.pack('<Q', val)[:MsDatetimeHandler._precision_to_len[col.precision]])
         if col.on_server.column_type != SYBMSTIME:
             if type(value) == date:

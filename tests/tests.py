@@ -1,11 +1,14 @@
 # vim: set fileencoding=utf8 :
 import unittest
 import sys
-from decimal import Decimal
+from decimal import Decimal, getcontext
 import logging
 from datetime import datetime, date, time
 from pytds import *
 from pytds.tds import *
+
+# set decimal precision to match mssql maximum precision
+getcontext().prec = 38
 
 try:
     import settings
@@ -59,7 +62,7 @@ class TestCase(unittest.TestCase):
         cur = conn.cursor()
         assert Decimal('0') == cur.execute_scalar("select cast('0' as money) as fieldname")
         assert Decimal('1') == cur.execute_scalar("select cast('1' as money) as fieldname")
-        assert Decimal('1.5555') == cur.execute_scalar("select cast('1.5555' as money) as fieldname")
+        self.assertEqual(Decimal('1.5555'), cur.execute_scalar("select cast('1.5555' as money) as fieldname"))
         assert Decimal('1234567.5555') == cur.execute_scalar("select cast('1234567.5555' as money) as fieldname")
         assert Decimal('-1234567.5555') == cur.execute_scalar("select cast('-1234567.5555' as money) as fieldname")
         assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
@@ -442,14 +445,30 @@ class FixedSizeChar(unittest.TestCase):
             ''')
 
 class EdgeCases(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select %s', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
         with conn.cursor() as cur:
-            cur.execute('select %s', (10**20,))
-            cur.execute('select %s', (10**38-1,))
-            cur.execute('select %s', (-10**38+1,))
+            self._testval(10**20)
+            self._testval(10**38-1)
+            self._testval(-10**38+1)
             with self.assertRaises(DataError):
-                cur.execute('select %s', (-10**38,))
-            #cur.execute('select %s', '\x00'*(2**31))
+                self._testval(-10**38)
+            ##cur.execute('select %s', '\x00'*(2**31))
+            self._testval(Decimal('9'*38))
+            self._testval(Decimal('0.'+'9'*38))
+            self._testval(-Decimal('9'*38))
+            self._testval(Decimal('1E10'))
+            self._testval(Decimal('1E-10'))
+            self._testval(Decimal('0.{0}1'.format('0'*37)))
+            with self.assertRaises(DataError):
+                self._testval(Decimal('1' + '0'*38))
+            with self.assertRaises(DataError):
+                self._testval(Decimal('-1' + '0'*38))
+            with self.assertRaises(DataError):
+                self._testval(Decimal('1E38'))
 
 class Extensions(unittest.TestCase):
     def runTest(self):
