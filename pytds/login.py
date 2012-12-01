@@ -76,13 +76,13 @@ class _SspiAuthentication(object):
 class _NtlmAuth(object):
     def __init__(self, login):
         self._login = login
-        from ntlm import ntlm
+        import ntlm
         self._domain, self._user = login.user_name.split('\\', 1)
         self.packet = ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(login.client_host_name, self._domain)
     def close(self):
         pass
     def handle_next(self, tds, length):
-        from ntlm import ntlm
+        import ntlm
         packet = tds._reader.readall(length)
         nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
         w = tds._writer
