@@ -74,9 +74,16 @@ def make_param(tds, name, value):
         if -2**31 <= value <= 2**31 -1:
             col_type = SYBINTN
             size = 4
-        else:
+        elif -2**63 <= value <= 2*63-1:
             col_type = SYBINTN
             size = 8
+        elif -10**38+1 <= value <= 10**38-1:
+            col_type = SYBDECIMAL
+            size = 1
+            column.column_scale = 0
+            column.column_prec = 38
+        else:
+            raise DataError('Numeric value out or range')
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, float):
         col_type = SYBFLTN

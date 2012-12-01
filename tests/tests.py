@@ -445,6 +445,11 @@ class EdgeCases(unittest.TestCase):
     def runTest(self):
         with conn.cursor() as cur:
             cur.execute('select %s', (10**20,))
+            cur.execute('select %s', (10**38-1,))
+            cur.execute('select %s', (-10**38+1,))
+            with self.assertRaises(DataError):
+                cur.execute('select %s', (-10**38,))
+            #cur.execute('select %s', '\x00'*(2**31))
 
 if __name__ == '__main__':
     unittest.main()
