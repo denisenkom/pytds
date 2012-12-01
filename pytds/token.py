@@ -764,7 +764,11 @@ def tds7_process_result(tds):
         logger.debug("no meta data")
         return TDS_SUCCESS
 
-    tds_free_all_results(tds)
+    tds.res_info = None
+    tds.param_info = None
+    tds.has_status = False
+    tds.ret_status = False
+    tds.current_results = None
     tds.rows_affected = TDS_NO_COUNT
 
     info = tds_alloc_results(num_cols)

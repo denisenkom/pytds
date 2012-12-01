@@ -421,7 +421,6 @@ def tds_set_state(tds, state):
             tds_mutex_unlock(tds.wire_mtx)
         tds.state = state
     elif state == TDS_QUERYING:
-        #check_tds_extra(tds)
         if tds_mutex_trylock(tds.wire_mtx):
             return tds.state
         if tds.state == TDS_DEAD:
@@ -433,14 +432,11 @@ def tds_set_state(tds, state):
             logger.error('logic error: cannot change query state from {0} to {1}'.\
                     format(state_names[prior_state], state_names[state]))
         else:
-            #tds_free_all_results(tds)
             tds.rows_affected = TDS_NO_COUNT
-            #tds_release_cursor
             tds.internal_sp_called = 0
             tds.state = state
     else:
         assert False
-    #check_tds_extra(tds)
     return tds.state
 
 def tds_mutex_trylock(mutex):
@@ -803,18 +799,6 @@ class _TdsSocket(object):
             tds_conn(self).s_signal.close()
         if tds_conn(self).s_signaled is not None:
             tds_conn(self).s_signaled.close()
-
-
-def tds_free_all_results(tds):
-    logger.debug("tds_free_all_results()")
-    if tds.current_results is tds.res_info:
-        tds.current_results = None
-    tds.res_info = None
-    if tds.current_results is tds.param_info:
-        tds.current_results = None
-    tds.param_info = None
-    tds.has_status = 0
-    tds.ret_status = 0
 
 class _OnServer(object):
     def __init__(self):
