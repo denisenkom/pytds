@@ -8,7 +8,6 @@ import logging
 import decimal
 import re
 from tds import *
-from tds import _TdsContext
 from login import *
 from query import *
 
@@ -41,6 +40,8 @@ class MemoryChunkedHandler(object):
     def end(self):
         return self.sio.getvalue()
 
+class _TdsLogin:
+    pass
 
 ######################
 ## Connection class ##
@@ -123,7 +124,6 @@ class Connection(object):
         if server in (".", "(local)"):
             server = "localhost"
 
-        from tds import _TdsLogin
         self._login = login = _TdsLogin()
         # set default values for loginrec
         login.library = "Python TDS Library"
@@ -137,6 +137,10 @@ class Connection(object):
         if tds_version:
             login.tds_version = tds_version
         login.database = database
+        login.emul_little_endian = False
+        login.bulk_copy = False
+        login.text_size = 0
+        login.client_lcid = lcid.LANGID_ENGLISH_US
 
         # that will set:
         # ANSI_DEFAULTS to ON,
@@ -145,16 +149,14 @@ class Connection(object):
         # and ROWCOUNT to infinite
         login.option_flag2 = TDS_ODBC_ON
 
+        login.connect_timeout = login_timeout
+        login.query_timeout = timeout
+
         # Connect to the server
         login.server_name = server
         login.instance_name = instance
-        ctx = _TdsContext()
-        ctx.int_handler = self._int_handler
-        self.tds_socket = tds_alloc_socket(ctx, 512)
+        self.tds_socket = tds_alloc_socket(512)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()
-
-        login.connect_timeout = login_timeout
-        login.query_timeout = timeout
 
     def commit(self):
         """
@@ -199,12 +201,10 @@ class Connection(object):
             while self._nextset(None):
                 pass
 
-    def _int_handler(self):
-        raise Exception('not implemented')
-
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
-        self.close()
+        if not self._closed:
+            self.close()
 
     def cancel(self):
         """

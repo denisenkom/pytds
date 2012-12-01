@@ -715,7 +715,7 @@ class _TdsWriter(object):
         self._pos = 8
 
 class _TdsSocket(object):
-    def __init__(self, context, bufsize):
+    def __init__(self, bufsize):
         self.conn = _TdsConn()
         self.out_pos = 8
         self.login = None
@@ -729,12 +729,11 @@ class _TdsSocket(object):
         self.param_info = None
         self.cur_cursor = None
         self.collation = None
-        self.tds72_transaction = '\x00\x00\x00\x00\x00\x00\x00\x00'
+        self.tds72_transaction = None
         self.has_status = False
         self.messages = []
         self._reader = _TdsReader(self)
         self._writer = _TdsWriter(self, bufsize)
-        self.conn.tds_ctx = context
         self.in_buf_max = 0
         self.authentication = None
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
@@ -795,8 +794,8 @@ class _TdsSocket(object):
             self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
 
 
-def tds_alloc_socket(context, bufsize):
-    return _TdsSocket(context, bufsize)
+def tds_alloc_socket(bufsize):
+    return _TdsSocket(bufsize)
 
 def tds_free_socket(tds):
     if tds:
@@ -872,39 +871,6 @@ def tds_alloc_row(res_info):
     res_info.row_size = len(res_info.columns)
 
     res_info.current_row = []
-
-class _TdsLogin:
-    def __init__(self):
-        self.option_flag2 = 0
-        self.tds_version = None
-        self.emul_little_endian = False
-        self.port = 1433
-        self.block_size = 4096
-        self.bulk_copy = False
-        self.text_size = 0
-        self.encryption_level = 0
-        self.client_lcid = lcid.LANGID_ENGLISH_US
-
-def tds_alloc_login(use_environment):
-    login = _TdsLogin()
-    login.server_name = ''
-    login.language = '' # if empty use database default
-    login.server_charset = ''
-    login.server_host_name = ''
-    login.app_name = ''
-    login.user_name = ''
-    login.password = ''
-    login.library = 'python-tds'
-    login.database = ''
-    login.dump_file = ''
-    login.client_charset = ''
-    login.instance_name = ''
-    login.server_realm_name = ''
-    login.attach_db_file = ''
-    return login
-
-class _TdsContext:
-    pass
 
 def tds_open_socket(tds, host, port, timeout=0):
     #tds = _Tds(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0))
