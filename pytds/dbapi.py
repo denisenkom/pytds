@@ -46,7 +46,7 @@ class _TdsLogin:
 ######################
 ## Connection class ##
 ######################
-class Connection(object):
+class _Connection(object):
     @property
     def as_dict(self):
         """
@@ -105,57 +105,15 @@ class Connection(object):
             self._sqlok()
         return self.tds_socket
 
-    def __init__(self, server, user, password,
-            database, appname, port, tds_version,
-            as_dict, encryption_level, login_timeout, timeout, autocommit):
-        self._autocommit = autocommit
-        logger.debug("Connection.__init__()")
+    def __init__(self, login, as_dict, autocommit):
+        self._login = login
         self._as_dict = as_dict
+        self._autocommit = autocommit
         self._state = DB_RES_NO_MORE_RESULTS
-        self.tds_socket = None
         self._closed = False
         self._active_cursor = None
-
-        # support MS methods of connecting locally
-        instance = ""
-        if "\\" in server:
-            server, instance = server.split("\\")
-
-        if server in (".", "(local)"):
-            server = "localhost"
-
-        self._login = login = _TdsLogin()
-        # set default values for loginrec
-        login.library = "Python TDS Library"
-        login.encryption_level = encryption_level
-        login.user_name = user or ''
-        login.password = password or ''
-        login.app_name = appname or 'pytds'
-        login.port = port
-        login.language = '' # use database default
-        login.attach_db_file = ''
-        if tds_version:
-            login.tds_version = tds_version
-        login.database = database
-        login.emul_little_endian = False
-        login.bulk_copy = False
-        login.text_size = 0
-        login.client_lcid = lcid.LANGID_ENGLISH_US
-
-        # that will set:
-        # ANSI_DEFAULTS to ON,
-        # IMPLICIT_TRANSACTIONS to OFF,
-        # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
-        # and ROWCOUNT to infinite
-        login.option_flag2 = TDS_ODBC_ON
-
-        login.connect_timeout = login_timeout
-        login.query_timeout = timeout
-
-        # Connect to the server
-        login.server_name = server
-        login.instance_name = instance
-        self.tds_socket = tds_alloc_socket(512)
+        from tds import _TdsSocket
+        self.tds_socket = _TdsSocket(login.blocksize)
         self.tds_socket.chunk_handler = MemoryChunkedHandler()
 
     def commit(self):
@@ -183,7 +141,7 @@ class Connection(object):
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
-        return Cursor(self)
+        return _Cursor(self)
 
     def rollback(self):
         """
@@ -234,8 +192,8 @@ class Connection(object):
         self._closed = True
         tds = self.tds_socket
         if tds is not None:
-            tds_close_socket(tds)
-            tds_free_socket(tds)
+            tds.close()
+            self.tds_socket = None
 
     def select_db(self, dbname):
         """
@@ -496,7 +454,7 @@ class Connection(object):
 ##################
 ## Cursor class ##
 ##################
-class Cursor(object):
+class _Cursor(object):
     """
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
@@ -658,7 +616,8 @@ class Cursor(object):
 def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, as_dict=False,
         host='', appname=None, port=None, tds_version=TDS74,
-        encryption_level=TDS_ENCRYPTION_OFF, autocommit=True):
+        encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
+        blocksize=4096):
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
@@ -698,11 +657,43 @@ def connect(server='.', database='', user='', password='', timeout=0,
     if host:
         server = host
 
-    conn = Connection(server, user, password, database,
-        appname, port, tds_version=tds_version, as_dict=as_dict, login_timeout=login_timeout,
-        timeout=timeout, encryption_level=encryption_level, autocommit=autocommit)
+    # support MS methods of connecting locally
+    instance = ""
+    if "\\" in server:
+        server, instance = server.split("\\")
 
-    return conn
+    if server in (".", "(local)"):
+        server = "localhost"
+
+    login = _TdsLogin()
+    login.library = "Python TDS Library"
+    login.encryption_level = encryption_level
+    login.user_name = user or ''
+    login.password = password or ''
+    login.app_name = appname or 'pytds'
+    login.port = port
+    login.language = '' # use database default
+    login.attach_db_file = ''
+    login.tds_version = tds_version
+    login.database = database
+    login.emul_little_endian = False
+    login.bulk_copy = False
+    login.text_size = 0
+    login.client_lcid = lcid.LANGID_ENGLISH_US
+
+    # that will set:
+    # ANSI_DEFAULTS to ON,
+    # IMPLICIT_TRANSACTIONS to OFF,
+    # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
+    # and ROWCOUNT to infinite
+    login.option_flag2 = TDS_ODBC_ON
+
+    login.connect_timeout = login_timeout
+    login.query_timeout = timeout
+    login.server_name = server
+    login.instance_name = instance
+    login.blocksize = blocksize
+    return _Connection(login, as_dict, autocommit)
 
 def Date(year, month, day):
     return date(year, month, day)

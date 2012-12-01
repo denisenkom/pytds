@@ -793,30 +793,17 @@ class _TdsSocket(object):
             self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
             self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
 
+    def close(self):
+        tds_close_socket(self)
+        if self.authentication:
+            self.authentication.close()
+            self.authentication = None
+        tds_ssl_deinit(self)
+        if tds_conn(self).s_signal is not None:
+            tds_conn(self).s_signal.close()
+        if tds_conn(self).s_signaled is not None:
+            tds_conn(self).s_signaled.close()
 
-def tds_alloc_socket(bufsize):
-    return _TdsSocket(bufsize)
-
-def tds_free_socket(tds):
-    if tds:
-        if tds.authentication:
-            tds.authentication.close()
-            tds.authentication = None
-        #tds_free_all_results(tds)
-        #tds_free_env(tds)
-        #while (tds->dyns)
-        #    tds_free_dynamic(tds, tds->dyns);
-        #while (tds->cursors)
-        #    tds_cursor_deallocated(tds, tds->cursors);
-        #free(tds->in_buf)
-        tds_ssl_deinit(tds)
-        tds_close_socket(tds);
-        if tds_conn(tds).s_signal is not None:
-            tds_conn(tds).s_signal.close()
-        if tds_conn(tds).s_signaled is not None:
-            tds_conn(tds).s_signaled.close()
-        #free(tds_conn(tds)->product_name);
-        #free(tds);
 
 def tds_free_all_results(tds):
     logger.debug("tds_free_all_results()")
