@@ -14,7 +14,10 @@
 import struct
 import base64
 import string
-import pyDes
+try:
+    import pyDes
+except:
+    raise Exception('To use ntlm authentication you should install pyDes module: pip install pydes')
 import hashlib
 import hmac
 import random
