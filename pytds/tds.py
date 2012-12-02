@@ -732,13 +732,8 @@ class _TdsSocket(object):
         if tds_conn(self).s_signaled is not None:
             tds_conn(self).s_signaled.close()
 
-class _OnServer(object):
-    def __init__(self):
-        self.column_type = None
-
 class _Column(object):
     def __init__(self):
-        self.on_server = _OnServer()
         self.char_codec = None
         self.column_name = ''
         self.value = None

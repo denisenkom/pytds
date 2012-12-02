@@ -740,7 +740,9 @@ def get_api_coltype(coltype):
         return DECIMAL
     elif coltype in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
         return DATETIME
-    elif coltype in (SYBVARCHAR, SYBCHAR, SYBTEXT):
+    elif coltype in (SYBVARCHAR, SYBCHAR, SYBTEXT,
+        XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
+        XSYBVARCHAR, XSYBCHAR):
         return STRING
     else:
         return BINARY
@@ -828,7 +830,7 @@ def tds7_get_data_info(tds, curcol):
     tds_get_type_info(tds, curcol)
 
     # Adjust column size according to client's encoding
-    #curcol.on_server.column_size = curcol.column_size
+    #curcol.column_size = curcol.column_size
 
     # NOTE adjustements must be done after curcol.char_codec initialization
     adjust_character_column_size(tds, curcol)
@@ -839,38 +841,28 @@ def tds7_get_data_info(tds, curcol):
     #
     curcol.column_name = r.read_ucs2(r.get_byte())
 
-    logger.debug("tds7_get_data_info: \n"
-                "\tcolname = %s (%d bytes)\n"
-                "\ttype = %d (%s)\n"
-                "\tserver's type = %d (%s)\n"
-                "\tcolumn_varint_size = %d" % (
-                curcol.column_name, len(curcol.column_name), 
-                curcol.column_type, tds_prtype(curcol.column_type),
-                curcol.on_server.column_type, tds_prtype(curcol.on_server.column_type),
-                curcol.column_varint_size))
-
     return TDS_SUCCESS
 
 #
 # Adjust column size according to client's encoding 
 #
 def adjust_character_column_size(tds, curcol):
-    if is_unicode_type(curcol.on_server.column_type):
+    if is_unicode_type(curcol.column_type):
         curcol.char_codec = ucs2_codec
 
     # Sybase UNI(VAR)CHAR fields are transmitted via SYBLONGBINARY and in UTF-16
-    if curcol.on_server.column_type == SYBLONGBINARY and \
+    if curcol.column_type == SYBLONGBINARY and \
             curcol.column_usertype in (USER_UNICHAR_TYPE, USER_UNIVARCHAR_TYPE):
 
         curcol.char_codec = ucs2_codec
     # FIXME: and sybase ??
-    if not curcol.char_codec and IS_TDS7_PLUS(tds) and is_ascii_type(curcol.on_server.column_type):
+    if not curcol.char_codec and IS_TDS7_PLUS(tds) and is_ascii_type(curcol.column_type):
         curcol.char_codec = tds.collation.get_codec()
 
     if not curcol.char_codec:
         return
 
-    curcol.on_server.column_size = curcol.column_size;
+    curcol.column_size = curcol.column_size;
     curcol.column_size = determine_adjusted_size(curcol.char_codec, curcol.column_size)
 
 def determine_adjusted_size(char_codec, column_size):

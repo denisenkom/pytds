@@ -148,7 +148,7 @@ def tds_submit_query(tds, query, params=(), flags=0):
         else:
             params = convert_params(tds, params)
             param_definition = ','.join('{0} {1}'.format(\
-                    p.column_name, tds_get_column_declaration(tds, p))
+                    p.column_name, p.funcs.get_declaration(tds, p))
                 for p in params)
             _submit_rpc(tds, SP_EXECUTESQL,\
                     [query, param_definition] + params, 0)
@@ -226,7 +226,7 @@ def tds_put_data_info(tds, curcol):
     if not IS_TDS7_PLUS(tds):
         w.put_int(curcol.column_usertype) # usertype
     # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
-    w.put_byte(curcol.on_server.column_type)
+    w.put_byte(curcol.column_type)
 
     curcol.funcs.put_info(tds, curcol)
 
@@ -234,97 +234,6 @@ def tds_put_data_info(tds, curcol):
     if not IS_TDS7_PLUS(tds):
         w.put_byte(0) # locale info length
 
-#
-# Return declaration for column (like "varchar(20)")
-# \param tds    state information for the socket and the TDS protocol
-# \param curcol column
-# \param out    buffer to hold declaration
-# \return TDS_FAIL or TDS_SUCCESS
-#
-def tds_get_column_declaration(tds, curcol):
-    max_len = 8000 if IS_TDS7_PLUS(tds) else 255
-
-    size = tds_fix_column_size(tds, curcol)
-    t = curcol.on_server.column_type #tds_get_conversion_type(curcol.on_server.column_type, curcol.on_server.column_size)
-
-    if t in (XSYBCHAR, SYBCHAR):
-        return "CHAR(%d)" % min(size, max_len)
-    elif t in (SYBVARCHAR, XSYBVARCHAR):
-        if curcol.column_varint_size == 8:
-            return "VARCHAR(MAX)"
-        else:
-            return "VARCHAR(%d)" % min(size, max_len)
-    elif t == SYBINT1:
-        return "TINYINT"
-    elif t == SYBINT2:
-        return "SMALLINT"
-    elif t == SYBINT4 or t == SYBINTN and size == 4:
-        return "INT"
-    elif t == SYBINT8 or t == SYBINTN and size == 8:
-        # TODO even for Sybase ??
-        return "BIGINT"
-    elif t == SYBFLT8 or t == SYBFLTN and size == 8:
-        return "FLOAT"
-    elif t == SYBDATETIME or t == SYBDATETIMN and size == 8:
-        return "DATETIME"
-    elif t == SYBBIT:
-        return "BIT"
-    elif t == SYBTEXT:
-        return "TEXT"
-    elif t == (SYBLONGBINARY, # TODO correct ??
-            SYBIMAGE):
-        return "IMAGE"
-    elif t == SYBMONEY4:
-        return "SMALLMONEY"
-    elif t == SYBMONEY:
-        return "MONEY"
-    elif t == SYBDATETIME4 or t == SYBDATETIMN and size == 4:
-        return "SMALLDATETIME"
-    elif t == SYBREAL:
-        return "REAL"
-    elif t in (SYBBINARY, XSYBBINARY):
-        return "BINARY(%d)" % min(size, max_len)
-    elif t in (SYBVARBINARY, XSYBVARBINARY):
-        if curcol.column_varint_size == 8:
-            return "VARBINARY(MAX)"
-        else:
-            return "VARBINARY(%u)" % min(size, max_len)
-    elif t == SYBNUMERIC:
-        return "NUMERIC(%d,%d)" % (curcol.column_prec, curcol.column_scale)
-    elif t == SYBDECIMAL:
-        return "DECIMAL(%d,%d)" % (curcol.column_prec, curcol.column_scale)
-    elif t == SYBUNIQUE:
-        if IS_TDS7_PLUS(tds):
-            return "UNIQUEIDENTIFIER"
-    elif t == SYBNTEXT:
-        if IS_TDS7_PLUS(tds):
-            return "NTEXT"
-    elif t in (SYBNVARCHAR, XSYBNVARCHAR):
-        if curcol.column_varint_size == 8:
-            return "NVARCHAR(MAX)"
-        elif IS_TDS7_PLUS(tds):
-            return "NVARCHAR(%u)" % min(size/2, 4000)
-    elif t == XSYBNCHAR:
-        if IS_TDS7_PLUS(tds):
-            return "NCHAR(%u)" % min(size/2, 4000)
-    elif t == SYBVARIANT:
-        if IS_TDS7_PLUS(tds):
-            return "SQL_VARIANT"
-    # TODO support scale !!
-    elif t == SYBMSTIME:
-        return "TIME"
-    elif t == SYBMSDATE:
-        return "DATE"
-    elif t == SYBMSDATETIME2:
-        return "DATETIME2"
-    elif t == SYBMSDATETIMEOFFSET:
-        return "DATETIMEOFFSET"
-    # nullable types should not occur here...
-    elif t in (SYBMONEYN, SYBDATETIMN, SYBBITN):
-        assert False
-        # TODO...
-    else:
-        raise Exception("Unknown type %d", t)
 
 def tds_submit_begin_tran(tds):
     logger.debug('tds_submit_begin_tran()')
