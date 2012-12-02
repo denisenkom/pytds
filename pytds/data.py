@@ -121,7 +121,7 @@ def make_param(tds, name, value):
                 col_type = SYBMSDATETIMEOFFSET
             else:
                 col_type = SYBMSDATETIME2
-            column.precision = 7
+            column.precision = 6
             size = 1
         else:
             col_type = SYBDATETIMN
@@ -142,7 +142,7 @@ def make_param(tds, name, value):
             col_type = SYBMSDATETIMEOFFSET
         else:
             col_type = SYBMSTIME
-        column.precision = 7
+        column.precision = 6
         size = 1
         column.column_varint_size = tds_get_varint_size(tds, col_type)
     elif isinstance(value, Decimal):
@@ -247,8 +247,8 @@ class DefaultHandler(object):
                     val = decoder.decode(val)
                 chunk_handler.new_chunk(val)
 
-    @staticmethod
-    def get_data(tds, curcol):
+    @classmethod
+    def get_data(cls, tds, curcol):
         logger.debug("tds_get_data: type %d, varint size %d" % (curcol.column_type, curcol.column_varint_size))
         r = tds._reader
         cvs = curcol.column_varint_size
@@ -273,8 +273,7 @@ class DefaultHandler(object):
             if colsize == 0:
                 colsize = -1;
         elif cvs == 8:
-            curcol.value = DefaultHandler._tds72_get_varmax(tds, curcol)
-            return
+            return cls._tds72_get_varmax(tds, curcol)
         elif cvs == 2:
             colsize = r.get_smallint()
         elif cvs == 1:
@@ -292,8 +291,7 @@ class DefaultHandler(object):
         logger.debug("tds_get_data(): wire column size is %d" % colsize)
         # set NULL flag in the row buffer
         if colsize < 0:
-            curcol.value = None
-            return
+            return None
 
         #
         # We're now set to read the data from the wire.
@@ -308,24 +306,23 @@ class DefaultHandler(object):
             # TODO this can lead to a big waste of memory
             new_blob_size = colsize
             if new_blob_size == 0:
-                curcol.value = ''
-                return
+                return ''
 
             # read the data
             if curcol.char_codec:
-                curcol.value = tds_get_char_data(tds, colsize, curcol)
+                return tds_get_char_data(tds, colsize, curcol)
             else:
                 assert colsize == new_blob_size
-                curcol.value = r.readall(colsize)
+                return r.readall(colsize)
         else: # non-numeric and non-blob
             if curcol.char_codec:
                 if colsize == 0:
-                    curcol.value = u''
+                    value = u''
                 elif curcol.char_codec:
-                    curcol.value = curcol.char_codec.decode(r.readall(colsize))[0]
+                    value = curcol.char_codec.decode(r.readall(colsize))[0]
                 else:
-                    curcol.value = r.readall(colsize)
-                curcol.cur_size = len(curcol.value)
+                    value = r.readall(colsize)
+                curcol.cur_size = len(value)
             else:
                 #
                 # special case, some servers seem to return more data in some conditions 
@@ -335,7 +332,7 @@ class DefaultHandler(object):
                 if colsize > curcol.column_size:
                     discard_len = colsize - curcol.column_size
                     colsize = curcol.column_size
-                curcol.value = r.readall(colsize)
+                value = r.readall(colsize)
                 if discard_len > 0:
                     r.skip(discard_len)
 
@@ -349,9 +346,9 @@ class DefaultHandler(object):
             #        curcol.column_type in (SYBBINARY, XSYBBINARY):
 
             #            if colsize < curcol.column_size:
-            #                curcol.value.extend(fillchar*(curcol.column_size - colsize))
+            #                value.extend(fillchar*(curcol.column_size - colsize))
             #            colsize = curcol.column_size
-            curcol.value = to_python(tds, curcol.value, curcol.column_type, curcol.column_size)
+            return to_python(tds, value, curcol.column_type, curcol.column_size)
 
     @staticmethod
     def put_info(tds, col):
@@ -545,15 +542,14 @@ class NumericHandler(object):
             val /= 10 ** scale
         return val
 
-    @staticmethod
-    def get_data(tds,  curcol):
+    @classmethod
+    def get_data(cls, tds,  curcol):
         r = tds._reader
         colsize = r.get_byte()
 
         # set NULL flag in the row buffer
         if colsize <= 0:
-            curcol.value = None
-            return
+            return None
 
         #
         # Since these can be passed around independent
@@ -566,13 +562,13 @@ class NumericHandler(object):
 
         # server is going to crash freetds ??
         # TODO close connection it server try to do so ??
-        if colsize > NumericHandler.MAX_NUMERIC:
+        if colsize > cls.MAX_NUMERIC:
             raise Exception('TDS_FAIL')
         positive = r.get_byte()
         buf = r.readall(colsize - 1)
 
         if IS_TDS7_PLUS(tds):
-            curcol.value = NumericHandler.ms_parse_numeric(positive, buf, scale)
+            return cls.ms_parse_numeric(positive, buf, scale)
         else:
             raise Exception('not supported')
 
@@ -638,10 +634,9 @@ class VariantHandler(object):
 
         # NULL
         try:
-            curcol.value = None
             if colsize < 2:
                 r.skip(colsize)
-                return
+                return None
 
             type = r.get_byte();
             info_len = r.get_byte()
@@ -668,8 +663,7 @@ class VariantHandler(object):
                     raise Exception('TDS_FAIL')
                 positive = r.get_byte()
                 buf = r.readall(colsize - 1)
-                curcol.value = NumericHandler.ms_parse_numeric(positive, buf, scale)
-                return
+                return NumericHandler.ms_parse_numeric(positive, buf, scale)
             varint = 0 if type == SYBUNIQUE else tds_get_varint_size(tds, type)
             if varint != info_len:
                 raise Exception('TDS_FAIL')
@@ -688,7 +682,7 @@ class VariantHandler(object):
                 else:
                     data = r.readall(colsize)
             colsize = 0
-            curcol.value = to_python(tds, data, type, colsize)
+            return to_python(tds, data, type, colsize)
         except:
             r.skip(colsize)
             raise
@@ -854,8 +848,7 @@ class MsDatetimeHandler(object):
         r = tds._reader
         size = r.get_byte()
         if size == 0:
-            col.value = None
-            return
+            return None
 
         if col.column_type == SYBMSDATETIMEOFFSET:
             size -= 2
@@ -889,24 +882,23 @@ class MsDatetimeHandler(object):
             nanoseconds -= minutes*60*1000000000
             seconds = nanoseconds//1000000000
             nanoseconds -= seconds*1000000000
-            col.value = time(hours, minutes, seconds, nanoseconds//1000)
+            return time(hours, minutes, seconds, nanoseconds//1000)
         elif col.column_type == SYBMSDATE:
-            col.value = date(1, 1, 1) + timedelta(days=days)
+            return date(1, 1, 1) + timedelta(days=days)
         elif col.column_type == SYBMSDATETIME2:
-            col.value = datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds//1000)
+            return datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds//1000)
         elif col.column_type == SYBMSDATETIMEOFFSET:
             offset = r.get_smallint()
             if offset > 840 or offset < -840:
                 raise Exception('TDS_FAIL')
             tz = tzoffset('', offset*60)
-            col.value = (datetime(1, 1, 1, tzinfo=_utc) + timedelta(days=days, microseconds=nanoseconds//1000)).astimezone(tz)
+            return (datetime(1, 1, 1, tzinfo=_utc) + timedelta(days=days, microseconds=nanoseconds//1000)).astimezone(tz)
 
     @staticmethod
     def put_info(tds, col):
         w = tds._writer
-        # TODO precision
         if col.on_server.column_type != SYBMSDATE:
-            w.put_byte(7)
+            w.put_byte(col.precision)
 
     _base_date = datetime(1900, 1, 1)
     _base_date2 = datetime(1, 1, 1)

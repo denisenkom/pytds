@@ -41,13 +41,6 @@ class TestCase(unittest.TestCase):
         assert 'test' == cur.execute_scalar("select N'test' as fieldname")
         assert 5 == cur.execute_scalar('select 5 as fieldname')
 
-    def test_dates(self):
-        cur = conn.cursor()
-        if IS_TDS73_PLUS(conn.tds_socket):
-            self.assertEqual(date(2010, 1, 2), cur.execute_scalar("select cast('2010-01-02T00:00:00' as date) as fieldname"))
-            assert time(14,16,18,123456) == cur.execute_scalar("select cast('14:16:18.1234567' as time) as fieldname")
-            assert datetime(2010, 1, 2, 20, 21, 22, 345678) == cur.execute_scalar("select cast('2010-01-02T20:21:22.345678' as datetime2) as fieldname")
-
     def test_decimals(self):
         cur = conn.cursor()
         assert Decimal(12) == cur.execute_scalar('select cast(12 as decimal) as fieldname')
@@ -519,5 +512,48 @@ class DateTimeOffset(unittest.TestCase):
         self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14*60)))
         self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15*60)))
 
-if __name__ == '__main__':
-    unittest.main()
+class TimeTest(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select cast(%s as time)', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute("select cast('20:21:22.1234567' as time)")
+            self.assertEqual(Time(20, 21, 22, 123456), cur.fetchone()[0])
+        self._testval(Time(14,16,18,123456))
+        self._testval(Time(0, 0, 0, 0))
+        self._testval(Time(0, 0, 0, 0))
+        self._testval(Time(0, 0, 0, 0))
+        self._testval(Time(23, 59, 59, 999999))
+        self._testval(Time(0, 0, 0, 0))
+        self._testval(Time(0, 0, 0, 0))
+        self._testval(Time(0, 0, 0, 0))
+
+class DateTime2(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select cast(%s as datetime2)', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute("select cast('9999-12-31T23:59:59.999999' as datetime2)")
+            self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 999999),)])
+        self._testval(Timestamp(2010, 1, 2, 20, 21, 22, 345678))
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0))
+        self._testval(Timestamp(1, 1, 1, 0, 0, 0))
+        self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999))
+
+class DateTest(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select cast(%s as date)', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute("select cast('9999-12-31T00:00:00' as date)")
+            self.assertEqual(cur.fetchall(), [(Date(9999, 12, 31),)])
+        self._testval(Date(2010, 1, 2))
+        self._testval(Date(2010, 1, 2))
+        self._testval(Date(1, 1, 1))
+        self._testval(Date(9999, 12, 31))

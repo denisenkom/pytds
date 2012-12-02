@@ -159,7 +159,7 @@ def tds_process_row(tds):
     info.row_count += 1
     for i, curcol in enumerate(info.columns):
         logger.debug("tds_process_row(): reading column %d" % i)
-        curcol.funcs.get_data(tds, curcol)
+        curcol.value = curcol.funcs.get_data(tds, curcol)
     return TDS_SUCCESS
 
 # NBC=null bitmap compression row
@@ -179,7 +179,7 @@ def tds_process_nbcrow(tds):
         if ord(nbc[i/8]) & (1 << i%8):
             curcol.value = None
         else:
-            curcol.funcs.get_data(tds, curcol)
+            curcol.value = curcol.funcs.get_data(tds, curcol)
     return TDS_SUCCESS
 #
 # tds_process_end() processes any of the DONE, DONEPROC, or DONEINPROC
@@ -937,7 +937,7 @@ def tds_process_param_result_tokens(tds):
             param = _Column()
             param.column_name = name
             tds_get_type_info(tds, param)
-            param.funcs.get_data(tds, param)
+            param.value = param.funcs.get_data(tds, param)
             tds.output_params[ordinal] = param
         else:
             r.unget_byte()
