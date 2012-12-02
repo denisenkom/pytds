@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, date, time, timedelta, tzinfo
 from decimal import Decimal, localcontext
+from dateutil.tz import tzoffset, tzutc
 import uuid
 from tds import *
 from tds import _Column
@@ -116,7 +117,10 @@ def make_param(tds, name, value):
         column.char_codec = ucs2_codec
     elif isinstance(value, datetime):
         if IS_TDS73_PLUS(tds):
-            col_type = SYBMSDATETIME2
+            if value.tzinfo:
+                col_type = SYBMSDATETIMEOFFSET
+            else:
+                col_type = SYBMSDATETIME2
             column.precision = 7
             size = 1
         else:
@@ -134,7 +138,10 @@ def make_param(tds, name, value):
     elif isinstance(value, time):
         if not IS_TDS73_PLUS(tds):
             raise DataError('Time type is not supported on MSSQL 2005 and lower')
-        col_type = SYBMSTIME
+        if value.tzinfo:
+            col_type = SYBMSDATETIMEOFFSET
+        else:
+            col_type = SYBMSTIME
         column.precision = 7
         size = 1
         column.column_varint_size = tds_get_varint_size(tds, col_type)
@@ -830,27 +837,7 @@ def tds_fix_column_size(tds, curcol):
 def tds_convert_string(tds, char_codec, s):
     return char_codec.encode(s)[0]
 
-ZERO = timedelta(0)
-
-# A class building tzinfo objects for fixed-offset time zones.
-# Note that FixedOffset(0, "UTC") is a different way to build a
-# UTC tzinfo object.
-
-class FixedOffset(tzinfo):
-    """Fixed offset in minutes east from UTC."""
-
-    def __init__(self, offset, name):
-        self.__offset = timedelta(minutes = offset)
-        self.__name = name
-
-    def utcoffset(self, dt):
-        return self.__offset
-
-    def tzname(self, dt):
-        return self.__name
-
-    def dst(self, dt):
-        return ZERO
+_utc = tzutc()
 
 class MsDatetimeHandler(object):
     @staticmethod
@@ -885,25 +872,16 @@ class MsDatetimeHandler(object):
                 raise Exception('TDS_FAIL')
             time_buf = r.readall(size)
             val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(time_buf), 0)
-            for i in range(col.column_prec, 7):
-                val *= 10
+            val *= 10**(7-col.column_prec)
             nanoseconds = val*100
 
         # get date part
         days = 0
         if col.column_type != SYBMSTIME:
             date_buf = r.readall(3)
-            val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(date_buf), 0)
-            days = val - 693595
+            days = reduce(lambda acc, val: acc * 256 + ord(val), reversed(date_buf), 0)
 
         # get time offset
-        tz = None
-        if col.column_type == SYBMSDATETIMEOFFSET:
-            offset = r.get_smallint()
-            if offset > 840 or offset < -840:
-                raise Exception('TDS_FAIL')
-            tz = FixedOffset(offset, '')
-
         if col.column_type == SYBMSTIME:
             hours = nanoseconds//1000000000//60//60
             nanoseconds -= hours*60*60*1000000000
@@ -913,9 +891,15 @@ class MsDatetimeHandler(object):
             nanoseconds -= seconds*1000000000
             col.value = time(hours, minutes, seconds, nanoseconds//1000)
         elif col.column_type == SYBMSDATE:
-            col.value = date(1900, 1, 1) + timedelta(days=days)
-        else:
-            col.value = datetime(1900, 1, 1, tzinfo=tz) + timedelta(days=days, microseconds=nanoseconds//1000)
+            col.value = date(1, 1, 1) + timedelta(days=days)
+        elif col.column_type == SYBMSDATETIME2:
+            col.value = datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds//1000)
+        elif col.column_type == SYBMSDATETIMEOFFSET:
+            offset = r.get_smallint()
+            if offset > 840 or offset < -840:
+                raise Exception('TDS_FAIL')
+            tz = tzoffset('', offset*60)
+            col.value = (datetime(1, 1, 1, tzinfo=_utc) + timedelta(days=days, microseconds=nanoseconds//1000)).astimezone(tz)
 
     @staticmethod
     def put_info(tds, col):
@@ -926,6 +910,7 @@ class MsDatetimeHandler(object):
 
     _base_date = datetime(1900, 1, 1)
     _base_date2 = datetime(1, 1, 1)
+    _base_date2_utc = datetime(1, 1, 1, tzinfo=_utc)
 
     _precision_to_len = {
             0: 3,
@@ -945,10 +930,13 @@ class MsDatetimeHandler(object):
             w.put_byte(0)
             return
 
-        # TODO precision
         value = col.value
         parts = []
+        tzinfo = None
         if col.on_server.column_type != SYBMSDATE:
+            tzinfo = value.tzinfo
+            if tzinfo:
+                value = value.astimezone(_utc)
             t = value
             secs = t.hour*60*60 + t.minute*60 + t.second
             val = (secs * 10**7 + t.microsecond*10)//(10**(7-col.precision))
@@ -956,14 +944,20 @@ class MsDatetimeHandler(object):
         if col.on_server.column_type != SYBMSTIME:
             if type(value) == date:
                 value = datetime.combine(value, time(0,0,0))
-            days = (value - MsDatetimeHandler._base_date2).days
+            if tzinfo:
+                days = (value - MsDatetimeHandler._base_date2_utc).days
+            else:
+                days = (value - MsDatetimeHandler._base_date2).days
             buf = struct.pack('<l', days)[:3]
             parts.append(buf)
         if col.on_server.column_type == SYBMSDATETIMEOFFSET:
-            parts.append(struct.pack('<H', value.utcoffset()))
+            assert tzinfo
+            parts.append(struct.pack('<h', col.value.utcoffset().total_seconds()//60))
         size = reduce(lambda a, b: a + len(b), parts, 0)
-        parts.insert(0, chr(size))
-        w.write(b''.join(parts))
+        w.put_byte(size)
+        for part in parts:
+            w.write(part)
+
 
 #
 # Fetch character data the wire.

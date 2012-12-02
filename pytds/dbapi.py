@@ -705,8 +705,8 @@ def TimeFromTicks(ticks):
     import time
     return Time(*time.localtime(ticks)[3:6])
 
-def Timestamp(year, month, day, hour, minute, second, microseconds=0):
-    return datetime(year, month, day, hour, minute, second, microseconds)
+def Timestamp(year, month, day, hour, minute, second, microseconds=0, tzinfo=None):
+    return datetime(year, month, day, hour, minute, second, microseconds, tzinfo)
 
 def TimestampFromTicks(ticks):
     return datetime.fromtimestamp(ticks)

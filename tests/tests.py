@@ -47,7 +47,6 @@ class TestCase(unittest.TestCase):
             self.assertEqual(date(2010, 1, 2), cur.execute_scalar("select cast('2010-01-02T00:00:00' as date) as fieldname"))
             assert time(14,16,18,123456) == cur.execute_scalar("select cast('14:16:18.1234567' as time) as fieldname")
             assert datetime(2010, 1, 2, 20, 21, 22, 345678) == cur.execute_scalar("select cast('2010-01-02T20:21:22.345678' as datetime2) as fieldname")
-            assert datetime(2010, 1, 2, 15, 21, 22, 123456, FixedOffset(5*60, '')) == cur.execute_scalar("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset) as fieldname")
 
     def test_decimals(self):
         cur = conn.cursor()
@@ -503,6 +502,22 @@ class DateTime(unittest.TestCase):
         with self.assertRaises(Error):
             self._testval(Timestamp(1752, 1, 1, 0, 0, 0))
 
+class DateTimeOffset(unittest.TestCase):
+    def _testval(self, val):
+        with conn.cursor() as cur:
+            cur.execute('select cast(%s as datetimeoffset)', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+    def runTest(self):
+        with conn.cursor() as cur:
+            cur.execute("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset)")
+            self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5*60*60)), cur.fetchone()[0])
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 5*60*60)))
+        self._testval(Timestamp(1, 1, 1, 0, 0, 0, 0, tzutc()))
+        self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 14*60)))
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14*60)))
+        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15*60)))
 
 if __name__ == '__main__':
     unittest.main()
