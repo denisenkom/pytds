@@ -1040,7 +1040,7 @@ class DatetimeHandler(object):
         else:
             size = col.size
         if col.column_type == SYBDATETIME or col.column_type == SYBDATETIMN and size == 8:
-            return Datetime.decode(r.read(Datetime.size))
+            return Datetime.decode(r.readall(Datetime.size))
 
         elif col.column_type == SYBDATETIME4 or col.column_type == SYBDATETIMN and size == 4:
             days, time = r.unpack(TDS_DATETIME4)
