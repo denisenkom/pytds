@@ -507,6 +507,16 @@ class DateTime(unittest.TestCase):
         self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 997000))
         with self.assertRaises(Error):
             self._testval(Timestamp(1752, 1, 1, 0, 0, 0))
+        with conn.cursor() as cur:
+            cur.execute('''
+            if object_id('testtable') is not null
+                drop table testtable
+            ''')
+            cur.execute('create table testtable (col datetime not null)')
+            dt = Timestamp(2010, 1, 2, 20, 21, 22, 123000)
+            cur.execute('insert into testtable values (%s)', (dt,))
+            cur.execute('select col from testtable')
+            self.assertEqual(cur.fetchone(), (dt,))
 
 class DateTimeOffset(unittest.TestCase):
     def _testval(self, val):

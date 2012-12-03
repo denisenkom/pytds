@@ -1022,11 +1022,11 @@ class DatetimeHandler(object):
     def get_info(tds, col):
         r = tds._reader
         if col.column_type == SYBDATETIMN:
-            col.column_size = r.get_byte()
+            col.size = r.get_byte()
         elif col.column_type == SYBDATETIME:
-            col.column_size = 8
+            col.size = 8
         elif col.column_type == SYBDATETIME4:
-            col.column_size = 4
+            col.size = 4
         else:
             assert False
 
