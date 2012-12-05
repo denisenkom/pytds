@@ -620,7 +620,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, as_dict=False,
         host='', appname=None, port=None, tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
-        blocksize=4096, use_mars=True)
+        blocksize=4096, use_mars=True):
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
