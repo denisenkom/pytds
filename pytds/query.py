@@ -24,9 +24,9 @@ def tds_start_query(tds):
     w.put_uint(0x16) # total length
     w.put_uint(0x12) # length
     w.put_usmallint(2) # type
-    if tds.tds72_transaction:
-        assert len(tds.tds72_transaction) == 8
-        w.write(tds.tds72_transaction)
+    if tds.conn.tds72_transaction:
+        assert len(tds.conn.tds72_transaction) == 8
+        w.write(tds.conn.tds72_transaction)
     else:
         w.write('\x00\x00\x00\x00\x00\x00\x00\x00')
     w.put_uint(1) # request count

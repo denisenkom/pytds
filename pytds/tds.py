@@ -138,7 +138,7 @@ def is_ascii_type(x): return x in (XSYBCHAR,XSYBVARCHAR,SYBTEXT,SYBCHAR,SYBVARCH
 def is_char_type(x): return is_unicode_type(x) or is_ascii_type(x)
 def is_similar_type(x, y): return is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
 
-def tds_conn(tds): return tds.conn
+def tds_conn(tds): return tds
 
 def TDS_IS_SOCKET_INVALID(sock):
     return sock is None
@@ -412,6 +412,7 @@ class _TdsReader(object):
         self._have = 0 # number of bytes read from packet
         self._size = 0 # size of current packet
         self._tds = tds
+        self._transport = tds
         self._type = None
         self._status = None
 
@@ -503,7 +504,7 @@ class _TdsReader(object):
             if self._have >= self._size:
                 self._read_packet()
             else:
-                self._buf = self._tds._read(self._size - self._have)
+                self._buf = self._transport.recv(self._size - self._have)
                 self._pos = 0
                 self._have += len(self._buf)
         res = self._buf[self._pos:self._pos+size]
@@ -511,19 +512,17 @@ class _TdsReader(object):
         return res
 
     def _read_packet(self):
-        if self._tds.is_dead():
-            raise Exception('Read attempt when state is TDS_DEAD')
-        header = self._tds._read(_header.size)
+        header = self._transport.recv(_header.size)
         if len(header) < _header.size:
             self._pos = 0
             if self._tds.state != TDS_IDLE and len(header) == 0:
-                tds_close_socket(self._tds)
+                self._transport.close()
             raise Exception('Reading header error')
         logger.debug('Received header')
         self._type, self._status, self._size, self._spid = _header.unpack(header)
         self._have = _header.size
         assert self._size > self._have, 'Empty packet doesn make any sense'
-        self._buf = self._tds._read(self._size - self._have)
+        self._buf = self._transport.recv(self._size - self._have)
         self._have += len(self._buf)
         self._pos = 0
 
@@ -534,6 +533,7 @@ class _TdsReader(object):
 class _TdsWriter(object):
     def __init__(self, tds, bufsize):
         self._tds = tds
+        self._transport = tds
         self._pos = 0
         self._buf = bytearray(bufsize)
 
@@ -639,48 +639,134 @@ class _TdsWriter(object):
         _header.pack_into(self._buf, 0, self._type, status, self._pos, 0)
         if IS_TDS7_PLUS(self._tds) and not self._tds.login:
             self._buf[6] = 0x01
-        self._tds._write(self._buf[:self._pos], final)
+        self._transport.send(self._buf[:self._pos], final)
         self._pos = 8
 
-class _TdsSocket(object):
-    def __init__(self, bufsize):
-        self.conn = _TdsConn()
+class MemoryChunkedHandler(object):
+    def begin(self, column, size):
+        logger.debug('MemoryChunkedHandler.begin(sz=%d)', size)
+        self.size = size
+        self.sio = StringIO()
+    def new_chunk(self, val):
+        logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
+        self.sio.write(val)
+    def end(self):
+        return self.sio.getvalue()
+
+class _TdsSession(object):
+    def __init__(self, tds, transport):
         self.out_pos = 8
-        self.login = None
-        self.int_handler = None
-        self.msg_handler = None
         self.res_info = None
         self.in_cancel = False
-        self.env = _TdsEnv()
         self.wire_mtx = None
         self.current_results = None
         self.param_info = None
         self.cur_cursor = None
-        self.collation = None
-        self.tds72_transaction = None
         self.has_status = False
-        self.messages = []
-        self._reader = _TdsReader(self)
-        self._writer = _TdsWriter(self, bufsize)
+        self._transport = transport
+        self._reader = _TdsReader(tds)
+        self._reader._transport = transport
+        self._writer = _TdsWriter(tds, tds._bufsize)
+        self._writer._transport = transport
         self.in_buf_max = 0
-        self.authentication = None
-        tds_conn(self).s_signal = tds_conn(self).s_signaled = None
-
-        # Jeff's hack, init to no timeout
-        self.query_timeout = 0
-        tds_set_s(self, None)
-        import socket
-        if hasattr(socket, 'socketpair'):
-            tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self.state = TDS_DEAD
+        self.state = TDS_IDLE
         self.write_mtx = TDS_MUTEX_INIT(self.wire_mtx)
+        self._tds = tds
+        self.messages = []
+        self.chunk_handler = tds.chunk_handler
 
     def is_dead(self):
         return self.state == TDS_DEAD
 
+    @property
+    def tds_version(self):
+        return self._tds.tds_version
+
+    @property
+    def conn(self):
+        return self._tds
+
+    def close(self):
+        self._transport.close()
+
+class _TdsSocket(object):
+    def __init__(self, login):
+        self._bufsize = login.blocksize
+        self.login = None
+        self.int_handler = None
+        self.msg_handler = None
+        self.env = _TdsEnv()
+        self.collation = None
+        self.tds72_transaction = None
+        self.authentication = None
+        self._mars_enabled = False
+        tds_conn(self).s_signal = tds_conn(self).s_signaled = None
+        self.emul_little_endian = True
+        self.chunk_handler = MemoryChunkedHandler()
+        self._main_session = _TdsSession(self, self)
+
+        # Jeff's hack, init to no timeout
+        self.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
+        tds_set_s(self, None)
+        import socket
+        if hasattr(socket, 'socketpair'):
+            tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self._login = login
+        self.tds_version = tds_version = login.tds_version
+        self.emul_little_endian = login.emul_little_endian
+        if IS_TDS7_PLUS(self):
+            # TDS 7/8 only supports little endian
+            self.emul_little_endian = True
+        if IS_TDS7_PLUS(self) and login.instance_name and not login.port:
+            instances = tds7_get_instances(login.server_name)
+            if login.instance_name not in instances:
+                raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
+            instdict = instances[login.instance_name]
+            if 'tcp' not in instdict:
+                raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
+            login.port = int(instdict['tcp'])
+        connect_timeout = login.connect_timeout
+
+        if not login.port:
+            login.port = 1433
+        try:
+            tds_open_socket(self, login.server_name, login.port, connect_timeout)
+        except socket.error as e:
+            raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
+        try:
+            from login import tds_login
+            tds_login(self._main_session, login)
+            text_size = login.text_size
+            if self.mars_enabled:
+                self._setup_smp()
+            q = []
+            if text_size:
+                q.append('set textsize {0}'.format(int(text_size)))
+            if login.database and self.env.database != login.database:
+                q.append('use ' + tds_quote_id(self, login.database))
+            if q:
+                tds_submit_query(tds._main_session, ''.join(q))
+                tds_process_simple_query(tds._main_session)
+        except:
+            self.close()
+            raise
+
+    def _setup_smp(self):
+        from smp import SmpManager
+        self._smp_manager = SmpManager(self)
+        self._main_session = _TdsSession(self, self._smp_manager.create_session())
+
+    @property
+    def mars_enabled(self): return self._mars_enabled
+
+    @property
+    def main_session(self):
+        return self._main_session
+
+    def create_session(self):
+        return _TdsSession(self, self._smp_manager.create_session())
+
     def _read(self, size):
-        if self.is_dead():
-            raise Exception('Tds is dead')
         events = tds_select(self, TDSSELREAD, self.query_timeout)
         if events & TDSPOLLURG:
             buf = tds_conn(self).s_signaled.read(size)
@@ -690,12 +776,18 @@ class _TdsSocket(object):
         elif events:
             buf = self._sock.recv(size)
             if len(buf) == 0:
-                tds_close_socket(self)
+                self.close()
                 raise Error('Server closed connection')
             return buf
         else:
-            tds_close_socket(self)
+            self.close()
             raise Error('Timeout')
+
+    def recv(self, size):
+        return self._read(size)
+
+    def send(self, data, final):
+        return self._write(data, final)
 
     def _write(self, data, final):
         pos = 0
@@ -714,7 +806,7 @@ class _TdsSocket(object):
                 nput = self._sock.send(data[pos:], flags)
             except socket.error as e:
                 if e.errno != errno.EWOULDBLOCK:
-                    tds_close_socket(self)
+                    self.close()
                     raise
             pos += nput
         if final and USE_CORK:
@@ -722,11 +814,12 @@ class _TdsSocket(object):
             self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
 
     def close(self):
-        tds_close_socket(self)
+        self._sock.close()
+        tds_set_state(self._main_session, TDS_DEAD)
         if self.authentication:
             self.authentication.close()
             self.authentication = None
-        tds_ssl_deinit(self)
+        #tds_ssl_deinit(self)
         if tds_conn(self).s_signal is not None:
             tds_conn(self).s_signal.close()
         if tds_conn(self).s_signaled is not None:
@@ -767,11 +860,6 @@ def tds_open_socket(tds, host, port, timeout=0):
         timeout = 90000
     tds._sock = socket.create_connection((host, port), timeout)
     return tds
-
-def tds_close_socket(tds):
-    if not tds.is_dead():
-        tds._sock.close()
-        tds_set_state(tds, TDS_DEAD)
 
 def tds_select(tds, tds_sel, timeout_seconds):
     poll_seconds = 1 if tds.int_handler else timeout_seconds

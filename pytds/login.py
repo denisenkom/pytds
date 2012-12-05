@@ -13,6 +13,7 @@ else:
 from tdsproto import *
 from tds import *
 from token import *
+from smp import SmpManager
 
 logger = logging.getLogger(__name__)
 
@@ -89,58 +90,21 @@ class _NtlmAuth(object):
         w.write(ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags))
         w.flush()
 
-def tds_connect_and_login(tds, login):
-    tds.login = login
-    tds.tds_version = login.tds_version
-    tds_conn(tds).emul_little_endian = login.emul_little_endian
-    if IS_TDS7_PLUS(tds):
-        # TDS 7/8 only supports little endian
-        tds_conn(tds).emul_little_endian = True
-    if IS_TDS7_PLUS(tds) and login.instance_name and not login.port:
-        instances = tds7_get_instances(login.server_name)
-        if login.instance_name not in instances:
-            raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
-        instdict = instances[login.instance_name]
-        if 'tcp' not in instdict:
-            raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
-        login.port = int(instdict['tcp'])
-    connect_timeout = login.connect_timeout
-    tds.query_timeout = connect_timeout if connect_timeout else login.query_timeout
-    if not login.port:
-        login.port = 1433
-    try:
-        tds_open_socket(tds, login.server_name, login.port, connect_timeout)
-    except socket.error as e:
-        raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
-    tds_set_state(tds, TDS_IDLE)
-    try:
-        db_selected = False
-        if IS_TDS71_PLUS(tds):
-            tds71_do_login(tds, login)
-            db_selected = True
-        elif IS_TDS7_PLUS(tds):
-            tds7_send_login(tds, login)
-            db_selected = True
-        else:
-            raise NotImplementedError('This TDS version is not supported')
-            tds._writer.begin_packet(TDS_LOGIN)
-            tds_send_login(tds, login)
-        if not tds_process_login_tokens(tds):
-            raise_db_exception(tds)
-            #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
-        text_size = login.text_size
-        if text_size or not db_selected and login.database:
-            q = []
-            if text_size:
-                q.append('set textsize {0}'.format(int(text_size)))
-            if not db_selected and login.database:
-                q.append('use ' + tds_quote_id(tds, login.database))
-            tds_submit_query(tds, ''.join(q))
-            tds_process_simple_query(tds)
-        return tds
-    except:
-        tds_close_socket(tds)
-        raise
+def tds_login(tds, login):
+    db_selected = False
+    if IS_TDS71_PLUS(tds):
+        tds71_do_login(tds, login)
+        db_selected = True
+    elif IS_TDS7_PLUS(tds):
+        tds7_send_login(tds, login)
+        db_selected = True
+    else:
+        raise NotImplementedError('This TDS version is not supported')
+        tds._writer.begin_packet(TDS_LOGIN)
+        tds_send_login(tds, login)
+    if not tds_process_login_tokens(tds):
+        raise_db_exception(tds)
+        #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
 
 import socket
 this_host_name = socket.gethostname()
@@ -164,14 +128,14 @@ def tds7_send_login(tds, login):
     auth_len = 0
     if sys.platform == 'win32':
         if user_name.find('\\') != -1 or not user_name:
-            tds.authentication = _SspiAuthentication(tds.login)
+            tds.authentication = _SspiAuthentication(login)
             auth_len = len(tds.authentication.packet)
             packet_size += auth_len
         else:
             packet_size += (len(user_name) + len(login.password))*2
     else:
         if user_name.find('\\') != -1:
-            tds.authentication = _NtlmAuth(tds.login)
+            tds.authentication = _NtlmAuth(login)
             auth_len = len(tds.authentication.packet)
             packet_size += auth_len
         elif not user_name:
@@ -331,7 +295,7 @@ def tds71_do_login(tds, login):
     w.put_int(os.getpid()) # TODO: change this to thread id
     if IS_TDS72_PLUS(tds):
         # MARS (1 enabled)
-        w.put_byte(0)
+        w.put_byte(1 if login.use_mars else 0)
     w.flush()
     p = tds._reader.read_whole_packet()
     size = len(p)
@@ -355,11 +319,11 @@ def tds71_do_login(tds, login):
         if off > size or off + l > size:
             raise Error('TDS_FAIL')
         if type == VERSION:
-            tds.product_version = prod_version_struct.unpack_from(p, off)
+            tds.conn.product_version = prod_version_struct.unpack_from(p, off)
         elif type == ENCRYPTION and l >= 1:
             crypt_flag, = byte_struct.unpack_from(p, off)
         elif type == MARS:
-            tds.mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
+            tds.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
         i += 5
     # we readed all packet
     logger.debug('detected flag %d', crypt_flag)

@@ -226,20 +226,20 @@ def tds_process_env_chg(tds):
     if type == TDS_ENV_SQLCOLLATION:
         size = r.get_byte()
         logger.debug("tds_process_env_chg(): {0} bytes of collation data received".format(size))
-        logger.debug("tds.collation was {0}".format(tds.collation))
-        tds.collation = r.get_collation()
+        logger.debug("tds.collation was {0}".format(tds.conn.collation))
+        tds.conn.collation = r.get_collation()
         r.skip(size - 5)
-        #tds7_srv_charset_changed(tds, tds.collation)
-        logger.debug("tds.collation now {0}".format(tds.collation))
+        #tds7_srv_charset_changed(tds, tds.conn.collation)
+        logger.debug("tds.collation now {0}".format(tds.conn.collation))
         # discard old one
         r.skip(r.get_byte())
     elif type == TDS_ENV_BEGINTRANS:
         size = r.get_byte()
         # TODO: parse transaction
-        tds.tds72_transaction = r.readall(8)
+        tds.conn.tds72_transaction = r.readall(8)
         r.skip(r.get_byte())
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
-        tds.tds72_transaction = None
+        tds.conn.tds72_transaction = None
         r.skip(r.get_byte())
         r.skip(r.get_byte())
     elif type == TDS_ENV_PACKSIZE:
@@ -257,16 +257,16 @@ def tds_process_env_chg(tds):
     elif type == TDS_ENV_DATABASE:
         newval = r.read_ucs2(r.get_byte())
         oldval = r.read_ucs2(r.get_byte())
-        tds.env.database = newval
+        tds.conn.env.database = newval
     elif type == TDS_ENV_LANG:
         newval = r.read_ucs2(r.get_byte())
         oldval = r.read_ucs2(r.get_byte())
-        tds.env.language = newval
+        tds.conn.env.language = newval
     elif type == TDS_ENV_CHARSET:
         newval = r.read_ucs2(r.get_byte())
         oldval = r.read_ucs2(r.get_byte())
         logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
-        tds.env.charset = newval
+        tds.conn.env.charset = newval
         tds_srv_charset_changed(tds, newval)
     elif type == TDS_ENV_DB_MIRRORING_PARTNER:
         newval = r.read_ucs2(r.get_byte())
@@ -368,8 +368,8 @@ def tds_process_login_tokens(tds):
             ack = r.get_byte()
             version = r.get_uint_be()
             ver['reported'] = version
-            tds.tds_version = _SERVER_TO_CLIENT_MAPPING[version]
-            if tds.tds_version == TDS71rev1:
+            tds.conn.tds_version = _SERVER_TO_CLIENT_MAPPING[version]
+            if tds.conn.tds_version == TDS71rev1:
                 tds.tds71rev1 = True
             if ver['reported'] == TDS70:
                 ver['name'] = '7.0'
@@ -395,7 +395,7 @@ def tds_process_login_tokens(tds):
             size -= 10
             if IS_TDS7_PLUS(tds):
                 product_version = 0x80000000
-                tds.product_name = r.read_ucs2(size/2)
+                tds.conn.product_name = r.read_ucs2(size/2)
             elif IS_TDS5_PLUS(tds):
                 raise NotImplementedError()
                 #tds.product_name = tds_get_string(tds, size)
@@ -405,15 +405,15 @@ def tds_process_login_tokens(tds):
             product_version = r.get_uint_be()
             # MSSQL 6.5 and 7.0 seem to return strange values for this
             # using TDS 4.2, something like 5F 06 32 FF for 6.50
-            tds_conn(tds).product_version = product_version
+            tds.conn.product_version = product_version
             logger.debug('Product version {0:x}'.format(product_version))
             # TDS 5.0 reports 5 on success 6 on failure
             # TDS 4.2 reports 1 on success and is not present of failure
             if ack == 5 or ack == 1:
                 succeed = True
-            if tds.authentication:
-                tds.authentication.close()
-                tds.authentication = None
+            if tds.conn.authentication:
+                tds.conn.authentication.close()
+                tds.conn.authentication = None
         else:
             tds_process_default_tokens(tds, marker)
         if marker == TDS_DONE_TOKEN:
@@ -857,7 +857,7 @@ def adjust_character_column_size(tds, curcol):
         curcol.char_codec = ucs2_codec
     # FIXME: and sybase ??
     if not curcol.char_codec and IS_TDS7_PLUS(tds) and is_ascii_type(curcol.column_type):
-        curcol.char_codec = tds.collation.get_codec()
+        curcol.char_codec = tds.conn.collation.get_codec()
 
     if not curcol.char_codec:
         return

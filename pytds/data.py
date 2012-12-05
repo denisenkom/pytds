@@ -198,8 +198,6 @@ class DefaultHandler(object):
             colsize = tds_get_size_by_type(curcol.column_type)
         else:
             colsize = -1;
-        if IS_TDSDEAD(tds):
-            raise Exception('TDS_FAIL')
 
         logger.debug("tds_get_data(): wire column size is %d" % colsize)
         # set NULL flag in the row buffer
@@ -397,7 +395,7 @@ class DefaultHandler(object):
 
         # TDS7.1 output collate information
         if IS_TDS71_PLUS(tds) and is_collate_type(col.column_type):
-            w.put_collation(tds.collation)
+            w.put_collation(tds.conn.collation)
 
     @staticmethod
     def put_data(tds, curcol):

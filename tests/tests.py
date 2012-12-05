@@ -20,11 +20,15 @@ except:
 #logging.basicConfig(level='INFO')
 logging.basicConfig()
 
-conn = connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
-
 class TestCase(unittest.TestCase):
+    def setUp(self):
+        self.conn = connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
+    def tearDown(self):
+        self.conn.close()
+
+class TestCase2(TestCase):
     def test_all(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         with self.assertRaises(ProgrammingError):
             cur.execute(u'select ')
         assert 'abc' == cur.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
@@ -42,14 +46,14 @@ class TestCase(unittest.TestCase):
         assert 5 == cur.execute_scalar('select 5 as fieldname')
 
     def test_decimals(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         assert Decimal(12) == cur.execute_scalar('select cast(12 as decimal) as fieldname')
         assert Decimal(-12) == cur.execute_scalar('select cast(-12 as decimal) as fieldname')
         assert Decimal('123456.12345') == cur.execute_scalar("select cast('123456.12345'as decimal(20,5)) as fieldname")
         assert Decimal('-123456.12345') == cur.execute_scalar("select cast('-123456.12345'as decimal(20,5)) as fieldname")
 
     def test_money(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         assert Decimal('0') == cur.execute_scalar("select cast('0' as money) as fieldname")
         assert Decimal('1') == cur.execute_scalar("select cast('1' as money) as fieldname")
         self.assertEqual(Decimal('1.5555'), cur.execute_scalar("select cast('1.5555' as money) as fieldname"))
@@ -57,9 +61,9 @@ class TestCase(unittest.TestCase):
         assert Decimal('-1234567.5555') == cur.execute_scalar("select cast('-1234567.5555' as money) as fieldname")
         assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
 
-class ParametrizedQueriesTestCase(unittest.TestCase):
+class ParametrizedQueriesTestCase(TestCase):
     def _test_val(self, val):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select %s', (val,))
         self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
@@ -80,9 +84,10 @@ class ParametrizedQueriesTestCase(unittest.TestCase):
         self._test_val(False)
         self._test_val(True)
 
-class TableTestCase(unittest.TestCase):
+class TableTestCase(TestCase):
     def setUp(self):
-        cur = conn.cursor()
+        super(TableTestCase, self).setUp()
+        cur = self.conn.cursor()
         cur.execute('''
         if object_id('testtable') is not null
             drop table testtable
@@ -95,35 +100,37 @@ class TableTestCase(unittest.TestCase):
         ''')
 
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select id from testtable order by id')
         self.assertEqual([(1,)], cur.fetchall())
 
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select _text from testtable order by id')
         self.assertEqual([(u'text',)], cur.fetchall())
 
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select _xml from testtable order by id')
         self.assertEqual([('<root/>',)], cur.fetchall())
 
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('insert into testtable (_xml) values (%s)', ('<some/>',))
 
     def tearDown(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute(u'drop table testtable')
+        super(TableTestCase, self).tearDown()
 
-class StoredProcsTestCase(unittest.TestCase):
+class StoredProcsTestCase(TestCase):
     def _drop_sp(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('''
         if object_id('testproc') is not null
             drop procedure testproc
         ''')
     def setUp(self):
+        super(StoredProcsTestCase, self).setUp()
         self._drop_sp()
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('''
         create procedure testproc (@param int)
         as
@@ -132,95 +139,94 @@ class StoredProcsTestCase(unittest.TestCase):
             return @param + 1
         end
         ''')
-    def tearDown(self):
-        self._drop_sp()
 
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         val = 45
         cur.callproc('testproc', {'@param': val})
         self.assertEqual(cur.fetchall(), [(val,)])
         self.assertEqual(val + 1, cur.get_proc_return_status())
 
-class CursorCloseTestCase(unittest.TestCase):
+class CursorCloseTestCase(TestCase):
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select 10; select 12')
             cur.fetchone()
-        with conn.cursor() as cur2:
+        with self.conn.cursor() as cur2:
             cur2.execute('select 20')
             cur2.fetchone()
 
-class MultipleRecordsetsTestCase(unittest.TestCase):
+class MultipleRecordsetsTestCase(TestCase):
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select 10; select 12')
         self.assertEqual((10,), cur.fetchone())
         self.assertTrue(cur.nextset())
         self.assertEqual((12,), cur.fetchone())
         self.assertFalse(cur.nextset())
 
-class TransactionsTestCase(unittest.TestCase):
+class TransactionsTestCase(TestCase):
     def _create_table(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('''
             if object_id('testtable') is not null
                 drop table testtable
             ''')
-        conn.commit()
-        with conn.cursor() as cur:
+        self.conn.commit()
+        with self.conn.cursor() as cur:
             cur.execute('''
             create table testtable (field datetime)
             ''')
 
     def runTest(self):
         self._create_table()
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
             self.assertNotEquals((None,), cur.fetchone())
-        conn.rollback()
-        with conn.cursor() as cur:
+        self.conn.rollback()
+        with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
             self.assertEquals((None,), cur.fetchone())
         self._create_table()
-        conn.commit()
-        with conn.cursor() as cur:
+        self.conn.commit()
+        with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
             self.assertNotEquals((None,), cur.fetchone())
 
     def tearDown(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('''
             if object_id('testtable') is not null
                 drop table testtable
             ''')
-        conn.commit()
+        self.conn.commit()
+        super(TransactionsTestCase, self).tearDown()
 
-class MultiPacketRequest(unittest.TestCase):
+class MultiPacketRequest(TestCase):
     def runTest(self):
-        cur = conn.cursor()
-        param = 'x' * (conn.tds_socket._writer.bufsize*10)
+        cur = self.conn.cursor()
+        param = 'x' * (self.conn._conn.main_session._writer.bufsize*3)
         cur.execute('select %s', (param,))
         self.assertEqual([(param, )], cur.fetchall())
 
-class BigRequest(unittest.TestCase):
+class BigRequest(TestCase):
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         param = 'x' * 5000
         params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
         cur.execute('select %s, %s, %s, %s', params)
         self.assertEqual([params], cur.fetchall())
 
-class ReadAllBug(unittest.TestCase):
+class ReadAllBug(TestCase):
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         params = ('x' * 5000,)
         cur.execute('select cast(%s as varchar(5000))', params)
         self.assertEqual([params], cur.fetchall())
 
-class Rowcount(unittest.TestCase):
+class Rowcount(TestCase):
     def _create_table(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('''
         if object_id('testtable') is not null
             drop table testtable
@@ -230,10 +236,11 @@ class Rowcount(unittest.TestCase):
         ''')
 
     def setUp(self):
+        super(Rowcount, self).setUp()
         self._create_table()
 
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('insert into testtable (field) values (1)')
         self.assertEqual(cur.rowcount, 1)
         cur.execute('insert into testtable (field) values (2)')
@@ -242,12 +249,9 @@ class Rowcount(unittest.TestCase):
         cur.fetchall()
         #self.assertEqual(cur.rowcount, 2)
 
-    def tearDown(self):
-        conn.rollback()
-
-class NoRows(unittest.TestCase):
+class NoRows(TestCase):
     def _create_table(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('''
         if object_id('testtable') is not null
             drop table testtable
@@ -257,19 +261,17 @@ class NoRows(unittest.TestCase):
         ''')
 
     def setUp(self):
+        super(NoRows, self).setUp()
         self._create_table()
 
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select * from testtable')
         self.assertEqual([], cur.fetchall())
 
-    def tearDown(self):
-        conn.rollback()
-
-class SqlVariant(unittest.TestCase):
+class SqlVariant(TestCase):
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute("select cast('test' as sql_variant)")
         self.assertEqual([('test',)], cur.fetchall())
 
@@ -285,7 +287,7 @@ class SqlVariant(unittest.TestCase):
         cur.execute("select cast(cast('test' as varbinary) as sql_variant)")
         self.assertEqual([('test',)], cur.fetchall())
 
-class BadConnection(unittest.TestCase):
+class BadConnection(TestCase):
     def runTest(self):
         with self.assertRaises(Error):
             conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
@@ -300,9 +302,9 @@ class BadConnection(unittest.TestCase):
             conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=None)
             conn.cursor().execute('select 1')
 
-class NullXml(unittest.TestCase):
+class NullXml(TestCase):
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select cast(NULL as xml)')
         self.assertEqual([(None,)], cur.fetchall())
         cur.execute('select cast(%s as xml)', (None,))
@@ -310,19 +312,19 @@ class NullXml(unittest.TestCase):
 
 class ConnectionClosing(unittest.TestCase):
     def runTest(self):
-        for x in xrange(10000):
+        for x in xrange(100):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
 
-class Description(unittest.TestCase):
+class Description(TestCase):
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(12.65 as decimal(4,2)) as testname')
             self.assertEqual(cur.description[0][0], 'testname')
             self.assertEqual(cur.description[0][1], DECIMAL)
             self.assertEqual(cur.description[0][4], 4)
             self.assertEqual(cur.description[0][5], 2)
 
-class Bug1(unittest.TestCase):
+class Bug1(TestCase):
     def runTest(self):
         conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
         cur = conn.cursor()
@@ -334,16 +336,16 @@ class Bug1(unittest.TestCase):
         cur.close()
         conn.rollback()
 
-class BinaryTest(unittest.TestCase):
+class BinaryTest(TestCase):
     def runTest(self):
         binary = '\x00\x01\x02'
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('select %s', (Binary(binary),))
         self.assertEqual([(binary,)], cur.fetchall())
 
-class GuitTest(unittest.TestCase):
+class GuidTest(TestCase):
     def runTest(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         val = uuid.uuid4()
         cur.execute('select %s', (val,))
         self.assertEqual([(val,)], cur.fetchall())
@@ -354,16 +356,17 @@ class GuitTest(unittest.TestCase):
 #        cur = conn.cursor()
 #        cur.execute('select 1')
 
-class Bug2(unittest.TestCase):
+class Bug2(TestCase):
     def _drop_sp(self):
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('''
         if object_id('testproc') is not null
             drop procedure testproc
         ''')
     def setUp(self):
+        super(Bug2, self).setUp()
         self._drop_sp()
-        cur = conn.cursor()
+        cur = self.conn.cursor()
         cur.execute('''
         create procedure testproc (@param int)
         as
@@ -373,52 +376,50 @@ class Bug2(unittest.TestCase):
             return @param + 1
         end
         ''')
-    def tearDown(self):
-        self._drop_sp()
 
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             val = 45
             cur.execute('exec testproc @param = 45')
             self.assertEqual(cur.fetchall(), [(val,)])
             self.assertEqual(val + 1, cur.get_proc_return_status())
 
-class Bug3(unittest.TestCase):
+class Bug3(TestCase):
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.close()
 
-class DateAndTimeParams(unittest.TestCase):
+class DateAndTimeParams(TestCase):
     def test_date(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             date = Date(2012, 10, 6)
             cur.execute('select %s', (date, ))
             self.assertEqual(cur.fetchall(), [(date,)])
 
     def test_time(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             time = Time(8, 7, 4, 123456)
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 
     def test_datetime(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             time = Timestamp(2013, 7, 9, 8, 7, 4, 123456)
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 
-class Bug4(unittest.TestCase):
+class Bug4(TestCase):
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('''
             set transaction isolation level read committed
             select 1
             ''')
             self.assertEqual(cur.fetchall(), [(1,)])
 
-class FixedSizeChar(unittest.TestCase):
+class FixedSizeChar(TestCase):
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('''
             if object_id('testtable') is not null
                 drop table testtable
@@ -429,20 +430,14 @@ class FixedSizeChar(unittest.TestCase):
             ''')
             cur.execute('select * from testtable')
             self.assertEqual(cur.fetchall(), [('1    ', '2    ', '3\x00\x00\x00\x00')])
-    def tearDown(self):
-        with conn.cursor() as cur:
-            cur.execute('''
-            if object_id('testtable') is not null
-                drop table testtable
-            ''')
 
-class EdgeCases(unittest.TestCase):
+class EdgeCases(TestCase):
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select %s', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             self._testval(10**20)
             self._testval(10**38-1)
             self._testval(-10**38+1)
@@ -462,14 +457,14 @@ class EdgeCases(unittest.TestCase):
             with self.assertRaises(DataError):
                 self._testval(Decimal('1E38'))
 
-class Extensions(unittest.TestCase):
+class Extensions(TestCase):
     def runTest(self):
-        with conn.cursor() as cur:
-            self.assertEqual(cur.connection, conn)
+        with self.conn.cursor() as cur:
+            self.assertEqual(cur.connection, self.conn)
 
-class SmallDateTime(unittest.TestCase):
+class SmallDateTime(TestCase):
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(%s as smalldatetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
@@ -481,11 +476,11 @@ class SmallDateTime(unittest.TestCase):
         with self.assertRaises(Error):
             self._testval(Timestamp(2080, 1, 1, 0, 0, 0))
 
-class DateTime(unittest.TestCase):
+class DateTime(TestCase):
     def _testencdec(self, val):
         self.assertEqual(val, Datetime.decode(Datetime.encode(val)))
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
@@ -493,7 +488,7 @@ class DateTime(unittest.TestCase):
         self.assertEqual(Datetime.decode('\x7f$-\x00\xff\x81\x8b\x01'), Datetime.max)
         self.assertEqual('\xf2\x9c\x00\x00}uO\x01', Datetime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
         self.assertEqual('\x7f$-\x00\xff\x81\x8b\x01', Datetime.encode(Datetime.max))
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T23:59:59.997' as datetime)")
             self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 997000),)])
         self._testencdec(Timestamp(2010, 1, 2, 10, 11, 12))
@@ -501,13 +496,13 @@ class DateTime(unittest.TestCase):
         self._testval(Timestamp(2010, 1, 2, 10, 11, 12))
         self._testval(Timestamp(1753, 1, 1, 0, 0, 0))
         self._testval(Timestamp(9999, 12, 31, 0, 0, 0))
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select cast(null as datetime)")
             self.assertEqual(cur.fetchall(), [(None,)])
         self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 997000))
         with self.assertRaises(Error):
             self._testval(Timestamp(1752, 1, 1, 0, 0, 0))
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('''
             if object_id('testtable') is not null
                 drop table testtable
@@ -518,15 +513,15 @@ class DateTime(unittest.TestCase):
             cur.execute('select col from testtable')
             self.assertEqual(cur.fetchone(), (dt,))
 
-class DateTimeOffset(unittest.TestCase):
+class DateTimeOffset(TestCase):
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetimeoffset)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        if conn.tds_version < TDS72:
+        if self.conn.tds_version < TDS72:
             return
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset)")
             self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5*60*60)), cur.fetchone()[0])
         self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))
@@ -537,13 +532,13 @@ class DateTimeOffset(unittest.TestCase):
         self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14*60)))
         self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15*60)))
 
-class TimeTest(unittest.TestCase):
+class TimeTest(TestCase):
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(%s as time)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select cast('20:21:22.1234567' as time)")
             self.assertEqual(Time(20, 21, 22, 123456), cur.fetchone()[0])
         self._testval(Time(14,16,18,123456))
@@ -555,13 +550,13 @@ class TimeTest(unittest.TestCase):
         self._testval(Time(0, 0, 0, 0))
         self._testval(Time(0, 0, 0, 0))
 
-class DateTime2(unittest.TestCase):
+class DateTime2(TestCase):
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetime2)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T23:59:59.999999' as datetime2)")
             self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 999999),)])
         self._testval(Timestamp(2010, 1, 2, 20, 21, 22, 345678))
@@ -569,15 +564,15 @@ class DateTime2(unittest.TestCase):
         self._testval(Timestamp(1, 1, 1, 0, 0, 0))
         self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999))
 
-class DateTest(unittest.TestCase):
+class DateTest(TestCase):
     def _testval(self, val):
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute('select cast(%s as date)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        if conn.tds_version < TDS72:
+        if self.conn.tds_version < TDS72:
             return
-        with conn.cursor() as cur:
+        with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T00:00:00' as date)")
             self.assertEqual(cur.fetchall(), [(Date(9999, 12, 31),)])
         self._testval(Date(2010, 1, 2))

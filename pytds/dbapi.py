@@ -29,17 +29,6 @@ DB_RES_NEXT_RESULT     = 3
 DB_RES_NO_MORE_RESULTS = 4
 DB_RES_SUCCEED         = 5
 
-class MemoryChunkedHandler(object):
-    def begin(self, column, size):
-        logger.debug('MemoryChunkedHandler.begin(sz=%d)', size)
-        self.size = size
-        self.sio = StringIO()
-    def new_chunk(self, val):
-        logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
-        self.sio.write(val)
-    def end(self):
-        return self.sio.getvalue()
-
 class _TdsLogin:
     pass
 
@@ -72,38 +61,33 @@ class _Connection(object):
         Returns current chunk handler
         Default is MemoryChunkedHandler()
         '''
-        return self.tds_socket.chunk_handler
+        if not self._conn:
+            raise Error('Connection closed')
+        return self._conn.chunk_handler
 
     @chunk_handler.setter
     def chunk_handler_set(self, value):
-        self.tds_socket.chunk_handler = value
+        if not self._conn:
+            raise Error('Connection closed')
+        self._conn.chunk_handler = value
 
     @property
     def tds_version(self):
         '''
         Returns version of tds protocol that is being used by this connection
         '''
-        tds = self._get_connection()
-        return tds.tds_version
+        if not self._conn:
+            raise Error('Connection closed')
+        return self._conn.tds_version
 
     @property
     def product_version(self):
         '''
         Returns version of the server
         '''
-        return self.tds_socket.product_version
-
-    def _get_connection(self):
-        if not self.tds_socket:
-            raise Error('Connection is closed')
-        if self.tds_socket.is_dead():
-            self.tds_socket.tds72_transaction = None
-            tds_connect_and_login(self.tds_socket, self._login)
-            self._try_activate_cursor(None)
-            if not self._autocommit:
-                tds_submit_query(self.tds_socket, 'set implicit_transactions on')
-            self._sqlok()
-        return self.tds_socket
+        if not self._conn:
+            raise Error('Connection closed')
+        return self._conn.product_version
 
     def __init__(self, login, as_dict, autocommit):
         self._login = login
@@ -112,58 +96,64 @@ class _Connection(object):
         self._state = DB_RES_NO_MORE_RESULTS
         self._active_cursor = None
         from tds import _TdsSocket
-        self.tds_socket = _TdsSocket(login.blocksize)
-        self.tds_socket.chunk_handler = MemoryChunkedHandler()
+        self._conn = None
+        self._conn = _TdsSocket(self._login)
+        if not self._autocommit:
+            tds_submit_begin_tran(self._conn.main_session)
+        self._sqlok(self._conn.main_session)
 
     def commit(self):
         """
         Commit transaction which is currently in progress.
         """
+        if not self._conn:
+            raise Error('Connection closed')
         if self._autocommit:
             return
 
-        tds = self._get_connection()
-        if not tds.tds72_transaction:
+        conn = self._conn
+        if not conn.tds72_transaction:
             return
 
-        try:
-            self._try_activate_cursor(None)
-            tds_submit_commit(tds, True)
-            self._sqlok()
-            while self._nextset(None):
-                pass
-        except Exception, e:
-            raise OperationalError('Cannot commit transaction: ' + str(e[0]))
+        self._try_activate_cursor(None)
+        self._cancel(conn.main_session)
+        tds_submit_commit(conn.main_session, True)
+        self._sqlok(conn.main_session)
+        while self._nextset(conn.main_session):
+            pass
 
     def cursor(self):
         """
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
+        if not self._conn:
+            raise Error('Connection closed')
         return _Cursor(self)
 
     def rollback(self):
         """
         Roll back transaction which is currently in progress.
         """
+        if not self._conn:
+            raise Error('Connection closed')
         if self._autocommit:
             return
 
-        if not self.tds_socket.is_dead():
-            tds = self._get_connection()
-            self.cancel()
-            self._active_cursor = None
-            tds_submit_rollback(tds, True)
-            self._sqlok()
-            while self._nextset(None):
-                pass
+        session = self._conn.main_session
+        self._cancel(session)
+        self._active_cursor = None
+        tds_submit_rollback(session, True)
+        self._sqlok(session)
+        while self._nextset(session):
+            pass
 
     def __del__(self):
         logger.debug("MSSQLConnection.__del__()")
-        if self.tds_socket:
-            self.tds_socket.close()
+        if self._conn is not None:
+            self._conn.close()
 
-    def cancel(self):
+    def _cancel(self, session):
         """
         cancel() -- cancel all pending results.
 
@@ -171,11 +161,9 @@ class _Connection(object):
         It can be called more than once in a row. No exception is raised in
         this case.
         """
-        logger.debug("MSSQLConnection.cancel()")
-        tds = self.tds_socket
-        if not tds.is_dead():
-            tds_send_cancel(tds)
-            tds_process_cancel(tds)
+        logger.debug("MSSQLConnection._cancel()")
+        tds_send_cancel(session)
+        tds_process_cancel(session)
 
     def close(self):
         """
@@ -186,10 +174,10 @@ class _Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.close()")
-        if not self.tds_socket:
+        if not self._conn:
             raise Error('Connection closed')
-        self.tds_socket.close()
-        self.tds_socket = None
+        self._conn.close()
+        self._conn = None
 
     def select_db(self, dbname):
         """
@@ -199,16 +187,17 @@ class _Connection(object):
         failure.
         """
         logger.debug("MSSQLConnection.select_db()")
+        if not self._conn:
+            raise Error('Connection closed')
         cur = self.cursor()
         try:
-            cur.execute('use {0}'.format(tds_quote_id(self.tds_socket, dbname)))
+            cur.execute('use {0}'.format(tds_quote_id(self._conn, dbname)))
         finally:
             cur.close()
 
-    def _nextrow(self):
+    def _nextrow(self, session):
         logger.debug("_nextrow()")
-        tds = self.tds_socket
-        resinfo = tds.res_info
+        resinfo = session.res_info
         if not resinfo or self._state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
             logger.debug("leaving _nextrow() returning NO_MORE_ROWS")
@@ -222,16 +211,16 @@ class _Connection(object):
         mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
 
         # Get the row from the TDS stream.
-        rc, res_type, done_flags = tds_process_tokens(tds, mask)
+        rc, res_type, done_flags = tds_process_tokens(session, mask)
         if done_flags & TDS_DONE_ERROR:
-            raise_db_exception(tds)
+            raise_db_exception(session)
             assert False
             raise Exception('FAIL')
         if rc == TDS_SUCCESS:
             if res_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
                 # Add the row to the row buffer, whose capacity is always at least 1
-                resinfo = tds.current_results
-                #_, res_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
+                resinfo = session.current_results
+                #_, res_type, _ = tds_process_tokens(session, TDS_TOKEN_TRAILING)
             else:
                 self._state = DB_RES_NEXT_RESULT
         elif rc == TDS_NO_MORE_RESULTS:
@@ -239,11 +228,10 @@ class _Connection(object):
         else:
             raise Exception("unexpected result from tds_process_tokens")
 
-    def _sqlok(self):
+    def _sqlok(self, session):
         logger.debug("dbsqlok()")
         #CHECK_CONN(FAIL);
 
-        tds = self.tds_socket
         #
         # If we hit an end token -- e.g. if the command
         # submitted returned no data (like an insert) -- then
@@ -251,14 +239,14 @@ class _Connection(object):
         #
         logger.debug("dbsqlok() not done, calling tds_process_tokens()")
         while True:
-            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+            tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
 
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
-                raise_db_exception(tds)
+                raise_db_exception(session)
                 assert False
                 raise Exception('FAIL')
             if result_type == TDS_ROWFMT_RESULT:
@@ -282,24 +270,24 @@ class _Connection(object):
                 logger.error('logic error: tds_process_tokens result_type %d', result_type);
 
     def _fetchone(self, cursor):
-        if self._active_cursor is not cursor:
-            raise Error('This cursor is not active')
         """
         Helper method used by fetchone and fetchmany to fetch and handle
         """
-        tds = self.tds_socket
-        if tds.res_info is None:
+        session = cursor._session
+        if session is None:
+            raise Error('This cursor is not active')
+        if session.res_info is None:
             raise Error("Previous statement didn't produce any results")
 
         if self._state == DB_RES_NO_MORE_RESULTS:
             return None
 
-        self._nextrow()
+        self._nextrow(session)
 
         if self._state != DB_RES_RESULTSET_ROWS:
             return None
 
-        cols = tds.res_info.columns
+        cols = session.res_info.columns
         row = tuple(col.value for col in cols)
         if self.as_dict:
             row_dict = dict(enumerate(cols))
@@ -307,77 +295,89 @@ class _Connection(object):
             row = row_dict
         return row
 
-    def _nextset(self, cursor):
-        if cursor is not self._active_cursor:
+    def _nextset(self, session):
+        if session is None:
             raise Error('This cursor is not active')
 
         while self._state == DB_RES_RESULTSET_ROWS:
-            self._nextrow()
-        self._sqlok()
+            self._nextrow(session)
+        self._sqlok(session)
         return None if self._state == DB_RES_NO_MORE_RESULTS else True
 
     def _rowcount(self, cursor):
-        if cursor is not self._active_cursor:
+        session = cursor._session
+        if session is None:
             return -1
-        tds = self.tds_socket
-        return tds.rows_affected
+        return session.rows_affected
 
     def _get_proc_return_status(self, cursor):
-        if cursor is not self._active_cursor:
+        session = cursor._session
+        if session is None:
             return None
-        tds = self.tds_socket
-        if not tds.has_status:
-            tds_process_tokens(tds, TDS_RETURN_PROC)
-        return tds.ret_status if tds.has_status else None
+        if not session.has_status:
+            tds_process_tokens(session, TDS_RETURN_PROC)
+        return session.ret_status if session.has_status else None
 
     def _description(self, cursor):
-        if cursor is not self._active_cursor:
+        session = cursor._session
+        if session is None:
             return None
-        res = self.tds_socket.res_info
+        res = session.res_info
         if res:
             return res.description
         else:
             return None
 
     def _native_description(self):
-        if cursor is not self._active_cursor:
+        session = cursor._session
+        if session is None:
             return None
-        res = self._conn.tds_socket.res_info
+        res = session.res_info
         if res:
             return res.native_descr
         else:
             return None
 
     def _close_cursor(self, cursor):
-        if cursor is self._active_cursor:
-            self._active_cursor = None
+        if cursor._session is not None:
+            if self._conn.mars_enabled:
+                cursor._session.close()
+            else:
+                if cursor is self._active_cursor:
+                    self._active_cursor = None
+                    self._session = None
         cursor._conn = None
 
     def _try_activate_cursor(self, cursor):
-        tds = self._get_connection()
-        if cursor is self._active_cursor or self._active_cursor is None:
-            self.cancel()
-        else:
-            if tds.state == TDS_PENDING:
-                rc, result_type, _ = tds_process_tokens(tds, TDS_TOKEN_TRAILING)
-                if rc != TDS_NO_MORE_RESULTS:
-                    raise InterfaceError('Results are still pending on connection')
-        self._active_cursor = cursor
+        conn = self._conn
+        if not conn.mars_enabled:
+            if not (cursor is self._active_cursor or self._active_cursor is None):
+                session = conn.main_session
+                if session.state == TDS_PENDING:
+                    rc, result_type, _ = tds_process_tokens(session, TDS_TOKEN_TRAILING)
+                    if rc != TDS_NO_MORE_RESULTS:
+                        raise InterfaceError('Results are still pending on connection')
+                cursor._session = session
+            self._active_cursor = cursor
 
     def _execute(self, cursor, operation, params):
-        tds = self._get_connection()
+        if not self._conn:
+            raise Error('Connection closed')
+        tds = self._conn
         self._try_activate_cursor(cursor)
-        tds_submit_query(tds, operation, params)
+        session = cursor._session
+        self._cancel(session)
+        tds_submit_query(session, operation, params)
         self._state = DB_RES_INIT
         while True:
-            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+            tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
 
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
-                raise_db_exception(tds)
+                raise_db_exception(session)
                 assert False
                 raise Exception('FAIL')
             if result_type == TDS_STATUS_RESULT:
@@ -405,19 +405,23 @@ class _Connection(object):
 
     def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
-        tds = self._get_connection()
+        if not self._conn:
+            raise Error('Connection closed')
+        tds = self._conn
         self._try_activate_cursor(cursor)
-        tds_submit_rpc(tds, procname, parameters)
-        tds.output_params = {}
+        session = cursor._session
+        self._cancel(session)
+        tds_submit_rpc(session, procname, parameters)
+        session.output_params = {}
         self._state = DB_RES_INIT
         while True:
-            tds_code, result_type, done_flags = tds_process_tokens(tds, TDS_TOKEN_RESULTS)
+            tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
             #/
             if done_flags & TDS_DONE_ERROR:
-                raise_db_exception(tds)
+                raise_db_exception(session)
                 assert False
                 raise Exception('FAIL')
             if result_type == TDS_STATUS_RESULT:
@@ -443,7 +447,7 @@ class _Connection(object):
                 logger.error('logic error: tds_process_tokens result_type %d', result_type);
         logger.debug('callproc end')
         results = list(parameters)
-        for key, param in tds.output_params.items():
+        for key, param in session.output_params.items():
             results[key] = param.value
         return results
 
@@ -459,6 +463,10 @@ class _Cursor(object):
         self._conn = conn
         self._batchsize = 1
         self.arraysize = 1
+        if conn._conn.mars_enabled:
+            self._session = conn._conn.create_session()
+        else:
+            self._session = conn._conn.main_session
 
     def __enter__(self):
         return self
@@ -523,13 +531,12 @@ class _Cursor(object):
 
     def executemany(self, operation, params_seq):
         counts = []
-        tds = self._conn.tds_socket
         for params in params_seq:
             self.execute(operation, params)
-            if tds.rows_affected != -1:
-                counts.append(tds.rows_affected)
+            if self._session.rows_affected != -1:
+                counts.append(self._session.rows_affected)
         if counts:
-            tds.rows_affected = sum(counts)
+            self._session.rows_affected = sum(counts)
 
     def execute_scalar(self, query_string, params=None):
         """
@@ -559,7 +566,7 @@ class _Cursor(object):
         return row[0]
 
     def nextset(self):
-        return self._conn._nextset(self)
+        return self._conn._nextset(self._session)
 
     @property
     def rowcount(self):
@@ -613,7 +620,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, as_dict=False,
         host='', appname=None, port=None, tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
-        blocksize=4096):
+        blocksize=4096, use_mars=True)
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
@@ -676,6 +683,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
     login.bulk_copy = False
     login.text_size = 0
     login.client_lcid = lcid.LANGID_ENGLISH_US
+    login.use_mars = use_mars
 
     # that will set:
     # ANSI_DEFAULTS to ON,
