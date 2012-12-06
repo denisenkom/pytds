@@ -674,6 +674,7 @@ class _TdsSession(object):
         self._tds = tds
         self.messages = []
         self.chunk_handler = tds.chunk_handler
+        self.rows_affected = -1
 
     def is_dead(self):
         return self.state == TDS_DEAD
@@ -859,6 +860,7 @@ def tds_open_socket(tds, host, port, timeout=0):
     if not timeout:
         timeout = 90000
     tds._sock = socket.create_connection((host, port), timeout)
+    tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     return tds
 
 def tds_select(tds, tds_sel, timeout_seconds):
