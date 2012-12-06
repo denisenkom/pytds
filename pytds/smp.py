@@ -1,5 +1,7 @@
 import struct
 import logging
+from StringIO import StringIO
+from tds import Error
 
 logger = logging.getLogger(__name__)
 
