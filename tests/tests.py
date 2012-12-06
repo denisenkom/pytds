@@ -326,15 +326,15 @@ class Description(TestCase):
 
 class Bug1(TestCase):
     def runTest(self):
-        conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
-        cur = conn.cursor()
         try:
+            conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
+            cur = conn.cursor()
             cur.execute('select 1')
             cur.fetchall()
+            cur.close()
+            conn.rollback()
         except:
             pass
-        cur.close()
-        conn.rollback()
 
 class BinaryTest(TestCase):
     def runTest(self):
