@@ -692,6 +692,7 @@ class _TdsSession(object):
 
 class _TdsSocket(object):
     def __init__(self, login):
+        self._is_connected = False
         self._bufsize = login.blocksize
         self.login = None
         self.int_handler = None
@@ -740,6 +741,7 @@ class _TdsSocket(object):
             text_size = login.text_size
             if self.mars_enabled:
                 self._setup_smp()
+            self._is_connected = True
             q = []
             if text_size:
                 q.append('set textsize {0}'.format(int(text_size)))
@@ -814,7 +816,11 @@ class _TdsSocket(object):
             self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
             self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
 
+    def is_connected(self):
+        return self._is_connected
+
     def close(self):
+        self._is_connected = False
         self._sock.close()
         tds_set_state(self._main_session, TDS_DEAD)
         if self.authentication:

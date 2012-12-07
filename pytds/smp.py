@@ -69,15 +69,18 @@ class SmpManager(object):
         if session._state in ('CLOSED', 'FIN SENT'):
             return
         elif session._state == 'SESSION ESTABLISHED':
-            hdr = self._smp_header.pack(self._smid,
-                self._FIN,
-                session._session_id, 
-                self._smp_header.size, 
-                session._seq_num_for_send,
-                session._high_water_for_recv,
-                )
-            self._state = 'FIN SENT'
-            self._transport.send(hdr, True)
+            if self._transport.is_connected():
+                hdr = self._smp_header.pack(self._smid,
+                    self._FIN,
+                    session._session_id, 
+                    self._smp_header.size, 
+                    session._seq_num_for_send,
+                    session._high_water_for_recv,
+                    )
+                self._state = 'FIN SENT'
+                self._transport.send(hdr, True)
+            else:
+                session._state = 'CLOSED'
 
     def _send_queued_packets(self, session):
         while session._send_queue and session._seq_num_for_send < session._high_water_for_send:
