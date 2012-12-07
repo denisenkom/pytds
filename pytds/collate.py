@@ -13,7 +13,7 @@ ucs2_codec = codecs.lookup('utf_16_le')
 def sortid2charset(sort_id):
     sql_collate = sort_id
     #
-    # The table from the MSQLServer reference "Windows Collation Designators" 
+    # The table from the MSQLServer reference "Windows Collation Designators"
     # and from " NLS Information for Microsoft Windows XP"
     #
     if sql_collate in (30, # SQL_Latin1_General_CP437_BIN
@@ -43,6 +43,8 @@ def sortid2charset(sort_id):
     elif sql_collate in (105, # SQL_Latin1_General_CP1251_CS_AS */
                         106):		# SQL_Latin1_General_CP1251_CI_AS */
         return 'CP1251'
+    elif sql_collate in (52, ):
+        return 'CP1252'
     elif sql_collate in (113, # SQL_Latin1_General_CP1253_CS_AS */
                         114,		# SQL_Latin1_General_CP1253_CI_AS */
                         120,		# SQL_MixDiction_CP1253_CS_AS */
@@ -59,6 +61,8 @@ def sortid2charset(sort_id):
     elif sql_collate in (153, # SQL_Latin1_General_CP1257_CS_AS */
                         154):		# SQL_Latin1_General_CP1257_CI_AS */
         return 'CP1257'
+    else:
+        raise Exception("Invalid collation: 0x%X" % (sql_collate, ))
 
 def lcid2charset(lcid):
     if lcid in (0x405,
@@ -132,10 +136,7 @@ class Collation(object):
     f_binary = 0x1000000
     f_binary2 = 0x2000000
 
-    def __init__(self, lcid, sort_id, ignore_case,
-            ignore_accent, ignore_width,
-            ignore_kana, binary, binary2,
-            version):
+    def __init__(self, lcid, sort_id, ignore_case, ignore_accent, ignore_width, ignore_kana, binary, binary2, version):
         self.lcid = lcid
         self.sort_id = sort_id
         self.ignore_case = ignore_case
