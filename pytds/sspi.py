@@ -373,7 +373,7 @@ def _make_buffers_desc(buffers):
 
 def make_winnt_identity(domain, user_name, password):
     identity = SEC_WINNT_AUTH_IDENTITY()
-    identity.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE
+    identity.Flags = 2 # SEC_WINNT_AUTH_IDENTITY_UNICODE
     identity.Password = password
     identity.PasswordLength = len(password)
     identity.Domain = domain
