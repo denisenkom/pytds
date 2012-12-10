@@ -17,31 +17,33 @@ from smp import SmpManager
 
 logger = logging.getLogger(__name__)
 
-class _SspiAuthentication(object):
-    def __init__(self, login):
+class SspiAuth(object):
+    def __init__(self, user_name='', password='', server_name='', port=None, spn=None):
         import sspi
-        import ctypes
         # parse username/password informations
-        user_name = login.user_name
-        pos = user_name.find('\\')
-        identity = None
-        if pos != -1:
-            domain = user_name[:pos]
-            user_name = user_name[pos+1:]
-            identity = sspi.make_winnt_identity(
+        if '\\' in user_name:
+            domain, user_name = user_name.split('\\')
+        else:
+            domain = ''
+        if domain and user_name:
+            self._identity = sspi.make_winnt_identity(
                 domain,
                 user_name,
-                login.password)
+                password)
+        else:
+            self._identity = None
+        # build SPN
+        if spn:
+            self._sname = spn
+        else:
+            primary_host_name, _, _ = socket.gethostbyname_ex(server_name)
+            self._sname = 'MSSQLSvc/{0}:{1}'.format(primary_host_name, port)
 
         # using Negotiate system will use proper protocol (either NTLM or Kerberos)
         self._cred = sspi.SspiCredentials(
             package='Negotiate',
             use=sspi.SECPKG_CRED_OUTBOUND,
-            identity=identity)
-
-        # build SPN
-        primary_host_name, _, _ = socket.gethostbyname_ex(login.server_name)
-        self._sname = 'MSSQLSvc/{0}:{1}'.format(primary_host_name, login.port)
+            identity=self._identity)
 
         self._flags = sspi.ISC_REQ_CONFIDENTIALITY|sspi.ISC_REQ_REPLAY_DETECT|sspi.ISC_REQ_CONNECTION
 
@@ -74,20 +76,22 @@ class _SspiAuthentication(object):
         self._ctx.close()
         self._cred.close()
 
-class _NtlmAuth(object):
-    def __init__(self, login):
-        self._login = login
-        import ntlm
-        self._domain, self._user = login.user_name.split('\\', 1)
+class NtlmAuth(object):
+    def __init__(self, user_name, password):
+        self._domain, self._user = user_name.split('\\', 1)
+        self._password = password
+
     def create_packet(self):
-        return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(
-            login.client_host_name, self._domain)
-    def close(self):
-        pass
+        import ntlm
+        return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(this_host_name, self._domain)
+
     def handle_next(self, packet):
         import ntlm
         nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
-        return ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags)
+        return ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._password, flags)
+
+    def close(self):
+        pass
 
 def tds_login(tds, login):
     db_selected = False
@@ -124,16 +128,9 @@ def tds7_send_login(tds, login):
     client_host_name = this_host_name
     login.client_host_name = client_host_name
     packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
-    if sys.platform == 'win32':
-        if user_name.find('\\') != -1 or not user_name:
-            tds.authentication = _SspiAuthentication(login)
-    else:
-        if user_name.find('\\') != -1:
-            tds.authentication = _NtlmAuth(login)
-        elif not user_name:
-            raise NotImplementedError('requested GSS authentication but it is not implemented')
-    if tds.authentication:
-        auth_packet = tds.authentication.create_packet()
+    if login.auth:
+        tds.authentication = login.auth
+        auth_packet = login.auth.create_packet()
         packet_size += len(auth_packet)
     else:
         auth_packet = ''
