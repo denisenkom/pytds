@@ -149,7 +149,6 @@ class _Connection(object):
             pass
 
     def __del__(self):
-        logger.debug("MSSQLConnection.__del__()")
         if self._conn is not None:
             self._conn.close()
 
