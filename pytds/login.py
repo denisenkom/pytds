@@ -42,33 +42,33 @@ class _SspiAuthentication(object):
         # build SPN
         primary_host_name, _, _ = socket.gethostbyname_ex(login.server_name)
         self._sname = 'MSSQLSvc/{0}:{1}'.format(primary_host_name, login.port)
-        self._buf = ctypes.create_string_buffer(4096)
-        bufs = [(sspi.SECBUFFER_TOKEN, self._buf)]
+
         self._flags = sspi.ISC_REQ_CONFIDENTIALITY|sspi.ISC_REQ_REPLAY_DETECT|sspi.ISC_REQ_CONNECTION
+
+    def create_packet(self):
+        import sspi
+        import ctypes
+        buf = ctypes.create_string_buffer(4096)
         self._ctx, status, bufs = self._cred.create_context(
             flags=self._flags,
             byte_ordering='network',
             target_name=self._sname,
-            output_buffers=bufs)
-        if status == sspi.Status.SEC_I_COMPLETE_AND_CONTINUE or status == sspi.Status.SEC_I_CONTINUE_NEEDED:
+            output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
+        if status == sspi.Status.SEC_I_COMPLETE_AND_CONTINUE:
             self._ctx.complete_auth_token(bufs)
-        self.packet = bufs[0][1]
+        return bufs[0][1]
 
-    def handle_next(self, tds, length):
+    def handle_next(self, packet):
         import sspi
-        r = tds._reader
-        token = r.readall(length)
+        import ctypes
+        buf = ctypes.create_string_buffer(4096)
         status, buffers = self._ctx.next(
             flags=self._flags,
             byte_ordering='network',
             target_name=self._sname,
-            input_buffers=[(sspi.SECBUFFER_TOKEN, token)],
-            output_buffers=[(sspi.SECBUFFER_TOKEN, self._buf)])
-        if len(buffers[0][1]) == 0:
-            return
-        w = tds._writer
-        w.write(buffers[0][1])
-        w.flush()
+            input_buffers=[(sspi.SECBUFFER_TOKEN, packet)],
+            output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
+        return buffers[0][1]
     
     def close(self):
         self._ctx.close()
@@ -79,16 +79,15 @@ class _NtlmAuth(object):
         self._login = login
         import ntlm
         self._domain, self._user = login.user_name.split('\\', 1)
-        self.packet = ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(login.client_host_name, self._domain)
+    def create_packet(self):
+        return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(
+            login.client_host_name, self._domain)
     def close(self):
         pass
-    def handle_next(self, tds, length):
+    def handle_next(self, packet):
         import ntlm
-        packet = tds._reader.readall(length)
         nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
-        w = tds._writer
-        w.write(ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags))
-        w.flush()
+        return ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags)
 
 def tds_login(tds, login):
     db_selected = False
@@ -125,23 +124,20 @@ def tds7_send_login(tds, login):
     client_host_name = this_host_name
     login.client_host_name = client_host_name
     packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
-    auth_len = 0
     if sys.platform == 'win32':
         if user_name.find('\\') != -1 or not user_name:
             tds.authentication = _SspiAuthentication(login)
-            auth_len = len(tds.authentication.packet)
-            packet_size += auth_len
-        else:
-            packet_size += (len(user_name) + len(login.password))*2
     else:
         if user_name.find('\\') != -1:
             tds.authentication = _NtlmAuth(login)
-            auth_len = len(tds.authentication.packet)
-            packet_size += auth_len
         elif not user_name:
             raise NotImplementedError('requested GSS authentication but it is not implemented')
-        else:
-            packet_size += (len(user_name) + len(login.password))*2
+    if tds.authentication:
+        auth_packet = tds.authentication.create_packet()
+        packet_size += len(auth_packet)
+    else:
+        auth_packet = ''
+        packet_size += (len(user_name) + len(login.password))*2
     w.put_int(packet_size)
     w.put_uint(login.tds_version)
     w.put_int(w.bufsize)
@@ -202,8 +198,8 @@ def tds7_send_login(tds, login):
     w.write(mac_address)
     # authentication
     w.put_smallint(current_pos)
-    w.put_smallint(auth_len)
-    current_pos += auth_len
+    w.put_smallint(len(auth_packet))
+    current_pos += len(auth_packet)
     # db file
     w.put_smallint(current_pos)
     w.put_smallint(len(login.attach_db_file))
@@ -224,7 +220,7 @@ def tds7_send_login(tds, login):
     w.write_ucs2(login.language)
     w.write_ucs2(login.database)
     if tds.authentication:
-        w.write(tds.authentication.packet)
+        w.write(auth_packet)
     w.write_ucs2(login.attach_db_file)
     w.flush()
 

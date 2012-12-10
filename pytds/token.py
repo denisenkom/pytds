@@ -50,10 +50,14 @@ def tds_token_name(marker):
 
 def tds_process_auth(tds):
     r = tds._reader
+    w = tds._writer
     pdu_size = r.get_smallint()
     if not tds.authentication:
         raise Error('Got unexpected token')
-    tds.authentication.handle_next(tds, pdu_size)
+    packet = tds.authentication.handle_next(r.readall(pdu_size))
+    if packet:
+        w.write(packet)
+        w.flush()
 
 def tds_process_default_tokens(tds, marker):
     r = tds._reader
