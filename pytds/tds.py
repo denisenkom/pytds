@@ -709,7 +709,7 @@ class _TdsSocket(object):
 
         # Jeff's hack, init to no timeout
         self.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
-        tds_set_s(self, None)
+        self._sock = None
         import socket
         if hasattr(socket, 'socketpair'):
             tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -821,7 +821,8 @@ class _TdsSocket(object):
 
     def close(self):
         self._is_connected = False
-        self._sock.close()
+        if self._sock is not None:
+            self._sock.close()
         tds_set_state(self._main_session, TDS_DEAD)
         if self.authentication:
             self.authentication.close()
