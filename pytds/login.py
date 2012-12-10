@@ -58,23 +58,17 @@ class _SspiAuthentication(object):
             self._ctx.complete_auth_token(bufs)
         return bufs[0][1]
 
-    def handle_next(self, tds, length):
+    def handle_next(self, packet):
         import sspi
         import ctypes
-        r = tds._reader
-        token = r.readall(length)
         buf = ctypes.create_string_buffer(4096)
         status, buffers = self._ctx.next(
             flags=self._flags,
             byte_ordering='network',
             target_name=self._sname,
-            input_buffers=[(sspi.SECBUFFER_TOKEN, token)],
+            input_buffers=[(sspi.SECBUFFER_TOKEN, packet)],
             output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
-        if len(buffers[0][1]) == 0:
-            return
-        w = tds._writer
-        w.write(buffers[0][1])
-        w.flush()
+        return buffers[0][1]
     
     def close(self):
         self._ctx.close()
@@ -90,13 +84,10 @@ class _NtlmAuth(object):
             login.client_host_name, self._domain)
     def close(self):
         pass
-    def handle_next(self, tds, length):
+    def handle_next(self, packet):
         import ntlm
-        packet = tds._reader.readall(length)
         nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
-        w = tds._writer
-        w.write(ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags))
-        w.flush()
+        return ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._login.password, flags)
 
 def tds_login(tds, login):
     db_selected = False
