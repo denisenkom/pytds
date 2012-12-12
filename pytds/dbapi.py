@@ -507,7 +507,8 @@ class _Cursor(object):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        self._conn._close_cursor(self)
+        if self._conn is not None:
+            self._conn._close_cursor(self)
 
     def execute(self, operation, params=()):
         # Execute the query

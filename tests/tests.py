@@ -596,3 +596,9 @@ class Auth(unittest.TestCase):
         with conn.cursor() as cursor:
             cursor.execute('select 1')
             cursor.fetchall()
+
+class CloseCursorTwice(TestCase):
+    def runTest(self):
+        cursor = self.conn.cursor()
+        cursor.close()
+        cursor.close()
