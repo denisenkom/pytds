@@ -16,50 +16,106 @@ def sortid2charset(sort_id):
     # The table from the MSQLServer reference "Windows Collation Designators"
     # and from " NLS Information for Microsoft Windows XP"
     #
-    if sql_collate in (30, # SQL_Latin1_General_CP437_BIN
-                    31,		# SQL_Latin1_General_CP437_CS_AS */
-                    32,		# SQL_Latin1_General_CP437_CI_AS */
-                    33,		# SQL_Latin1_General_Pref_CP437_CI_AS */
-                    34):	# SQL_Latin1_General_CP437_CI_AI */
+    if sql_collate in (
+            30, # SQL_Latin1_General_CP437_BIN
+            31, # SQL_Latin1_General_CP437_CS_AS
+            32, # SQL_Latin1_General_CP437_CI_AS
+            33, # SQL_Latin1_General_Pref_CP437_CI_AS
+            34): # SQL_Latin1_General_CP437_CI_AI
         return 'CP437'
-    elif sql_collate in (40, # SQL_Latin1_General_CP850_BIN */
-                        41,		# SQL_Latin1_General_CP850_CS_AS */
-                        42,		# SQL_Latin1_General_CP850_CI_AS */
-                        43,		# SQL_Latin1_General_Pref_CP850_CI_AS */
-                        44,		# SQL_Latin1_General_CP850_CI_AI */
-                        49,		# SQL_1xCompat_CP850_CI_AS */
-                        55,		# SQL_AltDiction_CP850_CS_AS */
-                        56,		# SQL_AltDiction_Pref_CP850_CI_AS */
-                        57,		# SQL_AltDiction_CP850_CI_AI */
-                        58,		# SQL_Scandinavian_Pref_CP850_CI_AS */
-                        59,		# SQL_Scandinavian_CP850_CS_AS */
-                        60,		# SQL_Scandinavian_CP850_CI_AS */
-                        61):	# SQL_AltDiction_CP850_CI_AS */
+    elif sql_collate in (
+            40, # SQL_Latin1_General_CP850_BIN
+            41, # SQL_Latin1_General_CP850_CS_AS
+            42, # SQL_Latin1_General_CP850_CI_AS
+            43, # SQL_Latin1_General_Pref_CP850_CI_AS
+            44, # SQL_Latin1_General_CP850_CI_AI
+            49, # SQL_1xCompat_CP850_CI_AS
+            55, # SQL_AltDiction_CP850_CS_AS
+            56, # SQL_AltDiction_Pref_CP850_CI_AS
+            57, # SQL_AltDiction_CP850_CI_AI
+            58, # SQL_Scandinavian_Pref_CP850_CI_AS
+            59, # SQL_Scandinavian_CP850_CS_AS
+            60, # SQL_Scandinavian_CP850_CI_AS
+            61): # SQL_AltDiction_CP850_CI_AS
         return 'CP850'
-    elif sql_collate in (80, # SQL_Latin1_General_1250_BIN */
-                        81,		# SQL_Latin1_General_CP1250_CS_AS */
-                        82):	# SQL_Latin1_General_CP1250_CI_AS */
+    elif sql_collate in (
+            80, # SQL_Latin1_General_1250_BIN
+            81, # SQL_Latin1_General_CP1250_CS_AS
+            82, # SQL_Latin1_General_Cp1250_CI_AS_KI_WI
+            83, # SQL_Czech_Cp1250_CS_AS_KI_WI
+            84, # SQL_Czech_Cp1250_CI_AS_KI_WI
+            85, # SQL_Hungarian_Cp1250_CS_AS_KI_WI
+            86, # SQL_Hungarian_Cp1250_CI_AS_KI_WI
+            87, # SQL_Polish_Cp1250_CS_AS_KI_WI
+            88, # SQL_Polish_Cp1250_CI_AS_KI_WI
+            89, # SQL_Romanian_Cp1250_CS_AS_KI_WI
+            90, # SQL_Romanian_Cp1250_CI_AS_KI_WI
+            91, # SQL_Croatian_Cp1250_CS_AS_KI_WI
+            92, # SQL_Croatian_Cp1250_CI_AS_KI_WI
+            93, # SQL_Slovak_Cp1250_CS_AS_KI_WI
+            94, # SQL_Slovak_Cp1250_CI_AS_KI_WI
+            95, # SQL_Slovenian_Cp1250_CS_AS_KI_WI
+            96, # SQL_Slovenian_Cp1250_CI_AS_KI_WI
+            ):
         return 'CP1250'
-    elif sql_collate in (105, # SQL_Latin1_General_CP1251_CS_AS */
-                        106):		# SQL_Latin1_General_CP1251_CI_AS */
+    elif sql_collate in (
+            104, # SQL_Latin1_General_1251_BIN
+            105, # SQL_Latin1_General_CP1251_CS_AS
+            106, # SQL_Latin1_General_CP1251_CI_AS
+            107, # SQL_Ukrainian_Cp1251_CS_AS_KI_WI
+            108, # SQL_Ukrainian_Cp1251_CI_AS_KI_WI
+            ):
         return 'CP1251'
-    elif sql_collate in (52, ):
+    elif sql_collate in (
+            51, # SQL_Latin1_General_Cp1_CS_AS_KI_WI
+            52, # SQL_Latin1_General_Cp1_CI_AS_KI_WI
+            53, # SQL_Latin1_General_Pref_Cp1_CI_AS_KI_WI
+            54, # SQL_Latin1_General_Cp1_CI_AI_KI_WI
+            183, # SQL_Danish_Pref_Cp1_CI_AS_KI_WI
+            184, # SQL_SwedishPhone_Pref_Cp1_CI_AS_KI_WI
+            185, # SQL_SwedishStd_Pref_Cp1_CI_AS_KI_WI
+            186, # SQL_Icelandic_Pref_Cp1_CI_AS_KI_WI
+            ):
         return 'CP1252'
-    elif sql_collate in (113, # SQL_Latin1_General_CP1253_CS_AS */
-                        114,		# SQL_Latin1_General_CP1253_CI_AS */
-                        120,		# SQL_MixDiction_CP1253_CS_AS */
-                        121,		# SQL_AltDiction_CP1253_CS_AS */
-                        122,		# SQL_AltDiction2_CP1253_CS_AS */
-                        124):		# SQL_Latin1_General_CP1253_CI_AI */
+    elif sql_collate in (
+            112, # SQL_Latin1_General_1253_BIN
+            113, # SQL_Latin1_General_CP1253_CS_AS
+            114, # SQL_Latin1_General_CP1253_CI_AS
+            120, # SQL_MixDiction_CP1253_CS_AS
+            121, # SQL_AltDiction_CP1253_CS_AS
+            122, # SQL_AltDiction2_CP1253_CS_AS
+            124, # SQL_Latin1_General_CP1253_CI_AI
+            ):
         return 'CP1253'
-    elif sql_collate in (137, # SQL_Latin1_General_CP1255_CS_AS */
-                        138):		# SQL_Latin1_General_CP1255_CI_AS */
+    elif sql_collate in (
+            128, # SQL_Latin1_General_1254_BIN
+            129, # SQL_Latin1_General_Cp1254_CS_AS_KI_WI
+            130, # SQL_Latin1_General_Cp1254_CI_AS_KI_WI
+            ):
+        return 'CP1254'
+    elif sql_collate in (
+            136, # SQL_Latin1_General_1255_BIN
+            137, # SQL_Latin1_General_CP1255_CS_AS
+            138, # SQL_Latin1_General_CP1255_CI_AS
+            ):
         return 'CP1255'
-    elif sql_collate in (145, # SQL_Latin1_General_CP1256_CS_AS */
-                        146):		# SQL_Latin1_General_CP1256_CI_AS */
+    elif sql_collate in (
+            144, # SQL_Latin1_General_1256_BIN
+            145, # SQL_Latin1_General_CP1256_CS_AS
+            146, # SQL_Latin1_General_CP1256_CI_AS
+            ):
         return 'CP1256'
-    elif sql_collate in (153, # SQL_Latin1_General_CP1257_CS_AS */
-                        154):		# SQL_Latin1_General_CP1257_CI_AS */
+    elif sql_collate in (
+            152, # SQL_Latin1_General_1257_BIN
+            153, # SQL_Latin1_General_CP1257_CS_AS
+            154, # SQL_Latin1_General_CP1257_CI_AS
+            155, # SQL_Estonian_Cp1257_CS_AS_KI_WI
+            156, # SQL_Estonian_Cp1257_CI_AS_KI_WI
+            157, # SQL_Latvian_Cp1257_CS_AS_KI_WI
+            158, # SQL_Latvian_Cp1257_CI_AS_KI_WI
+            159, # SQL_Lithuanian_Cp1257_CS_AS_KI_WI
+            160, # SQL_Lithuanian_Cp1257_CI_AS_KI_WI
+            ):
         return 'CP1257'
     else:
         raise Exception("Invalid collation: 0x%X" % (sql_collate, ))
