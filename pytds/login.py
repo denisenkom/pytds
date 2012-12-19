@@ -149,7 +149,10 @@ def tds7_send_login(tds, login):
     if tds.authentication:
         option_flag2 |= TDS_INTEGRATED_SECURITY_ON
     w.put_byte(option_flag2)
-    w.put_byte(0) # sql_type_flag
+    type_flags = 0
+    if login.readonly:
+        type_flags |= (2 << 5)
+    w.put_byte(type_flags)
     option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
     w.put_byte(option_flag3 if IS_TDS73_PLUS(tds) else 0)
     w.put_int(mins_fix)
