@@ -155,14 +155,14 @@ def tds_process_default_tokens(tds, marker):
 #
 def tds_process_row(tds):
     info = tds.current_results
-    if not info:
-        raise Exception('TDS_FAIL')
+    #if not info:
+    #    raise Exception('TDS_FAIL')
 
-    assert len(info.columns) > 0
+    #assert len(info.columns) > 0
 
     info.row_count += 1
-    for i, curcol in enumerate(info.columns):
-        logger.debug("tds_process_row(): reading column %d" % i)
+    for curcol in info.columns:
+        #logger.debug("tds_process_row(): reading column %d" % i)
         curcol.value = curcol.funcs.get_data(tds, curcol)
     return TDS_SUCCESS
 
@@ -214,7 +214,7 @@ def tds_process_end(tds, marker):
     if was_cancelled or (not more_results and not tds.in_cancel):
         logger.debug('tds_process_end() state set to TDS_IDLE')
         tds.in_cancel = False
-        tds_set_state(tds, TDS_IDLE)
+        tds.set_state(TDS_IDLE)
     if tds.is_dead():
         raise Exception('TDS_FAIL')
     if done_count_valid:
@@ -488,8 +488,10 @@ def tds_process_tokens(tds, flag):
 
     def SET_RETURN(ret, f):
         parent['result_type'] = ret
-        parent['return_flag'] = getattr(tdsflags, 'TDS_RETURN_' + f) | getattr(tdsflags, 'TDS_STOPAT_' + f)
-        if flag & getattr(tdsflags, 'TDS_STOPAT_' + f):
+        return_flag = getattr(tdsflags, 'TDS_RETURN_' + f)
+        stopat_flag = getattr(tdsflags, 'TDS_STOPAT_' + f)
+        parent['return_flag'] = return_flag | stopat_flag
+        if flag & stopat_flag:
             r.unget_byte()
             logger.debug("tds_process_tokens::SET_RETURN stopping on current token")
             return False
@@ -499,7 +501,7 @@ def tds_process_tokens(tds, flag):
         logger.debug("tds_process_tokens() state is COMPLETED")
         return TDS_NO_MORE_RESULTS, TDS_DONE_RESULT, done_flags
 
-    if tds_set_state(tds, TDS_READING) != TDS_READING:
+    if tds.set_state(TDS_READING) != TDS_READING:
         raise Exception('TDS_FAIL')
     try:
         rc = TDS_SUCCESS
@@ -700,7 +702,7 @@ def tds_process_tokens(tds, flag):
 
             if parent['return_flag'] & flag != 0:
                 if tds.state != TDS_IDLE:
-                    tds_set_state(tds, TDS_PENDING)
+                    tds.set_state(TDS_PENDING)
                 return rc, parent['result_type'], done_flags
 
             if tds.state == TDS_IDLE:
@@ -710,7 +712,7 @@ def tds_process_tokens(tds, flag):
                 # TODO free all results ??
                 return TDS_FAIL, parent['result_type'], done_flags
     except:
-        tds_set_state(tds, TDS_PENDING)
+        tds.set_state(TDS_PENDING)
         raise
 
 #/**

@@ -162,7 +162,7 @@ class DefaultHandler(object):
 
     @classmethod
     def get_data(cls, tds, curcol):
-        logger.debug("tds_get_data: type %d, varint size %d" % (curcol.column_type, curcol.column_varint_size))
+        #logger.debug("tds_get_data: type %d, varint size %d" % (curcol.column_type, curcol.column_varint_size))
         r = tds._reader
         cvs = curcol.column_varint_size
         if cvs == 4:
@@ -199,7 +199,7 @@ class DefaultHandler(object):
         else:
             colsize = -1;
 
-        logger.debug("tds_get_data(): wire column size is %d" % colsize)
+        #logger.debug("tds_get_data(): wire column size is %d" % colsize)
         # set NULL flag in the row buffer
         if colsize < 0:
             return None
@@ -481,45 +481,56 @@ class DefaultHandler(object):
             raise Exception('not implemented')
 
 _SYBFLT8_STRUCT = struct.Struct('d')
+_ubyte_struct = struct.Struct('B')
+_sbyte_struct = struct.Struct('b')
+_sshort_struct = struct.Struct('<h')
+_slong_struct = struct.Struct('<l')
+_slong8_struct = struct.Struct('<q')
+_flt4_struct = struct.Struct('f')
+_money8_struct = struct.Struct('<lL')
+_simple_types = set((SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
+        SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\
+        XSYBVARBINARY, XSYBBINARY, SYBVARBINARY))
 
 def to_python(tds, data, type, length):
-    logger.debug("to_python()")
+    #logger.debug("to_python()")
 
-    if type in (SYBBIT, SYBBITN):
-        return bool(struct.unpack('B', data)[0])
+    if type == SYBBIT or type == SYBBITN:
+        return bool(_ubyte_struct.unpack(data)[0])
 
     elif type == SYBINT1 or type == SYBINTN and length == 1:
-        return struct.unpack('b', data)[0]
+        return _sbyte_struct.unpack(data)[0]
 
     elif type == SYBINT2 or type == SYBINTN and length == 2:
-        return struct.unpack('<h', data)[0]
+        return _sshort_struct.unpack(data)[0]
 
     elif type == SYBINT4 or type == SYBINTN and length == 4:
-        return struct.unpack('<l', data)[0]
+        return _slong_struct.unpack(data)[0]
 
     elif type == SYBINT8 or type == SYBINTN and length == 8:
-        return struct.unpack('<q', data)[0]
+        return _slong8_struct.unpack(data)[0]
 
     elif type == SYBREAL or type == SYBFLTN and length == 4:
-        return struct.unpack('f', data)[0]
+        return _flt4_struct.unpack(data)[0]
 
     elif type == SYBFLT8 or type == SYBFLTN and length == 8:
         return _SYBFLT8_STRUCT.unpack(data)[0]
 
     elif type in (SYBMONEY, SYBMONEY4, SYBMONEYN):
         if length == 8:
-            hi, lo = struct.unpack('<lL', data)
+            hi, lo = _money8_struct.unpack(data)
             val = hi * (2 ** 32) + lo
         elif length == 4:
-            val, = struct.unpack('<l', data)
+            val, = _slong_struct.unpack(data)
         else:
             raise Exception('unsupported size of money type')
         val = Decimal(val)/10000
         return val
 
-    elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
-            SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\
-            XSYBVARBINARY, XSYBBINARY, SYBVARBINARY):
+    #elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
+    #        SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\
+    #        XSYBVARBINARY, XSYBBINARY, SYBVARBINARY):
+    elif type in _simple_types:
 
         return data
 

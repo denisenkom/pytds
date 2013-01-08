@@ -33,7 +33,7 @@ def tds_start_query(tds):
 
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
-    tds_set_state(tds, TDS_PENDING)
+    tds.set_state(TDS_PENDING)
     tds._writer.flush()
 
 def convert_params(tds, parameters):
@@ -96,13 +96,13 @@ def _submit_rpc(tds, rpc_name, params, flags):
         return tds_send_emulated_rpc(tds, rpc_name, params)
 
 def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
-    if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+    if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
         raise Exception('TDS_FAIL')
     try:
         _submit_rpc(tds, rpc_name, params, flags)
         tds_query_flush_packet(tds)
     except:
-        tds_set_state(tds, TDS_IDLE)
+        tds.set_state(TDS_IDLE)
         raise
 
 #
@@ -120,7 +120,7 @@ def tds_submit_query(tds, query, params=(), flags=0):
     if not query:
         raise Exception('TDS_FAIL')
 
-    if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+    if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
         raise Exception('TDS_FAIL')
     try:
         tds.res_info = None
@@ -155,7 +155,7 @@ def tds_submit_query(tds, query, params=(), flags=0):
             tds.internal_sp_called = TDS_SP_EXECUTESQL
         tds_query_flush_packet(tds)
     except:
-        tds_set_state(tds, TDS_IDLE)
+        tds.set_state(TDS_IDLE)
         raise
 
 
@@ -238,7 +238,7 @@ def tds_put_data_info(tds, curcol):
 def tds_submit_begin_tran(tds):
     logger.debug('tds_submit_begin_tran()')
     if IS_TDS72_PLUS(tds):
-        if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+        if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
         w = tds._writer
@@ -257,7 +257,7 @@ def tds_submit_begin_tran(tds):
 def tds_submit_rollback(tds, cont):
     logger.debug('tds_submit_rollback(%s, %s)', id(tds), cont)
     if IS_TDS72_PLUS(tds):
-        if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+        if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
         w = tds._writer
@@ -278,7 +278,7 @@ def tds_submit_rollback(tds, cont):
 def tds_submit_commit(tds, cont):
     logger.debug('tds_submit_commit(%s)', cont)
     if IS_TDS72_PLUS(tds):
-        if tds_set_state(tds, TDS_QUERYING) != TDS_QUERYING:
+        if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
             raise Exception('TDS_FAIL')
 
         w = tds._writer

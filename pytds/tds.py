@@ -318,9 +318,6 @@ class InternalProc(object):
 
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
 
-def tds_set_state(tds, state):
-    return tds.set_state(state)
-
 def tds_mutex_trylock(mutex):
     pass
 
@@ -377,7 +374,7 @@ class _TdsReader(object):
         return self.unpack(_byte)[0]
 
     def _le(self):
-        return tds_conn(self._tds).emul_little_endian
+        return self._tds.emul_little_endian
 
     def get_smallint(self):
         if self._le():
@@ -440,14 +437,13 @@ class _TdsReader(object):
         res = self.read(size)
         if len(res) == size:
             return res
-        result = StringIO()
-        result.write(res)
+        chunks = [res]
         left = size - len(res)
         while left:
             buf = self.read(left)
-            result.write(buf)
+            chunks.append(buf)
             left -= len(buf)
-        return result.getvalue()
+        return ''.join(chunks)
 
     def read(self, size):
         if self._pos >= len(self._buf):
@@ -596,12 +592,12 @@ class MemoryChunkedHandler(object):
     def begin(self, column, size):
         logger.debug('MemoryChunkedHandler.begin(sz=%d)', size)
         self.size = size
-        self.sio = StringIO()
+        self._chunks = []
     def new_chunk(self, val):
-        logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
-        self.sio.write(val)
+        #logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
+        self._chunks.append(val)
     def end(self):
-        return self.sio.getvalue()
+        return ''.join(self._chunks)
 
 class _TdsSession(object):
     def __init__(self, tds, transport):

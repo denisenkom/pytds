@@ -194,23 +194,18 @@ class _Connection(object):
         finally:
             cur.close()
 
+    _nextrow_mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
+
     def _nextrow(self, session):
         logger.debug("_nextrow()")
         resinfo = session.res_info
         if not resinfo or self._state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
-            logger.debug("leaving _nextrow() returning NO_MORE_ROWS")
+            #logger.debug("leaving _nextrow() returning NO_MORE_ROWS")
             return
 
-        #
-        # Try to get the self->row_buf.current item from the buffered rows, if any.  
-        # Else read from the stream, unless the buffer is exhausted.  
-        # If no rows are read, DBROWTYPE() will report NO_MORE_ROWS. 
-        #/
-        mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
-
         # Get the row from the TDS stream.
-        rc, res_type, done_flags = tds_process_tokens(session, mask)
+        rc, res_type, done_flags = tds_process_tokens(session, self._nextrow_mask)
         if done_flags & TDS_DONE_ERROR:
             raise_db_exception(session)
             assert False
