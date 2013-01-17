@@ -61,6 +61,14 @@ class TestCase2(TestCase):
         assert Decimal('-1234567.5555') == cur.execute_scalar("select cast('-1234567.5555' as money) as fieldname")
         assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
 
+    def test_timeout(self):
+        conn = connect(login_timeout=1, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
+        cur = conn.cursor()
+        with self.assertRaises(Error):
+            cur.execute("waitfor delay '00:00:05'")
+        with self.assertRaises(Error):
+            cur.execute('select 1')
+
 class ParametrizedQueriesTestCase(TestCase):
     def _test_val(self, val):
         cur = self.conn.cursor()

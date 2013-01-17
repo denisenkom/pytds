@@ -55,20 +55,22 @@ class _Connection(object):
         """
         return self._autocommit
 
+    def _assert_open(self):
+        if not self._conn or not self._conn.is_connected():
+            raise Error('Connection closed')
+
     @property
     def chunk_handler(self):
         '''
         Returns current chunk handler
         Default is MemoryChunkedHandler()
         '''
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         return self._conn.chunk_handler
 
     @chunk_handler.setter
     def chunk_handler_set(self, value):
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         self._conn.chunk_handler = value
 
     @property
@@ -76,8 +78,7 @@ class _Connection(object):
         '''
         Returns version of tds protocol that is being used by this connection
         '''
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         return self._conn.tds_version
 
     @property
@@ -85,8 +86,7 @@ class _Connection(object):
         '''
         Returns version of the server
         '''
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         return self._conn.product_version
 
     def __init__(self, login, as_dict, autocommit):
@@ -106,8 +106,7 @@ class _Connection(object):
         """
         Commit transaction which is currently in progress.
         """
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         if self._autocommit:
             return
 
@@ -127,16 +126,14 @@ class _Connection(object):
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         return _Cursor(self)
 
     def rollback(self):
         """
         Roll back transaction which is currently in progress.
         """
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         if self._autocommit:
             return
 
@@ -173,8 +170,7 @@ class _Connection(object):
         this case.
         """
         logger.debug("MSSQLConnection.close()")
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         self._conn.close()
         self._conn = None
 
@@ -186,8 +182,7 @@ class _Connection(object):
         failure.
         """
         logger.debug("MSSQLConnection.select_db()")
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         cur = self.cursor()
         try:
             cur.execute('use {0}'.format(tds_quote_id(self._conn, dbname)))
@@ -355,8 +350,7 @@ class _Connection(object):
             self._active_cursor = cursor
 
     def _execute(self, cursor, operation, params):
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         tds = self._conn
         self._try_activate_cursor(cursor)
         session = cursor._session
@@ -399,8 +393,7 @@ class _Connection(object):
 
     def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
-        if not self._conn:
-            raise Error('Connection closed')
+        self._assert_open()
         tds = self._conn
         self._try_activate_cursor(cursor)
         session = cursor._session
