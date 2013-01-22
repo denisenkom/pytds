@@ -133,8 +133,10 @@ class _Connection(object):
         """
         Roll back transaction which is currently in progress.
         """
-        self._assert_open()
         if self._autocommit:
+            return
+
+        if not self._conn or not self._conn.is_connected():
             return
 
         session = self._conn.main_session
