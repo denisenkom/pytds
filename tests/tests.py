@@ -64,10 +64,9 @@ class TestCase2(TestCase):
     def test_timeout(self):
         conn = connect(login_timeout=1, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
         cur = conn.cursor()
-        with self.assertRaises(Error):
+        with self.assertRaises(TimeoutError):
             cur.execute("waitfor delay '00:00:05'")
-        with self.assertRaises(Error):
-            cur.execute('select 1')
+        cur.execute('select 1')
 
 class ParametrizedQueriesTestCase(TestCase):
     def _test_val(self, val):

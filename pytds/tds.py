@@ -210,6 +210,9 @@ class Warning(StandardError):
 class Error(StandardError):
     pass
 
+class TimeoutError(Error):
+    pass
+
 class InterfaceError(Error):
     pass
 
@@ -353,15 +356,16 @@ _int8_le = struct.Struct('<q')
 _int8_be = struct.Struct('>q')
 
 class _TdsReader(object):
-    def __init__(self, tds):
+    def __init__(self, session, emul_little_endian):
         self._buf = ''
         self._pos = 0 # position in the buffer
         self._have = 0 # number of bytes read from packet
         self._size = 0 # size of current packet
-        self._tds = tds
-        self._transport = tds
+        self._session = session
+        self._transport = session._transport
         self._type = None
         self._status = None
+        self._emul_little_endian = emul_little_endian
 
     @property
     def packet_type(self):
@@ -374,7 +378,7 @@ class _TdsReader(object):
         return self.unpack(_byte)[0]
 
     def _le(self):
-        return self._tds.emul_little_endian
+        return self._emul_little_endian
 
     def get_smallint(self):
         if self._le():
@@ -458,10 +462,14 @@ class _TdsReader(object):
         return res
 
     def _read_packet(self):
-        header = self._transport.recv(_header.size)
+        try:
+            header = self._transport.recv(_header.size)
+        except TimeoutError:
+            tds_put_cancel(self._session)
+            raise
         if len(header) < _header.size:
             self._pos = 0
-            if self._tds.state != TDS_IDLE and len(header) == 0:
+            if self._state.state != TDS_IDLE and len(header) == 0:
                 self._transport.close()
             raise Exception('Reading header error')
         logger.debug('Received header')
@@ -610,7 +618,7 @@ class _TdsSession(object):
         self.cur_cursor = None
         self.has_status = False
         self._transport = transport
-        self._reader = _TdsReader(tds)
+        self._reader = _TdsReader(self, tds.emul_little_endian)
         self._reader._transport = transport
         self._writer = _TdsWriter(tds, tds._bufsize)
         self._writer._transport = transport
@@ -782,8 +790,7 @@ class _TdsSocket(object):
                 raise Error('Server closed connection')
             return buf
         else:
-            self.close()
-            raise Error('Timeout')
+            raise TimeoutError('Timeout')
 
     def recv(self, size):
         return self._read(size)
@@ -797,7 +804,7 @@ class _TdsSocket(object):
             res = tds_select(self, TDSSELWRITE, self.query_timeout)
             if not res:
                 #timeout
-                raise Error('Timeout')
+                raise TimeoutError('Timeout')
             try:
                 flags = 0
                 if hasattr(socket, 'MSG_NOSIGNAL'):
