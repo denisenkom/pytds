@@ -290,7 +290,7 @@ default = _Default()
 def raise_db_exception(tds):
     msg = tds.messages[-1]
     msg_no = msg['msgno']
-    error_msg = msg['message']
+    error_msg = ' '.join(msg['message'] for msg in tds.messages)
     if msg_no in prog_errors:
         ex = ProgrammingError(error_msg)
     elif msg_no in integrity_errors:
