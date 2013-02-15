@@ -609,3 +609,13 @@ class CloseCursorTwice(TestCase):
         cursor = self.conn.cursor()
         cursor.close()
         cursor.close()
+
+
+class RegressionSuite(TestCase):
+    def test_commit(self):
+        if self.conn.mars_enabled:
+            self.skipTest('Only breaks when mars is disabled')
+        cursor = self.conn.cursor()
+        cursor.execute('select 1')
+        cursor.fetchall()
+        self.conn.commit()

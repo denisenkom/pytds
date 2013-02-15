@@ -89,6 +89,10 @@ class _Connection(object):
         self._assert_open()
         return self._conn.product_version
 
+    @property
+    def mars_enabled(self):
+        return self._conn.mars_enabled
+
     def __init__(self, login, as_dict, autocommit):
         self._login = login
         self._as_dict = as_dict
@@ -348,7 +352,8 @@ class _Connection(object):
                     rc, result_type, _ = tds_process_tokens(session, TDS_TOKEN_TRAILING)
                     if rc != TDS_NO_MORE_RESULTS:
                         raise InterfaceError('Results are still pending on connection')
-                cursor._session = session
+                if cursor is not None:
+                    cursor._session = session
             self._active_cursor = cursor
 
     def _execute(self, cursor, operation, params):
