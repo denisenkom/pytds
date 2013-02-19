@@ -64,7 +64,7 @@ def tds_process_default_tokens(tds, marker):
     logger.debug('tds_process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
     if tds.is_dead():
         logger.debug('leaving tds_process_login_tokens() connection dead')
-        tds_close_socket(tds)
+        tds.close()
         raise Exception('TDS_FAIL')
     if marker == TDS_AUTH_TOKEN:
         return tds_process_auth(tds)
@@ -146,7 +146,7 @@ def tds_process_default_tokens(tds, marker):
     elif marker == TDS_NBC_ROW_TOKEN:
         return tds_process_nbcrow(tds)
     else:
-        tds_close_socket(tds)
+        tds.close()
         logger.error('Unknown marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
         raise Exception('TDSEBTOK')
 
