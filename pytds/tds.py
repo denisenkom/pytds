@@ -598,7 +598,6 @@ class _TdsWriter(object):
 
 class MemoryChunkedHandler(object):
     def begin(self, column, size):
-        logger.debug('MemoryChunkedHandler.begin(sz=%d)', size)
         self.size = size
         self._chunks = []
     def new_chunk(self, val):
