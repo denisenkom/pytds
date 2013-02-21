@@ -619,3 +619,20 @@ class RegressionSuite(TestCase):
         cursor.execute('select 1')
         cursor.fetchall()
         self.conn.commit()
+
+
+class TestLoadBalancer(TestCase):
+    def test_second(self):
+        lb = dbapi.SimpleLoadBalancer(['badserver', settings.CONNECT_KWARGS['server']])
+        with connect(*settings.CONNECT_ARGS, load_balancer=lb, **settings.CONNECT_KWARGS) as conn:
+            with conn.cursor() as cur:
+                cur.execute('select 1')
+                cur.fetchall()
+
+    def test_none(self):
+        lb = dbapi.SimpleLoadBalancer(['badserver'])
+        with self.assertRaises(LoginError):
+            with connect(*settings.CONNECT_ARGS, load_balancer=lb, **settings.CONNECT_KWARGS) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+                    cur.fetchall()

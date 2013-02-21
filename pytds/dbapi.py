@@ -106,6 +106,12 @@ class _Connection(object):
             tds_submit_begin_tran(self._conn.main_session)
         self._sqlok(self._conn.main_session)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
     def commit(self):
         """
         Commit transaction which is currently in progress.
@@ -615,7 +621,8 @@ def connect(server='.', database='', user='', password='', timeout=0,
         login_timeout=60, as_dict=False,
         host='', appname=None, port=None, tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
-        blocksize=4096, use_mars=False, auth=None, readonly=False):
+        blocksize=4096, use_mars=False, auth=None, readonly=False,
+        load_balancer=None):
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
@@ -694,6 +701,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
     login.blocksize = blocksize
     login.auth = auth
     login.readonly = readonly
+    login.load_balancer = load_balancer or SimpleLoadBalancer([server])
     return _Connection(login, as_dict, autocommit)
 
 def Date(year, month, day):
