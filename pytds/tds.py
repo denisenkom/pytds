@@ -165,6 +165,15 @@ TDS_DATETIME = struct.Struct('<ll')
 TDS_DATETIME4 = struct.Struct('<HH')
 
 
+class SimpleLoadBalancer(object):
+    def __init__(self, hosts):
+        self._hosts = hosts
+
+    def choose(self):
+        for host in self._hosts:
+            yield host
+
+
 #
 # Quote an id
 # \param tds    state information for the socket and the TDS protocol
@@ -720,7 +729,7 @@ class _TdsSocket(object):
         if hasattr(socket, 'socketpair'):
             tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
         self._login = login
-        self.tds_version = tds_version = login.tds_version
+        self.tds_version = login.tds_version
         self.emul_little_endian = login.emul_little_endian
         if IS_TDS7_PLUS(self):
             # TDS 7/8 only supports little endian
@@ -737,28 +746,34 @@ class _TdsSocket(object):
 
         if not login.port:
             login.port = 1433
-        try:
-            tds_open_socket(self, login.server_name, login.port, connect_timeout)
-        except socket.error as e:
-            raise LoginError("Cannot connect to server '{0}': {1}".format(login.server_name, e), e)
-        try:
-            from login import tds_login
-            tds_login(self._main_session, login)
-            text_size = login.text_size
-            if self.mars_enabled:
-                self._setup_smp()
-            self._is_connected = True
-            q = []
-            if text_size:
-                q.append('set textsize {0}'.format(int(text_size)))
-            if login.database and self.env.database != login.database:
-                q.append('use ' + tds_quote_id(self, login.database))
-            if q:
-                tds_submit_query(tds._main_session, ''.join(q))
-                tds_process_simple_query(tds._main_session)
-        except:
-            self.close()
-            raise
+        for host in login.load_balancer.choose():
+            try:
+                tds_open_socket(self, host, login.port, connect_timeout)
+            except socket.error as e:
+                e = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                continue
+            try:
+                from login import tds_login
+                tds_login(self._main_session, login)
+                text_size = login.text_size
+                if self.mars_enabled:
+                    self._setup_smp()
+                self._is_connected = True
+                q = []
+                if text_size:
+                    q.append('set textsize {0}'.format(int(text_size)))
+                if login.database and self.env.database != login.database:
+                    q.append('use ' + tds_quote_id(self, login.database))
+                if q:
+                    tds_submit_query(tds._main_session, ''.join(q))
+                    tds_process_simple_query(tds._main_session)
+            except Exception as e:
+                self.close()
+                #raise
+                continue
+            break
+        else:
+            raise e
 
     def _setup_smp(self):
         from smp import SmpManager
