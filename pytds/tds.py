@@ -768,7 +768,7 @@ class _TdsSocket(object):
                     tds_submit_query(tds._main_session, ''.join(q))
                     tds_process_simple_query(tds._main_session)
             except Exception as e:
-                self.close()
+                self._sock.close()
                 #raise
                 continue
             break
