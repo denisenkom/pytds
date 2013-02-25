@@ -340,7 +340,7 @@ class _Connection(object):
             return None
 
     def _close_cursor(self, cursor):
-        if cursor._session is not None:
+        if self._conn is not None and cursor._session is not None:
             if self._conn.mars_enabled:
                 cursor._session.close()
             else:
