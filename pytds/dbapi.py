@@ -2,7 +2,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.1.1'
+__version__ = '1.1.2'
 
 import logging
 import decimal
@@ -467,6 +467,9 @@ class _Cursor(object):
             self._session = conn._conn.create_session()
         else:
             self._session = conn._conn.main_session
+
+    def __del__(self):
+        self.close()
 
     def __enter__(self):
         return self
