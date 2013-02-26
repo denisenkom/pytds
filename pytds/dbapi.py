@@ -2,7 +2,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.1.2'
+__version__ = '1.1.3'
 
 import logging
 import decimal
