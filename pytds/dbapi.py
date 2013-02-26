@@ -140,22 +140,25 @@ class _Connection(object):
         return _Cursor(self)
 
     def rollback(self):
-        """
-        Roll back transaction which is currently in progress.
-        """
-        if self._autocommit:
-            return
+        try:
+            """
+            Roll back transaction which is currently in progress.
+            """
+            if self._autocommit:
+                return
 
-        if not self._conn or not self._conn.is_connected():
-            return
+            if not self._conn or not self._conn.is_connected():
+                return
 
-        session = self._conn.main_session
-        self._cancel(session)
-        self._active_cursor = None
-        tds_submit_rollback(session, True)
-        self._sqlok(session)
-        while self._nextset(session):
-            pass
+            session = self._conn.main_session
+            self._cancel(session)
+            self._active_cursor = None
+            tds_submit_rollback(session, True)
+            self._sqlok(session)
+            while self._nextset(session):
+                pass
+        except:
+            logger.exception('unexpected error in rollback')
 
     def __del__(self):
         if self._conn is not None:
