@@ -636,3 +636,13 @@ class TestLoadBalancer(TestCase):
                 with conn.cursor() as cur:
                     cur.execute('select 1')
                     cur.fetchall()
+
+
+class TestIntegrityError(TestCase):
+    def test_primary_key(self):
+        cursor = self.conn.cursor()
+        cursor.execute('create table testtable(pk int primary key)')
+        cursor.execute('insert into testtable values (1)')
+        with self.assertRaises(IntegrityError):
+            cursor.execute('insert into testtable values (1)')
+        cursor.execute('drop table testtable')

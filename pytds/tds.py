@@ -300,7 +300,13 @@ class _Default:
 default = _Default()
 
 def raise_db_exception(tds):
-    msg = tds.messages[-1]
+    while True:
+        msg = tds.messages[-1]
+        if msg['msgno'] == 3621: # the statement has been terminated
+            tds.messages = tds.messages[:-1]
+        else:
+            break
+
     msg_no = msg['msgno']
     error_msg = ' '.join(msg['message'] for msg in tds.messages)
     if msg_no in prog_errors:
