@@ -510,6 +510,9 @@ class _Cursor(object):
     def get_proc_return_status(self):
         return self._conn._get_proc_return_status(self)
 
+    def cancel(self):
+        self._conn._cancel(self._session)
+
     def close(self):
         """
         Closes the cursor. The cursor is unusable from this point.
