@@ -2,7 +2,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.2.1'
+__version__ = '1.3.0'
 
 import logging
 import decimal
@@ -631,7 +631,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
         host='', appname=None, port=None, tds_version=TDS74,
         encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
         blocksize=4096, use_mars=False, auth=None, readonly=False,
-        load_balancer=None):
+        load_balancer=None, use_tz=None):
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
@@ -711,6 +711,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
     login.auth = auth
     login.readonly = readonly
     login.load_balancer = load_balancer or SimpleLoadBalancer([server])
+    login.use_tz = use_tz
     return _Connection(login, as_dict, autocommit)
 
 def Date(year, month, day):

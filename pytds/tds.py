@@ -643,6 +643,7 @@ class _TdsSession(object):
         self.messages = []
         self.chunk_handler = tds.chunk_handler
         self.rows_affected = -1
+        self.use_tz = tds._login.use_tz
 
     def is_dead(self):
         return self.state == TDS_DEAD
@@ -726,6 +727,7 @@ class _TdsSocket(object):
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
         self.emul_little_endian = True
         self.chunk_handler = MemoryChunkedHandler()
+        self._login = login
         self._main_session = _TdsSession(self, self)
 
         # Jeff's hack, init to no timeout
@@ -734,7 +736,6 @@ class _TdsSocket(object):
         import socket
         if hasattr(socket, 'socketpair'):
             tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self._login = login
         self.tds_version = login.tds_version
         self.emul_little_endian = login.emul_little_endian
         if IS_TDS7_PLUS(self):

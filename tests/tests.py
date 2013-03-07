@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, date, time
 from pytds import *
 from pytds.tds import *
+from dateutil.tz import tzoffset, tzutc
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -646,3 +647,27 @@ class TestIntegrityError(TestCase):
         with self.assertRaises(IntegrityError):
             cursor.execute('insert into testtable values (1)')
         cursor.execute('drop table testtable')
+
+
+class TimezoneTests(unittest.TestCase):
+    def check_val(self, conn, sql, input, output):
+        with conn.cursor() as cur:
+            cur.execute('select ' + sql, (input,))
+            rows = cur.fetchall()
+            self.assertEqual(rows[0][0], output)
+
+    def runTest(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        use_tz = tzutc()
+        kwargs['use_tz'] = use_tz
+        with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
+            # Naive time should be interpreted as use_tz
+            self.check_val(conn, '%s',
+                           datetime(2011, 2, 3, 10, 11, 12, 3000),
+                           datetime(2011, 2, 3, 10, 11, 12, 3000, tzutc()))
+            # Aware time shoule be passed as-is
+            dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 60))
+            self.check_val(conn, '%s', dt, dt)
+            # Aware time should be converted to use_tz if not using datetimeoffset type
+            dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 60))
+            self.check_val(conn, 'cast(%s as datetime2)', dt, dt.astimezone(use_tz))

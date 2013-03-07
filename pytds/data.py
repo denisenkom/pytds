@@ -9,6 +9,12 @@ from tdsproto import *
 
 logger = logging.getLogger(__name__)
 
+def _applytz(dt, tz):
+    if not tz:
+        return dt
+    dt = dt.replace(tzinfo=tz)
+    return dt
+
 #/**
 # * Set type of column initializing all dependency 
 # * @param curcol column to set
@@ -928,9 +934,9 @@ class MsDatetimeHandler(object):
             nanoseconds -= seconds*1000000000
             return time(hours, minutes, seconds, nanoseconds//1000)
         elif col.column_type == SYBMSDATE:
-            return date(1, 1, 1) + timedelta(days=days)
+            return _applytz(date(1, 1, 1) + timedelta(days=days), tds.use_tz)
         elif col.column_type == SYBMSDATETIME2:
-            return datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds//1000)
+            return _applytz(datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds//1000), tds.use_tz)
         elif col.column_type == SYBMSDATETIMEOFFSET:
             offset = r.get_smallint()
             if offset > 840 or offset < -840:
@@ -941,7 +947,7 @@ class MsDatetimeHandler(object):
     @staticmethod
     def from_python(tds, col, value):
         if isinstance(value, datetime):
-            if value.tzinfo:
+            if value.tzinfo and not tds.use_tz:
                 col.column_type = SYBMSDATETIMEOFFSET
             else:
                 col.column_type = SYBMSDATETIME2
@@ -949,7 +955,7 @@ class MsDatetimeHandler(object):
         elif isinstance(value, date):
             col.column_type = SYBMSDATE
         elif isinstance(value, time):
-            if value.tzinfo:
+            if value.tzinfo and not tds.use_tz:
                 col.column_type = SYBMSDATETIMEOFFSET
             else:
                 col.column_type = SYBMSTIME
@@ -996,28 +1002,32 @@ class MsDatetimeHandler(object):
             return
 
         value = col.value
+        tzinf = getattr(value, 'tzinfo', None)
+        utcoffset = None
+        if tzinf:
+            utcoffset = value.utcoffset()
+            if tds.use_tz:
+                value = value.astimezone(tds.use_tz).replace(tzinfo=None)
+            else:
+                value = value.astimezone(_utc).replace(tzinfo=None)
         parts = []
-        tzinfo = None
         if col.column_type != SYBMSDATE:
-            tzinfo = value.tzinfo
-            if tzinfo:
-                value = value.astimezone(_utc)
+            # Encoding time part
             t = value
             secs = t.hour*60*60 + t.minute*60 + t.second
             val = (secs * 10**7 + t.microsecond*10)//(10**(7-col.prec))
             parts.append(struct.pack('<Q', val)[:MsDatetimeHandler._precision_to_len[col.prec]])
         if col.column_type != SYBMSTIME:
+            # Encoding date part
             if type(value) == date:
                 value = datetime.combine(value, time(0,0,0))
-            if tzinfo:
-                days = (value - MsDatetimeHandler._base_date2_utc).days
-            else:
-                days = (value - MsDatetimeHandler._base_date2).days
+            days = (value - MsDatetimeHandler._base_date2).days
             buf = struct.pack('<l', days)[:3]
             parts.append(buf)
         if col.column_type == SYBMSDATETIMEOFFSET:
-            assert tzinfo
-            parts.append(struct.pack('<h', col.value.utcoffset().total_seconds()//60))
+            # Encoding timezone part
+            assert utcoffset is not None
+            parts.append(struct.pack('<h', utcoffset.total_seconds()//60))
         size = reduce(lambda a, b: a + len(b), parts, 0)
         w.put_byte(size)
         for part in parts:
@@ -1049,11 +1059,11 @@ class DatetimeHandler(object):
         else:
             size = col.size
         if col.column_type == SYBDATETIME or col.column_type == SYBDATETIMN and size == 8:
-            return Datetime.decode(r.readall(Datetime.size))
+            return _applytz(Datetime.decode(r.readall(Datetime.size)), tds.use_tz)
 
         elif col.column_type == SYBDATETIME4 or col.column_type == SYBDATETIMN and size == 4:
             days, time = r.unpack(TDS_DATETIME4)
-            return cls._base_date + timedelta(days=days, minutes=time)
+            return _applytz(cls._base_date + timedelta(days=days, minutes=time), tds.use_tz)
         else:
             assert False
 
