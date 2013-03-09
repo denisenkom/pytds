@@ -7,46 +7,48 @@ from data import *
 logger = logging.getLogger(__name__)
 
 token_names = {
-0x20: "TDS5_PARAMFMT2",
-0x22: "ORDERBY2",
-0x61: "ROWFMT2",
-0x71: "LOGOUT",
-0x79: "RETURNSTATUS",
-0x7C: "PROCID",
-0x81: "TDS7_RESULT",
-0x83: "TDS_CURINFO",
-0x88: "TDS7_COMPUTE_RESULT",
-0xA0: "COLNAME",
-0xA1: "COLFMT",
-0xA3: "DYNAMIC2",
-0xA4: "TABNAME",
-0xA5: "COLINFO",
-0xA7: "COMPUTE_NAMES",
-0xA8: "COMPUTE_RESULT",
-0xA9: "ORDERBY",
-0xAA: "ERROR",
-0xAB: "INFO",
-0xAC: "PARAM",
-0xAD: "LOGINACK",
-0xAE: "CONTROL",
-0xD1: "ROW",
-0xD3: "CMP_ROW",
-0xD7: "TDS5_PARAMS",
-0xE2: "CAPABILITY",
-0xE3: "ENVCHANGE",
-0xE5: "EED",
-0xE6: "DBRPC",
-0xE7: "TDS5_DYNAMIC",
-0xEC: "TDS5_PARAMFMT",
-0xED: "AUTH",
-0xEE: "RESULT",
-0xFD: "DONE",
-0xFE: "DONEPROC",
-0xFF: "DONEINPROC",
-}
+    0x20: "TDS5_PARAMFMT2",
+    0x22: "ORDERBY2",
+    0x61: "ROWFMT2",
+    0x71: "LOGOUT",
+    0x79: "RETURNSTATUS",
+    0x7C: "PROCID",
+    0x81: "TDS7_RESULT",
+    0x83: "TDS_CURINFO",
+    0x88: "TDS7_COMPUTE_RESULT",
+    0xA0: "COLNAME",
+    0xA1: "COLFMT",
+    0xA3: "DYNAMIC2",
+    0xA4: "TABNAME",
+    0xA5: "COLINFO",
+    0xA7: "COMPUTE_NAMES",
+    0xA8: "COMPUTE_RESULT",
+    0xA9: "ORDERBY",
+    0xAA: "ERROR",
+    0xAB: "INFO",
+    0xAC: "PARAM",
+    0xAD: "LOGINACK",
+    0xAE: "CONTROL",
+    0xD1: "ROW",
+    0xD3: "CMP_ROW",
+    0xD7: "TDS5_PARAMS",
+    0xE2: "CAPABILITY",
+    0xE3: "ENVCHANGE",
+    0xE5: "EED",
+    0xE6: "DBRPC",
+    0xE7: "TDS5_DYNAMIC",
+    0xEC: "TDS5_PARAMFMT",
+    0xED: "AUTH",
+    0xEE: "RESULT",
+    0xFD: "DONE",
+    0xFE: "DONEPROC",
+    0xFF: "DONEINPROC",
+    }
+
 
 def tds_token_name(marker):
     return token_names.get(marker, '')
+
 
 def tds_process_auth(tds):
     r = tds._reader
@@ -58,6 +60,7 @@ def tds_process_auth(tds):
     if packet:
         w.write(packet)
         w.flush()
+
 
 def tds_process_default_tokens(tds, marker):
     r = tds._reader
@@ -136,7 +139,7 @@ def tds_process_default_tokens(tds, marker):
     elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
         logger.debug("Eating %s token", tds_token_name(marker))
         r.skip(r.get_smallint())
-    elif marker == TDS_TABNAME_TOKEN: # used for FOR BROWSE query
+    elif marker == TDS_TABNAME_TOKEN:  # used for FOR BROWSE query
         return tds_process_tabname(tds)
     elif marker == TDS_COLINFO_TOKEN:
         return tds_process_colinfo(tds, None, 0)
@@ -149,6 +152,7 @@ def tds_process_default_tokens(tds, marker):
         tds.close()
         logger.error('Unknown marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
         raise Exception('TDSEBTOK')
+
 
 #
 # tds_process_row() processes rows and places them in the row buffer.
@@ -166,6 +170,7 @@ def tds_process_row(tds):
         curcol.value = curcol.funcs.get_data(tds, curcol)
     return TDS_SUCCESS
 
+
 # NBC=null bitmap compression row
 # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
 def tds_process_nbcrow(tds):
@@ -180,31 +185,34 @@ def tds_process_nbcrow(tds):
     # corresponding fields
     nbc = r.readall((len(info.columns) + 7) / 8)
     for i, curcol in enumerate(info.columns):
-        if ord(nbc[i/8]) & (1 << i%8):
+        if ord(nbc[i / 8]) & (1 << (i % 8)):
             curcol.value = None
         else:
             curcol.value = curcol.funcs.get_data(tds, curcol)
     return TDS_SUCCESS
+
+
 #
 # tds_process_end() processes any of the DONE, DONEPROC, or DONEINPROC
 # tokens.
 # \param tds        state information for the socket and the TDS protocol
 # \param marker     TDS token number
-# \param flags_parm filled with bit flags (see TDS_DONE_ constants). 
+# \param flags_parm filled with bit flags (see TDS_DONE_ constants).
 #        Is NULL nothing is returned
 #
 def tds_process_end(tds, marker):
     r = tds._reader
     status = r.get_usmallint()
-    cur_cmd = r.get_usmallint()
+    r.get_usmallint()  # cur_cmd
     more_results = status & TDS_DONE_MORE_RESULTS != 0
     was_cancelled = status & TDS_DONE_CANCELLED != 0
     error = status & TDS_DONE_ERROR != 0
     done_count_valid = status & TDS_DONE_COUNT != 0
-    logger.debug('tds_process_end: more_results = {0}\n'
-            '\t\twas_cancelled = {1}\n'
-            '\t\terror = {2}\n'
-            '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
+    logger.debug(
+        'tds_process_end: more_results = {0}\n'
+        '\t\twas_cancelled = {1}\n'
+        '\t\terror = {2}\n'
+        '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
     if tds.res_info:
         tds.res_info.more_results = more_results
         if not tds.current_results:
@@ -222,6 +230,7 @@ def tds_process_end(tds, marker):
     else:
         tds.rows_affected = -1
     return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), status
+
 
 def tds_process_env_chg(tds):
     r = tds._reader
@@ -287,7 +296,7 @@ def tds_process_env_chg(tds):
 
 def tds_process_msg(tds, marker):
     r = tds._reader
-    size = r.get_smallint()
+    r.get_smallint()  # size
     msg = {}
     msg['marker'] = marker
     msg['msgno'] = r.get_int()
@@ -358,6 +367,7 @@ _SERVER_TO_CLIENT_MAPPING = {
     TDS74: TDS74,
     }
 
+
 def tds_process_login_tokens(tds):
     r = tds._reader
     succeed = False
@@ -399,7 +409,7 @@ def tds_process_login_tokens(tds):
             size -= 10
             if IS_TDS7_PLUS(tds):
                 product_version = 0x80000000
-                tds.conn.product_name = r.read_ucs2(size/2)
+                tds.conn.product_name = r.read_ucs2(size / 2)
             elif IS_TDS5_PLUS(tds):
                 raise NotImplementedError()
                 #tds.product_name = tds_get_string(tds, size)
@@ -427,22 +437,23 @@ def tds_process_login_tokens(tds):
         tds_set_spid(tds)
     return succeed
 
+
 # process all streams.
 # tds_process_tokens() is called after submitting a query with
 # tds_submit_query() and is responsible for calling the routines to
 # populate tds->res_info if appropriate (some query have no result sets)
 # @param tds A pointer to the TDSSOCKET structure managing a client/server operation.
-# @param result_type A pointer to an integer variable which 
+# @param result_type A pointer to an integer variable which
 #        tds_process_tokens sets to indicate the current type of result.
 #  @par
 #  <b>Values that indicate command status</b>
 #  <table>
-#   <tr><td>TDS_DONE_RESULT</td><td>The results of a command have been completely processed. 
-# 					This command returned no rows.</td></tr>
-#   <tr><td>TDS_DONEPROC_RESULT</td><td>The results of a  command have been completely processed.  
-# 					This command returned rows.</td></tr>
-#   <tr><td>TDS_DONEINPROC_RESULT</td><td>The results of a  command have been completely processed.  
-# 					This command returned rows.</td></tr>
+#   <tr><td>TDS_DONE_RESULT</td><td>The results of a command have been completely processed.
+#           This command returned no rows.</td></tr>
+#   <tr><td>TDS_DONEPROC_RESULT</td><td>The results of a  command have been completely processed.
+#           This command returned rows.</td></tr>
+#   <tr><td>TDS_DONEINPROC_RESULT</td><td>The results of a  command have been completely processed.
+#           This command returned rows.</td></tr>
 #  </table>
 #  <b>Values that indicate results information is available</b>
 #  <table><tr>
@@ -477,7 +488,7 @@ def tds_process_login_tokens(tds):
 # @retval TDS_FAIL on error.
 # @retval TDS_NO_MORE_RESULTS if all results have been completely processed.
 # @retval anything returned by one of the many functions it calls.  :-(
-#/
+#
 def tds_process_tokens(tds, flag):
     parent = {'result_type': 0, 'return_flag': 0}
     done_flags = 0
@@ -518,9 +529,9 @@ def tds_process_tokens(tds, flag):
                     rc = tds7_process_result(tds)
                     marker = r.get_byte()
                     if marker != TDS_TABNAME_TOKEN:
-                        r.unget_byte();
+                        r.unget_byte()
                     else:
-                        rc = tds_process_tabname(tds);
+                        rc = tds_process_tabname(tds)
                 else:
                     if SET_RETURN(TDS_ROWFMT_RESULT, 'ROWFMT'):
                         rc = tds7_process_result(tds)
@@ -567,11 +578,11 @@ def tds_process_tokens(tds, flag):
 
                             cursor.cursor_id = curcol.value
                             logger.debug("stored internal cursor id {0}".format(cursor.cursor_id))
-                            cursor.srv_status &= ~(TDS_CUR_ISTAT_CLOSED|TDS_CUR_ISTAT_OPEN|TDS_CUR_ISTAT_DEALLOC)
-                            cursor.srv_status |= TDS_CUR_ISTAT_OPEN if cursor.cursor_id else TDS_CUR_ISTAT_CLOSED|TDS_CUR_ISTAT_DEALLOC
+                            cursor.srv_status &= ~(TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_OPEN | TDS_CUR_ISTAT_DEALLOC)
+                            cursor.srv_status |= TDS_CUR_ISTAT_OPEN if cursor.cursor_id else TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_DEALLOC
                         if (tds.internal_sp_called == TDS_SP_PREPARE or tds.internal_sp_called == TDS_SP_PREPEXEC)\
-                            and tds.cur_dyn and tds.cur_dyn.num_id == 0 and curcol.value:
-                                tds.cur_dyn.num_id = curcol.value
+                                and tds.cur_dyn and tds.cur_dyn.num_id == 0 and curcol.value:
+                            tds.cur_dyn.num_id = curcol.value
                 else:
                     if SET_RETURN(TDS_PARAM_RESULT, 'PROC'):
                         rc = tds_process_param_result_tokens(tds)
@@ -628,7 +639,7 @@ def tds_process_tokens(tds, flag):
                 tds.cur_dyn = tds_process_dynamic(tds)
                 # special case, prepared statement cannot be prepared
                 if tds.cur_dyn and not tds.cur_dyn.emulated:
-                    marker = r.get_byte();
+                    marker = r.get_byte()
                     if marker == TDS_EED_TOKEN:
                         tds_process_msg(tds, marker)
                         if tds.cur_dyn and tds.cur_dyn.emulated:
@@ -660,8 +671,8 @@ def tds_process_tokens(tds, flag):
                 if SET_RETURN(TDS_DONEPROC_RESULT, 'DONE'):
                     rc, done_flags = tds_process_end(tds, marker)
                     if tds.internal_sp_called in (0, TDS_SP_PREPARE,
-                            TDS_SP_PREPEXEC, TDS_SP_EXECUTE,
-                            TDS_SP_UNPREPARE, TDS_SP_EXECUTESQL):
+                                                  TDS_SP_PREPEXEC, TDS_SP_EXECUTE,
+                                                  TDS_SP_UNPREPARE, TDS_SP_EXECUTESQL):
                         pass
                     elif tds.internal_sp_called == TDS_SP_CURSOROPEN:
                             parent['result_type'] = TDS_DONE_RESULT
@@ -672,7 +683,7 @@ def tds_process_tokens(tds, flag):
                             cursor = tds.cur_cursor
 
                             cursor.srv_status &= ~TDS_CUR_ISTAT_OPEN
-                            cursor.srv_status |= TDS_CUR_ISTAT_CLOSED|TDS_CUR_ISTAT_DECLARED
+                            cursor.srv_status |= TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_DECLARED
                             if cursor.status.dealloc == TDS_CURSOR_STATE_SENT:
                                 tds_cursor_deallocated(tds, cursor)
                         parent['result_type'] = TDS_NO_MORE_RESULTS
@@ -715,11 +726,12 @@ def tds_process_tokens(tds, flag):
         tds.set_state(TDS_PENDING)
         raise
 
-#/**
-# * \remarks Process the incoming token stream until it finds
-# * an end token (DONE, DONEPROC, DONEINPROC) with the cancel flag set.
-# * At that point the connection should be ready to handle a new query.
-# */
+
+#
+# \remarks Process the incoming token stream until it finds
+# an end token (DONE, DONEPROC, DONEINPROC) with the cancel flag set.
+# At that point the connection should be ready to handle a new query.
+#
 def tds_process_cancel(tds):
     # silly cases, nothing to do
     if not tds.in_cancel:
@@ -737,18 +749,19 @@ def tds_process_cancel(tds):
         elif rc in (TDS_CANCELLED, TDS_SUCCESS, TDS_NO_MORE_RESULTS):
             return TDS_SUCCESS
 
+
 def get_api_coltype(coltype):
     if coltype in (SYBBIT, SYBINT1, SYBINT2, SYBINT4, SYBINT8, SYBINTN,
-            SYBREAL, SYBFLT8, SYBFLTN):
+                   SYBREAL, SYBFLT8, SYBFLTN):
         return NUMBER
     elif coltype in (SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC,
-            SYBDECIMAL):
+                     SYBDECIMAL):
         return DECIMAL
     elif coltype in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
         return DATETIME
     elif coltype in (SYBVARCHAR, SYBCHAR, SYBTEXT,
-        XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
-        XSYBVARCHAR, XSYBCHAR):
+                     XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
+                     XSYBVARCHAR, XSYBCHAR):
         return STRING
     else:
         return BINARY
@@ -757,7 +770,7 @@ from tds import _Results
 
 
 #/**
-# * tds7_process_result() is the TDS 7.0 result set processing routine.  It 
+# * tds7_process_result() is the TDS 7.0 result set processing routine.  It
 # * is responsible for populating the tds->res_info structure.
 # * This is a TDS 7.0 only function
 # */
@@ -788,7 +801,7 @@ def tds7_process_result(tds):
         logger.debug("set current_results to cursor->res_info")
     else:
         tds.res_info = info
-        logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols==1 else "s")))
+        logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols == 1 else "s")))
 
     #
     # loop through the columns populating COLINFO struct from
@@ -805,32 +818,34 @@ def tds7_process_result(tds):
         scale = curcol.column_scale if hasattr(curcol, 'column_scale') else None
         header_tuple.append((curcol.column_name, coltype, None, None, precision, scale, curcol.column_nullable))
     info.native_descr = tuple((col.column_name, col.column_type)
-            for col in tds.res_info.columns)
+                              for col in tds.res_info.columns)
     info.description = tuple(header_tuple)
-    return info 
+    return info
+
 
 def tds_get_type_info(tds, curcol):
     r = tds._reader
     # User defined data type of the column
     curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(tds) else r.get_usmallint()
 
-    curcol.column_flags = r.get_usmallint() # Flags
+    curcol.column_flags = r.get_usmallint()  # Flags
 
-    curcol.column_nullable = curcol.column_flags & 0x01;
+    curcol.column_nullable = curcol.column_flags & 0x01
     curcol.column_writeable = (curcol.column_flags & 0x08) > 0
     curcol.column_identity = (curcol.column_flags & 0x10) > 0
 
-    tds_set_column_type(tds, curcol, r.get_byte()) # sets "cardinal" type
+    tds_set_column_type(tds, curcol, r.get_byte())  # sets "cardinal" type
 
     curcol.column_timestamp = (curcol.column_type == SYBBINARY and curcol.column_usertype == TDS_UT_TIMESTAMP)
 
     curcol.funcs.get_info(tds, curcol)
 
-#/**
-# * Read data information from wire
-# * \param tds state information for the socket and the TDS protocol
-# * \param curcol column where to store information
-# */
+
+#
+# Read data information from wire
+# \param tds state information for the socket and the TDS protocol
+# \param curcol column where to store information
+#
 def tds7_get_data_info(tds, curcol):
     r = tds._reader
     tds_get_type_info(tds, curcol)
@@ -849,8 +864,9 @@ def tds7_get_data_info(tds, curcol):
 
     return TDS_SUCCESS
 
+
 #
-# Adjust column size according to client's encoding 
+# Adjust column size according to client's encoding
 #
 def adjust_character_column_size(tds, curcol):
     if is_unicode_type(curcol.column_type):
@@ -868,61 +884,63 @@ def adjust_character_column_size(tds, curcol):
     if not curcol.char_codec:
         return
 
-    curcol.column_size = curcol.column_size;
+    curcol.column_size = curcol.column_size
     curcol.column_size = determine_adjusted_size(curcol.char_codec, curcol.column_size)
+
 
 def determine_adjusted_size(char_codec, column_size):
     return column_size
 
 _prtype_map = dict((
-            (SYBAOPAVG, "avg"),
-            (SYBAOPCNT, "count"),
-            (SYBAOPMAX, "max"),
-            (SYBAOPMIN, "min"),
-            (SYBAOPSUM, "sum"),
-            (SYBBINARY, "binary"),
-            (SYBLONGBINARY, "longbinary"),
-            (SYBBIT, "bit"),
-            (SYBBITN, "bit-null"),
-            (SYBCHAR, "char"),
-            (SYBDATETIME4, "smalldatetime"),
-            (SYBDATETIME, "datetime"),
-            (SYBDATETIMN, "datetime-null"),
-            (SYBDECIMAL, "decimal"),
-            (SYBFLT8, "float"),
-            (SYBFLTN, "float-null"),
-            (SYBIMAGE, "image"),
-            (SYBINT1, "tinyint"),
-            (SYBINT2, "smallint"),
-            (SYBINT4, "int"),
-            (SYBINT8, "bigint"),
-            (SYBINTN, "integer-null"),
-            (SYBMONEY4, "smallmoney"),
-            (SYBMONEY, "money"),
-            (SYBMONEYN, "money-null"),
-            (SYBNTEXT, "UCS-2 text"),
-            (SYBNVARCHAR, "UCS-2 varchar"),
-            (SYBNUMERIC, "numeric"),
-            (SYBREAL, "real"),
-            (SYBTEXT, "text"),
-            (SYBUNIQUE, "uniqueidentifier"),
-            (SYBVARBINARY, "varbinary"),
-            (SYBVARCHAR, "varchar"),
-            (SYBVARIANT, "variant"),
-            (SYBVOID, "void"),
-            (XSYBBINARY, "xbinary"),
-            (XSYBCHAR, "xchar"),
-            (XSYBNCHAR, "x UCS-2 char"),
-            (XSYBNVARCHAR, "x UCS-2 varchar"),
-            (XSYBVARBINARY, "xvarbinary"),
-            (XSYBVARCHAR, "xvarchar"),
-            (SYBMSDATE, "date"),
-            (SYBMSTIME, "time"),
-            )
-        )
+    (SYBAOPAVG, "avg"),
+    (SYBAOPCNT, "count"),
+    (SYBAOPMAX, "max"),
+    (SYBAOPMIN, "min"),
+    (SYBAOPSUM, "sum"),
+    (SYBBINARY, "binary"),
+    (SYBLONGBINARY, "longbinary"),
+    (SYBBIT, "bit"),
+    (SYBBITN, "bit-null"),
+    (SYBCHAR, "char"),
+    (SYBDATETIME4, "smalldatetime"),
+    (SYBDATETIME, "datetime"),
+    (SYBDATETIMN, "datetime-null"),
+    (SYBDECIMAL, "decimal"),
+    (SYBFLT8, "float"),
+    (SYBFLTN, "float-null"),
+    (SYBIMAGE, "image"),
+    (SYBINT1, "tinyint"),
+    (SYBINT2, "smallint"),
+    (SYBINT4, "int"),
+    (SYBINT8, "bigint"),
+    (SYBINTN, "integer-null"),
+    (SYBMONEY4, "smallmoney"),
+    (SYBMONEY, "money"),
+    (SYBMONEYN, "money-null"),
+    (SYBNTEXT, "UCS-2 text"),
+    (SYBNVARCHAR, "UCS-2 varchar"),
+    (SYBNUMERIC, "numeric"),
+    (SYBREAL, "real"),
+    (SYBTEXT, "text"),
+    (SYBUNIQUE, "uniqueidentifier"),
+    (SYBVARBINARY, "varbinary"),
+    (SYBVARCHAR, "varchar"),
+    (SYBVARIANT, "variant"),
+    (SYBVOID, "void"),
+    (XSYBBINARY, "xbinary"),
+    (XSYBCHAR, "xchar"),
+    (XSYBNCHAR, "x UCS-2 char"),
+    (XSYBNVARCHAR, "x UCS-2 varchar"),
+    (XSYBVARBINARY, "xvarbinary"),
+    (XSYBVARCHAR, "xvarchar"),
+    (SYBMSDATE, "date"),
+    (SYBMSTIME, "time"),
+    ))
+
 
 def tds_prtype(token):
     return _prtype_map.get(token, '')
+
 
 def tds_process_param_result_tokens(tds):
     r = tds._reader
@@ -931,7 +949,7 @@ def tds_process_param_result_tokens(tds):
         if token == TDS_PARAM_TOKEN:
             ordinal = r.get_usmallint()
             name = r.read_ucs2(r.get_byte())
-            status = r.get_byte() # 1 - OUTPUT of sp, 2 - result of udf
+            r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
             param = _Column()
             param.column_name = name
             tds_get_type_info(tds, param)

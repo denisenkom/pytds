@@ -5,6 +5,7 @@ from tds import Error
 
 logger = logging.getLogger(__name__)
 
+
 class _SmpSession(object):
     def __init__(self, tds, session_id):
         self._session_id = session_id
@@ -32,9 +33,10 @@ class _SmpSession(object):
             self._curr_buf_pos = 0
             if not self._curr_buf:
                 return b''
-        res = self._curr_buf[self._curr_buf_pos:self._curr_buf_pos+size]
+        res = self._curr_buf[self._curr_buf_pos:self._curr_buf_pos + size]
         self._curr_buf_pos += len(res)
         return res
+
 
 class SmpManager(object):
     _smid = 0x53
@@ -54,10 +56,11 @@ class SmpManager(object):
         session = _SmpSession(self, session_id)
         self._sessions[session_id] = session
         self._next_session_id += 1
-        hdr = self._smp_header.pack(self._smid,
+        hdr = self._smp_header.pack(
+            self._smid,
             self._SYN,
-            session_id, 
-            self._smp_header.size, 
+            session_id,
+            self._smp_header.size,
             0,
             session._high_water_for_recv,
             )
@@ -70,10 +73,11 @@ class SmpManager(object):
             return
         elif session._state == 'SESSION ESTABLISHED':
             if self._transport.is_connected():
-                hdr = self._smp_header.pack(self._smid,
+                hdr = self._smp_header.pack(
+                    self._smid,
                     self._FIN,
-                    session._session_id, 
-                    self._smp_header.size, 
+                    session._session_id,
+                    self._smp_header.size,
                     session._seq_num_for_send,
                     session._high_water_for_recv,
                     )
@@ -89,16 +93,17 @@ class SmpManager(object):
 
     @staticmethod
     def _add_one_wrap(val):
-        return 0 if val == 2**32-1 else val + 1
+        return 0 if val == 2 ** 32 - 1 else val + 1
 
     def _send_packet(self, session, data):
         if session._seq_num_for_send < session._high_water_for_send:
             l = self._smp_header.size + len(data)
             seq_num = self._add_one_wrap(session._seq_num_for_send)
-            hdr = self._smp_header.pack(self._smid,
+            hdr = self._smp_header.pack(
+                self._smid,
                 self._DATA,
-                session._session_id, 
-                l, 
+                session._session_id,
+                l,
                 seq_num,
                 session._high_water_for_recv,
                 )
@@ -116,10 +121,11 @@ class SmpManager(object):
             self._read_smp_message()
         session._high_water_for_recv = self._add_one_wrap(session._high_water_for_recv)
         if session._high_water_for_recv - session._last_high_water_for_recv >= 2:
-            hdr = self._smp_header.pack(self._smid,
+            hdr = self._smp_header.pack(
+                self._smid,
                 self._ACK,
-                session._session_id, 
-                self._smp_header.size, 
+                session._session_id,
+                self._smp_header.size,
                 session._seq_num_for_send,
                 session._high_water_for_recv,
                 )
@@ -174,9 +180,9 @@ class SmpManager(object):
                 data = self._readall(l - self._smp_header.size)
                 session._recv_queue.append(data)
                 if wnd > session._high_water_for_send:
-                    session._high_water_for_send = wnd 
+                    session._high_water_for_send = wnd
                     self._send_queued_packets(session)
-                    
+
             elif session._state == 'FIN SENT':
                 self._skip(l - self._smp_header.size)
             else:
@@ -184,7 +190,7 @@ class SmpManager(object):
                 raise Error('Unexpected SMP flags in packet from server')
         elif flags == self._FIN:
             if session._state == 'SESSION ESTABLISHED':
-                session._state = 'FIN RECEIVED'  
+                session._state = 'FIN RECEIVED'
             elif session._state == 'FIN SENT':
                 session._state = 'CLOSED'
                 del self._sessions[session._session_id]

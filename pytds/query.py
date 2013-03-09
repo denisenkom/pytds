@@ -3,38 +3,42 @@ from tdsproto import *
 from tds import _Column
 from data import *
 
+
 def START_QUERY(tds):
     if IS_TDS72_PLUS(tds):
         tds_start_query(tds)
 
 tds72_query_start = str(bytearray([
-    #/* total length */
+    # total length
     0x16, 0, 0, 0,
-    #/* length */
+    # length
     0x12, 0, 0, 0,
-    #/* type */
+    # type
     0x02, 0,
-    #/* transaction */
+    # transaction
     0, 0, 0, 0, 0, 0, 0, 0,
-    #/* request count */
+    # request count
     1, 0, 0, 0]))
+
 
 def tds_start_query(tds):
     w = tds._writer
-    w.put_uint(0x16) # total length
-    w.put_uint(0x12) # length
-    w.put_usmallint(2) # type
+    w.put_uint(0x16)  # total length
+    w.put_uint(0x12)  # length
+    w.put_usmallint(2)  # type
     if tds.conn.tds72_transaction:
         assert len(tds.conn.tds72_transaction) == 8
         w.write(tds.conn.tds72_transaction)
     else:
         w.write('\x00\x00\x00\x00\x00\x00\x00\x00')
-    w.put_uint(1) # request count
+    w.put_uint(1)  # request count
+
 
 def tds_query_flush_packet(tds):
     # TODO depend on result ??
     tds.set_state(TDS_PENDING)
     tds._writer.flush()
+
 
 def convert_params(tds, parameters):
     if isinstance(parameters, dict):
@@ -52,6 +56,7 @@ def convert_params(tds, parameters):
             else:
                 params.append(make_param(tds, '', parameter))
         return params
+
 
 def _submit_rpc(tds, rpc_name, params, flags):
     tds.cur_dyn = None
@@ -95,6 +100,7 @@ def _submit_rpc(tds, rpc_name, params, flags):
         # emulate it for TDS4.x, send RPC for mssql
         return tds_send_emulated_rpc(tds, rpc_name, params)
 
+
 def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
     if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
         raise Exception('TDS_FAIL')
@@ -104,6 +110,7 @@ def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
     except:
         tds.set_state(TDS_IDLE)
         raise
+
 
 #
 # tds_submit_query() sends a language string to the database server for
@@ -136,7 +143,7 @@ def tds_submit_query(tds, query, params=(), flags=0):
             w.put_byte(TDS_LANGUAGE_TOKEN)
             # TODO ICONV use converted size, not input size and convert string
             w.put_int(len(query) + 1)
-            w.put_byte(1 if params else 0) # 1 if there are params, 0 otherwise
+            w.put_byte(1 if params else 0)  # 1 if there are params, 0 otherwise
             w.write(tds, query)
             if params:
                 # add on parameters
@@ -147,11 +154,11 @@ def tds_submit_query(tds, query, params=(), flags=0):
             w.write_ucs2(query)
         else:
             params = convert_params(tds, params)
-            param_definition = ','.join('{0} {1}'.format(\
-                    p.column_name, p.funcs.get_declaration(tds, p))
+            param_definition = ','.join(
+                '{0} {1}'.format(p.column_name, p.funcs.get_declaration(tds, p))
                 for p in params)
-            _submit_rpc(tds, SP_EXECUTESQL,\
-                    [query, param_definition] + params, 0)
+            _submit_rpc(tds, SP_EXECUTESQL,
+                        [query, param_definition] + params, 0)
             tds.internal_sp_called = TDS_SP_EXECUTESQL
         tds_query_flush_packet(tds)
     except:
@@ -159,23 +166,23 @@ def tds_submit_query(tds, query, params=(), flags=0):
         raise
 
 
-#/**
-# * tds_send_cancel() sends an empty packet (8 byte header only)
-# * tds_process_cancel should be called directly after this.
-# * \param tds state information for the socket and the TDS protocol
-# * \remarks
-# *	tcp will either deliver the packet or time out. 
-# *	(TIME_WAIT determines how long it waits between retries.)  
-# *	
-# *	On sending the cancel, we may get EAGAIN.  We then select(2) until we know
-# *	either 1) it succeeded or 2) it didn't.  On failure, close the socket,
-# *	tell the app, and fail the function.  
-# *	
-# *	On success, we read(2) and wait for a reply with select(2).  If we get
-# *	one, great.  If the client's timeout expires, we tell him, but all we can
-# *	do is wait some more or give up and close the connection.  If he tells us
-# *	to cancel again, we wait some more.  
-# */
+#
+# tds_send_cancel() sends an empty packet (8 byte header only)
+# tds_process_cancel should be called directly after this.
+# \param tds state information for the socket and the TDS protocol
+# \remarks
+#  tcp will either deliver the packet or time out.
+#  (TIME_WAIT determines how long it waits between retries.)
+#
+#  On sending the cancel, we may get EAGAIN.  We then select(2) until we know
+#  either 1) it succeeded or 2) it didn't.  On failure, close the socket,
+#  tell the app, and fail the function.
+#
+#  On success, we read(2) and wait for a reply with select(2).  If we get
+#  one, great.  If the client's timeout expires, we tell him, but all we can
+#  do is wait some more or give up and close the connection.  If he tells us
+#  to cancel again, we wait some more.
+#
 def tds_send_cancel(tds):
     if TDS_MUTEX_TRYLOCK(tds.wire_mtx):
         # TODO check
@@ -185,7 +192,7 @@ def tds_send_cancel(tds):
         return TDS_SUCCESS
 
     logger.debug("tds_send_cancel: %sin_cancel and %sidle".format(
-                            ('' if tds.in_cancel else "not "), ('' if tds.state == TDS_IDLE else "not ")))
+                 ('' if tds.in_cancel else "not "), ('' if tds.state == TDS_IDLE else "not ")))
 
     # one cancel is sufficient
     if tds.in_cancel or tds.state == TDS_IDLE:
@@ -197,6 +204,7 @@ def tds_send_cancel(tds):
     TDS_MUTEX_UNLOCK(tds.wire_mtx)
 
     return rc
+
 
 #
 # Put data information to wire
@@ -217,14 +225,14 @@ def tds_put_data_info(tds, curcol):
         w.write(curcol.column_name)
     #
     # TODO support other flags (use defaul null/no metadata)
-    # bit 1 (2 as flag) in TDS7+ is "default value" bit 
+    # bit 1 (2 as flag) in TDS7+ is "default value" bit
     # (what's the meaning of "default value" ?)
     #
 
     logger.debug("tds_put_data_info putting status")
     w.put_byte(curcol.flags)
     if not IS_TDS7_PLUS(tds):
-        w.put_int(curcol.column_usertype) # usertype
+        w.put_int(curcol.column_usertype)  # usertype
     # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
     w.put_byte(curcol.column_type)
 
@@ -232,7 +240,7 @@ def tds_put_data_info(tds, curcol):
 
     # TODO needed in TDS4.2 ?? now is called only is TDS >= 5
     if not IS_TDS7_PLUS(tds):
-        w.put_byte(0) # locale info length
+        w.put_byte(0)  # locale info length
 
 
 def tds_submit_begin_tran(tds):
@@ -247,12 +255,13 @@ def tds_submit_begin_tran(tds):
 
         # begin transaction
         w.put_smallint(5)
-        w.put_byte(0) # new transaction level TODO
-        w.put_byte(0) # new transaction name
+        w.put_byte(0)  # new transaction level TODO
+        w.put_byte(0)  # new transaction name
 
         tds_query_flush_packet(tds)
     else:
         tds_submit_query(tds, "BEGIN TRANSACTION")
+
 
 def tds_submit_rollback(tds, cont):
     logger.debug('tds_submit_rollback(%s, %s)', id(tds), cont)
@@ -263,17 +272,18 @@ def tds_submit_rollback(tds, cont):
         w = tds._writer
         w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
-        w.put_smallint(8) # rollback
-        w.put_byte(0) # name
+        w.put_smallint(8)  # rollback
+        w.put_byte(0)  # name
         if cont:
             w.put_byte(1)
-            w.put_byte(0) # new transaction level TODO
-            w.put_byte(0) # new transaction name
+            w.put_byte(0)  # new transaction level TODO
+            w.put_byte(0)  # new transaction name
         else:
-            w.put_byte(0) # do not continue
-        tds_query_flush_packet(tds);
+            w.put_byte(0)  # do not continue
+        tds_query_flush_packet(tds)
     else:
         tds_submit_query(tds, "IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
+
 
 def tds_submit_commit(tds, cont):
     logger.debug('tds_submit_commit(%s)', cont)
@@ -284,14 +294,14 @@ def tds_submit_commit(tds, cont):
         w = tds._writer
         w.begin_packet(TDS7_TRANS)
         tds_start_query(tds)
-        w.put_smallint(7) # commit
-        w.put_byte(0) # name
+        w.put_smallint(7)  # commit
+        w.put_byte(0)  # name
         if cont:
             w.put_byte(1)
-            w.put_byte(0) # new transaction level TODO
-            w.put_byte(0) # new transaction name
+            w.put_byte(0)  # new transaction level TODO
+            w.put_byte(0)  # new transaction name
         else:
-            w.put_byte(0) # do not continue
+            w.put_byte(0)  # do not continue
         tds_query_flush_packet(tds)
     else:
         tds_submit_query(tds, "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")

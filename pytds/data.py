@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, time, timedelta, tzinfo
+from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from dateutil.tz import tzoffset, tzutc
 import uuid
@@ -9,17 +9,19 @@ from tdsproto import *
 
 logger = logging.getLogger(__name__)
 
+
 def _applytz(dt, tz):
     if not tz:
         return dt
     dt = dt.replace(tzinfo=tz)
     return dt
 
-#/**
-# * Set type of column initializing all dependency 
-# * @param curcol column to set
-# * @param type   type to set
-# */
+
+#
+# Set type of column initializing all dependency
+# @param curcol column to set
+# @param type   type to set
+#
 def tds_set_column_type(tds, curcol, type):
     # set type
     curcol.column_type = type
@@ -29,6 +31,7 @@ def tds_set_column_type(tds, curcol, type):
     curcol.column_varint_size = tds_get_varint_size(tds, type)
     if curcol.column_varint_size == 0:
         curcol.column_size = curcol.column_size = tds_get_size_by_type(type)
+
 
 def _get_handler(tds, type):
     if type in (SYBNUMERIC, SYBDECIMAL):
@@ -41,6 +44,7 @@ def _get_handler(tds, type):
         return DatetimeHandler
     else:
         return DefaultHandler
+
 
 def make_param(tds, name, value):
     column = _Column()
@@ -55,9 +59,9 @@ def make_param(tds, name, value):
     if value is None:
         handler = DefaultHandler
     elif isinstance(value, (int, long)):
-        if -2**63 <= value <= 2*63-1:
+        if -2 ** 63 <= value <= 2 ** 63 - 1:
             handler = DefaultHandler
-        elif -10**38+1 <= value <= 10**38-1:
+        elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
             value = Decimal(value)
             handler = NumericHandler
         else:
@@ -92,6 +96,7 @@ def make_param(tds, name, value):
     column.value = column.funcs.from_python(tds, column, value)
     return column
 
+
 class DefaultHandler(object):
     @staticmethod
     def get_info(tds, col):
@@ -99,7 +104,7 @@ class DefaultHandler(object):
         r = tds._reader
         if vs == 8:
             col.column_size = 0x7fffffff
-        elif vs in (4,5):
+        elif vs in (4, 5):
             col.column_size = r.get_int()
         elif vs == 2:
             # assure > 0
@@ -181,16 +186,16 @@ class DefaultHandler(object):
             else:
                 # It's a BLOB...
                 size = r.get_byte()
-                if size == 16: # Jeff's hack
-                    textptr = r.readall(16)
-                    timestamp = r.readall(8)
+                if size == 16:  # Jeff's hack
+                    r.readall(16)  # textptr
+                    r.readall(8)  # timestamp
                     colsize = r.get_int()
                 else:
                     colsize = -1
         elif cvs == 5:
             colsize = r.get_int()
             if colsize == 0:
-                colsize = -1;
+                colsize = -1
         elif cvs == 8:
             return cls._tds72_get_varmax(tds, curcol)
         elif cvs == 2:
@@ -203,7 +208,7 @@ class DefaultHandler(object):
             # TODO this should be column_size
             colsize = tds_get_size_by_type(curcol.column_type)
         else:
-            colsize = -1;
+            colsize = -1
 
         #logger.debug("tds_get_data(): wire column size is %d" % colsize)
         # set NULL flag in the row buffer
@@ -231,7 +236,7 @@ class DefaultHandler(object):
             else:
                 assert colsize == new_blob_size
                 return r.readall(colsize)
-        else: # non-numeric and non-blob
+        else:  # non-numeric and non-blob
             if curcol.char_codec:
                 if colsize == 0:
                     value = u''
@@ -242,7 +247,7 @@ class DefaultHandler(object):
                 curcol.cur_size = len(value)
             else:
                 #
-                # special case, some servers seem to return more data in some conditions 
+                # special case, some servers seem to return more data in some conditions
                 # (ASA 7 returning 4 byte nullable integer)
                 #
                 discard_len = 0
@@ -275,9 +280,9 @@ class DefaultHandler(object):
             col.column_varint_size = tds_get_varint_size(tds, col.column_type)
         elif isinstance(value, (int, long)):
             col.column_type = SYBINTN
-            if -2**31 <= value <= 2**31 -1:
+            if -2 ** 31 <= value <= 2 ** 31 - 1:
                 col.column_size = 4
-            elif -2**63 <= value <= 2*63-1:
+            elif -2 ** 63 <= value <= 2 ** 63 - 1:
                 col.column_size = 8
             else:
                 raise DataError('Numeric value out or range')
@@ -290,7 +295,7 @@ class DefaultHandler(object):
             if len(value) > 8000:
                 if IS_TDS72_PLUS(tds):
                     col.column_type = XSYBVARBINARY
-                    col.column_varint_size = 8 # nvarchar(max)
+                    col.column_varint_size = 8  # nvarchar(max)
                 else:
                     col.column_type = SYBIMAGE
                     col.column_varint_size = tds_get_varint_size(tds, col.column_type)
@@ -302,7 +307,7 @@ class DefaultHandler(object):
             if len(value) > 4000:
                 if IS_TDS72_PLUS(tds):
                     col.column_type = XSYBNVARCHAR
-                    col.column_varint_size = 8 # nvarchar(max)
+                    col.column_varint_size = 8  # nvarchar(max)
                 else:
                     col.column_type = SYBNTEXT
                     col.column_varint_size = tds_get_varint_size(tds, col.column_type)
@@ -343,8 +348,8 @@ class DefaultHandler(object):
             return "BIT"
         elif t == SYBTEXT:
             return "TEXT"
-        elif t == (SYBLONGBINARY, # TODO correct ??
-                SYBIMAGE):
+        elif t == (SYBLONGBINARY,  # TODO correct ??
+                   SYBIMAGE):
             return "IMAGE"
         elif t == SYBMONEY4:
             return "SMALLMONEY"
@@ -369,10 +374,10 @@ class DefaultHandler(object):
             if col.column_varint_size == 8:
                 return "NVARCHAR(MAX)"
             elif IS_TDS7_PLUS(tds):
-                return "NVARCHAR(%u)" % max(col.column_size//2, 1)
+                return "NVARCHAR(%u)" % max(col.column_size // 2, 1)
         elif t == XSYBNCHAR:
             if IS_TDS7_PLUS(tds):
-                return "NCHAR(%u)" % min(col.column_size//2, 4000)
+                return "NCHAR(%u)" % min(col.column_size // 2, 4000)
         elif t == SYBVARIANT:
             if IS_TDS7_PLUS(tds):
                 return "SQL_VARIANT"
@@ -443,13 +448,13 @@ class DefaultHandler(object):
         #
         if IS_TDS7_PLUS(tds):
             logger.debug("tds_data_put: not null param varint_size = %d",
-                        curcol.column_varint_size)
+                         curcol.column_varint_size)
 
             vs = curcol.column_varint_size
             if vs == 8:
-                w.put_int8(colsize);
-                w.put_int(colsize);
-            elif vs == 4: # It's a BLOB...
+                w.put_int8(colsize)
+                w.put_int(colsize)
+            elif vs == 4:  # It's a BLOB...
                 colsize = min(colsize, size)
                 # mssql require only size
                 w.put_int(colsize)
@@ -494,9 +499,10 @@ _slong_struct = struct.Struct('<l')
 _slong8_struct = struct.Struct('<q')
 _flt4_struct = struct.Struct('f')
 _money8_struct = struct.Struct('<lL')
-_simple_types = set((SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
-        SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,\
-        XSYBVARBINARY, XSYBBINARY, SYBVARBINARY))
+_simple_types = {SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,
+                 SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,
+                 XSYBVARBINARY, XSYBBINARY, SYBVARBINARY}
+
 
 def to_python(tds, data, type, length):
     #logger.debug("to_python()")
@@ -530,7 +536,7 @@ def to_python(tds, data, type, length):
             val, = _slong_struct.unpack(data)
         else:
             raise Exception('unsupported size of money type')
-        val = Decimal(val)/10000
+        val = Decimal(val) / 10000
         return val
 
     #elif type in (SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,\
@@ -556,12 +562,11 @@ class NumericHandler(object):
         col.column_scale = r.get_byte()
         # FIXME check prec/scale, don't let server crash us
 
-
     MAX_NUMERIC = 33
 
     @staticmethod
     def ms_parse_numeric(positive, buf, scale):
-        val = reduce(lambda acc, val: acc*256 + ord(val), reversed(buf), 0)
+        val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
         val = Decimal(val)
         with localcontext() as ctx:
             ctx.prec = 38
@@ -571,7 +576,7 @@ class NumericHandler(object):
         return val
 
     @classmethod
-    def get_data(cls, tds,  curcol):
+    def get_data(cls, tds, curcol):
         r = tds._reader
         colsize = r.get_byte()
 
@@ -606,8 +611,8 @@ class NumericHandler(object):
         # core if for some bug it's 0...
         #
         1,
-        2,  2,  3,  3,  4,  4,  4,  5,  5,
-        6,  6,  6,  7,  7,  8,  8,  9,  9,  9,
+        2, 2, 3, 3, 4, 4, 4, 5, 5,
+        6, 6, 6, 7, 7, 8, 8, 9, 9, 9,
         10, 10, 11, 11, 11, 12, 12, 13, 13, 14,
         14, 14, 15, 15, 16, 16, 16, 17, 17, 18,
         18, 19, 19, 19, 20, 20, 21, 21, 21, 22,
@@ -618,7 +623,7 @@ class NumericHandler(object):
 
     @staticmethod
     def from_python(tds, col, value):
-        if not (-10**38+1 <= value <= 10**38-1):
+        if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
             raise DataError('Decimal value is out of range')
         value = value.normalize()
         col.column_type = SYBDECIMAL
@@ -655,7 +660,7 @@ class NumericHandler(object):
         w.put_byte(size)
         val = col.value
         positive = 1 if val > 0 else 0
-        w.put_byte(positive) # sign
+        w.put_byte(positive)  # sign
         with localcontext() as ctx:
             ctx.prec = 38
             if not positive:
@@ -666,6 +671,7 @@ class NumericHandler(object):
             w.put_byte(val % 256)
             val //= 256
         assert val == 0
+
 
 #
 # This strange type has following structure
@@ -690,7 +696,7 @@ class VariantHandler(object):
                 r.skip(colsize)
                 return None
 
-            type = r.get_byte();
+            type = r.get_byte()
             info_len = r.get_byte()
             colsize -= 2
             if info_len > colsize:
@@ -702,13 +708,13 @@ class VariantHandler(object):
                 colsize -= Collation.wire_size
                 info_len -= Collation.wire_size
                 curcol.char_codec = ucs2_codec if is_unicode_type(type) else\
-                        collation.get_codec()
+                    collation.get_codec()
             # special case for numeric
             if is_numeric_type(type):
                 if info_len != 2:
                     raise Exception('TDS_FAIL')
-                curcol.precision = precision = r.get_byte()
-                curcol.scale     = scale     = r.get_byte()
+                curcol.precision = r.get_byte()
+                curcol.scale = scale = r.get_byte()
                 colsize -= 2
                 # FIXME check prec/scale, don't let server crash us
                 if colsize > NumericHandler.MAX_NUMERIC:
@@ -840,14 +846,15 @@ def tds_get_conversion_type(srctype, colsize):
 '''
     keyfunc = lambda (_, varint): varint
     code = fmt.format(
-            '\n'.join('    if datatype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(gen_varint, key=keyfunc), keyfunc)),
-            '\n'.join('        if datatype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(ms_varint, key=keyfunc), keyfunc)),
-            '\n'.join('        if datatype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(syb_varint, key=keyfunc), keyfunc)),
-            '\n'.join('    if servertype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(types_sizes, key=lambda (_, size): size), lambda (_, size): size)),
-            )
+        '\n'.join('    if datatype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(gen_varint, key=keyfunc), keyfunc)),
+        '\n'.join('        if datatype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(ms_varint, key=keyfunc), keyfunc)),
+        '\n'.join('        if datatype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(syb_varint, key=keyfunc), keyfunc)),
+        '\n'.join('    if servertype in ({0},): return {1}'.format(','.join(name for name, _ in g), k) for k, g in groupby(sorted(types_sizes, key=lambda (_, size): size), lambda (_, size): size)),
+        )
     return compile(code, 'autogenerated_types', 'exec')
 
 exec(gen_get_varint_size())
+
 
 #
 # Get column size for wire
@@ -878,10 +885,12 @@ def tds_fix_column_size(tds, curcol):
             size = max(min(size, 0x7fffffff), 1)
     return size
 
+
 def tds_convert_string(tds, char_codec, s):
     return char_codec.encode(s)[0]
 
 _utc = tzutc()
+
 
 class MsDatetimeHandler(object):
     @staticmethod
@@ -915,8 +924,8 @@ class MsDatetimeHandler(object):
                 raise Exception('TDS_FAIL')
             time_buf = r.readall(size)
             val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(time_buf), 0)
-            val *= 10**(7-col.prec)
-            nanoseconds = val*100
+            val *= 10 ** (7 - col.prec)
+            nanoseconds = val * 100
 
         # get date part
         days = 0
@@ -926,23 +935,23 @@ class MsDatetimeHandler(object):
 
         # get time offset
         if col.column_type == SYBMSTIME:
-            hours = nanoseconds//1000000000//60//60
-            nanoseconds -= hours*60*60*1000000000
-            minutes = nanoseconds/1000000000//60
-            nanoseconds -= minutes*60*1000000000
-            seconds = nanoseconds//1000000000
-            nanoseconds -= seconds*1000000000
-            return time(hours, minutes, seconds, nanoseconds//1000)
+            hours = nanoseconds // 1000000000 // 60 // 60
+            nanoseconds -= hours * 60 * 60 * 1000000000
+            minutes = nanoseconds // 1000000000 // 60
+            nanoseconds -= minutes * 60 * 1000000000
+            seconds = nanoseconds // 1000000000
+            nanoseconds -= seconds * 1000000000
+            return time(hours, minutes, seconds, nanoseconds // 1000)
         elif col.column_type == SYBMSDATE:
             return _applytz(date(1, 1, 1) + timedelta(days=days), tds.use_tz)
         elif col.column_type == SYBMSDATETIME2:
-            return _applytz(datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds//1000), tds.use_tz)
+            return _applytz(datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds // 1000), tds.use_tz)
         elif col.column_type == SYBMSDATETIMEOFFSET:
             offset = r.get_smallint()
             if offset > 840 or offset < -840:
                 raise Exception('TDS_FAIL')
-            tz = tzoffset('', offset*60)
-            return (datetime(1, 1, 1, tzinfo=_utc) + timedelta(days=days, microseconds=nanoseconds//1000)).astimezone(tz)
+            tz = tzoffset('', offset * 60)
+            return (datetime(1, 1, 1, tzinfo=_utc) + timedelta(days=days, microseconds=nanoseconds // 1000)).astimezone(tz)
 
     @staticmethod
     def from_python(tds, col, value):
@@ -984,15 +993,15 @@ class MsDatetimeHandler(object):
     _base_date2_utc = datetime(1, 1, 1, tzinfo=_utc)
 
     _precision_to_len = {
-            0: 3,
-            1: 3,
-            2: 3,
-            3: 4,
-            4: 4,
-            5: 5,
-            6: 5,
-            7: 5,
-            }
+        0: 3,
+        1: 3,
+        2: 3,
+        3: 4,
+        4: 4,
+        5: 5,
+        6: 5,
+        7: 5,
+        }
 
     @staticmethod
     def put_data(tds, col):
@@ -1014,29 +1023,31 @@ class MsDatetimeHandler(object):
         if col.column_type != SYBMSDATE:
             # Encoding time part
             t = value
-            secs = t.hour*60*60 + t.minute*60 + t.second
-            val = (secs * 10**7 + t.microsecond*10)//(10**(7-col.prec))
+            secs = t.hour * 60 * 60 + t.minute * 60 + t.second
+            val = (secs * 10 ** 7 + t.microsecond * 10) // (10 ** (7 - col.prec))
             parts.append(struct.pack('<Q', val)[:MsDatetimeHandler._precision_to_len[col.prec]])
         if col.column_type != SYBMSTIME:
             # Encoding date part
             if type(value) == date:
-                value = datetime.combine(value, time(0,0,0))
+                value = datetime.combine(value, time(0, 0, 0))
             days = (value - MsDatetimeHandler._base_date2).days
             buf = struct.pack('<l', days)[:3]
             parts.append(buf)
         if col.column_type == SYBMSDATETIMEOFFSET:
             # Encoding timezone part
             assert utcoffset is not None
-            parts.append(struct.pack('<h', utcoffset.total_seconds()//60))
+            parts.append(struct.pack('<h', utcoffset.total_seconds() // 60))
         size = reduce(lambda a, b: a + len(b), parts, 0)
         w.put_byte(size)
         for part in parts:
             w.write(part)
 
+
 class DatetimeHandler(object):
     _base_date = datetime(1900, 1, 1)
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
     @staticmethod
     def get_info(tds, col):
         r = tds._reader
@@ -1106,6 +1117,7 @@ class DatetimeHandler(object):
         else:
             assert False
 
+
 #
 # Fetch character data the wire.
 # Output is NOT null terminated.
@@ -1119,10 +1131,10 @@ class DatetimeHandler(object):
 def tds_get_char_data(tds, wire_size, curcol):
     r = tds._reader
     #
-    # dest is usually a column buffer, allocated when the column's metadata are processed 
-    # and reused for each row.  
+    # dest is usually a column buffer, allocated when the column's metadata are processed
+    # and reused for each row.
     # For blobs, dest is blob->textvalue, and can be reallocated or freed
-    # TODO: reallocate if blob and no space 
+    # TODO: reallocate if blob and no space
     #
     # silly case, empty string
     if wire_size == 0:
@@ -1134,13 +1146,14 @@ def tds_get_char_data(tds, wire_size, curcol):
         # TDS7.1/single -> use curcol collation
         # TDS7/single -> use server single byte
         # TDS7+/unicode -> use server (always unicode)
-        # TDS5/4.2 -> use server 
+        # TDS5/4.2 -> use server
         # TDS5/UTF-8 -> use server
         # TDS5/UTF-16 -> use UTF-16
         #
         return curcol.char_codec.decode(r.readall(wire_size))[0]
     else:
         return r.readall(wire_size)
+
 
 class Datetime:
     base_date = datetime(1900, 1, 1)
@@ -1157,15 +1170,15 @@ class Datetime:
     def encode(cls, value):
         cls.validate(value)
         if type(value) == date:
-            value = datetime.combine(value, time(0,0,0))
+            value = datetime.combine(value, time(0, 0, 0))
         days = (value - cls.base_date).days
-        ms = value.microsecond//1000
-        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second)*300 + int(round(ms*3/10.0))
+        ms = value.microsecond // 1000
+        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
         return TDS_DATETIME.pack(days, tm)
 
     @classmethod
     def decode(cls, buf):
         days, time = TDS_DATETIME.unpack(buf)
-        ms = int(round(time%300 * 10/3.0))
-        secs = time//300
+        ms = int(round(time % 300 * 10 / 3.0))
+        secs = time // 300
         return cls.base_date + timedelta(days=days, seconds=secs, milliseconds=ms)

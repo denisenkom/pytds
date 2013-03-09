@@ -1,15 +1,13 @@
-# vim: set fileencoding=utf8 :
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = '1.3.0'
 
 import logging
-import decimal
-import re
-from tds import *
-from login import *
-from query import *
+from . import lcid
+from .tds import *
+from .login import *
+from .query import *
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +20,17 @@ threadsafety = 1
 # this module uses extended python format codes
 paramstyle = 'pyformat'
 
-DB_RES_INIT            = 0
+DB_RES_INIT = 0
 DB_RES_RESULTSET_EMPTY = 1
-DB_RES_RESULTSET_ROWS  = 2
-DB_RES_NEXT_RESULT     = 3
+DB_RES_RESULTSET_ROWS = 2
+DB_RES_NEXT_RESULT = 3
 DB_RES_NO_MORE_RESULTS = 4
-DB_RES_SUCCEED         = 5
+DB_RES_SUCCEED = 5
+
 
 class _TdsLogin:
     pass
+
 
 ######################
 ## Connection class ##
@@ -204,7 +204,7 @@ class _Connection(object):
         finally:
             cur.close()
 
-    _nextrow_mask = TDS_STOPAT_ROWFMT|TDS_RETURN_DONE|TDS_RETURN_ROW|TDS_RETURN_COMPUTE
+    _nextrow_mask = TDS_STOPAT_ROWFMT | TDS_RETURN_DONE | TDS_RETURN_ROW | TDS_RETURN_COMPUTE
 
     def _nextrow(self, session):
         logger.debug("_nextrow()")
@@ -239,7 +239,7 @@ class _Connection(object):
         #
         # If we hit an end token -- e.g. if the command
         # submitted returned no data (like an insert) -- then
-        # we process the end token to extract the status code. 
+        # we process the end token to extract the status code.
         #
         logger.debug("dbsqlok() not done, calling tds_process_tokens()")
         while True:
@@ -247,7 +247,7 @@ class _Connection(object):
 
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
-            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
             #/
             if done_flags & TDS_DONE_ERROR:
                 raise_db_exception(session)
@@ -271,7 +271,7 @@ class _Connection(object):
             elif result_type == TDS_STATUS_RESULT:
                 continue
             else:
-                logger.error('logic error: tds_process_tokens result_type %d', result_type);
+                logger.error('logic error: tds_process_tokens result_type %d', result_type)
 
     def _fetchone(self, cursor):
         """
@@ -367,7 +367,6 @@ class _Connection(object):
 
     def _execute(self, cursor, operation, params):
         self._assert_open()
-        tds = self._conn
         self._try_activate_cursor(cursor)
         session = cursor._session
         self._cancel(session)
@@ -378,7 +377,7 @@ class _Connection(object):
 
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
-            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
             #/
             if done_flags & TDS_DONE_ERROR:
                 raise_db_exception(session)
@@ -405,12 +404,11 @@ class _Connection(object):
                     self._state = DB_RES_NO_MORE_RESULTS
                 break
             else:
-                logger.error('logic error: tds_process_tokens result_type %d', result_type);
+                logger.error('logic error: tds_process_tokens result_type %d', result_type)
 
     def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
         self._assert_open()
-        tds = self._conn
         self._try_activate_cursor(cursor)
         session = cursor._session
         self._cancel(session)
@@ -421,7 +419,7 @@ class _Connection(object):
             tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
-            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case. 
+            # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
             #/
             if done_flags & TDS_DONE_ERROR:
                 raise_db_exception(session)
@@ -447,12 +445,13 @@ class _Connection(object):
                     self._state = DB_RES_NO_MORE_RESULTS
                 break
             else:
-                logger.error('logic error: tds_process_tokens result_type %d', result_type);
+                logger.error('logic error: tds_process_tokens result_type %d', result_type)
         logger.debug('callproc end')
         results = list(parameters)
         for key, param in session.output_params.items():
             results[key] = param.value
         return results
+
 
 ##################
 ## Cursor class ##
@@ -594,7 +593,7 @@ class _Cursor(object):
         return self._conn._fetchone(self)
 
     def fetchmany(self, size=None):
-        if size == None:
+        if size is None:
             size = self.arraysize
 
         rows = []
@@ -626,12 +625,13 @@ class _Cursor(object):
         """
         pass
 
+
 def connect(server='.', database='', user='', password='', timeout=0,
-        login_timeout=60, as_dict=False,
-        host='', appname=None, port=None, tds_version=TDS74,
-        encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
-        blocksize=4096, use_mars=False, auth=None, readonly=False,
-        load_balancer=None, use_tz=None):
+            login_timeout=60, as_dict=False,
+            host='', appname=None, port=None, tds_version=TDS74,
+            encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
+            blocksize=4096, use_mars=False, auth=None, readonly=False,
+            load_balancer=None, use_tz=None):
     """
     Constructor for creating a connection to the database. Returns a
     Connection object.
@@ -686,7 +686,7 @@ def connect(server='.', database='', user='', password='', timeout=0,
     login.password = password or ''
     login.app_name = appname or 'pytds'
     login.port = port
-    login.language = '' # use database default
+    login.language = ''  # use database default
     login.attach_db_file = ''
     login.tds_version = tds_version
     login.database = database
@@ -714,22 +714,28 @@ def connect(server='.', database='', user='', password='', timeout=0,
     login.use_tz = use_tz
     return _Connection(login, as_dict, autocommit)
 
+
 def Date(year, month, day):
     return date(year, month, day)
 
+
 def DateFromTicks(ticks):
     return date.fromtimestamp(ticks)
+
 
 def Time(hour, minute, second, microsecond=0):
     from datetime import time
     return time(hour, minute, second, microsecond)
 
+
 def TimeFromTicks(ticks):
     import time
     return Time(*time.localtime(ticks)[3:6])
 
+
 def Timestamp(year, month, day, hour, minute, second, microseconds=0, tzinfo=None):
     return datetime(year, month, day, hour, minute, second, microseconds, tzinfo)
+
 
 def TimestampFromTicks(ticks):
     return datetime.fromtimestamp(ticks)

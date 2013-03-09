@@ -1,11 +1,8 @@
 import struct
 import logging
-from StringIO import StringIO
 import socket
-import struct
 import errno
 import select
-import lcid
 from collate import *
 from tdsproto import *
 
@@ -26,13 +23,13 @@ TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
 # tds protocol versions
-TDS70       = 0x70000000
-TDS71       = 0x71000000
-TDS71rev1   = 0x71000001
-TDS72       = 0x72090002
-TDS73A      = 0x730A0003
-TDS73B      = 0x730B0003
-TDS74       = 0x74000004
+TDS70 = 0x70000000
+TDS71 = 0x71000000
+TDS71rev1 = 0x71000001
+TDS72 = 0x72090002
+TDS73A = 0x730A0003
+TDS73B = 0x730B0003
+TDS74 = 0x74000004
 
 USE_POLL = hasattr(select, 'poll')
 USE_CORK = hasattr(socket, 'TCP_CORK')
@@ -46,47 +43,48 @@ TDSSELERR = 0
 TDSPOLLURG = 0x8000
 
 
-def IS_TDS42(x): return x.tds_version==0x402
-def IS_TDS46(x): return x.tds_version==0x406
-def IS_TDS50(x): return x.tds_version==0x500
-def IS_TDS70(x): return x.tds_version==TDS70
-def IS_TDS71(x): return x.tds_version in (TDS71, TDS71rev1)
-def IS_TDS72(x): return x.tds_version==TDS72
-def IS_TDS73(x): return x.tds_version in (TDS73A, TDS73B)
-def IS_TDS7_PLUS(x): return x.tds_version>=TDS70
-def IS_TDS71_PLUS(x): return x.tds_version>=TDS71
-def IS_TDS72_PLUS(x): return x.tds_version>=TDS72
-def IS_TDS73_PLUS(x): return x.tds_version>=TDS73A
+IS_TDS42 = lambda(x): x.tds_version == 0x402
+IS_TDS46 = lambda(x): x.tds_version == 0x406
+IS_TDS50 = lambda(x): x.tds_version == 0x500
+IS_TDS70 = lambda(x): x.tds_version == TDS70
+IS_TDS71 = lambda(x): x.tds_version in (TDS71, TDS71rev1)
+IS_TDS72 = lambda(x): x.tds_version == TDS72
+IS_TDS73 = lambda(x): x.tds_version in (TDS73A, TDS73B)
+IS_TDS7_PLUS = lambda(x): x.tds_version >= TDS70
+IS_TDS71_PLUS = lambda(x): x.tds_version >= TDS71
+IS_TDS72_PLUS = lambda(x): x.tds_version >= TDS72
+IS_TDS73_PLUS = lambda(x): x.tds_version >= TDS73A
 
 TDS_NO_COUNT = -1
 
-TDS_ROW_RESULT        = 4040
-TDS_PARAM_RESULT      = 4042
-TDS_STATUS_RESULT     = 4043
-TDS_MSG_RESULT        = 4044
-TDS_COMPUTE_RESULT    = 4045
-TDS_CMD_DONE          = 4046
-TDS_CMD_SUCCEED       = 4047
-TDS_CMD_FAIL          = 4048
-TDS_ROWFMT_RESULT     = 4049
+TDS_ROW_RESULT = 4040
+TDS_PARAM_RESULT = 4042
+TDS_STATUS_RESULT = 4043
+TDS_MSG_RESULT = 4044
+TDS_COMPUTE_RESULT = 4045
+TDS_CMD_DONE = 4046
+TDS_CMD_SUCCEED = 4047
+TDS_CMD_FAIL = 4048
+TDS_ROWFMT_RESULT = 4049
 TDS_COMPUTEFMT_RESULT = 4050
-TDS_DESCRIBE_RESULT   = 4051
-TDS_DONE_RESULT       = 4052
-TDS_DONEPROC_RESULT   = 4053
+TDS_DESCRIBE_RESULT = 4051
+TDS_DONE_RESULT = 4052
+TDS_DONEPROC_RESULT = 4053
 TDS_DONEINPROC_RESULT = 4054
-TDS_OTHERS_RESULT     = 4055
+TDS_OTHERS_RESULT = 4055
 
-TDS_TOKEN_RES_OTHERS    = 0
-TDS_TOKEN_RES_ROWFMT    = 1
-TDS_TOKEN_RES_COMPUTEFMT= 2
-TDS_TOKEN_RES_PARAMFMT  = 3
-TDS_TOKEN_RES_DONE      = 4
-TDS_TOKEN_RES_ROW       = 5
-TDS_TOKEN_RES_COMPUTE   = 6
-TDS_TOKEN_RES_PROC      = 7
-TDS_TOKEN_RES_MSG       = 8
+TDS_TOKEN_RES_OTHERS = 0
+TDS_TOKEN_RES_ROWFMT = 1
+TDS_TOKEN_RES_COMPUTEFMT = 2
+TDS_TOKEN_RES_PARAMFMT = 3
+TDS_TOKEN_RES_DONE = 4
+TDS_TOKEN_RES_ROW = 5
+TDS_TOKEN_RES_COMPUTE = 6
+TDS_TOKEN_RES_PROC = 7
+TDS_TOKEN_RES_MSG = 8
 
 TDS_HANDLE_ALL = 0
+
 
 def _gen_return_flags():
     _globs = globals()
@@ -98,63 +96,58 @@ def _gen_return_flags():
 _gen_return_flags()
 
 
-TDS_TOKEN_RESULTS = TDS_RETURN_ROWFMT|TDS_RETURN_COMPUTEFMT|TDS_RETURN_DONE|\
-        TDS_STOPAT_ROW|TDS_STOPAT_COMPUTE|TDS_RETURN_PROC
-TDS_TOKEN_TRAILING = TDS_STOPAT_ROWFMT|TDS_STOPAT_COMPUTEFMT|TDS_STOPAT_ROW|\
-        TDS_STOPAT_COMPUTE|TDS_STOPAT_MSG|TDS_STOPAT_OTHERS
+TDS_TOKEN_RESULTS = TDS_RETURN_ROWFMT | TDS_RETURN_COMPUTEFMT | TDS_RETURN_DONE |\
+    TDS_STOPAT_ROW | TDS_STOPAT_COMPUTE | TDS_RETURN_PROC
+TDS_TOKEN_TRAILING = TDS_STOPAT_ROWFMT | TDS_STOPAT_COMPUTEFMT | TDS_STOPAT_ROW |\
+    TDS_STOPAT_COMPUTE | TDS_STOPAT_MSG | TDS_STOPAT_OTHERS
 
-TDS_DONE_FINAL          = 0x00  # final result set, command completed successfully. */
-TDS_DONE_MORE_RESULTS   = 0x01  # more results follow */
-TDS_DONE_ERROR          = 0x02  # error occurred */
-TDS_DONE_INXACT         = 0x04  # transaction in progress */
-TDS_DONE_PROC           = 0x08  # results are from a stored procedure */
-TDS_DONE_COUNT          = 0x10  # count field in packet is valid */
-TDS_DONE_CANCELLED      = 0x20  # acknowledging an attention command (usually a cancel) */
-TDS_DONE_EVENT          = 0x40  # part of an event notification. */
-TDS_DONE_SRVERROR       = 0x100 # SQL server server error */
+TDS_DONE_FINAL = 0x00  # final result set, command completed successfully.
+TDS_DONE_MORE_RESULTS = 0x01  # more results follow
+TDS_DONE_ERROR = 0x02  # error occurred
+TDS_DONE_INXACT = 0x04  # transaction in progress
+TDS_DONE_PROC = 0x08  # results are from a stored procedure
+TDS_DONE_COUNT = 0x10  # count field in packet is valid
+TDS_DONE_CANCELLED = 0x20  # acknowledging an attention command (usually a cancel)
+TDS_DONE_EVENT = 0x40  # part of an event notification.
+TDS_DONE_SRVERROR = 0x100  # SQL server server error
 
-# after the above flags, a TDS_DONE packet has a field describing the state of the transaction */
-TDS_DONE_NO_TRAN        = 0     # No transaction in effect */
-TDS_DONE_TRAN_SUCCEED   = 1     # Transaction completed successfully */
-TDS_DONE_TRAN_PROGRESS  = 2     # Transaction in progress */
-TDS_DONE_STMT_ABORT     = 3     # A statement aborted */
-TDS_DONE_TRAN_ABORT     = 4     # Transaction aborted */
+# after the above flags, a TDS_DONE packet has a field describing the state of the transaction
+TDS_DONE_NO_TRAN = 0        # No transaction in effect
+TDS_DONE_TRAN_SUCCEED = 1   # Transaction completed successfully
+TDS_DONE_TRAN_PROGRESS = 2  # Transaction in progress
+TDS_DONE_STMT_ABORT = 3     # A statement aborted
+TDS_DONE_TRAN_ABORT = 4     # Transaction aborted
 
 TDS_NO_MORE_RESULTS = 1
-TDS_SUCCESS         = 0
-TDS_FAIL            = -1
-TDS_CANCELLED       = -2
-def TDS_FAILED(rc): return rc<0
-def TDS_SUCCEED(rc): return rc>=0
+TDS_SUCCESS = 0
+TDS_FAIL = -1
+TDS_CANCELLED = -2
 
-def is_blob_type(x): return x in (SYBTEXT, SYBIMAGE, SYBNTEXT)
-def is_blob_col(col): return (col.column_varint_size > 2)
+TDS_FAILED = lambda(rc): rc < 0
+TDS_SUCCEED = lambda(rc): rc >= 0
+
+is_blob_type = lambda(x): x in (SYBTEXT, SYBIMAGE, SYBNTEXT)
+is_blob_col = lambda(col): (col.column_varint_size > 2)
 # large type means it has a two byte size field
 # define is_large_type(x) (x>128)
-def is_numeric_type(x): return x in (SYBNUMERIC, SYBDECIMAL)
-def is_unicode_type(x): return x in (XSYBNVARCHAR,XSYBNCHAR,SYBNTEXT,SYBMSXML)
-def is_collate_type(x): return x in (XSYBVARCHAR, XSYBCHAR, SYBTEXT, XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT)
-def is_ascii_type(x): return x in (XSYBCHAR,XSYBVARCHAR,SYBTEXT,SYBCHAR,SYBVARCHAR)
-def is_char_type(x): return is_unicode_type(x) or is_ascii_type(x)
-def is_similar_type(x, y): return is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
+is_numeric_type = lambda(x): x in (SYBNUMERIC, SYBDECIMAL)
+is_unicode_type = lambda(x): x in (XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT, SYBMSXML)
+is_collate_type = lambda(x): x in (XSYBVARCHAR, XSYBCHAR, SYBTEXT, XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT)
+is_ascii_type = lambda(x): x in (XSYBCHAR, XSYBVARCHAR, SYBTEXT, SYBCHAR, SYBVARCHAR)
+is_char_type = lambda(x): is_unicode_type(x) or is_ascii_type(x)
+is_similar_type = lambda(x, y): is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
 
-def tds_conn(tds): return tds
+tds_conn = lambda(tds): tds
 
-def TDS_IS_SOCKET_INVALID(sock):
-    return sock is None
+TDS_IS_SOCKET_INVALID = lambda(sock): sock is None
 
-def IS_TDSDEAD(tds):
-    return tds is None or tds._sock is None
+IS_TDSDEAD = lambda(tds): tds is None or tds._sock is None
 
-TDS_DEF_BLKSZ		= 512
-TDS_DEF_CHARSET		= "iso_1"
-TDS_DEF_LANG		= "us_english"
+TDS_DEF_BLKSZ = 512
+TDS_DEF_CHARSET = "iso_1"
+TDS_DEF_LANG = "us_english"
 
-def tds_set_s(tds, sock):
-    tds._sock = sock
-
-def tds_get_s(tds):
-    return tds._sock
+tds_get_s = lambda(tds): tds._sock
 
 TDS_ADDITIONAL_SPACE = 0
 
@@ -177,7 +170,7 @@ class SimpleLoadBalancer(object):
 #
 # Quote an id
 # \param tds    state information for the socket and the TDS protocol
-# \param buffer buffer to store quoted id. If NULL do not write anything 
+# \param buffer buffer to store quoted id. If NULL do not write anything
 #        (useful to compute quote length)
 # \param id     id to quote
 # \param idlen  id length
@@ -190,10 +183,11 @@ def tds_quote_id(tds, id):
 
     return '"{0}"'.format(id.replace('"', '""'))
 
+
 # Check if product is Sybase (such as Adaptive Server Enterrprice). x should be a TDSSOCKET*.
-def TDS_IS_SYBASE(x): return not tds_conn(x).product_version & 0x80000000
+TDS_IS_SYBASE = lambda(x): not tds_conn(x).product_version & 0x80000000
 # Check if product is Microsft SQL Server. x should be a TDSSOCKET*.
-def TDS_IS_MSSQL(x): return tds_conn(x).product_version & 0x80000000
+TDS_IS_MSSQL = lambda(x): tds_conn(x).product_version & 0x80000000
 
 # store a tuple of programming error codes
 prog_errors = (
@@ -212,18 +206,23 @@ integrity_errors = (
     2627,   # violate UNIQUE KEY constraint
 )
 
+
 # exception hierarchy
 class Warning(StandardError):
     pass
 
+
 class Error(StandardError):
     pass
+
 
 class TimeoutError(Error):
     pass
 
+
 class InterfaceError(Error):
     pass
+
 
 class DatabaseError(Error):
     @property
@@ -238,23 +237,30 @@ class DatabaseError(Error):
                 'line %d:\n%s' % (self.number, self.severity,
                 self.state, self.line, self.text)
 
+
 class DataError(Error):
     pass
+
 
 class OperationalError(DatabaseError):
     pass
 
+
 class LoginError(OperationalError):
     pass
+
 
 class IntegrityError(DatabaseError):
     pass
 
+
 class InternalError(DatabaseError):
     pass
 
+
 class ProgrammingError(DatabaseError):
     pass
+
 
 class NotSupportedError(DatabaseError):
     pass
@@ -268,6 +274,7 @@ NUMBER = 3
 DATETIME = 4
 DECIMAL = 5
 ROWID = 6
+
 
 # stored procedure output parameter
 class output:
@@ -285,24 +292,26 @@ class output:
         """
         return self._value
 
-
     def __init__(self, param_type, value=None):
         self._type = param_type
         self._value = value
 
+
 class Binary(str):
     def __repr__(self):
         return 'Binary({0})'.format(super(Binary, self).__repr__())
+
 
 class _Default:
     pass
 
 default = _Default()
 
+
 def raise_db_exception(tds):
     while True:
         msg = tds.messages[-1]
-        if msg['msgno'] == 3621: # the statement has been terminated
+        if msg['msgno'] == 3621:  # the statement has been terminated
             tds.messages = tds.messages[:-1]
         else:
             break
@@ -327,32 +336,43 @@ def raise_db_exception(tds):
     tds.messages = []
     raise ex
 
+
 class InternalProc(object):
     def __init__(self, proc_id, name):
         self.proc_id = proc_id
         self.name = name
+
     def __unicode__(self):
         return self.name
 
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
 
+
 def tds_mutex_trylock(mutex):
     pass
+
 
 def tds_mutex_unlock(mutex):
     pass
 
+
 TDS_MUTEX_TRYLOCK = tds_mutex_trylock
+TDS_MUTEX_UNLOCK = tds_mutex_unlock
+
+
 def TDS_MUTEX_LOCK(mutex):
     pass
-TDS_MUTEX_UNLOCK = tds_mutex_unlock
+
+
 def TDS_MUTEX_INIT(something):
     return None
+
 
 class _TdsConn:
     def __init__(self):
         self.tls_session = None
         self.tls_credentials = None
+
 
 class _TdsEnv:
     pass
@@ -370,12 +390,13 @@ _uint_be = struct.Struct('>L')
 _int8_le = struct.Struct('<q')
 _int8_be = struct.Struct('>q')
 
+
 class _TdsReader(object):
     def __init__(self, session, emul_little_endian):
         self._buf = ''
-        self._pos = 0 # position in the buffer
-        self._have = 0 # number of bytes read from packet
-        self._size = 0 # size of current packet
+        self._pos = 0  # position in the buffer
+        self._have = 0  # number of bytes read from packet
+        self._size = 0  # size of current packet
         self._session = session
         self._transport = session._transport
         self._type = None
@@ -429,7 +450,7 @@ class _TdsReader(object):
             return self.unpack(_int8_be)[0]
 
     def read_ucs2(self, num_chars):
-        buf = self.readall(num_chars*2)
+        buf = self.readall(num_chars * 2)
         return ucs2_codec.decode(buf)[0]
 
     def get_collation(self):
@@ -472,7 +493,7 @@ class _TdsReader(object):
                 self._buf = self._transport.recv(self._size - self._have)
                 self._pos = 0
                 self._have += len(self._buf)
-        res = self._buf[self._pos:self._pos+size]
+        res = self._buf[self._pos:self._pos + size]
         self._pos += len(res)
         return res
 
@@ -499,6 +520,7 @@ class _TdsReader(object):
         self._read_packet()
         return self.readall(self._size - _header.size)
 
+
 class _TdsWriter(object):
     def __init__(self, tds, bufsize):
         self._tds = tds
@@ -516,7 +538,7 @@ class _TdsWriter(object):
             return
 
         if bufsize > len(self._buf):
-            self._buf.extend('\0'*(bufsize - len(self._buf)))
+            self._buf.extend('\0' * (bufsize - len(self._buf)))
         else:
             self._buf = self._buf[0:bufsize]
 
@@ -586,7 +608,7 @@ class _TdsWriter(object):
                 self._write_packet(final=False)
             else:
                 to_write = min(left, len(data) - data_off)
-                self._buf[self._pos:self._pos+to_write] = data[data_off:data_off+to_write]
+                self._buf[self._pos:self._pos + to_write] = data[data_off:data_off + to_write]
                 self._pos += to_write
                 data_off += to_write
 
@@ -595,7 +617,7 @@ class _TdsWriter(object):
 
     def write_string(self, s, codec):
         for i in xrange(0, len(s), self.bufsize):
-            chunk = s[i:i+self.bufsize]
+            chunk = s[i:i + self.bufsize]
             buf, consumed = codec.encode(chunk)
             assert consumed == len(chunk)
             self.write(buf)
@@ -611,15 +633,19 @@ class _TdsWriter(object):
         self._transport.send(self._buf[:self._pos], final)
         self._pos = 8
 
+
 class MemoryChunkedHandler(object):
     def begin(self, column, size):
         self.size = size
         self._chunks = []
+
     def new_chunk(self, val):
         #logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
         self._chunks.append(val)
+
     def end(self):
         return ''.join(self._chunks)
+
 
 class _TdsSession(object):
     def __init__(self, tds, transport):
@@ -670,22 +696,22 @@ class _TdsSession(object):
                 self.state = TDS_PENDING
                 tds_mutex_unlock(self.wire_mtx)
             else:
-                logger.error('logic error: cannot chage query state from {0} to {1}'.\
-                        format(state_names[prior_state], state_names[state]))
+                logger.error('logic error: cannot chage query state from {0} to {1}'.
+                             format(state_names[prior_state], state_names[state]))
         elif state == TDS_READING:
             # transition to READING are valid only from PENDING
             if tds_mutex_trylock(self.wire_mtx):
                 return self.state
             if self.state != TDS_PENDING:
                 tds_mutex_unlock(self.wire_mtx)
-                logger.error('logic error: cannot change query state from {0} to {1}'.\
-                        format(state_names[prior_state], state_names[state]))
+                logger.error('logic error: cannot change query state from {0} to {1}'.
+                             format(state_names[prior_state], state_names[state]))
             else:
                 self.state = state
         elif state == TDS_IDLE:
             if prior_state == TDS_DEAD and tds_get_s(self) is None:
-                logger.error('logic error: cannot change query state from {0} to {1}'.\
-                        format(state_names[prior_state], state_names[state]))
+                logger.error('logic error: cannot change query state from {0} to {1}'.
+                             format(state_names[prior_state], state_names[state]))
             elif prior_state in (TDS_READING, TDS_QUERYING):
                 tds_mutex_unlock(self.wire_mtx)
             self.state = state
@@ -698,12 +724,12 @@ class _TdsSession(object):
                 return self.state
             if self.state == TDS_DEAD:
                 tds_mutex_unlock(self.wire_mtx)
-                logger.error('logic error: cannot change query state from {0} to {1}'.\
-                        format(state_names[prior_state], state_names[state]))
+                logger.error('logic error: cannot change query state from {0} to {1}'.
+                             format(state_names[prior_state], state_names[state]))
             elif self.state != TDS_IDLE:
                 tds_mutex_unlock(self.wire_mtx)
-                logger.error('logic error: cannot change query state from {0} to {1}'.\
-                        format(state_names[prior_state], state_names[state]))
+                logger.error('logic error: cannot change query state from {0} to {1}'.
+                             format(state_names[prior_state], state_names[state]))
             else:
                 self.rows_affected = TDS_NO_COUNT
                 self.internal_sp_called = 0
@@ -711,6 +737,7 @@ class _TdsSession(object):
         else:
             assert False
         return self.state
+
 
 class _TdsSocket(object):
     def __init__(self, login):
@@ -788,7 +815,8 @@ class _TdsSocket(object):
         self._main_session = _TdsSession(self, self._smp_manager.create_session())
 
     @property
-    def mars_enabled(self): return self._mars_enabled
+    def mars_enabled(self):
+        return self._mars_enabled
 
     @property
     def main_session(self):
@@ -860,6 +888,7 @@ class _TdsSocket(object):
         if self.s_signaled is not None:
             self.s_signaled.close()
 
+
 class _Column(object):
     def __init__(self):
         self.char_codec = None
@@ -869,10 +898,12 @@ class _Column(object):
     def __repr__(self):
         return '<_Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
 
+
 class _Results(object):
     def __init__(self):
         self.columns = []
         self.row_count = 0
+
 
 def tds_open_socket(tds, host, port, timeout=0):
     #tds = _Tds(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0))
@@ -896,6 +927,7 @@ def tds_open_socket(tds, host, port, timeout=0):
     tds._sock = socket.create_connection((host, port), timeout)
     tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     return tds
+
 
 def tds_select(tds, tds_sel, timeout_seconds):
     poll_seconds = 1 if tds.int_handler else timeout_seconds
@@ -934,10 +966,12 @@ def tds_select(tds, tds_sel, timeout_seconds):
         seconds -= poll_seconds
     return 0
 
+
 def tds_put_cancel(tds):
     tds._writer.begin_packet(TDS_CANCEL)
     tds._writer.flush()
     tds.in_cancel = 1
+
 
 def tds_ssl_deinit(tds):
     if tds_conn(tds).tls_session:
@@ -947,6 +981,7 @@ def tds_ssl_deinit(tds):
         gnutls_certificate_free_credentials(tds_conn(tds).tls_credentials)
         #tds_conn(tds).tls_credentials = None
 
+
 #
 # Get port of all instances
 # @return default port number or 0 if error
@@ -955,15 +990,15 @@ def tds_ssl_deinit(tds):
 def tds7_get_instances(ip_addr):
     s = socket.socket(type=socket.SOCK_DGRAM)
     try:
-        # 
-        # Request the instance's port from the server.  
+        #
+        # Request the instance's port from the server.
         # There is no easy way to detect if port is closed so we always try to
-        # get a reply from server 16 times. 
+        # get a reply from server 16 times.
         #
         for num_try in range(16):
             # send the request
             s.sendto('\x03', (ip_addr, 1434))
-            msg = s.recv(16*1024-1)
+            msg = s.recv(16 * 1024 - 1)
             # got data, read and parse
             if len(msg) > 3 and msg[0] == '\x05':
                 tokens = msg[3:].split(';')

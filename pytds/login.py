@@ -1,6 +1,8 @@
 # vim: set fileencoding=utf8 :
-import sys
 import struct
+import socket
+from dateutil.tz import tzlocal
+import uuid
 import os
 import logging
 ENCRYPTION_ENABLED = False
@@ -13,9 +15,9 @@ else:
 from tdsproto import *
 from tds import *
 from token import *
-from smp import SmpManager
 
 logger = logging.getLogger(__name__)
+
 
 class SspiAuth(object):
     def __init__(self, user_name='', password='', server_name='', port=None, spn=None):
@@ -45,7 +47,7 @@ class SspiAuth(object):
             use=sspi.SECPKG_CRED_OUTBOUND,
             identity=self._identity)
 
-        self._flags = sspi.ISC_REQ_CONFIDENTIALITY|sspi.ISC_REQ_REPLAY_DETECT|sspi.ISC_REQ_CONNECTION
+        self._flags = sspi.ISC_REQ_CONFIDENTIALITY | sspi.ISC_REQ_REPLAY_DETECT | sspi.ISC_REQ_CONNECTION
 
     def create_packet(self):
         import sspi
@@ -71,10 +73,11 @@ class SspiAuth(object):
             input_buffers=[(sspi.SECBUFFER_TOKEN, packet)],
             output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
         return buffers[0][1]
-    
+
     def close(self):
         self._ctx.close()
         self._cred.close()
+
 
 class NtlmAuth(object):
     def __init__(self, user_name, password):
@@ -93,14 +96,12 @@ class NtlmAuth(object):
     def close(self):
         pass
 
+
 def tds_login(tds, login):
-    db_selected = False
     if IS_TDS71_PLUS(tds):
         tds71_do_login(tds, login)
-        db_selected = True
     elif IS_TDS7_PLUS(tds):
         tds7_send_login(tds, login)
-        db_selected = True
     else:
         raise NotImplementedError('This TDS version is not supported')
         tds._writer.begin_packet(TDS_LOGIN)
@@ -109,12 +110,10 @@ def tds_login(tds, login):
         raise_db_exception(tds)
         #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
 
-import socket
 this_host_name = socket.gethostname()
-from dateutil.tz import tzlocal
-mins_fix = tzlocal().utcoffset(datetime.now()).total_seconds()/60
-import uuid
+mins_fix = tzlocal().utcoffset(datetime.now()).total_seconds() / 60
 mac_address = struct.pack('>Q', uuid.getnode())[:6]
+
 
 def tds7_send_login(tds, login):
     option_flag2 = login.option_flag2
@@ -127,21 +126,21 @@ def tds7_send_login(tds, login):
     current_pos = 86 + 8 if IS_TDS72_PLUS(tds) else 86
     client_host_name = this_host_name
     login.client_host_name = client_host_name
-    packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database))*2
+    packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database)) * 2
     if login.auth:
         tds.authentication = login.auth
         auth_packet = login.auth.create_packet()
         packet_size += len(auth_packet)
     else:
         auth_packet = ''
-        packet_size += (len(user_name) + len(login.password))*2
+        packet_size += (len(user_name) + len(login.password)) * 2
     w.put_int(packet_size)
     w.put_uint(login.tds_version)
     w.put_int(w.bufsize)
     from pytds import intversion
     w.put_uint(intversion)
     w.put_int(os.getpid())
-    w.put_uint(0) # connection id
+    w.put_uint(0)  # connection id
     option_flag1 = TDS_SET_LANG_ON | TDS_USE_DB_NOTIFY | TDS_INIT_DB_FATAL
     if not login.bulk_copy:
         option_flag1 |= TDS_DUMPLOAD_OFF
@@ -176,7 +175,7 @@ def tds7_send_login(tds, login):
     w.put_smallint(len(login.app_name))
     current_pos += len(login.app_name) * 2
     # server name
-    w.put_smallint(current_pos);
+    w.put_smallint(current_pos)
     w.put_smallint(len(login.server_name))
     current_pos += len(login.server_name) * 2
     # reserved
@@ -187,13 +186,13 @@ def tds7_send_login(tds, login):
     w.put_smallint(len(login.library))
     current_pos += len(login.library) * 2
     # language
-    w.put_smallint(current_pos);
-    w.put_smallint(len(login.language));
-    current_pos += len(login.language) * 2;
+    w.put_smallint(current_pos)
+    w.put_smallint(len(login.language))
+    current_pos += len(login.language) * 2
     # database name
-    w.put_smallint(current_pos);
-    w.put_smallint(len(login.database));
-    current_pos += len(login.database) * 2;
+    w.put_smallint(current_pos)
+    w.put_smallint(len(login.database))
+    current_pos += len(login.database) * 2
     # ClientID
     w.write(mac_address)
     # authentication
@@ -203,7 +202,7 @@ def tds7_send_login(tds, login):
     # db file
     w.put_smallint(current_pos)
     w.put_smallint(len(login.attach_db_file))
-    current_pos += len(login.attach_db_file) * 2;
+    current_pos += len(login.attach_db_file) * 2
     if IS_TDS72_PLUS(tds):
         # new password
         w.put_smallint(current_pos)
@@ -224,54 +223,59 @@ def tds7_send_login(tds, login):
     w.write_ucs2(login.attach_db_file)
     w.flush()
 
+
 def tds7_crypt_pass(password):
     encoded = bytearray(ucs2_codec.encode(password)[0])
     for i, ch in enumerate(encoded):
-        encoded[i] = ((ch << 4)&0xff | (ch >> 4)) ^ 0xA5
+        encoded[i] = ((ch << 4) & 0xff | (ch >> 4)) ^ 0xA5
     return encoded
 
+VERSION = 0
+ENCRYPTION = 1
+INSTOPT = 2
+THREADID = 3
+MARS = 4
+TRACEID = 5
+TERMINATOR = 0xff
+
+
 def tds71_do_login(tds, login):
-    VERSION = 0
-    ENCRYPTION = 1
-    INSTOPT = 2
-    THREADID = 3
-    MARS = 4
-    TRACEID = 5
-    TERMINATOR = 0xff
     instance_name = login.instance_name or 'MSSQLServer'
     encryption_level = login.encryption_level
     if IS_TDS72_PLUS(tds):
         START_POS = 26
-        buf = struct.pack('>BHHBHHBHHBHHBHHB',
-                #netlib version
-                VERSION, START_POS, 6,
-                #encryption
-                ENCRYPTION, START_POS + 6, 1,
-                #instance
-                INSTOPT, START_POS + 6 + 1, len(instance_name)+1,
-                # thread id
-                THREADID, START_POS + 6 + 1 + len(instance_name)+1, 4,
-                # MARS enabled
-                MARS, START_POS + 6 + 1 + len(instance_name)+1 + 4, 1,
-                # end
-                TERMINATOR
-                )
+        buf = struct.pack(
+            '>BHHBHHBHHBHHBHHB',
+            #netlib version
+            VERSION, START_POS, 6,
+            #encryption
+            ENCRYPTION, START_POS + 6, 1,
+            #instance
+            INSTOPT, START_POS + 6 + 1, len(instance_name) + 1,
+            # thread id
+            THREADID, START_POS + 6 + 1 + len(instance_name) + 1, 4,
+            # MARS enabled
+            MARS, START_POS + 6 + 1 + len(instance_name) + 1 + 4, 1,
+            # end
+            TERMINATOR
+            )
     else:
         START_POS = 21
-        buf = struct.pack('>BHHBHHBHHBHHB',
-                #netlib version
-                VERSION, START_POS, 6,
-                #encryption
-                ENCRYPTION, START_POS + 6, 1,
-                #instance
-                INSTOPT, START_POS + 6 + 1, len(instance_name)+1,
-                # thread id
-                THREADID, START_POS + 6 + 1 + len(instance_name)+1, 4,
-                # end
-                TERMINATOR
-                )
+        buf = struct.pack(
+            '>BHHBHHBHHBHHB',
+            #netlib version
+            VERSION, START_POS, 6,
+            #encryption
+            ENCRYPTION, START_POS + 6, 1,
+            #instance
+            INSTOPT, START_POS + 6 + 1, len(instance_name) + 1,
+            # thread id
+            THREADID, START_POS + 6 + 1 + len(instance_name) + 1, 4,
+            # end
+            TERMINATOR
+            )
     assert START_POS == len(buf)
-    assert buf[START_POS-1] == b'\xff'
+    assert buf[START_POS - 1] == b'\xff'
     w = tds._writer
     w.begin_packet(TDS71_PRELOGIN)
     w.write(buf)
@@ -287,8 +291,8 @@ def tds71_do_login(tds, login):
         # not supported
         w.put_byte(2)
     w.write(instance_name.encode('ascii'))
-    w.put_byte(0) # zero terminate instance_name
-    w.put_int(os.getpid()) # TODO: change this to thread id
+    w.put_byte(0)  # zero terminate instance_name
+    w.put_int(os.getpid())  # TODO: change this to thread id
     if IS_TDS72_PLUS(tds):
         # MARS (1 enabled)
         w.put_byte(1 if login.use_mars else 0)
@@ -328,5 +332,5 @@ def tds71_do_login(tds, login):
         if encryption_level >= TDS_ENCRYPTION_REQUIRE:
             raise Error('Server required encryption but it is not supported')
         return tds7_send_login(tds, login)
-    tds_set_s(tds, ssl.wrap_socket(tds._sock, ssl_version=ssl.PROTOCOL_SSLv3))
+    tds._sock = ssl.wrap_socket(tds._sock, ssl_version=ssl.PROTOCOL_SSLv3)
     return tds7_send_login(tds, login)
