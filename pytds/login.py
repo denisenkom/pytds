@@ -12,9 +12,9 @@ except:
     encryption_supported = False
 else:
     encryption_supported = True
-from tdsproto import *
-from tds import *
-from token import *
+from .tdsproto import *
+from .tds import *
+from .token import *
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
 import logging
 import traceback
-from tdsproto import *
-from tds import _Column
-from data import *
+from .tdsproto import *
+from .tds import _Column
+from .data import *
 
 logger = logging.getLogger(__name__)
 

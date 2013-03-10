@@ -1,7 +1,7 @@
-from tds import *
-from tdsproto import *
-from tds import _Column
-from data import *
+from .tds import *
+from .tdsproto import *
+from .tds import _Column
+from .data import *
 
 
 def START_QUERY(tds):

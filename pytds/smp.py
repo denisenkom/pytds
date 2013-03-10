@@ -1,6 +1,6 @@
 import struct
 import logging
-from tds import Error, readall, skipall
+from .tds import Error, readall, skipall
 
 logger = logging.getLogger(__name__)
 

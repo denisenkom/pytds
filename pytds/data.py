@@ -3,9 +3,9 @@ from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from dateutil.tz import tzoffset, tzutc
 import uuid
-from tds import *
-from tds import _Column
-from tdsproto import *
+from .tds import *
+from .tds import _Column
+from .tdsproto import *
 
 logger = logging.getLogger(__name__)
 

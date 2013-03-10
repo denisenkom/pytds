@@ -3,8 +3,8 @@ import logging
 import socket
 import errno
 import select
-from collate import *
-from tdsproto import *
+from .collate import *
+from .tdsproto import *
 
 logger = logging.getLogger()
 
