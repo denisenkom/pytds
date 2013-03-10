@@ -56,7 +56,7 @@ def tds_process_auth(tds):
     pdu_size = r.get_smallint()
     if not tds.authentication:
         raise Error('Got unexpected token')
-    packet = tds.authentication.handle_next(r.readall(pdu_size))
+    packet = tds.authentication.handle_next(readall(r, pdu_size))
     if packet:
         w.write(packet)
         w.flush()
@@ -105,7 +105,7 @@ def tds_process_default_tokens(tds, marker):
             #    if type == 2:
             #        break
         else:
-            tds_conn(tds).capabilities = r.readall(min(tok_size, TDS_MAX_CAPABILITY))
+            tds_conn(tds).capabilities = readall(r, min(tok_size, TDS_MAX_CAPABILITY))
             # PARAM_TOKEN can be returned inserting text in db, to return new timestamp
     elif marker == TDS_PARAM_TOKEN:
         r.unget_byte()
@@ -183,7 +183,7 @@ def tds_process_nbcrow(tds):
 
     # reading bitarray for nulls, 1 represent null values for
     # corresponding fields
-    nbc = r.readall((len(info.columns) + 7) / 8)
+    nbc = readall(r, (len(info.columns) + 7) / 8)
     for i, curcol in enumerate(info.columns):
         if ord(nbc[i / 8]) & (1 << (i % 8)):
             curcol.value = None
@@ -249,7 +249,7 @@ def tds_process_env_chg(tds):
     elif type == TDS_ENV_BEGINTRANS:
         size = r.get_byte()
         # TODO: parse transaction
-        tds.conn.tds72_transaction = r.readall(8)
+        tds.conn.tds72_transaction = readall(r, 8)
         r.skip(r.get_byte())
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
         tds.conn.tds72_transaction = None
@@ -310,7 +310,7 @@ def tds_process_msg(tds, marker):
         else:
             msg['priv_msg_type'] = 1
         len_sqlstate = r.get_byte()
-        msg['sql_state'] = r.readall(len_sqlstate)
+        msg['sql_state'] = readall(r, len_sqlstate)
         has_eed = r.get_byte()
         # junk status and transaction state
         r.get_smallint()

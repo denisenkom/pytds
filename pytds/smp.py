@@ -1,7 +1,6 @@
 import struct
 import logging
-from StringIO import StringIO
-from tds import Error
+from tds import Error, readall, skipall
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ class _SmpSession(object):
     def send(self, data, final):
         self._tds._send_packet(self, data)
 
-    def recv(self, size):
+    def read(self, size):
         if not self._curr_buf[self._curr_buf_pos:]:
             self._curr_buf = self._tds._recv_packet(self)
             self._curr_buf_pos = 0
@@ -145,7 +144,7 @@ class SmpManager(object):
             return 'FIN'
 
     def _read_smp_message(self):
-        smid, flags, sid, l, seq_num, wnd = self._smp_header.unpack(self._readall(self._smp_header.size))
+        smid, flags, sid, l, seq_num, wnd = self._smp_header.unpack(readall(self._transport, self._smp_header.size))
         if smid != self._smid:
             self.close()
             raise Error('Invalid SMP packet signature')
@@ -177,14 +176,14 @@ class SmpManager(object):
                     self.close()
                     raise Error('Invalid SEQNUM in ACK packet from server')
                 session._seq_num_for_recv = seq_num
-                data = self._readall(l - self._smp_header.size)
+                data = readall(self._transport, l - self._smp_header.size)
                 session._recv_queue.append(data)
                 if wnd > session._high_water_for_send:
                     session._high_water_for_send = wnd
                     self._send_queued_packets(session)
 
             elif session._state == 'FIN SENT':
-                self._skip(l - self._smp_header.size)
+                skipall(self._transport, l - self._smp_header.size)
             else:
                 self.close()
                 raise Error('Unexpected SMP flags in packet from server')
@@ -206,34 +205,6 @@ class SmpManager(object):
         else:
             self.close()
             raise Error('Unexpected SMP flags in packet from server')
-
-    def _skip(self, size):
-        buf = self._transport.recv(size)
-        if len(buf) == size:
-            return
-        remains = size - len(buf)
-        while remains:
-            buf = self._transport.recv(remains)
-            if not buf:
-                self.close()
-                raise Error('Server closed connection')
-            remains -= len(buf)
-
-    def _readall(self, size):
-        buf = self._transport.recv(size)
-        if len(buf) == size:
-            return buf
-        io = StringIO()
-        remains = size - len(buf)
-        io.write(buf)
-        while remains:
-            buf = self._transport.recv(remains)
-            if not buf:
-                self._transport.close()
-                raise Error('Server closed connection')
-            io.write(buf)
-            remains -= len(buf)
-        return io.getvalue()
 
     def close(self):
         self._transport.close()

@@ -187,8 +187,8 @@ class DefaultHandler(object):
                 # It's a BLOB...
                 size = r.get_byte()
                 if size == 16:  # Jeff's hack
-                    r.readall(16)  # textptr
-                    r.readall(8)  # timestamp
+                    readall(r, 16)  # textptr
+                    readall(r, 8)  # timestamp
                     colsize = r.get_int()
                 else:
                     colsize = -1
@@ -235,15 +235,15 @@ class DefaultHandler(object):
                 return tds_get_char_data(tds, colsize, curcol)
             else:
                 assert colsize == new_blob_size
-                return r.readall(colsize)
+                return readall(r, colsize)
         else:  # non-numeric and non-blob
             if curcol.char_codec:
                 if colsize == 0:
                     value = u''
                 elif curcol.char_codec:
-                    value = curcol.char_codec.decode(r.readall(colsize))[0]
+                    value = curcol.char_codec.decode(readall(r, colsize))[0]
                 else:
-                    value = r.readall(colsize)
+                    value = readall(r, colsize)
                 curcol.cur_size = len(value)
             else:
                 #
@@ -254,7 +254,7 @@ class DefaultHandler(object):
                 if colsize > curcol.column_size:
                     discard_len = colsize - curcol.column_size
                     colsize = curcol.column_size
-                value = r.readall(colsize)
+                value = readall(r, colsize)
                 if discard_len > 0:
                     r.skip(discard_len)
 
@@ -598,7 +598,7 @@ class NumericHandler(object):
         if colsize > cls.MAX_NUMERIC:
             raise Exception('TDS_FAIL')
         positive = r.get_byte()
-        buf = r.readall(colsize - 1)
+        buf = readall(r, colsize - 1)
 
         if IS_TDS7_PLUS(tds):
             return cls.ms_parse_numeric(positive, buf, scale)
@@ -720,7 +720,7 @@ class VariantHandler(object):
                 if colsize > NumericHandler.MAX_NUMERIC:
                     raise Exception('TDS_FAIL')
                 positive = r.get_byte()
-                buf = r.readall(colsize - 1)
+                buf = readall(r, colsize - 1)
                 return NumericHandler.ms_parse_numeric(positive, buf, scale)
             varint = 0 if type == SYBUNIQUE else tds_get_varint_size(tds, type)
             if varint != info_len:
@@ -738,7 +738,7 @@ class VariantHandler(object):
                 if curcol.char_codec:
                     data = tds_get_char_data(tds, colsize, curcol)
                 else:
-                    data = r.readall(colsize)
+                    data = readall(r, colsize)
             colsize = 0
             return to_python(tds, data, type, colsize)
         except:
@@ -922,7 +922,7 @@ class MsDatetimeHandler(object):
             assert size >= 3 and size <= 5
             if size < 3 or size > 5:
                 raise Exception('TDS_FAIL')
-            time_buf = r.readall(size)
+            time_buf = readall(r, size)
             val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(time_buf), 0)
             val *= 10 ** (7 - col.prec)
             nanoseconds = val * 100
@@ -930,7 +930,7 @@ class MsDatetimeHandler(object):
         # get date part
         days = 0
         if col.column_type != SYBMSTIME:
-            date_buf = r.readall(3)
+            date_buf = readall(r, 3)
             days = reduce(lambda acc, val: acc * 256 + ord(val), reversed(date_buf), 0)
 
         # get time offset
@@ -1070,7 +1070,7 @@ class DatetimeHandler(object):
         else:
             size = col.size
         if col.column_type == SYBDATETIME or col.column_type == SYBDATETIMN and size == 8:
-            return _applytz(Datetime.decode(r.readall(Datetime.size)), tds.use_tz)
+            return _applytz(Datetime.decode(readall(r, Datetime.size)), tds.use_tz)
 
         elif col.column_type == SYBDATETIME4 or col.column_type == SYBDATETIMN and size == 4:
             days, time = r.unpack(TDS_DATETIME4)
@@ -1150,9 +1150,9 @@ def tds_get_char_data(tds, wire_size, curcol):
         # TDS5/UTF-8 -> use server
         # TDS5/UTF-16 -> use UTF-16
         #
-        return curcol.char_codec.decode(r.readall(wire_size))[0]
+        return curcol.char_codec.decode(readall(r, wire_size))[0]
     else:
-        return r.readall(wire_size)
+        return readall(r, wire_size)
 
 
 class Datetime:

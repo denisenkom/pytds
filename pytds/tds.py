@@ -391,6 +391,37 @@ _int8_le = struct.Struct('<q')
 _int8_be = struct.Struct('>q')
 
 
+def skipall(stm, size):
+    res = stm.read(size)
+    if len(res) == size:
+        return
+    elif len(res) == 0:
+        raise Error('Server closed connection')
+    left = size - len(res)
+    while left:
+        buf = stm.read(left)
+        if len(buf) == 0:
+            raise Error('Server closed connection')
+        left -= len(buf)
+
+
+def readall(stm, size):
+    res = stm.read(size)
+    if len(res) == size:
+        return res
+    elif len(res) == 0:
+        raise Error('Server closed connection')
+    chunks = [res]
+    left = size - len(res)
+    while left:
+        buf = stm.read(left)
+        if len(buf) == 0:
+            raise Error('Server closed connection')
+        chunks.append(buf)
+        left -= len(buf)
+    return ''.join(chunks)
+
+
 class _TdsReader(object):
     def __init__(self, session, emul_little_endian):
         self._buf = ''
@@ -408,7 +439,7 @@ class _TdsReader(object):
         return self._type
 
     def unpack(self, struct):
-        return struct.unpack(self.readall(struct.size))
+        return struct.unpack(readall(self, struct.size))
 
     def get_byte(self):
         return self.unpack(_byte)[0]
@@ -450,11 +481,11 @@ class _TdsReader(object):
             return self.unpack(_int8_be)[0]
 
     def read_ucs2(self, num_chars):
-        buf = self.readall(num_chars * 2)
+        buf = readall(self, num_chars * 2)
         return ucs2_codec.decode(buf)[0]
 
     def get_collation(self):
-        buf = self.readall(Collation.wire_size)
+        buf = readall(self, Collation.wire_size)
         return Collation.unpack(buf)
 
     def unget_byte(self):
@@ -473,24 +504,12 @@ class _TdsReader(object):
             buf = self.read(left)
             left -= len(buf)
 
-    def readall(self, size):
-        res = self.read(size)
-        if len(res) == size:
-            return res
-        chunks = [res]
-        left = size - len(res)
-        while left:
-            buf = self.read(left)
-            chunks.append(buf)
-            left -= len(buf)
-        return ''.join(chunks)
-
     def read(self, size):
         if self._pos >= len(self._buf):
             if self._have >= self._size:
                 self._read_packet()
             else:
-                self._buf = self._transport.recv(self._size - self._have)
+                self._buf = self._transport.read(self._size - self._have)
                 self._pos = 0
                 self._have += len(self._buf)
         res = self._buf[self._pos:self._pos + size]
@@ -499,26 +518,20 @@ class _TdsReader(object):
 
     def _read_packet(self):
         try:
-            header = self._transport.recv(_header.size)
+            header = readall(self._transport, _header.size)
         except TimeoutError:
             tds_put_cancel(self._session)
             raise
-        if len(header) < _header.size:
-            self._pos = 0
-            if self._state.state != TDS_IDLE and len(header) == 0:
-                self._transport.close()
-            raise Exception('Reading header error')
-        logger.debug('Received header')
+        self._pos = 0
         self._type, self._status, self._size, self._spid = _header.unpack(header)
         self._have = _header.size
         assert self._size > self._have, 'Empty packet doesn make any sense'
-        self._buf = self._transport.recv(self._size - self._have)
+        self._buf = self._transport.read(self._size - self._have)
         self._have += len(self._buf)
-        self._pos = 0
 
     def read_whole_packet(self):
         self._read_packet()
-        return self.readall(self._size - _header.size)
+        return readall(self, self._size - _header.size)
 
 
 class _TdsWriter(object):
@@ -825,7 +838,7 @@ class _TdsSocket(object):
     def create_session(self):
         return _TdsSession(self, self._smp_manager.create_session())
 
-    def _read(self, size):
+    def read(self, size):
         events = tds_select(self, TDSSELREAD, self.query_timeout)
         if events & TDSPOLLURG:
             buf = tds_conn(self).s_signaled.read(size)
@@ -840,9 +853,6 @@ class _TdsSocket(object):
             return buf
         else:
             raise TimeoutError('Timeout')
-
-    def recv(self, size):
-        return self._read(size)
 
     def send(self, data, final):
         return self._write(data, final)
