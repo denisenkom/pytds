@@ -588,22 +588,27 @@ class DateTest(TestCase):
         self._testval(Date(1, 1, 1))
         self._testval(Date(9999, 12, 31))
 
+
 class Auth(unittest.TestCase):
-    def test_ntlm(self):
-        conn = connect(settings.HOST, auth=NtlmAuth(user_name=settings.NTLM_USER, password=settings.NTLM_PASSWORD))
-        with conn.cursor() as cursor:
-            cursor.execute('select 1')
-            cursor.fetchall()
+    #def test_ntlm(self):
+    #    conn = connect(settings.HOST, auth=NtlmAuth(user_name=settings.NTLM_USER, password=settings.NTLM_PASSWORD))
+    #    with conn.cursor() as cursor:
+    #        cursor.execute('select 1')
+    #        cursor.fetchall()
+
+    @unittest.skipUnless(sys.platform.startswith("win"), "requires Windows")
     def test_sspi(self):
         conn = connect(settings.HOST, auth=SspiAuth())
         with conn.cursor() as cursor:
             cursor.execute('select 1')
             cursor.fetchall()
+
     def test_sqlauth(self):
         conn = connect(settings.HOST, user=settings.USER, password=settings.PASSWORD)
         with conn.cursor() as cursor:
             cursor.execute('select 1')
             cursor.fetchall()
+
 
 class CloseCursorTwice(TestCase):
     def runTest(self):
