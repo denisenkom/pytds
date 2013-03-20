@@ -1,12 +1,14 @@
 # vim: set fileencoding=utf8 :
+from __future__ import with_statement
 import unittest
 import sys
 from decimal import Decimal, getcontext
 import logging
 from datetime import datetime, date, time
-from pytds import *
-from pytds.tds import *
+import uuid
 from dateutil.tz import tzoffset, tzutc
+from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
+    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -629,16 +631,16 @@ class RegressionSuite(TestCase):
 
 class TestLoadBalancer(TestCase):
     def test_second(self):
-        lb = dbapi.SimpleLoadBalancer(['badserver', settings.CONNECT_KWARGS['server']])
-        with connect(*settings.CONNECT_ARGS, load_balancer=lb, **settings.CONNECT_KWARGS) as conn:
+        lb = SimpleLoadBalancer(['badserver', settings.CONNECT_KWARGS['server']])
+        with connect(load_balancer=lb, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
             with conn.cursor() as cur:
                 cur.execute('select 1')
                 cur.fetchall()
 
     def test_none(self):
-        lb = dbapi.SimpleLoadBalancer(['badserver'])
+        lb = SimpleLoadBalancer(['badserver'])
         with self.assertRaises(LoginError):
-            with connect(*settings.CONNECT_ARGS, load_balancer=lb, **settings.CONNECT_KWARGS) as conn:
+            with connect(load_balancer=lb, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
                     cur.fetchall()
