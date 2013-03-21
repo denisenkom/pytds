@@ -47,7 +47,7 @@ def convert_params(tds, parameters):
         params = []
         for parameter in parameters:
             if type(parameter) is output:
-                raise Exception('not implemented')
+                raise NotImplementedError
                 #param_type = parameter.type
                 #param_value = parameter.value
                 #param_output = True
@@ -102,14 +102,9 @@ def _submit_rpc(tds, rpc_name, params, flags):
 
 
 def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
-    if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
-        raise Exception('TDS_FAIL')
-    try:
+    with tds.state_context(TDS_QUERYING):
         _submit_rpc(tds, rpc_name, params, flags)
         tds_query_flush_packet(tds)
-    except:
-        tds.set_state(TDS_IDLE)
-        raise
 
 
 #
@@ -125,11 +120,9 @@ def tds_submit_rpc(tds, rpc_name, params=(), flags=0):
 def tds_submit_query(tds, query, params=(), flags=0):
     logger.info('tds_submit_query(%s, %s)', query, params)
     if not query:
-        raise Exception('TDS_FAIL')
+        raise ProgrammingError('Empty query is not allowed')
 
-    if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
-        raise Exception('TDS_FAIL')
-    try:
+    with tds.state_context(TDS_QUERYING):
         tds.res_info = None
         w = tds._writer
         if IS_TDS50(tds):
@@ -161,9 +154,6 @@ def tds_submit_query(tds, query, params=(), flags=0):
                         [query, param_definition] + params, 0)
             tds.internal_sp_called = TDS_SP_EXECUTESQL
         tds_query_flush_packet(tds)
-    except:
-        tds.set_state(TDS_IDLE)
-        raise
 
 
 #
@@ -187,7 +177,7 @@ def tds_send_cancel(tds):
     if TDS_MUTEX_TRYLOCK(tds.wire_mtx):
         # TODO check
         # signal other socket
-        raise Exception('not implemented')
+        raise NotImplementedError
         #tds_conn(tds).s_signal.send((void*) &tds, sizeof(tds))
         return TDS_SUCCESS
 
@@ -304,4 +294,4 @@ def tds_submit_commit(tds, cont):
             w.put_byte(0)  # do not continue
         tds_query_flush_packet(tds)
     else:
-        tds_submit_query(tds, "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
+        tds_submit_query(tds, "IF @@TRANCOUNT > 1 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")

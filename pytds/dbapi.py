@@ -56,8 +56,10 @@ class _Connection(object):
         return self._autocommit
 
     def _assert_open(self):
-        if not self._conn or not self._conn.is_connected():
+        if not self._conn:
             raise Error('Connection closed')
+        if not self._conn.is_connected():
+            self._open()
 
     @property
     def chunk_handler(self):
@@ -93,10 +95,7 @@ class _Connection(object):
     def mars_enabled(self):
         return self._conn.mars_enabled
 
-    def __init__(self, login, as_dict, autocommit):
-        self._login = login
-        self._as_dict = as_dict
-        self._autocommit = autocommit
+    def _open(self):
         self._state = DB_RES_NO_MORE_RESULTS
         self._active_cursor = None
         from tds import _TdsSocket
@@ -105,6 +104,12 @@ class _Connection(object):
         if not self._autocommit:
             tds_submit_begin_tran(self._conn.main_session)
         self._sqlok(self._conn.main_session)
+
+    def __init__(self, login, as_dict, autocommit):
+        self._autocommit = autocommit
+        self._login = login
+        self._as_dict = as_dict
+        self._open()
 
     def __enter__(self):
         return self
@@ -354,6 +359,8 @@ class _Connection(object):
 
     def _try_activate_cursor(self, cursor):
         conn = self._conn
+        if cursor is not None and not cursor._session.is_connected():
+            cursor._open()
         if not conn.mars_enabled:
             if not (cursor is self._active_cursor or self._active_cursor is None):
                 session = conn.main_session
@@ -465,10 +472,13 @@ class _Cursor(object):
         self._conn = conn
         self._batchsize = 1
         self.arraysize = 1
-        if conn._conn.mars_enabled:
-            self._session = conn._conn.create_session()
+        self._open()
+
+    def _open(self):
+        if self._conn._conn.mars_enabled:
+            self._session = self._conn._conn.create_session()
         else:
-            self._session = conn._conn.main_session
+            self._session = self._conn._conn.main_session
 
     def __del__(self):
         self.close()

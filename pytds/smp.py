@@ -36,6 +36,9 @@ class _SmpSession(object):
         self._curr_buf_pos += len(res)
         return res
 
+    def is_connected(self):
+        return self._state == 'SESSION ESTABLISHED'
+
 
 class SmpManager(object):
     _smid = 0x53
@@ -208,3 +211,7 @@ class SmpManager(object):
 
     def close(self):
         self._transport.close()
+
+    def _transport_closed(self):
+        for session in self._sessions.values():
+            session._state = 'CLOSED'

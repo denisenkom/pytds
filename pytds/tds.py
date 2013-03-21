@@ -139,15 +139,11 @@ is_similar_type = lambda(x, y): is_char_type(x) and is_char_type(y) or is_unicod
 
 tds_conn = lambda(tds): tds
 
-TDS_IS_SOCKET_INVALID = lambda(sock): sock is None
-
 IS_TDSDEAD = lambda(tds): tds is None or tds._sock is None
 
 TDS_DEF_BLKSZ = 512
 TDS_DEF_CHARSET = "iso_1"
 TDS_DEF_LANG = "us_english"
-
-tds_get_s = lambda(tds): tds._sock
 
 TDS_ADDITIONAL_SPACE = 0
 
@@ -687,6 +683,9 @@ class _TdsSession(object):
     def is_dead(self):
         return self.state == TDS_DEAD
 
+    def is_connected(self):
+        return self._transport.is_connected()
+
     @property
     def tds_version(self):
         return self._tds.tds_version
@@ -722,7 +721,7 @@ class _TdsSession(object):
             else:
                 self.state = state
         elif state == TDS_IDLE:
-            if prior_state == TDS_DEAD and tds_get_s(self) is None:
+            if prior_state == TDS_DEAD:
                 logger.error('logic error: cannot change query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
             elif prior_state in (TDS_READING, TDS_QUERYING):
@@ -750,6 +749,25 @@ class _TdsSession(object):
         else:
             assert False
         return self.state
+
+    def state_context(self, state):
+        return _StateContext(self, state)
+
+
+class _StateContext(object):
+    def __init__(self, session, state):
+        self._session = session
+        self._state = state
+
+    def __enter__(self):
+        if self._session.set_state(self._state) != self._state:
+            raise Error("Couldn't switch to state")
+        return self
+
+    def __exit__(self, type, value, traceback):
+        if type is not None:
+            if self._session.state != TDS_DEAD:
+                self._session.set_state(TDS_IDLE)
 
 
 class _TdsSocket(object):
@@ -839,32 +857,36 @@ class _TdsSocket(object):
         return _TdsSession(self, self._smp_manager.create_session())
 
     def read(self, size):
-        events = tds_select(self, TDSSELREAD, self.query_timeout)
-        if events & TDSPOLLURG:
-            buf = tds_conn(self).s_signaled.read(size)
-            if not self.in_cancel:
-                tds_put_cancel(self)
-            return buf
-        elif events:
-            buf = self._sock.recv(size)
-            if len(buf) == 0:
-                self.close()
-                raise Error('Server closed connection')
-            return buf
-        else:
-            raise TimeoutError('Timeout')
+        try:
+            events = tds_select(self, TDSSELREAD, self.query_timeout)
+            if events & TDSPOLLURG:
+                buf = tds_conn(self).s_signaled.read(size)
+                if not self.in_cancel:
+                    tds_put_cancel(self)
+                return buf
+            elif events:
+                buf = self._sock.recv(size)
+                if len(buf) == 0:
+                    raise Error('Server closed connection')
+                return buf
+            else:
+                raise TimeoutError('Timeout')
+        except TimeoutError:
+            raise
+        except:
+            self.close()
+            raise
 
     def send(self, data, final):
         return self._write(data, final)
 
     def _write(self, data, final):
-        pos = 0
-        while pos < len(data):
-            res = tds_select(self, TDSSELWRITE, self.query_timeout)
-            if not res:
-                #timeout
-                raise TimeoutError('Timeout')
-            try:
+        try:
+            pos = 0
+            while pos < len(data):
+                res = tds_select(self, TDSSELWRITE, self.query_timeout)
+                if not res:
+                    raise TimeoutError('Timeout')
                 flags = 0
                 if hasattr(socket, 'MSG_NOSIGNAL'):
                     flags |= socket.MSG_NOSIGNAL
@@ -872,14 +894,15 @@ class _TdsSocket(object):
                     if hasattr(socket, 'MSG_MORE'):
                         flags |= socket.MSG_MORE
                 nput = self._sock.send(data[pos:], flags)
-            except socket.error as e:
-                if e.errno != errno.EWOULDBLOCK:
-                    self.close()
-                    raise
-            pos += nput
-        if final and USE_CORK:
-            self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
-            self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
+                pos += nput
+            if final and USE_CORK:
+                self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
+                self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
+        except TimeoutError:
+            raise
+        except:
+            self.close()
+            raise
 
     def is_connected(self):
         return self._is_connected
@@ -888,6 +911,8 @@ class _TdsSocket(object):
         self._is_connected = False
         if self._sock is not None:
             self._sock.close()
+        if hasattr(self, '_smp_manager'):
+            self._smp_manager._transport_closed()
         self._main_session.state = TDS_DEAD
         if self.authentication:
             self.authentication.close()

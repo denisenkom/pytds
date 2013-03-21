@@ -87,7 +87,7 @@ def tds_process_default_tokens(tds, marker):
         # past the done packet.
         #
         if not TDS_IS_MSSQL(tds) and tds_conn(tds).product_version < TDS_SYB_VER(12, 0, 0):
-            raise Exception('not supported')
+            raise NotImplementedError
             #p = tds_conn(tds).capabilities;
             #pend = tds_conn(tds)->capabilities + TDS_MAX_CAPABILITY;
 
@@ -150,8 +150,7 @@ def tds_process_default_tokens(tds, marker):
         return tds_process_nbcrow(tds)
     else:
         tds.close()
-        logger.error('Unknown marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
-        raise Exception('TDSEBTOK')
+        raise Error('Invalid TDS marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
 
 
 #
@@ -512,9 +511,7 @@ def tds_process_tokens(tds, flag):
         logger.debug("tds_process_tokens() state is COMPLETED")
         return TDS_NO_MORE_RESULTS, TDS_DONE_RESULT, done_flags
 
-    if tds.set_state(TDS_READING) != TDS_READING:
-        raise Exception('TDS_FAIL')
-    try:
+    with tds.state_context(TDS_READING):
         rc = TDS_SUCCESS
         while True:
             marker = r.get_byte()
@@ -722,9 +719,6 @@ def tds_process_tokens(tds, flag):
             if tds.state == TDS_DEAD:
                 # TODO free all results ??
                 return TDS_FAIL, parent['result_type'], done_flags
-    except:
-        tds.set_state(TDS_PENDING)
-        raise
 
 
 #

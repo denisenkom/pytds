@@ -6,9 +6,11 @@ from decimal import Decimal, getcontext
 import logging
 from datetime import datetime, date, time
 import uuid
+import socket
 from dateutil.tz import tzoffset, tzutc
 from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
-    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth
+    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth,\
+    tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -320,10 +322,30 @@ class NullXml(TestCase):
         cur.execute('select cast(%s as xml)', (None,))
         self.assertEqual([(None,)], cur.fetchall())
 
+
 class ConnectionClosing(unittest.TestCase):
-    def runTest(self):
-        for x in xrange(100):
+    def test_open_close(self):
+        for x in xrange(3):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
+
+    def test_connection_closed_by_server(self):
+        with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD) as conn:
+            # test overall recovery
+            conn._conn._sock.close()
+            with conn.cursor() as cur:
+                with self.assertRaises(socket.error):
+                    cur.execute('select 1')
+                cur.execute('select 1')
+                cur.fetchall()
+            with conn.cursor() as cur:
+                # test recovery of specific lowlevel methods
+                tds_submit_query(cur._session, 'select 1')
+                conn._conn._sock.close()
+                self.assertTrue(cur._session.is_connected())
+                with self.assertRaises(socket.error):
+                    tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
+                self.assertFalse(cur._session.is_connected())
+
 
 class Description(TestCase):
     def runTest(self):
