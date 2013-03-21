@@ -299,9 +299,7 @@ class _Connection(object):
         cols = session.res_info.columns
         row = tuple(col.value for col in cols)
         if self.as_dict:
-            row_dict = dict(enumerate(cols))
-            row_dict.update(dict((col.column_name, col.value) for col in cols if col.column_name))
-            row = row_dict
+            row = dict((col.column_name, col.value) for col in cols if col.column_name)
         return row
 
     def _nextset(self, session):
