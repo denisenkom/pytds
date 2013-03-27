@@ -968,8 +968,8 @@ def tds_select(tds, tds_sel, timeout_seconds):
     poll_seconds = 1 if tds.int_handler else timeout_seconds
     seconds = timeout_seconds
     while timeout_seconds is None or seconds > 0:
-        timeout = poll_seconds * 1000 if poll_seconds else None
         if USE_POLL:
+            timeout = poll_seconds * 1000 if poll_seconds else None
             poll = select.poll()
             poll.register(tds._sock, tds_sel)
             poll.register(tds_conn(tds).s_signaled, select.POLLIN)
@@ -987,6 +987,7 @@ def tds_select(tds, tds_sel, timeout_seconds):
             if tds.int_handler:
                 tds.int_handler()
         else:
+            timeout = poll_seconds if poll_seconds else None
             read = []
             write = []
             if tds_sel == TDSSELREAD:
