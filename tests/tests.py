@@ -73,6 +73,11 @@ class TestCase2(TestCase):
             cur.execute("waitfor delay '00:00:05'")
         cur.execute('select 1')
 
+    def test_strs(self):
+        cur = self.conn.cursor()
+        self.assertIsInstance(cur.execute_scalar("select 'test'"), unicode)
+
+
 class ParametrizedQueriesTestCase(TestCase):
     def _test_val(self, val):
         cur = self.conn.cursor()

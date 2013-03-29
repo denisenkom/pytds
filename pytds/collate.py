@@ -252,6 +252,6 @@ class Collation(object):
             return lcid2charset(self.lcid)
 
     def get_codec(self):
-        codecs.lookup(self.get_charset())
+        return codecs.lookup(self.get_charset())
 
     #TODO: define __repr__ and __unicode__
