@@ -93,11 +93,11 @@ class TestCase2(TestCase):
         assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
 
     def test_timeout(self):
-        conn = connect(login_timeout=1, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
-        cur = conn.cursor()
-        with self.assertRaises(TimeoutError):
-            cur.execute("waitfor delay '00:00:05'")
-        cur.execute('select 1')
+        with connect(login_timeout=1, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
+            cur = conn.cursor()
+            with self.assertRaises(TimeoutError):
+                cur.execute("waitfor delay '00:00:05'")
+            cur.execute('select 1')
 
     def test_strs(self):
         cur = self.conn.cursor()
@@ -247,11 +247,11 @@ class MultiPacketRequest(TestCase):
 
 class BigRequest(TestCase):
     def runTest(self):
-        cur = self.conn.cursor()
-        param = 'x' * 5000
-        params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
-        cur.execute('select %s, %s, %s, %s', params)
-        self.assertEqual([params], cur.fetchall())
+        with self.conn.cursor() as cur:
+            param = 'x' * 5000
+            params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
+            cur.execute('select %s, %s, %s, %s', params)
+            self.assertEqual([params], cur.fetchall())
 
 class ReadAllBug(TestCase):
     def runTest(self):
@@ -301,20 +301,24 @@ class SqlVariant(TestCase):
         cur.execute("select cast(cast('test' as varbinary) as sql_variant)")
         self.assertEqual([(b'test',)], cur.fetchall())
 
-class BadConnection(TestCase):
+class BadConnection(unittest.TestCase):
     def runTest(self):
         with self.assertRaises(Error):
-            conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
-            conn.cursor().execute('select 1')
+            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad') as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
         with self.assertRaises(Error):
-            conn = connect(server=settings.HOST+'bad', database=settings.DATABASE, user=settings.USER+'bad', password=settings.PASSWORD)
-            conn.cursor().execute('select 1')
+            with connect(server=settings.HOST+'bad', database=settings.DATABASE, user=settings.USER+'bad', password=settings.PASSWORD) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
         with self.assertRaises(Error):
-            conn = connect(server=settings.HOST, database=settings.DATABASE+'x', user=settings.USER, password=settings.PASSWORD)
-            conn.cursor().execute('select 1')
+            with connect(server=settings.HOST, database=settings.DATABASE+'x', user=settings.USER, password=settings.PASSWORD) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
         with self.assertRaises(Error):
-            conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=None)
-            conn.cursor().execute('select 1')
+            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=None) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
 
 class NullXml(TestCase):
     def runTest(self):
@@ -361,21 +365,20 @@ class Description(TestCase):
 class Bug1(TestCase):
     def runTest(self):
         try:
-            conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad')
-            cur = conn.cursor()
-            cur.execute('select 1')
-            cur.fetchall()
-            cur.close()
-            conn.rollback()
+            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad') as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+                    cur.fetchall()
+                conn.rollback()
         except:
             pass
 
 class BinaryTest(TestCase):
     def runTest(self):
         binary = b'\x00\x01\x02'
-        cur = self.conn.cursor()
-        cur.execute('select %s', (Binary(binary),))
-        self.assertEqual([(binary,)], cur.fetchall())
+        with self.conn.cursor() as cur:
+            cur.execute('select %s', (Binary(binary),))
+            self.assertEqual([(binary,)], cur.fetchall())
 
 class GuidTest(TestCase):
     def runTest(self):
@@ -393,7 +396,6 @@ class GuidTest(TestCase):
 class Bug2(DbTestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
-            cur = self.conn.cursor()
             cur.execute('''
             create procedure testproc (@param int)
             as
@@ -610,16 +612,16 @@ class Auth(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform.startswith("win"), "requires Windows")
     def test_sspi(self):
-        conn = connect(settings.HOST, auth=SspiAuth())
-        with conn.cursor() as cursor:
-            cursor.execute('select 1')
-            cursor.fetchall()
+        with connect(settings.HOST, auth=SspiAuth()) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('select 1')
+                cursor.fetchall()
 
     def test_sqlauth(self):
-        conn = connect(settings.HOST, user=settings.USER, password=settings.PASSWORD)
-        with conn.cursor() as cursor:
-            cursor.execute('select 1')
-            cursor.fetchall()
+        with connect(settings.HOST, user=settings.USER, password=settings.PASSWORD) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute('select 1')
+                cursor.fetchall()
 
 
 class CloseCursorTwice(TestCase):
