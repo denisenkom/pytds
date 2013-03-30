@@ -3,7 +3,7 @@ from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from dateutil.tz import tzoffset, tzutc
 import uuid
-from six.moves import map
+from six.moves import map, reduce
 from .tds import *
 from .tds import _Column
 from .tdsproto import *
@@ -152,16 +152,18 @@ class DefaultHandler(object):
         if size == -1:
             return None
 
-        chunk_handler = tds.chunk_handler
-        chunk_handler.begin(curcol, size)
         decoder = None
         if curcol.char_codec:
             decoder = curcol.char_codec.incrementaldecoder()
+            chunk_handler = MemoryStrChunkedHandler()
+        else:
+            chunk_handler = tds.chunk_handler
+        chunk_handler.begin(curcol, size)
         while True:
             chunk_len = r.get_int()
             if chunk_len <= 0:
                 if decoder:
-                    val = decoder.decode('', True)
+                    val = decoder.decode(b'', True)
                     chunk_handler.new_chunk(val)
                 return chunk_handler.end()
             left = chunk_len
@@ -554,6 +556,14 @@ def to_python(tds, data, type, length):
         raise Exception('unknown type {0}'.format(type))
 
 
+if sys.version_info[0] >= 3:
+    def _decode_num(buf):
+        return reduce(lambda acc, val: acc * 256 + val, reversed(buf), 0)
+else:
+    def _decode_num(buf):
+        return reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
+
+
 class NumericHandler(object):
     @staticmethod
     def get_info(tds, col):
@@ -567,7 +577,7 @@ class NumericHandler(object):
 
     @staticmethod
     def ms_parse_numeric(positive, buf, scale):
-        val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
+        val = _decode_num(buf)
         val = Decimal(val)
         with localcontext() as ctx:
             ctx.prec = 38

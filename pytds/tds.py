@@ -662,6 +662,19 @@ class MemoryChunkedHandler(object):
         self._chunks.append(val)
 
     def end(self):
+        return b''.join(self._chunks)
+
+
+class MemoryStrChunkedHandler(object):
+    def begin(self, column, size):
+        self.size = size
+        self._chunks = []
+
+    def new_chunk(self, val):
+        #logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
+        self._chunks.append(val)
+
+    def end(self):
         return ''.join(self._chunks)
 
 

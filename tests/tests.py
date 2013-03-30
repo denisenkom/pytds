@@ -62,7 +62,7 @@ class TestCase2(TestCase):
         with self.assertRaises(ProgrammingError):
             cur.execute(u'select ')
         assert 'abc' == cur.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
-        assert 'abc' == cur.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
+        assert b'abc' == cur.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
         #assert 12 == cur.execute_scalar('select cast(12 as bigint) as fieldname')
         assert 12 == cur.execute_scalar('select cast(12 as smallint) as fieldname')
         assert -12 == cur.execute_scalar('select -12 as fieldname')
