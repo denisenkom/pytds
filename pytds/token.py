@@ -170,6 +170,14 @@ def tds_process_row(tds):
     return TDS_SUCCESS
 
 
+if sys.version_info[0] >= 3:
+    def _ord(val):
+        return val
+else:
+    def _ord(val):
+        return ord(val)
+
+
 # NBC=null bitmap compression row
 # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
 def tds_process_nbcrow(tds):
@@ -182,9 +190,9 @@ def tds_process_nbcrow(tds):
 
     # reading bitarray for nulls, 1 represent null values for
     # corresponding fields
-    nbc = readall(r, (len(info.columns) + 7) / 8)
+    nbc = readall(r, (len(info.columns) + 7) // 8)
     for i, curcol in enumerate(info.columns):
-        if ord(nbc[i / 8]) & (1 << (i % 8)):
+        if _ord(nbc[i // 8]) & (1 << (i % 8)):
             curcol.value = None
         else:
             curcol.value = curcol.funcs.get_data(tds, curcol)

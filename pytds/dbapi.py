@@ -4,6 +4,7 @@ __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = '1.3.2'
 
 import logging
+import six
 from . import lcid
 from .tds import *
 from .login import *
@@ -487,7 +488,7 @@ class _Connection(object):
 ##################
 ## Cursor class ##
 ##################
-class _Cursor(object):
+class _Cursor(six.Iterator):
     """
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
@@ -641,7 +642,7 @@ class _Cursor(object):
     def fetchall(self):
         return list(row for row in self)
 
-    def next(self):
+    def __next__(self):
         row = self.fetchone()
         if row is None:
             raise StopIteration

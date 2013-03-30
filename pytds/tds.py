@@ -302,7 +302,7 @@ class output:
         self._value = value
 
 
-class Binary(str):
+class Binary(bytes):
     def __repr__(self):
         return 'Binary({0})'.format(super(Binary, self).__repr__())
 
@@ -424,7 +424,7 @@ def readall(stm, size):
             raise Error('Server closed connection')
         chunks.append(buf)
         left -= len(buf)
-    return ''.join(chunks)
+    return b''.join(chunks)
 
 
 class _TdsReader(object):
@@ -556,7 +556,7 @@ class _TdsWriter(object):
             return
 
         if bufsize > len(self._buf):
-            self._buf.extend('\0' * (bufsize - len(self._buf)))
+            self._buf.extend(b'\0' * (bufsize - len(self._buf)))
         else:
             self._buf = self._buf[0:bufsize]
 

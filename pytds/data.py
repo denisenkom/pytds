@@ -3,6 +3,7 @@ from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from dateutil.tz import tzoffset, tzutc
 import uuid
+import six
 from six.moves import map, reduce
 from .tds import *
 from .tds import _Column
@@ -59,7 +60,7 @@ def make_param(tds, name, value):
         value = None
     if value is None:
         handler = DefaultHandler
-    elif isinstance(value, (int, long)):
+    elif isinstance(value, six.integer_types):
         if -2 ** 63 <= value <= 2 ** 63 - 1:
             handler = DefaultHandler
         elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
@@ -71,7 +72,7 @@ def make_param(tds, name, value):
         handler = DefaultHandler
     elif isinstance(value, Binary):
         handler = DefaultHandler
-    elif isinstance(value, (str, unicode)):
+    elif isinstance(value, six.string_types):
         handler = DefaultHandler
     elif isinstance(value, datetime):
         if IS_TDS73_PLUS(tds):
@@ -281,7 +282,7 @@ class DefaultHandler(object):
             col.column_type = XSYBVARCHAR
             col.column_size = 1
             col.column_varint_size = tds_get_varint_size(tds, col.column_type)
-        elif isinstance(value, (int, long)):
+        elif isinstance(value, six.integer_types):
             col.column_type = SYBINTN
             if -2 ** 31 <= value <= 2 ** 31 - 1:
                 col.column_size = 4
@@ -306,7 +307,7 @@ class DefaultHandler(object):
                 col.column_type = XSYBVARBINARY
                 col.column_varint_size = tds_get_varint_size(tds, col.column_type)
             col.column_size = len(value)
-        elif isinstance(value, (str, unicode)):
+        elif isinstance(value, six.string_types):
             if len(value) > 4000:
                 if IS_TDS72_PLUS(tds):
                     col.column_type = XSYBNVARCHAR
@@ -677,9 +678,9 @@ class NumericHandler(object):
             if not positive:
                 val *= -1
             size -= 1
-            val = long(val * (10 ** scale))
+            val = val * (10 ** scale)
         for i in range(size):
-            w.put_byte(val % 256)
+            w.put_byte(int(val % 256))
             val //= 256
         assert val == 0
 
@@ -934,7 +935,7 @@ class MsDatetimeHandler(object):
             if size < 3 or size > 5:
                 raise Exception('TDS_FAIL')
             time_buf = readall(r, size)
-            val = reduce(lambda acc, val: acc * 256 + ord(val), reversed(time_buf), 0)
+            val = _decode_num(time_buf)
             val *= 10 ** (7 - col.prec)
             nanoseconds = val * 100
 
@@ -942,7 +943,7 @@ class MsDatetimeHandler(object):
         days = 0
         if col.column_type != SYBMSTIME:
             date_buf = readall(r, 3)
-            days = reduce(lambda acc, val: acc * 256 + ord(val), reversed(date_buf), 0)
+            days = _decode_num(date_buf)
 
         # get time offset
         if col.column_type == SYBMSTIME:
@@ -1047,7 +1048,7 @@ class MsDatetimeHandler(object):
         if col.column_type == SYBMSDATETIMEOFFSET:
             # Encoding timezone part
             assert utcoffset is not None
-            parts.append(struct.pack('<h', utcoffset.total_seconds() // 60))
+            parts.append(struct.pack('<h', int(utcoffset.total_seconds()) // 60))
         size = reduce(lambda a, b: a + len(b), parts, 0)
         w.put_byte(size)
         for part in parts:

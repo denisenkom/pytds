@@ -9,6 +9,7 @@ import uuid
 import socket
 from dateutil.tz import tzoffset, tzutc
 from six import text_type
+from six.moves import xrange
 from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth,\
     tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS
@@ -110,7 +111,7 @@ class DbTests(DbTestCase):
             cur.execute('create table test_autocommit(field int)')
             self.conn.commit()
             cur.execute('insert into test_autocommit(field) values(1)')
-            self.assertEquals(self.conn._trancount(), 1)
+            self.assertEqual(self.conn._trancount(), 1)
             cur.execute('select field from test_autocommit')
             row = cur.fetchone()
             self.conn.rollback()
@@ -120,7 +121,7 @@ class DbTests(DbTestCase):
 
             self.conn.autocommit = True
             cur.execute('insert into test_autocommit(field) values(1)')
-            self.assertEquals(self.conn._trancount(), 0)
+            self.assertEqual(self.conn._trancount(), 0)
 
 
 class ParametrizedQueriesTestCase(TestCase):
@@ -214,11 +215,11 @@ class TransactionsTestCase(DbTestCase):
             create table testtable (field datetime)
             ''')
             cur.execute("select object_id('testtable')")
-            self.assertNotEquals((None,), cur.fetchone())
+            self.assertNotEqual((None,), cur.fetchone())
         self.conn.rollback()
         with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
-            self.assertEquals((None,), cur.fetchone())
+            self.assertEqual((None,), cur.fetchone())
         with self.conn.cursor() as cur:
             cur.execute('''
             create table testtable (field datetime)
@@ -226,7 +227,7 @@ class TransactionsTestCase(DbTestCase):
         self.conn.commit()
         with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
-            self.assertNotEquals((None,), cur.fetchone())
+            self.assertNotEqual((None,), cur.fetchone())
 
     def tearDown(self):
         with self.conn.cursor() as cur:
@@ -298,7 +299,7 @@ class SqlVariant(TestCase):
         self.assertEqual([(Decimal('100.55555'),)], cur.fetchall())
 
         cur.execute("select cast(cast('test' as varbinary) as sql_variant)")
-        self.assertEqual([('test',)], cur.fetchall())
+        self.assertEqual([(b'test',)], cur.fetchall())
 
 class BadConnection(TestCase):
     def runTest(self):
@@ -371,7 +372,7 @@ class Bug1(TestCase):
 
 class BinaryTest(TestCase):
     def runTest(self):
-        binary = '\x00\x01\x02'
+        binary = b'\x00\x01\x02'
         cur = self.conn.cursor()
         cur.execute('select %s', (Binary(binary),))
         self.assertEqual([(binary,)], cur.fetchall())
@@ -448,7 +449,7 @@ class FixedSizeChar(DbTestCase):
             insert into testtable values ('1', '2', cast('3' as binary(5)))
             ''')
             cur.execute('select * from testtable')
-            self.assertEqual(cur.fetchall(), [('1    ', '2    ', '3\x00\x00\x00\x00')])
+            self.assertEqual(cur.fetchall(), [('1    ', '2    ', b'3\x00\x00\x00\x00')])
 
 class EdgeCases(TestCase):
     def _testval(self, val):
@@ -503,10 +504,10 @@ class DateTime(DbTestCase):
             cur.execute('select cast(%s as datetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        self.assertEqual(Datetime.decode('\xf2\x9c\x00\x00}uO\x01'), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
-        self.assertEqual(Datetime.decode('\x7f$-\x00\xff\x81\x8b\x01'), Datetime.max)
-        self.assertEqual('\xf2\x9c\x00\x00}uO\x01', Datetime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
-        self.assertEqual('\x7f$-\x00\xff\x81\x8b\x01', Datetime.encode(Datetime.max))
+        self.assertEqual(Datetime.decode(b'\xf2\x9c\x00\x00}uO\x01'), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
+        self.assertEqual(Datetime.decode(b'\x7f$-\x00\xff\x81\x8b\x01'), Datetime.max)
+        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', Datetime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
+        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', Datetime.encode(Datetime.max))
         with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T23:59:59.997' as datetime)")
             self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 997000),)])
