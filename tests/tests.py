@@ -8,6 +8,7 @@ from datetime import datetime, date, time
 import uuid
 import socket
 from dateutil.tz import tzoffset, tzutc
+from six import text_type
 from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth,\
     tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS
@@ -16,7 +17,7 @@ from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalan
 getcontext().prec = 38
 
 try:
-    import settings
+    from . import settings
 except:
     print('Settings module is not found, please create settings module and specify HOST, DATATABSE, USER and PASSWORD there')
     sys.exit(1)
@@ -99,7 +100,7 @@ class TestCase2(TestCase):
 
     def test_strs(self):
         cur = self.conn.cursor()
-        self.assertIsInstance(cur.execute_scalar("select 'test'"), unicode)
+        self.assertIsInstance(cur.execute_scalar("select 'test'"), text_type)
 
 
 class DbTests(DbTestCase):
@@ -141,7 +142,6 @@ class ParametrizedQueriesTestCase(TestCase):
         self._test_val('')
         self._test_val(2**34)
         self._test_val(2**63 - 1)
-        self._test_val(100L)
         self._test_val(False)
         self._test_val(True)
 

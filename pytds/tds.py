@@ -4,6 +4,7 @@ import socket
 import errno
 import select
 import sys
+from six.moves import xrange
 from .collate import *
 from .tdsproto import *
 

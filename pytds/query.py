@@ -30,7 +30,7 @@ def tds_start_query(tds):
         assert len(tds.conn.tds72_transaction) == 8
         w.write(tds.conn.tds72_transaction)
     else:
-        w.write('\x00\x00\x00\x00\x00\x00\x00\x00')
+        w.write(b'\x00\x00\x00\x00\x00\x00\x00\x00')
     w.put_uint(1)  # request count
 
 

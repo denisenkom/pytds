@@ -408,7 +408,7 @@ def tds_process_login_tokens(tds):
             size -= 10
             if IS_TDS7_PLUS(tds):
                 product_version = 0x80000000
-                tds.conn.product_name = r.read_ucs2(size / 2)
+                tds.conn.product_name = r.read_ucs2(size // 2)
             elif IS_TDS5_PLUS(tds):
                 raise NotImplementedError()
                 #tds.product_name = tds_get_string(tds, size)
@@ -493,7 +493,7 @@ def tds_process_tokens(tds, flag):
     done_flags = 0
     saved_rows_affected = tds.rows_affected
     cancel_seen = 0
-    import tds as tdsflags
+    from . import tds as tdsflags
     r = tds._reader
 
     def SET_RETURN(ret, f):

@@ -154,7 +154,7 @@ def tds7_send_login(tds, login):
     w.put_byte(type_flags)
     option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
     w.put_byte(option_flag3 if IS_TDS73_PLUS(tds) else 0)
-    w.put_int(mins_fix)
+    w.put_int(int(mins_fix))
     w.put_int(login.client_lcid)
     w.put_smallint(current_pos)
     w.put_smallint(len(client_host_name))
@@ -245,7 +245,7 @@ def tds71_do_login(tds, login):
     if IS_TDS72_PLUS(tds):
         START_POS = 26
         buf = struct.pack(
-            '>BHHBHHBHHBHHBHHB',
+            b'>BHHBHHBHHBHHBHHB',
             #netlib version
             VERSION, START_POS, 6,
             #encryption
@@ -262,7 +262,7 @@ def tds71_do_login(tds, login):
     else:
         START_POS = 21
         buf = struct.pack(
-            '>BHHBHHBHHBHHB',
+            b'>BHHBHHBHHBHHB',
             #netlib version
             VERSION, START_POS, 6,
             #encryption
@@ -275,7 +275,6 @@ def tds71_do_login(tds, login):
             TERMINATOR
             )
     assert START_POS == len(buf)
-    assert buf[START_POS - 1] == b'\xff'
     w = tds._writer
     w.begin_packet(TDS71_PRELOGIN)
     w.write(buf)
