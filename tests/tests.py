@@ -31,6 +31,30 @@ class TestCase(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
+
+class DbTestCase(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        del kwargs['database']
+        self.conn = connect(**kwargs)
+        with self.conn.cursor() as cur:
+            self.conn.autocommit = True
+            try:
+                cur.execute('drop database test_pytds')
+            except:
+                pass
+            cur.execute('create database test_pytds')
+            cur.execute('use test_pytds')
+            self.conn.autocommit = False
+
+    def tearDown(self):
+        #with self.conn.cursor() as cur:
+        #    self.conn.rollback()
+        #    self.conn.autocommit = True
+        #    cur.execute('drop database test_pytds')
+        self.conn.close()
+
+
 class TestCase2(TestCase):
     def test_all(self):
         cur = self.conn.cursor()
@@ -76,6 +100,26 @@ class TestCase2(TestCase):
     def test_strs(self):
         cur = self.conn.cursor()
         self.assertIsInstance(cur.execute_scalar("select 'test'"), unicode)
+
+
+class DbTests(DbTestCase):
+    def test_autocommit(self):
+        self.assertFalse(self.conn.autocommit)
+        with self.conn.cursor() as cur:
+            cur.execute('create table test_autocommit(field int)')
+            self.conn.commit()
+            cur.execute('insert into test_autocommit(field) values(1)')
+            self.assertEquals(self.conn._trancount(), 1)
+            cur.execute('select field from test_autocommit')
+            row = cur.fetchone()
+            self.conn.rollback()
+            cur.execute('select field from test_autocommit')
+            row = cur.fetchone()
+            self.assertFalse(row)
+
+            self.conn.autocommit = True
+            cur.execute('insert into test_autocommit(field) values(1)')
+            self.assertEquals(self.conn._trancount(), 0)
 
 
 class ParametrizedQueriesTestCase(TestCase):

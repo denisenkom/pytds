@@ -55,11 +55,39 @@ class _Connection(object):
         """
         return self._autocommit
 
+    @property
+    def autocommit(self):
+        return self._autocommit
+
+    def _set_implicit_transactions(self, on):
+        self._try_activate_cursor(None)
+        self._cancel(self._conn.main_session)
+        cmd = 'SET IMPLICIT_TRANSACTIONS {}'.format('ON' if on else 'OFF')
+        tds_submit_query(self._conn.main_session, cmd)
+        self._sqlok(self._conn.main_session)
+
+    @autocommit.setter
+    def autocommit(self, value):
+        if self._autocommit != value:
+            if value:
+                if self._conn.tds72_transaction:
+                    self._try_activate_cursor(None)
+                    self._cancel(self._conn.main_session)
+                    tds_submit_commit(self._conn.main_session, False)
+                    self._sqlok(self._conn.main_session)
+            self._set_implicit_transactions(not value)
+            self._autocommit = value
+
     def _assert_open(self):
         if not self._conn:
             raise Error('Connection closed')
         if not self._conn.is_connected():
             self._open()
+
+    def _trancount(self):
+        with self.cursor() as cur:
+            cur.execute('select @@trancount')
+            return cur.fetchone()[0]
 
     @property
     def chunk_handler(self):
@@ -101,11 +129,9 @@ class _Connection(object):
         from tds import _TdsSocket
         self._conn = None
         self._conn = _TdsSocket(self._login)
-        if not self._autocommit:
-            tds_submit_begin_tran(self._conn.main_session)
-        self._sqlok(self._conn.main_session)
+        self._set_implicit_transactions(not self._autocommit)
 
-    def __init__(self, login, as_dict, autocommit):
+    def __init__(self, login, as_dict, autocommit=False):
         self._autocommit = autocommit
         self._login = login
         self._as_dict = as_dict
@@ -153,6 +179,9 @@ class _Connection(object):
                 return
 
             if not self._conn or not self._conn.is_connected():
+                return
+
+            if not self._conn.tds72_transaction:
                 return
 
             session = self._conn.main_session
@@ -637,7 +666,7 @@ class _Cursor(object):
 def connect(server='.', database='', user='', password='', timeout=0,
             login_timeout=60, as_dict=False,
             host='', appname=None, port=None, tds_version=TDS74,
-            encryption_level=TDS_ENCRYPTION_OFF, autocommit=True,
+            encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None):
     """
