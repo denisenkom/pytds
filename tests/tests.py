@@ -145,23 +145,15 @@ class ParametrizedQueriesTestCase(TestCase):
         self._test_val(False)
         self._test_val(True)
 
-class TableTestCase(TestCase):
-    def setUp(self):
-        super(TableTestCase, self).setUp()
+class TableTestCase(DbTestCase):
+    def runTest(self):
         cur = self.conn.cursor()
-        cur.execute('''
-        if object_id('testtable') is not null
-            drop table testtable
-        ''')
         cur.execute(u'''
         create table testtable (id int, _text text, _xml xml)
         ''')
         cur.execute(u'''
         insert into testtable (id, _text, _xml) values (1, 'text', '<root/>')
         ''')
-
-    def runTest(self):
-        cur = self.conn.cursor()
         cur.execute('select id from testtable order by id')
         self.assertEqual([(1,)], cur.fetchall())
 
@@ -181,16 +173,8 @@ class TableTestCase(TestCase):
         cur.execute(u'drop table testtable')
         super(TableTestCase, self).tearDown()
 
-class StoredProcsTestCase(TestCase):
-    def _drop_sp(self):
-        cur = self.conn.cursor()
-        cur.execute('''
-        if object_id('testproc') is not null
-            drop procedure testproc
-        ''')
-    def setUp(self):
-        super(StoredProcsTestCase, self).setUp()
-        self._drop_sp()
+class StoredProcsTestCase(DbTestCase):
+    def runTest(self):
         cur = self.conn.cursor()
         cur.execute('''
         create procedure testproc (@param int)
@@ -200,9 +184,6 @@ class StoredProcsTestCase(TestCase):
             return @param + 1
         end
         ''')
-
-    def runTest(self):
-        cur = self.conn.cursor()
         val = 45
         cur.callproc('testproc', {'@param': val})
         self.assertEqual(cur.fetchall(), [(val,)])
@@ -226,29 +207,22 @@ class MultipleRecordsetsTestCase(TestCase):
         self.assertEqual((12,), cur.fetchone())
         self.assertFalse(cur.nextset())
 
-class TransactionsTestCase(TestCase):
-    def _create_table(self):
-        with self.conn.cursor() as cur:
-            cur.execute('''
-            if object_id('testtable') is not null
-                drop table testtable
-            ''')
-        self.conn.commit()
+class TransactionsTestCase(DbTestCase):
+    def runTest(self):
         with self.conn.cursor() as cur:
             cur.execute('''
             create table testtable (field datetime)
             ''')
-
-    def runTest(self):
-        self._create_table()
-        with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
             self.assertNotEquals((None,), cur.fetchone())
         self.conn.rollback()
         with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
             self.assertEquals((None,), cur.fetchone())
-        self._create_table()
+        with self.conn.cursor() as cur:
+            cur.execute('''
+            create table testtable (field datetime)
+            ''')
         self.conn.commit()
         with self.conn.cursor() as cur:
             cur.execute("select object_id('testtable')")
@@ -285,23 +259,12 @@ class ReadAllBug(TestCase):
         cur.execute('select cast(%s as varchar(5000))', params)
         self.assertEqual([params], cur.fetchall())
 
-class Rowcount(TestCase):
-    def _create_table(self):
+class Rowcount(DbTestCase):
+    def runTest(self):
         cur = self.conn.cursor()
-        cur.execute('''
-        if object_id('testtable') is not null
-            drop table testtable
-        ''')
         cur.execute('''
         create table testtable (field int)
         ''')
-
-    def setUp(self):
-        super(Rowcount, self).setUp()
-        self._create_table()
-
-    def runTest(self):
-        cur = self.conn.cursor()
         cur.execute('insert into testtable (field) values (1)')
         self.assertEqual(cur.rowcount, 1)
         cur.execute('insert into testtable (field) values (2)')
@@ -310,23 +273,12 @@ class Rowcount(TestCase):
         cur.fetchall()
         #self.assertEqual(cur.rowcount, 2)
 
-class NoRows(TestCase):
-    def _create_table(self):
+class NoRows(DbTestCase):
+    def runTest(self):
         cur = self.conn.cursor()
-        cur.execute('''
-        if object_id('testtable') is not null
-            drop table testtable
-        ''')
         cur.execute('''
         create table testtable (field int)
         ''')
-
-    def setUp(self):
-        super(NoRows, self).setUp()
-        self._create_table()
-
-    def runTest(self):
-        cur = self.conn.cursor()
         cur.execute('select * from testtable')
         self.assertEqual([], cur.fetchall())
 
@@ -437,29 +389,19 @@ class GuidTest(TestCase):
 #        cur = conn.cursor()
 #        cur.execute('select 1')
 
-class Bug2(TestCase):
-    def _drop_sp(self):
-        cur = self.conn.cursor()
-        cur.execute('''
-        if object_id('testproc') is not null
-            drop procedure testproc
-        ''')
-    def setUp(self):
-        super(Bug2, self).setUp()
-        self._drop_sp()
-        cur = self.conn.cursor()
-        cur.execute('''
-        create procedure testproc (@param int)
-        as
-        begin
-            set transaction isolation level read uncommitted -- that will produce very empty result (even no rowcount)
-            select @param
-            return @param + 1
-        end
-        ''')
-
+class Bug2(DbTestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
+            cur = self.conn.cursor()
+            cur.execute('''
+            create procedure testproc (@param int)
+            as
+            begin
+                set transaction isolation level read uncommitted -- that will produce very empty result (even no rowcount)
+                select @param
+                return @param + 1
+            end
+            ''')
             val = 45
             cur.execute('exec testproc @param = 45')
             self.assertEqual(cur.fetchall(), [(val,)])
@@ -498,13 +440,9 @@ class Bug4(TestCase):
             ''')
             self.assertEqual(cur.fetchall(), [(1,)])
 
-class FixedSizeChar(TestCase):
+class FixedSizeChar(DbTestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
-            cur.execute('''
-            if object_id('testtable') is not null
-                drop table testtable
-            ''')
             cur.execute('''
             create table testtable (chr char(5), nchr nchar(5), bfld binary(5))
             insert into testtable values ('1', '2', cast('3' as binary(5)))
@@ -557,7 +495,7 @@ class SmallDateTime(TestCase):
         with self.assertRaises(Error):
             self._testval(Timestamp(2080, 1, 1, 0, 0, 0))
 
-class DateTime(TestCase):
+class DateTime(DbTestCase):
     def _testencdec(self, val):
         self.assertEqual(val, Datetime.decode(Datetime.encode(val)))
     def _testval(self, val):
@@ -717,14 +655,13 @@ class TestLoadBalancer(TestCase):
                     cur.fetchall()
 
 
-class TestIntegrityError(TestCase):
+class TestIntegrityError(DbTestCase):
     def test_primary_key(self):
         cursor = self.conn.cursor()
         cursor.execute('create table testtable(pk int primary key)')
         cursor.execute('insert into testtable values (1)')
         with self.assertRaises(IntegrityError):
             cursor.execute('insert into testtable values (1)')
-        cursor.execute('drop table testtable')
 
 
 class TimezoneTests(unittest.TestCase):
