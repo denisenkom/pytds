@@ -1,6 +1,6 @@
-from dbapi import *
-from tds import *
-from dbapi import __version__
+from .dbapi import *
+from .tds import *
+from .dbapi import __version__
 
 def ver_to_int(ver):
     maj, minor, rev = ver.split('.')

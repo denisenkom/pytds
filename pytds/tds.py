@@ -43,17 +43,17 @@ TDSSELERR = 0
 TDSPOLLURG = 0x8000
 
 
-IS_TDS42 = lambda(x): x.tds_version == 0x402
-IS_TDS46 = lambda(x): x.tds_version == 0x406
-IS_TDS50 = lambda(x): x.tds_version == 0x500
-IS_TDS70 = lambda(x): x.tds_version == TDS70
-IS_TDS71 = lambda(x): x.tds_version in (TDS71, TDS71rev1)
-IS_TDS72 = lambda(x): x.tds_version == TDS72
-IS_TDS73 = lambda(x): x.tds_version in (TDS73A, TDS73B)
-IS_TDS7_PLUS = lambda(x): x.tds_version >= TDS70
-IS_TDS71_PLUS = lambda(x): x.tds_version >= TDS71
-IS_TDS72_PLUS = lambda(x): x.tds_version >= TDS72
-IS_TDS73_PLUS = lambda(x): x.tds_version >= TDS73A
+IS_TDS42 = lambda x: x.tds_version == 0x402
+IS_TDS46 = lambda x: x.tds_version == 0x406
+IS_TDS50 = lambda x: x.tds_version == 0x500
+IS_TDS70 = lambda x: x.tds_version == TDS70
+IS_TDS71 = lambda x: x.tds_version in (TDS71, TDS71rev1)
+IS_TDS72 = lambda x: x.tds_version == TDS72
+IS_TDS73 = lambda x: x.tds_version in (TDS73A, TDS73B)
+IS_TDS7_PLUS = lambda x: x.tds_version >= TDS70
+IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
+IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
+IS_TDS73_PLUS = lambda x: x.tds_version >= TDS73A
 
 TDS_NO_COUNT = -1
 
@@ -123,23 +123,23 @@ TDS_SUCCESS = 0
 TDS_FAIL = -1
 TDS_CANCELLED = -2
 
-TDS_FAILED = lambda(rc): rc < 0
-TDS_SUCCEED = lambda(rc): rc >= 0
+TDS_FAILED = lambda rc: rc < 0
+TDS_SUCCEED = lambda rc: rc >= 0
 
-is_blob_type = lambda(x): x in (SYBTEXT, SYBIMAGE, SYBNTEXT)
-is_blob_col = lambda(col): (col.column_varint_size > 2)
+is_blob_type = lambda x: x in (SYBTEXT, SYBIMAGE, SYBNTEXT)
+is_blob_col = lambda col: (col.column_varint_size > 2)
 # large type means it has a two byte size field
 # define is_large_type(x) (x>128)
-is_numeric_type = lambda(x): x in (SYBNUMERIC, SYBDECIMAL)
-is_unicode_type = lambda(x): x in (XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT, SYBMSXML)
-is_collate_type = lambda(x): x in (XSYBVARCHAR, XSYBCHAR, SYBTEXT, XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT)
-is_ascii_type = lambda(x): x in (XSYBCHAR, XSYBVARCHAR, SYBTEXT, SYBCHAR, SYBVARCHAR)
-is_char_type = lambda(x): is_unicode_type(x) or is_ascii_type(x)
-is_similar_type = lambda(x, y): is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
+is_numeric_type = lambda x: x in (SYBNUMERIC, SYBDECIMAL)
+is_unicode_type = lambda x: x in (XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT, SYBMSXML)
+is_collate_type = lambda x: x in (XSYBVARCHAR, XSYBCHAR, SYBTEXT, XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT)
+is_ascii_type = lambda x: x in (XSYBCHAR, XSYBVARCHAR, SYBTEXT, SYBCHAR, SYBVARCHAR)
+is_char_type = lambda x: is_unicode_type(x) or is_ascii_type(x)
+is_similar_type = lambda x, y: is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
 
-tds_conn = lambda(tds): tds
+tds_conn = lambda tds: tds
 
-IS_TDSDEAD = lambda(tds): tds is None or tds._sock is None
+IS_TDSDEAD = lambda tds: tds is None or tds._sock is None
 
 TDS_DEF_BLKSZ = 512
 TDS_DEF_CHARSET = "iso_1"
@@ -181,9 +181,9 @@ def tds_quote_id(tds, id):
 
 
 # Check if product is Sybase (such as Adaptive Server Enterrprice). x should be a TDSSOCKET*.
-TDS_IS_SYBASE = lambda(x): not tds_conn(x).product_version & 0x80000000
+TDS_IS_SYBASE = lambda x: not tds_conn(x).product_version & 0x80000000
 # Check if product is Microsft SQL Server. x should be a TDSSOCKET*.
-TDS_IS_MSSQL = lambda(x): tds_conn(x).product_version & 0x80000000
+TDS_IS_MSSQL = lambda x: tds_conn(x).product_version & 0x80000000
 
 # store a tuple of programming error codes
 prog_errors = (
