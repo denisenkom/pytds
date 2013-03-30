@@ -121,7 +121,7 @@ class _Connection(object):
     def _open(self):
         self._state = DB_RES_NO_MORE_RESULTS
         self._active_cursor = None
-        from tds import _TdsSocket
+        from .tds import _TdsSocket
         self._conn = None
         self._conn = _TdsSocket(self._login)
         if not self._autocommit:

@@ -3,6 +3,7 @@ import logging
 import socket
 import errno
 import select
+import sys
 from .collate import *
 from .tdsproto import *
 
@@ -87,12 +88,13 @@ TDS_HANDLE_ALL = 0
 
 
 def _gen_return_flags():
-    _globs = globals()
+    _globs = {}
     prefix = 'TDS_TOKEN_RES_'
     for key, value in globals().items():
         if key.startswith(prefix):
             _globs['TDS_RETURN_' + key[len(prefix):]] = 1 << (value * 2)
             _globs['TDS_STOPAT_' + key[len(prefix):]] = 2 << (value * 2)
+    globals().update(_globs)
 _gen_return_flags()
 
 
@@ -203,12 +205,18 @@ integrity_errors = (
 )
 
 
+if sys.version_info[0] >= 3:
+    exc_base_class = Exception
+else:
+    exc_base_class = StandardError
+
+
 # exception hierarchy
-class Warning(StandardError):
+class Warning(exc_base_class):
     pass
 
 
-class Error(StandardError):
+class Error(exc_base_class):
     pass
 
 
@@ -811,14 +819,15 @@ class _TdsSocket(object):
 
         if not login.port:
             login.port = 1433
+        err = None
         for host in login.load_balancer.choose():
             try:
                 tds_open_socket(self, host, login.port, connect_timeout)
             except socket.error as e:
-                e = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
                 continue
             try:
-                from login import tds_login
+                from .login import tds_login
                 tds_login(self._main_session, login)
                 text_size = login.text_size
                 if self.mars_enabled:
@@ -834,14 +843,15 @@ class _TdsSocket(object):
                     tds_process_simple_query(tds._main_session)
             except Exception as e:
                 self._sock.close()
+                err = e
                 #raise
                 continue
             break
         else:
-            raise e
+            raise err
 
     def _setup_smp(self):
-        from smp import SmpManager
+        from .smp import SmpManager
         self._smp_manager = SmpManager(self)
         self._main_session = _TdsSession(self, self._smp_manager.create_session())
 

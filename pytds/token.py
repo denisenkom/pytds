@@ -1,7 +1,7 @@
 import logging
 import traceback
 from .tdsproto import *
-from .tds import _Column
+from .tds import _Column, _Results
 from .data import *
 
 logger = logging.getLogger(__name__)
@@ -759,8 +759,6 @@ def get_api_coltype(coltype):
         return STRING
     else:
         return BINARY
-
-from tds import _Results
 
 
 #/**

@@ -5,10 +5,10 @@ logging.basicConfig()
 #logging.basicConfig(level='INFO')
 
 import pytds as dbapi
-import settings
+from . import settings
 
 # Base unit test
-import dbapi20
+from . import dbapi20
 
 class test_dbapi(dbapi20.DatabaseAPI20Test):
     driver = dbapi

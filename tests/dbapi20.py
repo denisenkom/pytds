@@ -634,11 +634,11 @@ class DatabaseAPI20Test(unittest.TestCase):
             that returns two result sets, first the 
 	    number of rows in booze then "name from booze"
         '''
-        raise NotImplementedError,'Helper not implemented'
+        raise NotImplementedError('Helper not implemented')
 
     def help_nextset_tearDown(self,cur):
         'If cleaning up is needed after nextSetTest'
-        raise NotImplementedError,'Helper not implemented'
+        raise NotImplementedError('Helper not implemented')
 
     def test_nextset(self):
         con = self._connect()
@@ -702,7 +702,7 @@ class DatabaseAPI20Test(unittest.TestCase):
 
     def test_setoutputsize(self):
         # Real test for setoutputsize is driver dependant
-        raise NotImplementedError,'Driver need to override this test'
+        raise NotImplementedError('Driver need to override this test')
 
     def test_None(self):
         con = self._connect()
