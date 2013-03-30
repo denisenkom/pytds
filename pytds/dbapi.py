@@ -59,13 +59,6 @@ class _Connection(object):
     def autocommit(self):
         return self._autocommit
 
-    def _set_implicit_transactions(self, on):
-        self._try_activate_cursor(None)
-        self._cancel(self._conn.main_session)
-        cmd = 'SET IMPLICIT_TRANSACTIONS {}'.format('ON' if on else 'OFF')
-        tds_submit_query(self._conn.main_session, cmd)
-        self._sqlok(self._conn.main_session)
-
     @autocommit.setter
     def autocommit(self, value):
         if self._autocommit != value:
@@ -75,7 +68,9 @@ class _Connection(object):
                     self._cancel(self._conn.main_session)
                     tds_submit_commit(self._conn.main_session, False)
                     self._sqlok(self._conn.main_session)
-            self._set_implicit_transactions(not value)
+            else:
+                tds_submit_begin_tran(self._conn.main_session)
+                self._sqlok(self._conn.main_session)
             self._autocommit = value
 
     def _assert_open(self):
@@ -129,7 +124,9 @@ class _Connection(object):
         from tds import _TdsSocket
         self._conn = None
         self._conn = _TdsSocket(self._login)
-        self._set_implicit_transactions(not self._autocommit)
+        if not self._autocommit:
+            tds_submit_begin_tran(self._conn.main_session)
+            self._sqlok(self._conn.main_session)
 
     def __init__(self, login, as_dict, autocommit=False):
         self._autocommit = autocommit
