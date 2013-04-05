@@ -70,6 +70,7 @@ class _Connection(object):
                     tds_submit_commit(self._conn.main_session, False)
                     self._sqlok(self._conn.main_session)
             else:
+                self._cancel(self._conn.main_session)
                 tds_submit_begin_tran(self._conn.main_session)
                 self._sqlok(self._conn.main_session)
             self._autocommit = value
@@ -362,7 +363,7 @@ class _Connection(object):
         else:
             return None
 
-    def _native_description(self):
+    def _native_description(self, cursor):
         session = cursor._session
         if session is None:
             return None

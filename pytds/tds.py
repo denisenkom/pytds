@@ -30,6 +30,7 @@ TDS71 = 0x71000000
 TDS71rev1 = 0x71000001
 TDS72 = 0x72090002
 TDS73A = 0x730A0003
+TDS73 = TDS73A
 TDS73B = 0x730B0003
 TDS74 = 0x74000004
 
@@ -273,12 +274,27 @@ class NotSupportedError(DatabaseError):
 #############################
 ## DB-API type definitions ##
 #############################
-STRING = 1
-BINARY = 2
-NUMBER = 3
-DATETIME = 4
-DECIMAL = 5
-ROWID = 6
+class DBAPITypeObject:
+    def __init__(self, *values):
+        self.values = set(values)
+    def __cmp__(self, other):
+        if other in self.values:
+            return 0
+        if other < self.values:
+            return 1
+        else:
+            return -1
+
+STRING = DBAPITypeObject(SYBVARCHAR, SYBCHAR, SYBTEXT,
+                         XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
+                         XSYBVARCHAR, XSYBCHAR, SYBMSXML)
+BINARY = DBAPITypeObject(SYBIMAGE, SYBBINARY, SYBVARBINARY, XSYBVARBINARY, XSYBBINARY)
+NUMBER = DBAPITypeObject(SYBBIT, SYBINT1, SYBINT2, SYBINT4, SYBINT8, SYBINTN,
+                         SYBREAL, SYBFLT8, SYBFLTN)
+DATETIME = DBAPITypeObject(SYBDATETIME, SYBDATETIME4, SYBDATETIMN)
+DECIMAL = DBAPITypeObject(SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC,
+                          SYBDECIMAL)
+ROWID = DBAPITypeObject()
 
 
 # stored procedure output parameter
@@ -728,16 +744,16 @@ class _TdsSession(object):
         if state == TDS_PENDING:
             if prior_state in (TDS_READING, TDS_QUERYING):
                 self.state = TDS_PENDING
-                tds_mutex_unlock(self.wire_mtx)
+                #tds_mutex_unlock(self.wire_mtx)
             else:
                 logger.error('logic error: cannot chage query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
         elif state == TDS_READING:
             # transition to READING are valid only from PENDING
-            if tds_mutex_trylock(self.wire_mtx):
-                return self.state
+            #if tds_mutex_trylock(self.wire_mtx):
+            #    return self.state
             if self.state != TDS_PENDING:
-                tds_mutex_unlock(self.wire_mtx)
+                #tds_mutex_unlock(self.wire_mtx)
                 logger.error('logic error: cannot change query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
             else:
@@ -746,24 +762,24 @@ class _TdsSession(object):
             if prior_state == TDS_DEAD:
                 logger.error('logic error: cannot change query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
-            elif prior_state in (TDS_READING, TDS_QUERYING):
-                tds_mutex_unlock(self.wire_mtx)
+            #elif prior_state in (TDS_READING, TDS_QUERYING):
+            #    tds_mutex_unlock(self.wire_mtx)
             self.state = state
         elif state == TDS_DEAD:
-            if prior_state in (TDS_READING, TDS_QUERYING):
-                tds_mutex_unlock(self.wire_mtx)
+            #if prior_state in (TDS_READING, TDS_QUERYING):
+            #    tds_mutex_unlock(self.wire_mtx)
             self.state = state
         elif state == TDS_QUERYING:
-            if tds_mutex_trylock(self.wire_mtx):
-                return self.state
+            #if tds_mutex_trylock(self.wire_mtx):
+            #    return self.state
             if self.state == TDS_DEAD:
-                tds_mutex_unlock(self.wire_mtx)
-                logger.error('logic error: cannot change query state from {0} to {1}'.
-                             format(state_names[prior_state], state_names[state]))
+                #tds_mutex_unlock(self.wire_mtx)
+                raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
+                                     format(state_names[prior_state], state_names[state]))
             elif self.state != TDS_IDLE:
-                tds_mutex_unlock(self.wire_mtx)
-                logger.error('logic error: cannot change query state from {0} to {1}'.
-                             format(state_names[prior_state], state_names[state]))
+                #tds_mutex_unlock(self.wire_mtx)
+                raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
+                                     format(state_names[prior_state], state_names[state]))
             else:
                 self.rows_affected = TDS_NO_COUNT
                 self.internal_sp_called = 0

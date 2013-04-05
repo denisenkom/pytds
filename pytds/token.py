@@ -752,23 +752,6 @@ def tds_process_cancel(tds):
             return TDS_SUCCESS
 
 
-def get_api_coltype(coltype):
-    if coltype in (SYBBIT, SYBINT1, SYBINT2, SYBINT4, SYBINT8, SYBINTN,
-                   SYBREAL, SYBFLT8, SYBFLTN):
-        return NUMBER
-    elif coltype in (SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC,
-                     SYBDECIMAL):
-        return DECIMAL
-    elif coltype in (SYBDATETIME, SYBDATETIME4, SYBDATETIMN):
-        return DATETIME
-    elif coltype in (SYBVARCHAR, SYBCHAR, SYBTEXT,
-                     XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
-                     XSYBVARCHAR, XSYBCHAR):
-        return STRING
-    else:
-        return BINARY
-
-
 #/**
 # * tds7_process_result() is the TDS 7.0 result set processing routine.  It
 # * is responsible for populating the tds->res_info structure.
@@ -813,12 +796,14 @@ def tds7_process_result(tds):
         curcol = _Column()
         info.columns.append(curcol)
         tds7_get_data_info(tds, curcol)
-        coltype = get_api_coltype(curcol.column_type)
+        coltype = curcol.column_type
+        if coltype == SYBINTN:
+            coltype = {1: SYBINT1, 2: SYBINT2, 4: SYBINT4, 8: SYBINT8}[curcol.column_size]
         precision = curcol.column_prec if hasattr(curcol, 'column_prec') else None
         scale = curcol.column_scale if hasattr(curcol, 'column_scale') else None
         header_tuple.append((curcol.column_name, coltype, None, None, precision, scale, curcol.column_nullable))
-    info.native_descr = tuple((col.column_name, col.column_type)
-                              for col in tds.res_info.columns)
+    info.native_descr = tuple((col[0], col[1])
+                              for col in header_tuple)
     info.description = tuple(header_tuple)
     return info
 
