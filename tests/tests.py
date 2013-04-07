@@ -339,7 +339,7 @@ class ConnectionClosing(unittest.TestCase):
             # test overall recovery
             conn._conn._sock.close()
             with conn.cursor() as cur:
-                with self.assertRaises(socket.error):
+                with self.assertRaises(Exception):
                     cur.execute('select 1')
                 cur.execute('select 1')
                 cur.fetchall()
@@ -348,7 +348,7 @@ class ConnectionClosing(unittest.TestCase):
                 tds_submit_query(cur._session, 'select 1')
                 conn._conn._sock.close()
                 self.assertTrue(cur._session.is_connected())
-                with self.assertRaises(socket.error):
+                with self.assertRaises(Exception):
                     tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
                 self.assertFalse(cur._session.is_connected())
 
