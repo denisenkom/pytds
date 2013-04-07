@@ -108,19 +108,19 @@ END
         
     def help_nextset_setUp(self,cur):
         self._try_run2(cur,
-            """IF OBJECT_ID(N'[dbo].[more_than_one]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[more_than_one]""",
+            """IF OBJECT_ID(N'[dbo].[deleteme]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[deleteme]""",
             """
-create procedure more_than_one
+create procedure deleteme
 as
 begin
-    select 1,2,3
-    select 4,5,6
+    select count(*) from %sbooze
+    select name from %sbooze
 end
-""",
+""" % (self.table_prefix, self.table_prefix),
             )
 
     def help_nextset_tearDown(self,cur):
-        pass
+        cur.execute("drop procedure deleteme")
         
     def test_ExceptionsAsConnectionAttributes(self):
         pass
