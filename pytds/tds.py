@@ -836,53 +836,60 @@ class _TdsSocket(object):
         import socket
         if hasattr(socket, 'socketpair'):
             tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self.tds_version = login.tds_version
-        self.emul_little_endian = login.emul_little_endian
-        if IS_TDS7_PLUS(self):
-            # TDS 7/8 only supports little endian
-            self.emul_little_endian = True
-        if IS_TDS7_PLUS(self) and login.instance_name and not login.port:
-            instances = tds7_get_instances(login.server_name)
-            if login.instance_name not in instances:
-                raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
-            instdict = instances[login.instance_name]
-            if 'tcp' not in instdict:
-                raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
-            login.port = int(instdict['tcp'])
-        connect_timeout = login.connect_timeout
+        try:
+            self.tds_version = login.tds_version
+            self.emul_little_endian = login.emul_little_endian
+            if IS_TDS7_PLUS(self):
+                # TDS 7/8 only supports little endian
+                self.emul_little_endian = True
+            if IS_TDS7_PLUS(self) and login.instance_name and not login.port:
+                instances = tds7_get_instances(login.server_name)
+                if login.instance_name not in instances:
+                    raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
+                instdict = instances[login.instance_name]
+                if 'tcp' not in instdict:
+                    raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
+                login.port = int(instdict['tcp'])
+            connect_timeout = login.connect_timeout
 
-        if not login.port:
-            login.port = 1433
-        err = None
-        for host in login.load_balancer.choose():
-            try:
-                tds_open_socket(self, host, login.port, connect_timeout)
-            except socket.error as e:
-                err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
-                continue
-            try:
-                from .login import tds_login
-                tds_login(self._main_session, login)
-                text_size = login.text_size
-                if self.mars_enabled:
-                    self._setup_smp()
-                self._is_connected = True
-                q = []
-                if text_size:
-                    q.append('set textsize {0}'.format(int(text_size)))
-                if login.database and self.env.database != login.database:
-                    q.append('use ' + tds_quote_id(self, login.database))
-                if q:
-                    tds_submit_query(tds._main_session, ''.join(q))
-                    tds_process_simple_query(tds._main_session)
-            except Exception as e:
-                self._sock.close()
-                err = e
-                #raise
-                continue
-            break
-        else:
-            raise err
+            if not login.port:
+                login.port = 1433
+            err = None
+            for host in login.load_balancer.choose():
+                try:
+                    tds_open_socket(self, host, login.port, connect_timeout)
+                except socket.error as e:
+                    err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                    continue
+                try:
+                    from .login import tds_login
+                    tds_login(self._main_session, login)
+                    text_size = login.text_size
+                    if self.mars_enabled:
+                        self._setup_smp()
+                    self._is_connected = True
+                    q = []
+                    if text_size:
+                        q.append('set textsize {0}'.format(int(text_size)))
+                    if login.database and self.env.database != login.database:
+                        q.append('use ' + tds_quote_id(self, login.database))
+                    if q:
+                        tds_submit_query(tds._main_session, ''.join(q))
+                        tds_process_simple_query(tds._main_session)
+                except Exception as e:
+                    self._sock.close()
+                    err = e
+                    #raise
+                    continue
+                break
+            else:
+                raise err
+        except Exception:
+            if tds_conn(self).s_signal is not None:
+                tds_conn(self).s_signal.close()
+            if tds_conn(self).s_signaled is not None:
+                tds_conn(self).s_signaled.close()
+            raise
 
     def _setup_smp(self):
         from .smp import SmpManager
