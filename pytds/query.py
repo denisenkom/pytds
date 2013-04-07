@@ -46,12 +46,7 @@ def convert_params(tds, parameters):
     else:
         params = []
         for parameter in parameters:
-            if type(parameter) is output:
-                raise NotImplementedError
-                #param_type = parameter.type
-                #param_value = parameter.value
-                #param_output = True
-            elif isinstance(parameter, _Column):
+            if isinstance(parameter, _Column):
                 params.append(parameter)
             else:
                 params.append(make_param(tds, '', parameter))
