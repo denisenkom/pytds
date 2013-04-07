@@ -11,6 +11,7 @@ __author__ = 'Stuart Bishop <stuart@stuartbishop.net>'
 
 import unittest
 import time
+import sys
 
 
 class DatabaseAPI20Test(unittest.TestCase):
@@ -121,8 +122,13 @@ class DatabaseAPI20Test(unittest.TestCase):
     def test_Exceptions(self):
         # Make sure required exceptions exist, and are in the
         # defined heirarchy.
-        self.assertTrue(issubclass(self.driver.Warning,StandardError))
-        self.assertTrue(issubclass(self.driver.Error,StandardError))
+        if sys.version_info[0] >= 3:
+            exc_base_class = Exception
+        else:
+            exc_base_class = StandardError
+
+        self.assertTrue(issubclass(self.driver.Warning, exc_base_class))
+        self.assertTrue(issubclass(self.driver.Error, exc_base_class))
         self.assertTrue(issubclass(self.driver.InterfaceError,self.driver.Error))
         self.assertTrue(issubclass(self.driver.DatabaseError,self.driver.Error))
         self.assertTrue(issubclass(self.driver.OperationalError,self.driver.Error))
