@@ -9,4 +9,5 @@ Install
 -------
 
 To install run this command:
-    $ pip install python-tds
+
+    pip install python-tds
