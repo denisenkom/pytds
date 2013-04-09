@@ -11,3 +11,8 @@ Install
 To install run this command:
 
     pip install python-tds
+
+To connect to database do
+    
+    import pytds
+    conn = pytds.connect('server', 'database', 'user', 'password')
