@@ -446,6 +446,15 @@ def readall(stm, size):
         left -= len(buf)
     return b''.join(chunks)
 
+def readall_fast(stm, size):
+    buf, offset = stm.read_fast(size)
+    if len(buf) - offset < size:
+        # slow case
+        buf = buf[offset:]
+        buf += stm.read(size - len(buf))
+        return buf, 0
+    return buf, offset
+
 
 class _TdsReader(object):
     def __init__(self, session, emul_little_endian):
@@ -463,8 +472,21 @@ class _TdsReader(object):
     def packet_type(self):
         return self._type
 
+    def read_fast(self, size):
+        if self._pos >= len(self._buf):
+            if self._have >= self._size:
+                self._read_packet()
+            else:
+                self._buf = self._transport.read(self._size - self._have)
+                self._pos = 0
+                self._have += len(self._buf)
+        offset = self._pos
+        self._pos += size
+        return self._buf, offset
+
     def unpack(self, struct):
-        return struct.unpack(readall(self, struct.size))
+        buf, offset = readall_fast(self, struct.size)
+        return struct.unpack_from(buf, offset)
 
     def get_byte(self):
         return self.unpack(_byte)[0]
@@ -530,16 +552,8 @@ class _TdsReader(object):
             left -= len(buf)
 
     def read(self, size):
-        if self._pos >= len(self._buf):
-            if self._have >= self._size:
-                self._read_packet()
-            else:
-                self._buf = self._transport.read(self._size - self._have)
-                self._pos = 0
-                self._have += len(self._buf)
-        res = self._buf[self._pos:self._pos + size]
-        self._pos += len(res)
-        return res
+        buf, offset = self.read_fast(size)
+        return buf[offset:offset + size]
 
     def _read_packet(self):
         try:
