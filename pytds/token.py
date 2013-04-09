@@ -138,14 +138,14 @@ def tds_process_default_tokens(tds, marker):
     elif marker == TDS_CURINFO_TOKEN:
         return tds_process_cursor_tokens(tds)
     elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
-        logger.warning("Eating %s token", tds_token_name(marker))
+        #logger.warning("Eating %s token", tds_token_name(marker))
         r.skip(r.get_smallint())
     elif marker == TDS_TABNAME_TOKEN:  # used for FOR BROWSE query
         return tds_process_tabname(tds)
     elif marker == TDS_COLINFO_TOKEN:
         return tds_process_colinfo(tds, None, 0)
     elif marker == TDS_ORDERBY2_TOKEN:
-        logger.warning("Eating %s token", tds_token_name(marker))
+        #logger.warning("Eating %s token", tds_token_name(marker))
         r.skip(r.get_int())
     elif marker == TDS_NBC_ROW_TOKEN:
         return tds_process_nbcrow(tds)
