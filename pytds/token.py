@@ -3,6 +3,7 @@ import traceback
 from .tdsproto import *
 from .tds import _Column, _Results
 from .data import *
+from . import tds as tdsflags
 
 logger = logging.getLogger(__name__)
 
@@ -501,7 +502,6 @@ def tds_process_tokens(tds, flag):
     done_flags = 0
     saved_rows_affected = tds.rows_affected
     cancel_seen = 0
-    from . import tds as tdsflags
     r = tds._reader
 
     def SET_RETURN(ret, f):
