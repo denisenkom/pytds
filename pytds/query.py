@@ -199,7 +199,6 @@ def tds_send_cancel(tds):
 # \return TDS_SUCCESS or TDS_FAIL
 #
 def tds_put_data_info(tds, curcol):
-    logger.debug("tds_put_data_info putting param_name")
     w = tds._writer
     if IS_TDS7_PLUS(tds):
         w.put_byte(len(curcol.column_name))
@@ -214,7 +213,6 @@ def tds_put_data_info(tds, curcol):
     # (what's the meaning of "default value" ?)
     #
 
-    logger.debug("tds_put_data_info putting status")
     w.put_byte(curcol.flags)
     if not IS_TDS7_PLUS(tds):
         w.put_int(curcol.column_usertype)  # usertype

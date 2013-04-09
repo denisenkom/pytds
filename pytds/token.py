@@ -64,9 +64,9 @@ def tds_process_auth(tds):
 
 def tds_process_default_tokens(tds, marker):
     r = tds._reader
-    logger.debug('tds_process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
+    #logger.debug('tds_process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
     if tds.is_dead():
-        logger.debug('leaving tds_process_login_tokens() connection dead')
+        #logger.debug('leaving tds_process_login_tokens() connection dead')
         tds.close()
         raise Exception('TDS_FAIL')
     if marker == TDS_AUTH_TOKEN:
@@ -137,14 +137,14 @@ def tds_process_default_tokens(tds, marker):
     elif marker == TDS_CURINFO_TOKEN:
         return tds_process_cursor_tokens(tds)
     elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
-        logger.debug("Eating %s token", tds_token_name(marker))
+        logger.warning("Eating %s token", tds_token_name(marker))
         r.skip(r.get_smallint())
     elif marker == TDS_TABNAME_TOKEN:  # used for FOR BROWSE query
         return tds_process_tabname(tds)
     elif marker == TDS_COLINFO_TOKEN:
         return tds_process_colinfo(tds, None, 0)
     elif marker == TDS_ORDERBY2_TOKEN:
-        logger.debug("Eating %s token", tds_token_name(marker))
+        logger.warning("Eating %s token", tds_token_name(marker))
         r.skip(r.get_int())
     elif marker == TDS_NBC_ROW_TOKEN:
         return tds_process_nbcrow(tds)
@@ -215,19 +215,19 @@ def tds_process_end(tds, marker):
     was_cancelled = status & TDS_DONE_CANCELLED != 0
     error = status & TDS_DONE_ERROR != 0
     done_count_valid = status & TDS_DONE_COUNT != 0
-    logger.debug(
-        'tds_process_end: more_results = {0}\n'
-        '\t\twas_cancelled = {1}\n'
-        '\t\terror = {2}\n'
-        '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
+    #logger.debug(
+    #    'tds_process_end: more_results = {0}\n'
+    #    '\t\twas_cancelled = {1}\n'
+    #    '\t\terror = {2}\n'
+    #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
     if tds.res_info:
         tds.res_info.more_results = more_results
         if not tds.current_results:
             tds.current_results = tds.res_info
     rows_affected = r.get_int8() if IS_TDS72_PLUS(tds) else r.get_int()
-    logger.debug('\t\trows_affected = {0}'.format(rows_affected))
+    #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
     if was_cancelled or (not more_results and not tds.in_cancel):
-        logger.debug('tds_process_end() state set to TDS_IDLE')
+        #logger.debug('tds_process_end() state set to TDS_IDLE')
         tds.in_cancel = False
         tds.set_state(TDS_IDLE)
     if tds.is_dead():
@@ -245,12 +245,12 @@ def tds_process_env_chg(tds):
     type = r.get_byte()
     if type == TDS_ENV_SQLCOLLATION:
         size = r.get_byte()
-        logger.debug("tds_process_env_chg(): {0} bytes of collation data received".format(size))
-        logger.debug("tds.collation was {0}".format(tds.conn.collation))
+        #logger.debug("tds_process_env_chg(): {0} bytes of collation data received".format(size))
+        #logger.debug("tds.collation was {0}".format(tds.conn.collation))
         tds.conn.collation = r.get_collation()
         r.skip(size - 5)
         #tds7_srv_charset_changed(tds, tds.conn.collation)
-        logger.debug("tds.collation now {0}".format(tds.conn.collation))
+        #logger.debug("tds.collation now {0}".format(tds.conn.collation))
         # discard old one
         r.skip(r.get_byte())
     elif type == TDS_ENV_BEGINTRANS:
@@ -267,7 +267,7 @@ def tds_process_env_chg(tds):
         oldval = r.read_ucs2(r.get_byte())
         new_block_size = int(newval)
         if new_block_size >= 512:
-            logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
+            #logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
             #
             # Is possible to have a shrink if server limits packet
             # size more than what we specified
@@ -285,7 +285,7 @@ def tds_process_env_chg(tds):
     elif type == TDS_ENV_CHARSET:
         newval = r.read_ucs2(r.get_byte())
         oldval = r.read_ucs2(r.get_byte())
-        logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
+        #logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
         tds.conn.env.charset = newval
         tds_srv_charset_changed(tds, newval)
     elif type == TDS_ENV_DB_MIRRORING_PARTNER:
@@ -327,7 +327,7 @@ def tds_process_msg(tds, marker):
         msg['priv_msg_type'] = 1
     else:
         logger.error('tds_process_msg() called with unknown marker "{0}"'.format(marker))
-    logger.debug('tds_process_msg() reading message {0} from server'.format(msg['msgno']))
+    #logger.debug('tds_process_msg() reading message {0} from server'.format(msg['msgno']))
     msg['message'] = r.read_ucs2(r.get_smallint())
     # server name
     msg['server'] = r.read_ucs2(r.get_byte())
@@ -511,19 +511,19 @@ def tds_process_tokens(tds, flag):
         parent['return_flag'] = return_flag | stopat_flag
         if flag & stopat_flag:
             r.unget_byte()
-            logger.debug("tds_process_tokens::SET_RETURN stopping on current token")
+            #logger.debug("tds_process_tokens::SET_RETURN stopping on current token")
             return False
         return True
 
     if tds.state == TDS_IDLE:
-        logger.debug("tds_process_tokens() state is COMPLETED")
+        #logger.debug("tds_process_tokens() state is COMPLETED")
         return TDS_NO_MORE_RESULTS, TDS_DONE_RESULT, done_flags
 
     with tds.state_context(TDS_READING):
         rc = TDS_SUCCESS
         while True:
             marker = r.get_byte()
-            logger.info("processing result tokens.  marker is  {0:x}({1})".format(marker, tds_token_name(marker)))
+            #logger.info("processing result tokens.  marker is  {0:x}({1})".format(marker, tds_token_name(marker)))
             if marker == TDS7_RESULT_TOKEN:
                 #
                 # If we're processing the results of a cursor fetch
@@ -567,22 +567,22 @@ def tds_process_tokens(tds, flag):
             elif marker == TDS_PARAM_TOKEN:
                 r.unget_byte()
                 if tds.internal_sp_called:
-                    logger.debug("processing parameters for sp {0}".formst(tds.internal_sp_called))
+                    #logger.debug("processing parameters for sp {0}".formst(tds.internal_sp_called))
                     while True:
                         marker = r.get_byte()
                         if marker != TDS_PARAM_TOKEN:
                             break
-                        logger.debug("calling tds_process_param_result")
+                        #logger.debug("calling tds_process_param_result")
                         pinfo = tds_process_param_result(tds)
                     r.unget_byte()
-                    logger.debug("{0} hidden return parameters".format(pinfo.num_cols if pinfo else -1))
+                    #logger.debug("{0} hidden return parameters".format(pinfo.num_cols if pinfo else -1))
                     if pinfo and pinfo.num_cols > 0:
                         curcol = pinfo.columns[0]
                         if tds.internal_sp_called == TDS_SP_CURSOROPEN and tds.cur_cursor:
                             cursor = tds.cur_cursor
 
                             cursor.cursor_id = curcol.value
-                            logger.debug("stored internal cursor id {0}".format(cursor.cursor_id))
+                            #logger.debug("stored internal cursor id {0}".format(cursor.cursor_id))
                             cursor.srv_status &= ~(TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_OPEN | TDS_CUR_ISTAT_DEALLOC)
                             cursor.srv_status |= TDS_CUR_ISTAT_OPEN if cursor.cursor_id else TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_DEALLOC
                         if (tds.internal_sp_called == TDS_SP_PREPARE or tds.internal_sp_called == TDS_SP_PREPEXEC)\
@@ -605,7 +605,7 @@ def tds_process_tokens(tds, flag):
                     cursor = tds.cur_cursor
 
                     tds.current_results = cursor.res_info
-                    logger.debug("tds_process_tokens(). set current_results to cursor->res_info")
+                    #logger.debug("tds_process_tokens(). set current_results to cursor->res_info")
                 else:
                     # assure that we point to row, not to compute
                     if tds.res_info:
@@ -637,7 +637,7 @@ def tds_process_tokens(tds, flag):
                         if SET_RETURN(TDS_STATUS_RESULT, 'PROC'):
                             tds.has_status = True
                             tds.ret_status = ret_status
-                            logger.debug("tds_process_tokens: return status is {0}".format(tds.ret_status))
+                            #logger.debug("tds_process_tokens: return status is {0}".format(tds.ret_status))
                             rc = TDS_SUCCESS
             elif marker == TDS5_DYNAMIC_TOKEN:
                 # process acknowledge dynamic
@@ -683,7 +683,7 @@ def tds_process_tokens(tds, flag):
                             parent['result_type'] = TDS_DONE_RESULT
                             tds.rows_affected = saved_rows_affected
                     elif tds.internal_sp_called == TDS_SP_CURSORCLOSE:
-                        logger.debug("TDS_SP_CURSORCLOSE")
+                        #logger.debug("TDS_SP_CURSORCLOSE")
                         if tds.cur_cursor:
                             cursor = tds.cur_cursor
 
@@ -759,7 +759,7 @@ def tds_process_cancel(tds):
 # */
 def tds7_process_result(tds):
     r = tds._reader
-    logger.debug("processing TDS7 result metadata.")
+    #logger.debug("processing TDS7 result metadata.")
 
     # read number of columns and allocate the columns structure
 
@@ -768,7 +768,7 @@ def tds7_process_result(tds):
     # This can be a DUMMY results token from a cursor fetch
 
     if num_cols == -1:
-        logger.debug("no meta data")
+        #logger.debug("no meta data")
         return TDS_SUCCESS
 
     tds.res_info = None
@@ -781,16 +781,16 @@ def tds7_process_result(tds):
     tds.current_results = info = _Results()
     if tds.cur_cursor:
         tds.cur_cursor.res_info = info
-        logger.debug("set current_results to cursor->res_info")
+        #logger.debug("set current_results to cursor->res_info")
     else:
         tds.res_info = info
-        logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols == 1 else "s")))
+        #logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols == 1 else "s")))
 
     #
     # loop through the columns populating COLINFO struct from
     # server response
     #
-    logger.debug("setting up {0} columns".format(num_cols))
+    #logger.debug("setting up {0} columns".format(num_cols))
     header_tuple = []
     for col in range(num_cols):
         curcol = _Column()

@@ -151,7 +151,7 @@ class SmpManager(object):
         if smid != self._smid:
             self.close()
             raise Error('Invalid SMP packet signature')
-        logger.debug('received smp packet t:%s sid:%s len:%s num:%s wnd:%s', self._type_to_str(flags), sid, l, seq_num, wnd)
+        #logger.debug('received smp packet t:%s sid:%s len:%s num:%s wnd:%s', self._type_to_str(flags), sid, l, seq_num, wnd)
         try:
             session = self._sessions[sid]
         except KeyError:

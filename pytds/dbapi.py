@@ -205,7 +205,7 @@ class _Connection(object):
         It can be called more than once in a row. No exception is raised in
         this case.
         """
-        logger.debug("MSSQLConnection._cancel()")
+        #logger.debug("MSSQLConnection._cancel()")
         tds_send_cancel(session)
         tds_process_cancel(session)
 
@@ -217,7 +217,7 @@ class _Connection(object):
         It can be called more than once in a row. No exception is raised in
         this case.
         """
-        logger.debug("MSSQLConnection.close()")
+        #logger.debug("MSSQLConnection.close()")
         self._assert_open()
         self._conn.close()
         self._conn = None
@@ -229,7 +229,7 @@ class _Connection(object):
         This function selects the given database. An exception is raised on
         failure.
         """
-        logger.debug("MSSQLConnection.select_db()")
+        #logger.debug("MSSQLConnection.select_db()")
         self._assert_open()
         cur = self.cursor()
         try:
@@ -240,7 +240,7 @@ class _Connection(object):
     _nextrow_mask = TDS_STOPAT_ROWFMT | TDS_RETURN_DONE | TDS_RETURN_ROW | TDS_RETURN_COMPUTE
 
     def _nextrow(self, session):
-        logger.debug("_nextrow()")
+        #logger.debug("_nextrow()")
         resinfo = session.res_info
         if not resinfo or self._state != DB_RES_RESULTSET_ROWS:
             # no result set or result set empty (no rows)
@@ -266,7 +266,7 @@ class _Connection(object):
             raise Exception("unexpected result from tds_process_tokens")
 
     def _sqlok(self, session):
-        logger.debug("dbsqlok()")
+        #logger.debug("dbsqlok()")
         #CHECK_CONN(FAIL);
 
         #
@@ -274,7 +274,7 @@ class _Connection(object):
         # submitted returned no data (like an insert) -- then
         # we process the end token to extract the status code.
         #
-        logger.debug("dbsqlok() not done, calling tds_process_tokens()")
+        #logger.debug("dbsqlok() not done, calling tds_process_tokens()")
         while True:
             tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
 
@@ -440,7 +440,7 @@ class _Connection(object):
                 logger.error('logic error: tds_process_tokens result_type %d', result_type)
 
     def _callproc(self, cursor, procname, parameters):
-        logger.debug('callproc begin')
+        #logger.debug('callproc begin')
         self._assert_open()
         self._try_activate_cursor(cursor)
         session = cursor._session
@@ -479,7 +479,7 @@ class _Connection(object):
                 break
             else:
                 logger.error('logic error: tds_process_tokens result_type %d', result_type)
-        logger.debug('callproc end')
+        #logger.debug('callproc end')
         results = list(parameters)
         for key, param in session.output_params.items():
             results[key] = param.value
@@ -570,8 +570,8 @@ class _Cursor(six.Iterator):
                 rename = dict((name, '@{0}'.format(name)) for name in params.keys())
                 params = dict(('@{0}'.format(name), value) for name, value in params.items())
                 operation = operation % rename
-            logger.debug('converted query: {0}'.format(operation))
-            logger.debug('params: {0}'.format(params))
+            #logger.debug('converted query: {0}'.format(operation))
+            #logger.debug('params: {0}'.format(params))
         self._conn._execute(self, operation, params)
 
     def executemany(self, operation, params_seq):

@@ -415,9 +415,9 @@ class DefaultHandler(object):
     @staticmethod
     def put_data(tds, curcol):
         w = tds._writer
-        logger.debug("tds_data_put")
+        #logger.debug("tds_data_put")
         if curcol.value is None:
-            logger.debug("tds_data_put: null param")
+            #logger.debug("tds_data_put: null param")
             vs = curcol.column_varint_size
             if vs == 5:
                 w.put_int(0)
@@ -451,8 +451,8 @@ class DefaultHandler(object):
         # Test proprietary behavior
         #
         if IS_TDS7_PLUS(tds):
-            logger.debug("tds_data_put: not null param varint_size = %d",
-                         curcol.column_varint_size)
+            #logger.debug("tds_data_put: not null param varint_size = %d",
+            #             curcol.column_varint_size)
 
             vs = curcol.column_varint_size
             if vs == 8:
