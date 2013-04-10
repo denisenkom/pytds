@@ -155,6 +155,7 @@ class _Connection(object):
             return
 
         self._try_activate_cursor(None)
+        conn.main_session.messages = []
         self._cancel(conn.main_session)
         tds_submit_commit(conn.main_session, True)
         self._sqlok(conn.main_session)
@@ -184,6 +185,7 @@ class _Connection(object):
                 return
 
             session = self._conn.main_session
+            session.messages = []
             self._cancel(session)
             self._active_cursor = None
             tds_submit_rollback(session, True)
@@ -206,6 +208,7 @@ class _Connection(object):
         this case.
         """
         #logger.debug("MSSQLConnection._cancel()")
+        session.messages = []
         tds_send_cancel(session)
         tds_process_cancel(session)
 
@@ -402,6 +405,7 @@ class _Connection(object):
         self._assert_open()
         self._try_activate_cursor(cursor)
         session = cursor._session
+        session.messages = []
         self._cancel(session)
         tds_submit_query(session, operation, params)
         self._state = DB_RES_INIT
@@ -444,6 +448,7 @@ class _Connection(object):
         self._assert_open()
         self._try_activate_cursor(cursor)
         session = cursor._session
+        session.messages = []
         self._cancel(session)
         tds_submit_rpc(session, procname, parameters)
         session.output_params = {}
