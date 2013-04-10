@@ -19,35 +19,6 @@ def _applytz(dt, tz):
     return dt
 
 
-#
-# Set type of column initializing all dependency
-# @param curcol column to set
-# @param type   type to set
-#
-def tds_set_column_type(tds, curcol, type):
-    # set type
-    curcol.column_type = type
-    curcol.funcs = _get_handler(tds, type)
-
-    # set size
-    curcol.column_varint_size = tds_get_varint_size(tds, type)
-    if curcol.column_varint_size == 0:
-        curcol.column_size = curcol.column_size = tds_get_size_by_type(type)
-
-
-def _get_handler(tds, type):
-    if type in (SYBNUMERIC, SYBDECIMAL):
-        return NumericHandler
-    elif type == SYBVARIANT:
-        return VariantHandler
-    elif type in (SYBMSDATE, SYBMSTIME, SYBMSDATETIME2, SYBMSDATETIMEOFFSET):
-        return MsDatetimeHandler
-    elif type in (SYBDATETIME, SYBDATETIMN, SYBDATETIME4):
-        return DatetimeHandler
-    else:
-        return DefaultHandler
-
-
 def make_param(tds, name, value):
     column = _Column()
     column.column_name = name
@@ -101,50 +72,6 @@ def make_param(tds, name, value):
 
 class DefaultHandler(object):
     @staticmethod
-    def get_info(tds, col):
-        vs = col.column_varint_size
-        r = tds._reader
-        if vs == 8:
-            col.column_size = 0x7fffffff
-        elif vs in (4, 5):
-            col.column_size = r.get_int()
-        elif vs == 2:
-            # assure > 0
-            col.column_size = r.get_smallint()
-            # under TDS9 this means ?var???(MAX)
-            if col.column_size < 0 and IS_TDS72_PLUS(tds):
-                col.column_size = 0x3fffffff
-                col.column_varint_size = 8
-        elif vs == 1:
-            col.column_size = r.get_byte()
-        elif vs == 0:
-            col.column_size = tds_get_size_by_type(col.column_type)
-
-        if IS_TDS71_PLUS(tds) and is_collate_type(col.column_type):
-            # based on true type as sent by server
-            col.column_collation = r.get_collation()
-            col.char_codec = col.column_collation.get_codec()
-
-        # Only read table_name for blob columns (eg. not for SYBLONGBINARY)
-        if is_blob_type(col.column_type):
-            # discard this additional byte
-            if IS_TDS72_PLUS(tds):
-                num_parts = r.get_byte()
-                # TODO do not discard first ones
-                for _ in range(num_parts):
-                    col.table_name = r.read_ucs2(r.get_smallint())
-            else:
-                col.table_name = r.read_ucs2(r.get_smallint())
-        elif IS_TDS72_PLUS(tds) and col.column_type == SYBMSXML:
-            has_schema = r.get_byte()
-            if has_schema:
-                # discard schema informations
-                r.read_ucs2(r.get_byte())        # dbname
-                r.read_ucs2(r.get_byte())        # schema owner
-                r.read_ucs2(r.get_smallint())    # schema collection
-        return TDS_SUCCESS
-
-    @staticmethod
     def _tds72_get_varmax(tds, curcol):
         r = tds._reader
         size = r.get_int8()
@@ -174,107 +101,6 @@ class DefaultHandler(object):
                 if decoder:
                     val = decoder.decode(val)
                 chunk_handler.new_chunk(val)
-
-    @classmethod
-    def get_data(cls, tds, curcol):
-        #logger.debug("tds_get_data: type %d, varint size %d" % (curcol.column_type, curcol.column_varint_size))
-        r = tds._reader
-        cvs = curcol.column_varint_size
-        if cvs == 4:
-            #
-            # LONGBINARY
-            # This type just stores a 4-byte length
-            #
-            if curcol.column_type == SYBLONGBINARY:
-                colsize = r.get_int()
-            else:
-                # It's a BLOB...
-                size = r.get_byte()
-                if size == 16:  # Jeff's hack
-                    readall(r, 16)  # textptr
-                    readall(r, 8)  # timestamp
-                    colsize = r.get_int()
-                else:
-                    colsize = -1
-        elif cvs == 5:
-            colsize = r.get_int()
-            if colsize == 0:
-                colsize = -1
-        elif cvs == 8:
-            return cls._tds72_get_varmax(tds, curcol)
-        elif cvs == 2:
-            colsize = r.get_smallint()
-        elif cvs == 1:
-            colsize = r.get_byte()
-            if colsize == 0:
-                colsize = -1
-        elif cvs == 0:
-            # TODO this should be column_size
-            colsize = tds_get_size_by_type(curcol.column_type)
-        else:
-            colsize = -1
-
-        #logger.debug("tds_get_data(): wire column size is %d" % colsize)
-        # set NULL flag in the row buffer
-        if colsize < 0:
-            return None
-
-        #
-        # We're now set to read the data from the wire.
-        #
-        # colsize == wire_size, bytes to read
-        #
-        if is_blob_col(curcol):
-            # Blobs don't use a column's fixed buffer because the official maximum size is 2 GB.
-            # Instead, they're reallocated as necessary, based on the data's size.
-            # Here we allocate memory, if need be.
-            #
-            # TODO this can lead to a big waste of memory
-            new_blob_size = colsize
-            if new_blob_size == 0:
-                return ''
-
-            # read the data
-            if curcol.char_codec:
-                return tds_get_char_data(tds, colsize, curcol)
-            else:
-                assert colsize == new_blob_size
-                return readall(r, colsize)
-        else:  # non-numeric and non-blob
-            if curcol.char_codec:
-                if colsize == 0:
-                    value = u''
-                elif curcol.char_codec:
-                    value = curcol.char_codec.decode(readall(r, colsize))[0]
-                else:
-                    value = readall(r, colsize)
-                curcol.cur_size = len(value)
-            else:
-                #
-                # special case, some servers seem to return more data in some conditions
-                # (ASA 7 returning 4 byte nullable integer)
-                #
-                discard_len = 0
-                if colsize > curcol.column_size:
-                    discard_len = colsize - curcol.column_size
-                    colsize = curcol.column_size
-                value = readall(r, colsize)
-                if discard_len > 0:
-                    r.skip(discard_len)
-
-            # pad (UNI)CHAR and BINARY types
-            #fillchar = '\0'
-            #if curcol.column_type in (SYBCHAR, XSYBCHAR):
-            #    fillchar = ' '
-            # extra handling for SYBLONGBINARY
-            #if curcol.column_type == SYBLONGBINARY and curcol.column_usertype == USER_UNICHAR_TYPE or\
-            #        curcol.column_type in (SYBCHAR, XSYBCHAR) and (curcol.column_size == curcol.column_size) or\
-            #        curcol.column_type in (SYBBINARY, XSYBBINARY):
-
-            #            if colsize < curcol.column_size:
-            #                value.extend(fillchar*(curcol.column_size - colsize))
-            #            colsize = curcol.column_size
-            return to_python(tds, value, curcol.column_type, curcol.column_size)
 
     @staticmethod
     def from_python(tds, col, value):
@@ -566,14 +392,6 @@ else:
 
 
 class NumericHandler(object):
-    @staticmethod
-    def get_info(tds, col):
-        r = tds._reader
-        col.column_size = r.get_byte()
-        col.column_prec = r.get_byte()
-        col.column_scale = r.get_byte()
-        # FIXME check prec/scale, don't let server crash us
-
     MAX_NUMERIC = 33
 
     @staticmethod
@@ -693,10 +511,6 @@ class NumericHandler(object):
 # BLOBS (text/image) not supported
 #
 class VariantHandler(object):
-    @staticmethod
-    def get_info(tds, col):
-        return DefaultHandler.get_info(tds, col)
-
     @staticmethod
     def get_data(tds, curcol):
         r = tds._reader
@@ -1060,36 +874,6 @@ class DatetimeHandler(object):
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
-    @staticmethod
-    def get_info(tds, col):
-        r = tds._reader
-        if col.column_type == SYBDATETIMN:
-            col.size = r.get_byte()
-        elif col.column_type == SYBDATETIME:
-            col.size = 8
-        elif col.column_type == SYBDATETIME4:
-            col.size = 4
-        else:
-            assert False
-
-    @classmethod
-    def get_data(cls, tds, col):
-        r = tds._reader
-        if col.column_type == SYBDATETIMN:
-            size = r.get_byte()
-            if size == 0:
-                return None
-        else:
-            size = col.size
-        if col.column_type == SYBDATETIME or col.column_type == SYBDATETIMN and size == 8:
-            return _applytz(Datetime.decode(readall(r, Datetime.size)), tds.use_tz)
-
-        elif col.column_type == SYBDATETIME4 or col.column_type == SYBDATETIMN and size == 4:
-            days, time = r.unpack(TDS_DATETIME4)
-            return _applytz(cls._base_date + timedelta(days=days, minutes=time), tds.use_tz)
-        else:
-            assert False
-
     @classmethod
     def from_python(cls, tds, col, value):
         col.column_type = SYBDATETIMN
@@ -1189,8 +973,7 @@ class Datetime:
         return TDS_DATETIME.pack(days, tm)
 
     @classmethod
-    def decode(cls, buf):
-        days, time = TDS_DATETIME.unpack(buf)
+    def decode(cls, days, time):
         ms = int(round(time % 300 * 10 / 3.0))
         secs = time // 300
         return cls.base_date + timedelta(days=days, seconds=secs, milliseconds=ms)

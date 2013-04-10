@@ -404,6 +404,7 @@ class _TdsEnv:
 
 _header = struct.Struct('>BBHHxx')
 _byte = struct.Struct('B')
+_tinyint = struct.Struct('b')
 _smallint_le = struct.Struct('<h')
 _smallint_be = struct.Struct('>h')
 _usmallint_le = struct.Struct('<H')
@@ -494,6 +495,9 @@ class _TdsReader(object):
     def _le(self):
         return self._emul_little_endian
 
+    def get_tinyint(self):
+        return self.unpack(_tinyint)[0]
+
     def get_smallint(self):
         if self._le():
             return self.unpack(_smallint_le)[0]
@@ -530,6 +534,9 @@ class _TdsReader(object):
     def read_ucs2(self, num_chars):
         buf = readall(self, num_chars * 2)
         return ucs2_codec.decode(buf)[0]
+
+    def read_str(self, size, codec):
+        return codec.decode(readall(self, size))[0]
 
     def get_collation(self):
         buf = readall(self, Collation.wire_size)

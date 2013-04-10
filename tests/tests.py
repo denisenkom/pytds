@@ -12,7 +12,7 @@ from six import text_type
 from six.moves import xrange
 from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth,\
-    tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS
+    tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS, TDS_DATETIME
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -74,6 +74,14 @@ class TestCase2(TestCase):
         assert ('test', 20) == cur.fetchone()
         assert 'test' == cur.execute_scalar("select 'test' as fieldname")
         assert 'test' == cur.execute_scalar("select N'test' as fieldname")
+        assert 'test' == cur.execute_scalar("select cast(N'test' as ntext) as fieldname")
+        assert 'test' == cur.execute_scalar("select cast(N'test' as text) as fieldname")
+        self.assertEqual('test ', cur.execute_scalar("select cast(N'test' as char(5)) as fieldname"))
+        self.assertEqual('test ', cur.execute_scalar("select cast(N'test' as nchar(5)) as fieldname"))
+        assert b'test' == cur.execute_scalar("select cast('test' as varbinary(4)) as fieldname")
+        assert b'test' == cur.execute_scalar("select cast('test' as image) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as image) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as ntext) as fieldname")
         assert 5 == cur.execute_scalar('select 5 as fieldname')
 
     def test_decimals(self):
@@ -500,14 +508,14 @@ class SmallDateTime(TestCase):
 
 class DateTime(DbTestCase):
     def _testencdec(self, val):
-        self.assertEqual(val, Datetime.decode(Datetime.encode(val)))
+        self.assertEqual(val, Datetime.decode(*TDS_DATETIME.unpack(Datetime.encode(val))))
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        self.assertEqual(Datetime.decode(b'\xf2\x9c\x00\x00}uO\x01'), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
-        self.assertEqual(Datetime.decode(b'\x7f$-\x00\xff\x81\x8b\x01'), Datetime.max)
+        self.assertEqual(Datetime.decode(*TDS_DATETIME.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
+        self.assertEqual(Datetime.decode(*TDS_DATETIME.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), Datetime.max)
         self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', Datetime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
         self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', Datetime.encode(Datetime.max))
         with self.conn.cursor() as cur:
