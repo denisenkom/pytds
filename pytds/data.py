@@ -72,7 +72,7 @@ def make_param(tds, name, value):
 
 class DefaultHandler(object):
     @staticmethod
-    def _tds72_get_varmax(tds, curcol):
+    def _tds72_get_varmax(tds, curcol, codec):
         r = tds._reader
         size = r.get_int8()
 
@@ -81,8 +81,8 @@ class DefaultHandler(object):
             return None
 
         decoder = None
-        if curcol.char_codec:
-            decoder = curcol.char_codec.incrementaldecoder()
+        if codec:
+            decoder = codec.incrementaldecoder()
             chunk_handler = MemoryStrChunkedHandler()
         else:
             chunk_handler = tds.chunk_handler

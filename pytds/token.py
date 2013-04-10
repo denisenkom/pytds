@@ -796,12 +796,6 @@ def tds7_process_result(tds):
         info.columns.append(curcol)
         curcol._read = tds_get_type_info(tds, curcol)
 
-        # Adjust column size according to client's encoding
-        #curcol.column_size = curcol.column_size
-
-        # NOTE adjustements must be done after curcol.char_codec initialization
-        adjust_character_column_size(tds, curcol)
-
         #
         # under 7.0 lengths are number of characters not
         # number of bytes... read_ucs2 handles this
@@ -938,7 +932,7 @@ def tds_get_type_info(tds, curcol):
         codec = None
         if IS_TDS71_PLUS(tds):
             curcol.column_collation = r.get_collation()
-            curcol.char_codec = codec = curcol.column_collation.get_codec()
+            codec = curcol.column_collation.get_codec()
         return lambda: r.read_str(r.get_smallint(), codec)
 
     elif type == XSYBNCHAR:
@@ -952,10 +946,10 @@ def tds_get_type_info(tds, curcol):
         codec = None
         if IS_TDS71_PLUS(tds):
             curcol.column_collation = r.get_collation()
-            curcol.char_codec = codec = curcol.column_collation.get_codec()
+            codec = curcol.column_collation.get_codec()
         # under TDS9 this means ?var???(MAX)
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol)
+            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, codec)
         else:
             return lambda: codec.decode(readall(r, r.get_smallint()))[0]
 
@@ -963,18 +957,17 @@ def tds_get_type_info(tds, curcol):
         curcol.column_size = size = r.get_smallint()
         if IS_TDS71_PLUS(tds):
             curcol.column_collation = r.get_collation()
-            curcol.char_codec = codec = ucs2_codec
         # under TDS9 this means ?var???(MAX)
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol)
+            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, ucs2_codec)
         else:
-            return lambda: codec.decode(readall(r, r.get_smallint()))[0]
+            return lambda: ucs2_codec.decode(readall(r, r.get_smallint()))[0]
 
     elif type == SYBTEXT:
         curcol.column_size = r.get_int()
         if IS_TDS71_PLUS(tds):
             curcol.column_collation = collation = r.get_collation()
-            curcol.char_codec = codec = collation.get_codec()
+            codec = collation.get_codec()
         else:
             codec = None
         if IS_TDS72_PLUS(tds):
@@ -1002,13 +995,12 @@ def tds_get_type_info(tds, curcol):
 
     elif type == SYBMSXML:
         curcol.has_schema = has_schema = r.get_byte()
-        curcol.char_codec = ucs2_codec
         if has_schema:
             # discard schema informations
             curcol.schema_dbname = r.read_ucs2(r.get_byte())        # dbname
             curcol.schema_owner = r.read_ucs2(r.get_byte())        # schema owner
             curcol.schema_collection = r.read_ucs2(r.get_smallint())    # schema collection
-        return lambda: DefaultHandler._tds72_get_varmax(tds, curcol)
+        return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, ucs2_codec)
 
     elif type == XSYBBINARY:
         curcol.column_size = r.get_smallint()
@@ -1027,7 +1019,7 @@ def tds_get_type_info(tds, curcol):
     elif type == XSYBVARBINARY:
         curcol.column_size = size = r.get_smallint()
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol)
+            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, None)
         else:
             return lambda: readall(r, r.get_smallint())
 
@@ -1062,32 +1054,6 @@ def tds_get_type_info(tds, curcol):
     else:
         raise InterfaceError('Invalid type', type)
 
-
-#
-# Adjust column size according to client's encoding
-#
-def adjust_character_column_size(tds, curcol):
-    if is_unicode_type(curcol.column_type):
-        curcol.char_codec = ucs2_codec
-
-    # Sybase UNI(VAR)CHAR fields are transmitted via SYBLONGBINARY and in UTF-16
-    if curcol.column_type == SYBLONGBINARY and \
-            curcol.column_usertype in (USER_UNICHAR_TYPE, USER_UNIVARCHAR_TYPE):
-
-        curcol.char_codec = ucs2_codec
-    # FIXME: and sybase ??
-    if not curcol.char_codec and IS_TDS7_PLUS(tds) and is_ascii_type(curcol.column_type):
-        curcol.char_codec = tds.conn.collation.get_codec()
-
-    if not curcol.char_codec:
-        return
-
-    #curcol.column_size = curcol.column_size
-    #curcol.column_size = determine_adjusted_size(curcol.char_codec, curcol.column_size)
-
-
-def determine_adjusted_size(char_codec, column_size):
-    return column_size
 
 _prtype_map = dict((
     (SYBAOPAVG, "avg"),
