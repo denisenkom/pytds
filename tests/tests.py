@@ -88,6 +88,8 @@ class TestCase2(TestCase):
         assert None == cur.execute_scalar("select cast(NULL as varchar(10)) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as nchar(10)) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
+        self.assertEqual(u'Iñtërnâtiônàlizætiøn1', cur.execute_scalar('select %s', (u'Iñtërnâtiônàlizætiøn1'.encode('utf8'),)))
         assert 5 == cur.execute_scalar('select 5 as fieldname')
 
     def test_decimals(self):
