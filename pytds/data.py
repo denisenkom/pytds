@@ -887,7 +887,10 @@ def tds_fix_column_size(tds, curcol):
 
 
 def tds_convert_string(tds, char_codec, s):
+    if isinstance(s, bytes):
+        s = s.decode('utf8')
     return char_codec.encode(s)[0]
+    #return char_codec.encode(s)[0]
 
 _utc = tzutc()
 
