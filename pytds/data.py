@@ -45,6 +45,8 @@ def make_param(tds, name, value):
         handler = DefaultHandler
     elif isinstance(value, six.string_types):
         handler = DefaultHandler
+    elif isinstance(value, six.binary_type):
+        handler = DefaultHandler
     elif isinstance(value, datetime):
         if IS_TDS73_PLUS(tds):
             handler = MsDatetimeHandler
@@ -133,7 +135,7 @@ class DefaultHandler(object):
                 col.column_type = XSYBVARBINARY
                 col.column_varint_size = tds_get_varint_size(tds, col.column_type)
             col.column_size = len(value)
-        elif isinstance(value, six.string_types):
+        elif isinstance(value, six.string_types + (six.binary_type,)):
             if len(value) > 4000:
                 if IS_TDS72_PLUS(tds):
                     col.column_type = XSYBNVARCHAR
@@ -716,7 +718,6 @@ def tds_convert_string(tds, char_codec, s):
     if isinstance(s, bytes):
         s = s.decode('utf8')
     return char_codec.encode(s)[0]
-    #return char_codec.encode(s)[0]
 
 _utc = tzutc()
 
