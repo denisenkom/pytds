@@ -860,6 +860,13 @@ def _decode_image(rdr):
         return None
 
 
+def _decode_short_str(rdr, codec):
+    size = rdr.get_smallint()
+    if size < 0:
+        return None
+    return rdr.read_str(size, codec)
+
+
 def tds_get_type_info(tds, curcol):
     r = tds._reader
     # User defined data type of the column
@@ -933,13 +940,13 @@ def tds_get_type_info(tds, curcol):
         if IS_TDS71_PLUS(tds):
             curcol.column_collation = r.get_collation()
             codec = curcol.column_collation.get_codec()
-        return lambda: r.read_str(r.get_smallint(), codec)
+        return lambda: _decode_short_str(r, codec)
 
     elif type == XSYBNCHAR:
         curcol.column_size = r.get_smallint()
         if IS_TDS71_PLUS(tds):
             curcol.column_collation = r.get_collation()
-        return lambda: r.read_str(r.get_smallint(), ucs2_codec)
+        return lambda: _decode_short_str(r, ucs2_codec)
 
     elif type == XSYBVARCHAR:
         curcol.column_size = size = r.get_smallint()
@@ -951,7 +958,7 @@ def tds_get_type_info(tds, curcol):
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
             return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, codec)
         else:
-            return lambda: codec.decode(readall(r, r.get_smallint()))[0]
+            return lambda: _decode_short_str(r, codec)
 
     elif type == XSYBNVARCHAR:
         curcol.column_size = size = r.get_smallint()
@@ -961,7 +968,7 @@ def tds_get_type_info(tds, curcol):
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
             return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, ucs2_codec)
         else:
-            return lambda: ucs2_codec.decode(readall(r, r.get_smallint()))[0]
+            return lambda: _decode_short_str(r, ucs2_codec)
 
     elif type == SYBTEXT:
         curcol.column_size = r.get_int()

@@ -82,6 +82,12 @@ class TestCase2(TestCase):
         assert b'test' == cur.execute_scalar("select cast('test' as image) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as image) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as ntext) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as nvarchar(max)) as fieldname")
+        self.assertEqual(None, cur.execute_scalar("select cast(NULL as varchar(max)) as fieldname"))
+        assert None == cur.execute_scalar("select cast(NULL as nvarchar(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as varchar(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as nchar(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
         assert 5 == cur.execute_scalar('select 5 as fieldname')
 
     def test_decimals(self):
@@ -158,10 +164,10 @@ class TableTestCase(DbTestCase):
     def runTest(self):
         cur = self.conn.cursor()
         cur.execute(u'''
-        create table testtable (id int, _text text, _xml xml)
+        create table testtable (id int, _text text, _xml xml, vcm varchar(max), vc varchar(10))
         ''')
         cur.execute(u'''
-        insert into testtable (id, _text, _xml) values (1, 'text', '<root/>')
+        insert into testtable (id, _text, _xml, vcm, vc) values (1, 'text', '<root/>', '', NULL)
         ''')
         cur.execute('select id from testtable order by id')
         self.assertEqual([(1,)], cur.fetchall())
@@ -173,6 +179,14 @@ class TableTestCase(DbTestCase):
         cur = self.conn.cursor()
         cur.execute('select _xml from testtable order by id')
         self.assertEqual([('<root/>',)], cur.fetchall())
+
+        cur = self.conn.cursor()
+        cur.execute('select id, _text, _xml, vcm, vc from testtable order by id')
+        self.assertTupleEqual((1, 'text', '<root/>', '', None), cur.fetchone())
+
+        cur = self.conn.cursor()
+        cur.execute('select vc from testtable order by id')
+        self.assertEqual([(None,)], cur.fetchall())
 
         cur = self.conn.cursor()
         cur.execute('insert into testtable (_xml) values (%s)', ('<some/>',))
