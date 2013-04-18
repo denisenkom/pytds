@@ -24,6 +24,7 @@ import random
 import re
 import binascii
 from socket import gethostname
+from six import print_
 
 NTLM_NegotiateUnicode                = 0x00000001
 NTLM_NegotiateOEM                    = 0x00000002
@@ -112,69 +113,69 @@ NTLM_MsAvRestrictions     = 8  # A Restriction_Encoding structure (section 2.2.2
 #
 def dump_NegotiateFlags(NegotiateFlags):
     if NegotiateFlags & NTLM_NegotiateUnicode:
-        print "NTLM_NegotiateUnicode set"
+        print_("NTLM_NegotiateUnicode set")
     if NegotiateFlags & NTLM_NegotiateOEM:
-        print "NTLM_NegotiateOEM set"
+        print_("NTLM_NegotiateOEM set")
     if NegotiateFlags & NTLM_RequestTarget:
-        print "NTLM_RequestTarget set"
+        print_("NTLM_RequestTarget set")
     if NegotiateFlags & NTLM_Unknown9:
-        print "NTLM_Unknown9 set"
+        print_("NTLM_Unknown9 set")
     if NegotiateFlags & NTLM_NegotiateSign:
-        print "NTLM_NegotiateSign set"
+        print_("NTLM_NegotiateSign set")
     if NegotiateFlags & NTLM_NegotiateSeal:
-        print "NTLM_NegotiateSeal set"
+        print_("NTLM_NegotiateSeal set")
     if NegotiateFlags & NTLM_NegotiateDatagram:
-        print "NTLM_NegotiateDatagram set"
+        print_("NTLM_NegotiateDatagram set")
     if NegotiateFlags & NTLM_NegotiateLanManagerKey:
-        print "NTLM_NegotiateLanManagerKey set"
+        print_("NTLM_NegotiateLanManagerKey set")
     if NegotiateFlags & NTLM_Unknown8:
-        print "NTLM_Unknown8 set"
+        print_("NTLM_Unknown8 set")
     if NegotiateFlags & NTLM_NegotiateNTLM:
-        print "NTLM_NegotiateNTLM set"
+        print_("NTLM_NegotiateNTLM set")
     if NegotiateFlags & NTLM_NegotiateNTOnly:
-        print "NTLM_NegotiateNTOnly set"
+        print_("NTLM_NegotiateNTOnly set")
     if NegotiateFlags & NTLM_Anonymous:
-        print "NTLM_Anonymous set"
+        print_("NTLM_Anonymous set")
     if NegotiateFlags & NTLM_NegotiateOemDomainSupplied:
-        print "NTLM_NegotiateOemDomainSupplied set"
+        print_("NTLM_NegotiateOemDomainSupplied set")
     if NegotiateFlags & NTLM_NegotiateOemWorkstationSupplied:
-        print "NTLM_NegotiateOemWorkstationSupplied set"
+        print_("NTLM_NegotiateOemWorkstationSupplied set")
     if NegotiateFlags & NTLM_Unknown6:
-        print "NTLM_Unknown6 set"
+        print_("NTLM_Unknown6 set")
     if NegotiateFlags & NTLM_NegotiateAlwaysSign:
-        print "NTLM_NegotiateAlwaysSign set"
+        print_("NTLM_NegotiateAlwaysSign set")
     if NegotiateFlags & NTLM_TargetTypeDomain:
-        print "NTLM_TargetTypeDomain set"
+        print_("NTLM_TargetTypeDomain set")
     if NegotiateFlags & NTLM_TargetTypeServer:
-        print "NTLM_TargetTypeServer set"
+        print_("NTLM_TargetTypeServer set")
     if NegotiateFlags & NTLM_TargetTypeShare:
-        print "NTLM_TargetTypeShare set"
+        print_("NTLM_TargetTypeShare set")
     if NegotiateFlags & NTLM_NegotiateExtendedSecurity:
-        print "NTLM_NegotiateExtendedSecurity set"
+        print_("NTLM_NegotiateExtendedSecurity set")
     if NegotiateFlags & NTLM_NegotiateIdentify:
-        print "NTLM_NegotiateIdentify set"
+        print_("NTLM_NegotiateIdentify set")
     if NegotiateFlags & NTLM_Unknown5:
-        print "NTLM_Unknown5 set"
+        print_("NTLM_Unknown5 set")
     if NegotiateFlags & NTLM_RequestNonNTSessionKey:
-        print "NTLM_RequestNonNTSessionKey set"
+        print_("NTLM_RequestNonNTSessionKey set")
     if NegotiateFlags & NTLM_NegotiateTargetInfo:
-        print "NTLM_NegotiateTargetInfo set"
+        print_("NTLM_NegotiateTargetInfo set")
     if NegotiateFlags & NTLM_Unknown4:
-        print "NTLM_Unknown4 set"
+        print_("NTLM_Unknown4 set")
     if NegotiateFlags & NTLM_NegotiateVersion:
-        print "NTLM_NegotiateVersion set"
+        print_("NTLM_NegotiateVersion set")
     if NegotiateFlags & NTLM_Unknown3:
-        print "NTLM_Unknown3 set"
+        print_("NTLM_Unknown3 set")
     if NegotiateFlags & NTLM_Unknown2:
-        print "NTLM_Unknown2 set"
+        print_("NTLM_Unknown2 set")
     if NegotiateFlags & NTLM_Unknown1:
-        print "NTLM_Unknown1 set"
+        print_("NTLM_Unknown1 set")
     if NegotiateFlags & NTLM_Negotiate128:
-        print "NTLM_Negotiate128 set"
+        print_("NTLM_Negotiate128 set")
     if NegotiateFlags & NTLM_NegotiateKeyExchange:
-        print "NTLM_NegotiateKeyExchange set"
+        print_("NTLM_NegotiateKeyExchange set")
     if NegotiateFlags & NTLM_Negotiate56:
-        print "NTLM_Negotiate56 set"
+        print_("NTLM_Negotiate56 set")
 
 
 def create_NTLM_NEGOTIATE_MESSAGE_raw(workstation, domain, type1_flags=NTLM_TYPE1_FLAGS):
