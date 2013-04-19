@@ -355,8 +355,7 @@ class NullXml(TestCase):
 
 def get_spid(conn):
     with conn.cursor() as cur:
-        cur.execute('select @@spid')
-        return cur.fetchall()[0][0]
+        return cur.spid
 
 
 def kill(conn, spid):

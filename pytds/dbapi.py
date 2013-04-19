@@ -547,6 +547,10 @@ class _Cursor(six.Iterator):
     def connection(self):
         return self._conn
 
+    @property
+    def spid(self):
+        return self._session._spid
+
     def get_proc_return_status(self):
         return self._conn._get_proc_return_status(self)
 

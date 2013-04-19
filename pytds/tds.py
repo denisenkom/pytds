@@ -559,7 +559,7 @@ class _TdsReader(object):
             self._session._put_cancel()
             raise
         self._pos = 0
-        self._type, self._status, self._size, self._spid = _header.unpack(header)
+        self._type, self._status, self._size, self._session._spid = _header.unpack(header)
         self._have = _header.size
         assert self._size > self._have, 'Empty packet doesn make any sense'
         self._buf = self._transport.read(self._size - self._have)
@@ -732,6 +732,7 @@ class _TdsSession(object):
         self.chunk_handler = tds.chunk_handler
         self.rows_affected = -1
         self.use_tz = tds._login.use_tz
+        self._spid = 0
 
     def is_dead(self):
         return self.state == TDS_DEAD
