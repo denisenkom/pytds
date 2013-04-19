@@ -812,7 +812,6 @@ class _TdsSession(object):
         self._writer.flush()
 
     def make_param(self, name, value):
-        tds = self
         column = _Column()
         column.column_name = name
         column.flags = 0
@@ -841,17 +840,17 @@ class _TdsSession(object):
         elif isinstance(value, six.binary_type):
             handler = DefaultHandler
         elif isinstance(value, datetime):
-            if IS_TDS73_PLUS(tds):
+            if IS_TDS73_PLUS(self):
                 handler = MsDatetimeHandler
             else:
                 handler = DatetimeHandler
         elif isinstance(value, date):
-            if IS_TDS73_PLUS(tds):
+            if IS_TDS73_PLUS(self):
                 handler = MsDatetimeHandler
             else:
                 handler = DatetimeHandler
         elif isinstance(value, time):
-            if not IS_TDS73_PLUS(tds):
+            if not IS_TDS73_PLUS(self):
                 raise DataError('Time type is not supported on MSSQL 2005 and lower')
             handler = MsDatetimeHandler
         elif isinstance(value, Decimal):
@@ -861,11 +860,10 @@ class _TdsSession(object):
         else:
             raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
         column.funcs = handler
-        column.value = column.funcs.from_python(tds, column, value)
+        column.value = column.funcs.from_python(self, column, value)
         return column
 
     def _convert_params(self, parameters):
-        tds = self
         if isinstance(parameters, dict):
             return [self.make_param(name, value) for name, value in parameters.items()]
         else:
@@ -878,13 +876,12 @@ class _TdsSession(object):
             return params
 
     def _submit_rpc(self, rpc_name, params, flags):
-        tds = self
-        tds.cur_dyn = None
-        w = tds._writer
-        if IS_TDS7_PLUS(tds):
+        self.cur_dyn = None
+        w = self._writer
+        if IS_TDS7_PLUS(self):
             w.begin_packet(TDS_RPC)
             self._START_QUERY()
-            if IS_TDS71_PLUS(tds) and isinstance(rpc_name, InternalProc):
+            if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
                 w.put_smallint(-1)
                 w.put_smallint(rpc_name.proc_id)
             else:
@@ -899,9 +896,9 @@ class _TdsSession(object):
             params = self._convert_params(params)
             for param in params:
                 self.put_data_info(param)
-                param.funcs.put_data(tds, param)
+                param.funcs.put_data(self, param)
             #self.query_flush_packet()
-        elif IS_TDS5_PLUS(tds):
+        elif IS_TDS5_PLUS(self):
             w.begin_packet(TDS_NORMAL)
             w.put_byte(TDS_DBRPC_TOKEN)
             # TODO ICONV convert rpc name
@@ -912,13 +909,13 @@ class _TdsSession(object):
             w.put_smallint(2 if params else 0)
 
             if params:
-                tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME)
+                self.put_params(params, TDS_PUT_DATA_USE_NAME)
 
             # send it
             #self.query_flush_packet()
         else:
             # emulate it for TDS4.x, send RPC for mssql
-            return tds_send_emulated_rpc(tds, rpc_name, params)
+            return tds_send_emulated_rpc(self, rpc_name, params)
 
     def submit_rpc(self, rpc_name, params=(), flags=0):
         with self.state_context(TDS_QUERYING):
@@ -926,15 +923,14 @@ class _TdsSession(object):
             self.query_flush_packet()
 
     def submit_query(self, query, params=(), flags=0):
-        tds = self
         logger.info('submit_query(%s, %s)', query, params)
         if not query:
             raise ProgrammingError('Empty query is not allowed')
 
-        with tds.state_context(TDS_QUERYING):
-            tds.res_info = None
-            w = tds._writer
-            if IS_TDS50(tds):
+        with self.state_context(TDS_QUERYING):
+            self.res_info = None
+            w = self._writer
+            if IS_TDS50(self):
                 new_query = None
                 # are there '?' style parameters ?
                 if tds_next_placeholder(query):
@@ -946,22 +942,22 @@ class _TdsSession(object):
                 # TODO ICONV use converted size, not input size and convert string
                 w.put_int(len(query) + 1)
                 w.put_byte(1 if params else 0)  # 1 if there are params, 0 otherwise
-                w.write(tds, query)
+                w.write(self, query)
                 if params:
                     # add on parameters
-                    tds_put_params(tds, params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
-            elif not IS_TDS7_PLUS(tds) or not params:
+                    self.put_params(params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
+            elif not IS_TDS7_PLUS(self) or not params:
                 w.begin_packet(TDS_QUERY)
                 self._START_QUERY()
                 w.write_ucs2(query)
             else:
                 params = self._convert_params(params)
                 param_definition = ','.join(
-                    '{0} {1}'.format(p.column_name, p.funcs.get_declaration(tds, p))
+                    '{0} {1}'.format(p.column_name, p.funcs.get_declaration(self, p))
                     for p in params)
                 self._submit_rpc(SP_EXECUTESQL,
                             [query, param_definition] + params, 0)
-                tds.internal_sp_called = TDS_SP_EXECUTESQL
+                self.internal_sp_called = TDS_SP_EXECUTESQL
             self.query_flush_packet()
 
     def _put_cancel(self):
@@ -970,32 +966,30 @@ class _TdsSession(object):
         self.in_cancel = 1
 
     def send_cancel(self):
-        tds = self
-        if TDS_MUTEX_TRYLOCK(tds.wire_mtx):
+        if TDS_MUTEX_TRYLOCK(self.wire_mtx):
             # TODO check
             # signal other socket
             raise NotImplementedError
             #tds_conn(tds).s_signal.send((void*) &tds, sizeof(tds))
             return TDS_SUCCESS
 
-        logger.debug("tds_send_cancel: %sin_cancel and %sidle".format(
-                    ('' if tds.in_cancel else "not "), ('' if tds.state == TDS_IDLE else "not ")))
+        logger.debug("send_cancel: %sin_cancel and %sidle".format(
+                    ('' if self.in_cancel else "not "), ('' if self.state == TDS_IDLE else "not ")))
 
         # one cancel is sufficient
-        if tds.in_cancel or tds.state == TDS_IDLE:
-            TDS_MUTEX_UNLOCK(tds.wire_mtx)
+        if self.in_cancel or self.state == TDS_IDLE:
+            TDS_MUTEX_UNLOCK(self.wire_mtx)
             return TDS_SUCCESS
 
-        tds.res_info = None
+        self.res_info = None
         rc = self._put_cancel()
-        TDS_MUTEX_UNLOCK(tds.wire_mtx)
+        TDS_MUTEX_UNLOCK(self.wire_mtx)
 
         return rc
 
     def put_data_info(self, curcol):
-        tds = self
-        w = tds._writer
-        if IS_TDS7_PLUS(tds):
+        w = self._writer
+        if IS_TDS7_PLUS(self):
             w.put_byte(len(curcol.column_name))
             w.write_ucs2(curcol.column_name)
         else:
@@ -1009,26 +1003,25 @@ class _TdsSession(object):
         #
 
         w.put_byte(curcol.flags)
-        if not IS_TDS7_PLUS(tds):
+        if not IS_TDS7_PLUS(self):
             w.put_int(curcol.column_usertype)  # usertype
         # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
         w.put_byte(curcol.column_type)
 
-        curcol.funcs.put_info(tds, curcol)
+        curcol.funcs.put_info(self, curcol)
 
         # TODO needed in TDS4.2 ?? now is called only is TDS >= 5
-        if not IS_TDS7_PLUS(tds):
+        if not IS_TDS7_PLUS(self):
             w.put_byte(0)  # locale info length
 
 
     def submit_begin_tran(self):
-        tds = self
         logger.debug('submit_begin_tran()')
-        if IS_TDS72_PLUS(tds):
-            if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
+        if IS_TDS72_PLUS(self):
+            if self.set_state(TDS_QUERYING) != TDS_QUERYING:
                 raise Exception('TDS_FAIL')
 
-            w = tds._writer
+            w = self._writer
             w.begin_packet(TDS7_TRANS)
             self._start_query()
 
@@ -1043,13 +1036,12 @@ class _TdsSession(object):
 
 
     def submit_rollback(self, cont):
-        tds = self
-        logger.debug('submit_rollback(%s, %s)', id(tds), cont)
-        if IS_TDS72_PLUS(tds):
-            if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
+        logger.debug('submit_rollback(%s, %s)', id(self), cont)
+        if IS_TDS72_PLUS(self):
+            if self.set_state(TDS_QUERYING) != TDS_QUERYING:
                 raise Exception('TDS_FAIL')
 
-            w = tds._writer
+            w = self._writer
             w.begin_packet(TDS7_TRANS)
             self._start_query()
             w.put_smallint(8)  # rollback
@@ -1066,13 +1058,12 @@ class _TdsSession(object):
 
 
     def submit_commit(self, cont):
-        tds = self
         logger.debug('submit_commit(%s)', cont)
-        if IS_TDS72_PLUS(tds):
-            if tds.set_state(TDS_QUERYING) != TDS_QUERYING:
+        if IS_TDS72_PLUS(self):
+            if self.set_state(TDS_QUERYING) != TDS_QUERYING:
                 raise Exception('TDS_FAIL')
 
-            w = tds._writer
+            w = self._writer
             w.begin_packet(TDS7_TRANS)
             self._start_query()
             w.put_smallint(7)  # commit
@@ -1094,13 +1085,12 @@ class _TdsSession(object):
     _tds72_query_start = struct.Struct('<IIHQI')
 
     def _start_query(self):
-        tds = self
-        w = tds._writer
+        w = self._writer
         w.pack(_TdsSession._tds72_query_start,
             0x16,  # total length
             0x12,  # length
             2,  # type
-            tds.conn.tds72_transaction,
+            self.conn.tds72_transaction,
             1,  # request count
             )
 
