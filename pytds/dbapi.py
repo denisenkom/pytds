@@ -71,9 +71,16 @@ class _Connection(object):
                     self._sqlok(self._conn.main_session)
             else:
                 self._cancel(self._conn.main_session)
-                self._conn.main_session.submit_begin_tran()
+                self._conn.main_session.submit_begin_tran(isolation_level=self._isolation_level)
                 self._sqlok(self._conn.main_session)
             self._autocommit = value
+
+    @property
+    def isolation_level(self):
+        return self._isolation_level
+
+    def set_isolation_level(self, level):
+        self._isolation_level = level
 
     def _assert_open(self):
         if not self._conn:
@@ -127,13 +134,14 @@ class _Connection(object):
         self._conn = None
         self._conn = _TdsSocket(self._login)
         if not self._autocommit:
-            self._conn.main_session.submit_begin_tran()
+            self._conn.main_session.submit_begin_tran(isolation_level=self._isolation_level)
             self._sqlok(self._conn.main_session)
 
     def __init__(self, login, as_dict, autocommit=False):
         self._autocommit = autocommit
         self._login = login
         self._as_dict = as_dict
+        self._isolation_level = 0
         self._open()
 
     def __enter__(self):
@@ -157,7 +165,7 @@ class _Connection(object):
         self._try_activate_cursor(None)
         conn.main_session.messages = []
         self._cancel(conn.main_session)
-        conn.main_session.submit_commit(True)
+        conn.main_session.submit_commit(True, isolation_level=self._isolation_level)
         self._sqlok(conn.main_session)
         while self._nextset(conn.main_session):
             pass
@@ -188,7 +196,7 @@ class _Connection(object):
             session.messages = []
             self._cancel(session)
             self._active_cursor = None
-            session.submit_rollback(True)
+            session.submit_rollback(True, isolation_level=self._isolation_level)
             self._sqlok(session)
             while self._nextset(session):
                 pass
