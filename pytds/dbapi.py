@@ -67,11 +67,11 @@ class _Connection(object):
                 if self._conn.tds72_transaction:
                     self._try_activate_cursor(None)
                     self._cancel(self._conn.main_session)
-                    tds_submit_commit(self._conn.main_session, False)
+                    self._conn.main_session.submit_commit(False)
                     self._sqlok(self._conn.main_session)
             else:
                 self._cancel(self._conn.main_session)
-                tds_submit_begin_tran(self._conn.main_session)
+                self._conn.main_session.submit_begin_tran()
                 self._sqlok(self._conn.main_session)
             self._autocommit = value
 
@@ -127,7 +127,7 @@ class _Connection(object):
         self._conn = None
         self._conn = _TdsSocket(self._login)
         if not self._autocommit:
-            tds_submit_begin_tran(self._conn.main_session)
+            self._conn.main_session.submit_begin_tran()
             self._sqlok(self._conn.main_session)
 
     def __init__(self, login, as_dict, autocommit=False):
@@ -157,7 +157,7 @@ class _Connection(object):
         self._try_activate_cursor(None)
         conn.main_session.messages = []
         self._cancel(conn.main_session)
-        tds_submit_commit(conn.main_session, True)
+        conn.main_session.submit_commit(True)
         self._sqlok(conn.main_session)
         while self._nextset(conn.main_session):
             pass
@@ -188,7 +188,7 @@ class _Connection(object):
             session.messages = []
             self._cancel(session)
             self._active_cursor = None
-            tds_submit_rollback(session, True)
+            session.submit_rollback(True)
             self._sqlok(session)
             while self._nextset(session):
                 pass
@@ -209,7 +209,7 @@ class _Connection(object):
         """
         #logger.debug("MSSQLConnection._cancel()")
         session.messages = []
-        tds_send_cancel(session)
+        session.send_cancel()
         tds_process_cancel(session)
 
     def close(self):
@@ -407,7 +407,7 @@ class _Connection(object):
         session = cursor._session
         session.messages = []
         self._cancel(session)
-        tds_submit_query(session, operation, params)
+        session.submit_query(operation, params)
         self._state = DB_RES_INIT
         while True:
             tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
@@ -450,7 +450,7 @@ class _Connection(object):
         session = cursor._session
         session.messages = []
         self._cancel(session)
-        tds_submit_rpc(session, procname, parameters)
+        session.submit_rpc(procname, parameters)
         session.output_params = {}
         self._state = DB_RES_INIT
         while True:

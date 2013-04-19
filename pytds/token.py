@@ -1,10 +1,9 @@
 import logging
 import traceback
 from .tdsproto import *
-from .tds import _Column, _Results
+from .tds import *
+from .tds import _Results, _Column, _applytz
 from . import tds as tdsflags
-from .data import *
-from .data import _applytz
 
 logger = logging.getLogger(__name__)
 

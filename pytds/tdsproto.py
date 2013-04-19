@@ -1,3 +1,25 @@
+# tds protocol versions
+TDS70 = 0x70000000
+TDS71 = 0x71000000
+TDS71rev1 = 0x71000001
+TDS72 = 0x72090002
+TDS73A = 0x730A0003
+TDS73 = TDS73A
+TDS73B = 0x730B0003
+TDS74 = 0x74000004
+
+IS_TDS42 = lambda x: x.tds_version == 0x402
+IS_TDS46 = lambda x: x.tds_version == 0x406
+IS_TDS50 = lambda x: x.tds_version == 0x500
+IS_TDS70 = lambda x: x.tds_version == TDS70
+IS_TDS71 = lambda x: x.tds_version in (TDS71, TDS71rev1)
+IS_TDS72 = lambda x: x.tds_version == TDS72
+IS_TDS73 = lambda x: x.tds_version in (TDS73A, TDS73B)
+IS_TDS7_PLUS = lambda x: x.tds_version >= TDS70
+IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
+IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
+IS_TDS73_PLUS = lambda x: x.tds_version >= TDS73A
+
 # packet types
 TDS_QUERY = 1
 TDS_LOGIN = 2
