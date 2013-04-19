@@ -1016,7 +1016,10 @@ class _TdsSession(object):
             w.put_byte(0)  # locale info length
 
 
-    def submit_begin_tran(self):
+    _begin_tran_struct_72 = struct.Struct('<HBB')
+
+
+    def submit_begin_tran(self, isolation_level=0):
         logger.debug('submit_begin_tran()')
         if IS_TDS72_PLUS(self):
             if self.set_state(TDS_QUERYING) != TDS_QUERYING:
@@ -1025,18 +1028,19 @@ class _TdsSession(object):
             w = self._writer
             w.begin_packet(TDS7_TRANS)
             self._start_query()
-
-            # begin transaction
-            w.put_smallint(5)
-            w.put_byte(0)  # new transaction level TODO
-            w.put_byte(0)  # new transaction name
-
+            w.pack(self._begin_tran_struct_72,
+                   5, # TM_BEGIN_XACT
+                   isolation_level,
+                   0,  # new transaction name
+                   )
             self.query_flush_packet()
         else:
             self.submit_query("BEGIN TRANSACTION")
 
+    _commit_rollback_tran_struct72_hdr = struct.Struct('<HBB')
+    _continue_tran_struct72 = struct.Struct('<BB')
 
-    def submit_rollback(self, cont):
+    def submit_rollback(self, cont, isolation_level=0):
         logger.debug('submit_rollback(%s, %s)', id(self), cont)
         if IS_TDS72_PLUS(self):
             if self.set_state(TDS_QUERYING) != TDS_QUERYING:
@@ -1045,20 +1049,24 @@ class _TdsSession(object):
             w = self._writer
             w.begin_packet(TDS7_TRANS)
             self._start_query()
-            w.put_smallint(8)  # rollback
-            w.put_byte(0)  # name
+            flags = 0
             if cont:
-                w.put_byte(1)
-                w.put_byte(0)  # new transaction level TODO
-                w.put_byte(0)  # new transaction name
-            else:
-                w.put_byte(0)  # do not continue
+                flags |= 1
+            w.pack(self._commit_rollback_tran_struct72_hdr,
+                   8,  # TM_ROLLBACK_XACT
+                   0,  # transaction name
+                   flags,
+                   )
+            if cont:
+                w.pack(self._continue_tran_struct72,
+                       isolation_level,
+                       0,  # new transaction name
+                       )
             self.query_flush_packet()
         else:
             self.submit_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
 
-
-    def submit_commit(self, cont):
+    def submit_commit(self, cont, isolation_level=0):
         logger.debug('submit_commit(%s)', cont)
         if IS_TDS72_PLUS(self):
             if self.set_state(TDS_QUERYING) != TDS_QUERYING:
@@ -1067,14 +1075,19 @@ class _TdsSession(object):
             w = self._writer
             w.begin_packet(TDS7_TRANS)
             self._start_query()
-            w.put_smallint(7)  # commit
-            w.put_byte(0)  # name
+            flags = 0
             if cont:
-                w.put_byte(1)
-                w.put_byte(0)  # new transaction level TODO
-                w.put_byte(0)  # new transaction name
-            else:
-                w.put_byte(0)  # do not continue
+                flags |= 1
+            w.pack(self._commit_rollback_tran_struct72_hdr,
+                   7,  # TM_COMMIT_XACT
+                   0,  # transaction name
+                   flags,
+                   )
+            if cont:
+                w.pack(self._continue_tran_struct72,
+                       isolation_level,
+                       0,  # new transaction name
+                       )
             self.query_flush_packet()
         else:
             self.submit_query("IF @@TRANCOUNT > 1 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
