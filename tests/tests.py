@@ -353,28 +353,42 @@ class NullXml(TestCase):
         self.assertEqual([(None,)], cur.fetchall())
 
 
+def get_spid(conn):
+    with conn.cursor() as cur:
+        cur.execute('select @@spid')
+        return cur.fetchall()[0][0]
+
+
+def kill(conn, spid):
+    with conn.cursor() as cur:
+        cur.execute('kill {}'.format(spid))
+
+
 class ConnectionClosing(unittest.TestCase):
     def test_open_close(self):
         for x in xrange(3):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
 
     def test_connection_closed_by_server(self):
-        with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD) as conn:
-            # test overall recovery
-            conn._conn._sock.close()
-            with conn.cursor() as cur:
-                with self.assertRaises(Exception):
+        with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, autocommit=True) as master_conn:
+            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD) as conn:
+                # test overall recovery
+                kill(master_conn, get_spid(conn))
+                with conn.cursor() as cur:
+                    with self.assertRaises(Exception):
+                        cur.execute('select 1')
                     cur.execute('select 1')
-                cur.execute('select 1')
-                cur.fetchall()
-            with conn.cursor() as cur:
-                # test recovery of specific lowlevel methods
-                tds_submit_query(cur._session, 'select 1')
-                conn._conn._sock.close()
-                self.assertTrue(cur._session.is_connected())
-                with self.assertRaises(Exception):
-                    tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
-                self.assertFalse(cur._session.is_connected())
+                    cur.fetchall()
+            #with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD) as conn:
+            #    spid = get_spid(conn)
+            #    with conn.cursor() as cur:
+            #        # test recovery of specific lowlevel methods
+            #        tds_submit_query(cur._session, "waitfor delay '00:00:05'; select 1")
+            #        kill(master_conn, spid)
+            #        self.assertTrue(cur._session.is_connected())
+            #        with self.assertRaises(Exception):
+            #            tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
+            #        self.assertFalse(cur._session.is_connected())
 
 
 class Description(TestCase):

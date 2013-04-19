@@ -34,14 +34,9 @@ TDS73 = TDS73A
 TDS73B = 0x730B0003
 TDS74 = 0x74000004
 
-USE_POLL = hasattr(select, 'poll')
 USE_CORK = hasattr(socket, 'TCP_CORK')
-if USE_POLL:
-    TDSSELREAD = select.POLLIN
-    TDSSELWRITE = select.POLLOUT
-else:
-    TDSSELREAD = 1
-    TDSSELWRITE = 2
+TDSSELREAD = 1
+TDSSELWRITE = 2
 TDSSELERR = 0
 TDSPOLLURG = 0x8000
 
@@ -938,25 +933,14 @@ class _TdsSocket(object):
         return _TdsSession(self, self._smp_manager.create_session())
 
     def read(self, size):
-        try:
-            events = tds_select(self, TDSSELREAD, self.query_timeout)
-            if events & TDSPOLLURG:
-                buf = tds_conn(self).s_signaled.read(size)
-                if not self.in_cancel:
-                    tds_put_cancel(self)
-                return buf
-            elif events:
-                buf = self._sock.recv(size)
-                if len(buf) == 0:
-                    raise Error('Server closed connection')
-                return buf
-            else:
-                raise TimeoutError('Timeout')
-        except TimeoutError:
-            raise
-        except:
+        r, _, _ = select.select([self._sock], [], [], self.query_timeout)
+        if not r:
+            raise TimeoutError('Timeout')
+        buf = self._sock.recv(size)
+        if len(buf) == 0:
             self.close()
-            raise
+            raise Error('Server closed connection')
+        return buf
 
     def send(self, data, final):
         return self._write(data, final)
@@ -965,8 +949,8 @@ class _TdsSocket(object):
         try:
             pos = 0
             while pos < len(data):
-                res = tds_select(self, TDSSELWRITE, self.query_timeout)
-                if not res:
+                _, w, _ = select.select([], [self._sock], [], self.query_timeout)
+                if not w:
                     raise TimeoutError('Timeout')
                 flags = 0
                 if hasattr(socket, 'MSG_NOSIGNAL'):
@@ -979,8 +963,6 @@ class _TdsSocket(object):
             if final and USE_CORK:
                 self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
                 self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
-        except TimeoutError:
-            raise
         except:
             self.close()
             raise
@@ -1043,45 +1025,6 @@ def tds_open_socket(tds, host, port, timeout=0):
     tds._sock = socket.create_connection((host, port), timeout)
     tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
     return tds
-
-
-def tds_select(tds, tds_sel, timeout_seconds):
-    poll_seconds = 1 if tds.int_handler else timeout_seconds
-    seconds = timeout_seconds
-    while timeout_seconds is None or seconds > 0:
-        if USE_POLL:
-            timeout = poll_seconds * 1000 if poll_seconds else None
-            poll = select.poll()
-            poll.register(tds._sock, tds_sel)
-            poll.register(tds_conn(tds).s_signaled, select.POLLIN)
-            res = poll.poll(timeout)
-            result = 0
-            if res:
-                for fd, events in res:
-                    if events & select.POLLERR:
-                        raise Exception('Error event occured')
-                    if fd == tds._sock.fileno():
-                        result = events
-                    else:
-                        result |= TDSPOLLURG
-                return result
-            if tds.int_handler:
-                tds.int_handler()
-        else:
-            timeout = poll_seconds if poll_seconds else None
-            read = []
-            write = []
-            if tds_sel == TDSSELREAD:
-                read = [tds._sock]
-            if tds_sel == TDSSELWRITE:
-                write = [tds._sock]
-            r, w, x = select.select(read, write, [], timeout)
-            if x:
-                return TDSSELERR
-            if r or w:
-                return 1
-        seconds -= poll_seconds
-    return 0
 
 
 def tds_put_cancel(tds):
