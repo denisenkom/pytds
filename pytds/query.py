@@ -8,30 +8,19 @@ def START_QUERY(tds):
     if IS_TDS72_PLUS(tds):
         tds_start_query(tds)
 
-tds72_query_start = str(bytearray([
-    # total length
-    0x16, 0, 0, 0,
-    # length
-    0x12, 0, 0, 0,
-    # type
-    0x02, 0,
-    # transaction
-    0, 0, 0, 0, 0, 0, 0, 0,
-    # request count
-    1, 0, 0, 0]))
+
+_tds72_query_start = struct.Struct('<IIHQI')
 
 
 def tds_start_query(tds):
     w = tds._writer
-    w.put_uint(0x16)  # total length
-    w.put_uint(0x12)  # length
-    w.put_usmallint(2)  # type
-    if tds.conn.tds72_transaction:
-        assert len(tds.conn.tds72_transaction) == 8
-        w.write(tds.conn.tds72_transaction)
-    else:
-        w.write(b'\x00\x00\x00\x00\x00\x00\x00\x00')
-    w.put_uint(1)  # request count
+    w.pack(_tds72_query_start,
+           0x16,  # total length
+           0x12,  # length
+           2,  # type
+           tds.conn.tds72_transaction,
+           1,  # request count
+           )
 
 
 def tds_query_flush_packet(tds):

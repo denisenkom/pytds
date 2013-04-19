@@ -258,10 +258,10 @@ def tds_process_env_chg(tds):
     elif type == TDS_ENV_BEGINTRANS:
         size = r.get_byte()
         # TODO: parse transaction
-        tds.conn.tds72_transaction = readall(r, 8)
+        tds.conn.tds72_transaction = r.get_uint8()
         r.skip(r.get_byte())
     elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
-        tds.conn.tds72_transaction = None
+        tds.conn.tds72_transaction = 0
         r.skip(r.get_byte())
         r.skip(r.get_byte())
     elif type == TDS_ENV_PACKSIZE:

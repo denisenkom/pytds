@@ -415,6 +415,8 @@ _uint_le = struct.Struct('<L')
 _uint_be = struct.Struct('>L')
 _int8_le = struct.Struct('<q')
 _int8_be = struct.Struct('>q')
+_uint8_le = struct.Struct('<Q')
+_uint8_be = struct.Struct('>Q')
 
 
 def skipall(stm, size):
@@ -446,6 +448,7 @@ def readall(stm, size):
         chunks.append(buf)
         left -= len(buf)
     return b''.join(chunks)
+
 
 def readall_fast(stm, size):
     buf, offset = stm.read_fast(size)
@@ -524,6 +527,12 @@ class _TdsReader(object):
 
     def get_uint_be(self):
         return self.unpack(_uint_be)[0]
+
+    def get_uint8(self):
+        if self._le():
+            return self.unpack(_uint8_le)[0]
+        else:
+            return self.unpack(_uint8_be)[0]
 
     def get_int8(self):
         if self._le():
@@ -842,7 +851,7 @@ class _TdsSocket(object):
         self.msg_handler = None
         self.env = _TdsEnv()
         self.collation = None
-        self.tds72_transaction = None
+        self.tds72_transaction = 0
         self.authentication = None
         self._mars_enabled = False
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
