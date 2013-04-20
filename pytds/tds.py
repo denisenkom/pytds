@@ -709,6 +709,464 @@ class MemoryStrChunkedHandler(object):
         return ''.join(self._chunks)
 
 
+class Bit(object):
+    type = SYBBITN
+
+    def get_declaration(self):
+        return 'BIT'
+
+    def write_info(self, w):
+        w.put_byte(1)
+
+    def write(self, w, value):
+        if value is None:
+            w.put_byte(0)
+        else:
+            w.put_byte(1)
+            w.put_byte(1 if value else 0)
+
+
+class Int(object):
+    type = SYBINTN
+
+    def get_declaration(self):
+        return 'INT'
+
+    def write_info(self, w):
+        w.put_byte(4)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(-1)
+        else:
+            w.put_byte(4)
+            w.put_int(val)
+
+
+class BigInt(object):
+    type = SYBINTN
+
+    def get_declaration(self):
+        return 'BIGINT'
+
+    def write_info(self, w):
+        w.put_byte(8)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(-1)
+        else:
+            w.put_byte(8)
+            w.put_int8(val)
+
+
+class FloatN(object):
+    type = SYBFLTN
+
+    def get_declaration(self):
+        return 'FLOAT'
+
+    def write_info(self, w):
+        w.put_byte(8)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(-1)
+        else:
+            w.put_byte(8)
+            w.pack(_SYBFLT8_STRUCT, val)
+
+    def read(self, r):
+        size = r.get_byte()
+        if not size:
+            return None
+        else:
+            if size != 8:
+                raise InterfaceError('Invalid SYBFLTN size', size)
+            return r.unpack(_SYBFLT8_STRUCT)[0]
+
+
+class NVarCharMax(object):
+    type = XSYBNVARCHAR
+
+    def __init__(self, collation):
+        self._collation = collation
+
+    def get_declaration(self):
+        return 'NVARCHAR(MAX)'
+
+    def write_info(self, w):
+        w.put_smallint(-1)
+        w.put_collation(self._collation)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int8(-1)
+        else:
+            if isinstance(val, bytes):
+                val = val.decode('utf8')
+            w.put_int8(len(val) * 2)
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+            w.put_int(0)
+
+
+class NVarChar70(object):
+    type = XSYBNVARCHAR
+
+    def __init__(self, size):
+        if size <= 0 or size > 4000:
+            raise DataError('Invalid size for NVARCHAR field')
+        self._size = size
+
+    def get_declaration(self):
+        return 'NVARCHAR({})'.format(self._size)
+
+    def write_info(self, w):
+        w.put_smallint(self._size * 2)
+        #w.put_smallint(self._size)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_smallint(-1)
+        else:
+            if isinstance(val, bytes):
+                val = val.decode('utf8')
+            w.put_smallint(len(val) * 2)
+            #w.put_smallint(len(val))
+            w.write_ucs2(val)
+
+
+class NVarChar71(NVarChar70):
+    type = XSYBNVARCHAR
+
+    def __init__(self, size, collation):
+        super(NVarChar71, self).__init__(size)
+        self._collation = collation
+
+    def write_info(self, w):
+        super(NVarChar71, self).write_info(w)
+        w.put_collation(self._collation)
+
+
+class NText(object):
+    def __init__(self, size):
+        self._size = size
+
+    def write_info(self, w):
+        w.put_int(self._size * 2)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int(-1)
+        else:
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+
+
+class VarBinaryMax(object):
+    type = XSYBVARBINARY
+
+    def get_declaration(self):
+        return 'VARBINARY(MAX)'
+
+    def write_info(self, w):
+        w.put_smallint(-1)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int8(-1)
+        else:
+            w.put_int8(len(val))
+            w.put_int(len(val))
+            w.write(val)
+            w.put_int(0)
+
+
+class VarBinary(object):
+    type = XSYBVARBINARY
+
+    def __init__(self, size):
+        self._size = size
+
+    def get_declaration(self):
+        return 'VARBINARY({})'.format(self._size)
+
+    def write_info(self, w):
+        w.put_smallint(self._size)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_smallint(-1)
+        else:
+            w.put_smallint(len(val))
+            w.write(val)
+
+
+class Image(object):
+    type = SYBIMAGE
+
+    def get_declaration(self):
+        return 'IMAGE'
+
+
+class DateTime(object):
+    type = SYBDATETIMN
+
+    _base_date = datetime(1900, 1, 1)
+    _min_date = datetime(1753, 1, 1, 0, 0, 0)
+    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
+    def get_declaration(self):
+        return 'DATETIME'
+
+    def write_info(self, w):
+        w.put_byte(8)
+
+    def write(self, w, val):
+        w.write(Datetime.encode(value))
+
+
+class BaseDateTime73(object):
+    _precision_to_len = {
+        0: 3,
+        1: 3,
+        2: 3,
+        3: 4,
+        4: 4,
+        5: 5,
+        6: 5,
+        7: 5,
+        }
+
+    _base_date2 = datetime(1, 1, 1)
+
+    def _write_time(self, w, t, prec):
+        secs = t.hour * 60 * 60 + t.minute * 60 + t.second
+        val = (secs * 10 ** 7 + t.microsecond * 10) // (10 ** (7 - prec))
+        w.write(struct.pack('<Q', val)[:self._precision_to_len[prec]])
+
+    def _write_date(self, w, value):
+        if type(value) == date:
+            value = datetime.combine(value, time(0, 0, 0))
+        days = (value - self._base_date2).days
+        buf = struct.pack('<l', days)[:3]
+        w.write(buf)
+
+
+class MsDate(BaseDateTime73):
+    type = SYBMSDATE
+
+    def get_declaration(self):
+        return 'DATE'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, value):
+        if value is None:
+            w.put_byte(0)
+        else:
+            w.put_byte(3)
+            self._write_date(w, value)
+
+
+class MsTime(BaseDateTime73):
+    type = SYBMSTIME
+
+    def __init__(self, prec, use_tz=None):
+        self._prec = prec
+        self._size = self._precision_to_len[prec]
+        self._use_tz = use_tz
+
+    def get_declaration(self):
+        return 'TIME({})'.format(self._prec)
+
+    def write_info(self, w):
+        w.put_byte(self._prec)
+
+    def write(self, w, value):
+        if value is None:
+            w.put_byte(0)
+        else:
+            if value.tzinfo:
+                if not self._use_tz:
+                    raise DataError('Timezone-aware datetime is used without specifying use_tz')
+                value = value.astimezone(self._use_tz).replace(tzinfo=None)
+            w.put_byte(self._size)
+            self._write_time(w, value, self._prec)
+
+
+class DateTime2(BaseDateTime73):
+    type = SYBMSDATETIME2
+
+    def __init__(self, prec, use_tz):
+        self._prec = prec
+        self._size = self._precision_to_len[prec] + 3
+        self._use_tz = use_tz
+
+    def get_declaration(self):
+        return 'DATETIME2({})'.format(self._prec)
+
+    def write_info(self, w):
+        w.put_byte(self._prec)
+
+    def write(self, w, value):
+        if value is None:
+            w.put_byte(0)
+        else:
+            if value.tzinfo:
+                if not self._use_tz:
+                    raise DataError('Timezone-aware datetime is used without specifying use_tz')
+                value = value.astimezone(self._use_tz).replace(tzinfo=None)
+            w.put_byte(self._size)
+            self._write_time(w, value, self._prec)
+            self._write_date(w, value)
+
+
+class DateTimeOffset(BaseDateTime73):
+    type = SYBMSDATETIMEOFFSET
+
+    def __init__(self, prec):
+        self._prec = prec
+        self._size = self._precision_to_len[prec] + 5
+
+    def get_declaration(self):
+        return 'DATETIMEOFFSET({})'.format(self._prec)
+
+    def write_info(self, w):
+        w.put_byte(self._prec)
+
+    def write(self, w, value):
+        if value is None:
+            w.put_byte(0)
+        else:
+            utcoffset = value.utcoffset()
+            value = value.astimezone(_utc).replace(tzinfo=None)
+
+            w.put_byte(self._size)
+            self._write_time(w, value, self._prec)
+            self._write_date(w, value)
+            w.put_smallint(int(utcoffset.total_seconds()) // 60)
+
+
+class MsDecimal(object):
+    type = SYBDECIMAL
+
+    _max_size = 33
+
+    _bytes_per_prec = [
+        #
+        # precision can't be 0 but using a value > 0 assure no
+        # core if for some bug it's 0...
+        #
+        1,
+        2, 2, 3, 3, 4, 4, 4, 5, 5,
+        6, 6, 6, 7, 7, 8, 8, 9, 9, 9,
+        10, 10, 11, 11, 11, 12, 12, 13, 13, 14,
+        14, 14, 15, 15, 16, 16, 16, 17, 17, 18,
+        18, 19, 19, 19, 20, 20, 21, 21, 21, 22,
+        22, 23, 23, 24, 24, 24, 25, 25, 26, 26,
+        26, 27, 27, 28, 28, 28, 29, 29, 30, 30,
+        31, 31, 31, 32, 32, 33, 33, 33
+        ]
+
+    _info_struct = struct.Struct('BBB')
+
+    def __init__(self, scale, prec):
+        if prec > 38:
+            raise DataError('Precision of decimal value is out of range')
+        self._scale = scale
+        self._prec = prec
+        self._size = self._bytes_per_prec[prec]
+
+    @classmethod
+    def from_value(cls, value):
+        if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
+            raise DataError('Decimal value is out of range')
+        value = value.normalize()
+        _, digits, exp = value.as_tuple()
+        if exp > 0:
+            scale = 0
+            prec = len(digits) + exp
+        else:
+            scale = -exp
+            prec = max(len(digits), scale)
+        return cls(scale=scale, prec=prec)
+
+    @classmethod
+    def from_stream(cls, r):
+        size, prec, scale = r.unpack(cls._info_struct)
+        if size != self._bytes_per_prec[prec]:
+            raise InterfaceError("Invalid DECIMAL type, size doesn't match precision")
+        return cls(scale=scale, prec=prec)
+
+    def get_declaration(self):
+        return 'DECIMAL({},{})'.format(self._prec, self._scale)
+
+    def write_info(self, w):
+        w.pack(self._info_struct, self._size, self._prec, self._scale)
+
+    def write(self, w, value):
+        if not isinstance(value, Decimal):
+            value = Decimal(value)
+        value = value.normalize()
+        scale = self._scale
+        size = self._size
+        w.put_byte(size)
+        val = value
+        positive = 1 if val > 0 else 0
+        w.put_byte(positive)  # sign
+        with localcontext() as ctx:
+            ctx.prec = 38
+            if not positive:
+                val *= -1
+            size -= 1
+            val = val * (10 ** scale)
+        for i in range(size):
+            w.put_byte(int(val % 256))
+            val //= 256
+        assert val == 0
+
+    def _decode(self, positive, buf):
+        val = _decode_num(buf)
+        val = Decimal(val)
+        with localcontext() as ctx:
+            ctx.prec = 38
+            if not positive:
+                val *= -1
+            val /= 10 ** self.scale
+        return val
+
+    def read(self, r):
+        size = r.get_byte()
+        if size <= 0:
+            return None
+
+        if size != self._size:
+            raise InterfaceError('Invalid DECIMAL size')
+        positive = r.get_byte()
+        buf = readall(r, size - 1)
+        return self._decode(positive, buf)
+
+
+class MsUnique(object):
+    type = SYBUNIQUE
+
+    def get_declaration(self):
+        return 'UNIQUEIDENTIFIER'
+
+    def write_info(self, w):
+        w.put_byte(16)
+
+    def write(self, w, value):
+        if value is None:
+            w.put_byte(-1)
+        else:
+            w.put_byte(16)
+            w.write(value.bytes_le)
+
+
 class _TdsSession(object):
     def __init__(self, tds, transport):
         self.out_pos = 8
@@ -812,6 +1270,22 @@ class _TdsSession(object):
         self.set_state(TDS_PENDING)
         self._writer.flush()
 
+    def _write_nvarchar_max(self, w, val):
+        if val is None:
+            w.put_int8(-1)
+        else:
+            w.put_int8(len(val) * 2)
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+            w.put_int(0)
+
+    def _write_nvarchar(self, w, val):
+        if val is None:
+            w.put_smallint(-1)
+        else:
+            w.put_smallint(len(val) * 2)
+            w.write_ucs2(val)
+
     def make_param(self, name, value):
         column = _Column()
         column.column_name = name
@@ -822,46 +1296,71 @@ class _TdsSession(object):
         if value is default:
             column.flags = fDefaultValue
             value = None
+        column.value = value
         if value is None:
-            handler = DefaultHandler
+            if IS_TDS71_PLUS(self):
+                column.type = NVarChar71(1, self.conn.collation)
+            else:
+                column.type = NVarChar70(1)
+        elif isinstance(value, bool):
+            column.type = Bit()
         elif isinstance(value, six.integer_types):
-            if -2 ** 63 <= value <= 2 ** 63 - 1:
-                handler = DefaultHandler
+            if -2 ** 31 <= value <= 2 ** 31 - 1:
+                column.type = Int()
+            elif -2 ** 63 <= value <= 2 ** 63 - 1:
+                column.type = BigInt()
             elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
-                value = Decimal(value)
-                handler = NumericHandler
+                column.type = MsDecimal(0, 38)
             else:
                 raise DataError('Numeric value out or range')
         elif isinstance(value, float):
-            handler = DefaultHandler
+            column.type = FloatN()
         elif isinstance(value, Binary):
-            handler = DefaultHandler
-        elif isinstance(value, six.string_types):
-            handler = DefaultHandler
-        elif isinstance(value, six.binary_type):
-            handler = DefaultHandler
+            size = len(value)
+            if size > 8000:
+                if IS_TDS72_PLUS(tds):
+                    column.type = VarBinaryMax()
+                else:
+                    column.type = Image()
+            else:
+                column.type = VarBinary(size)
+        elif isinstance(value, six.string_types + (six.binary_type,)):
+            size = len(value)
+            if size == 0:
+                size = 1
+            if size > 4000:
+                if IS_TDS72_PLUS(self):
+                    column.type = NVarCharMax(self.conn.collation)
+                else:
+                    column.type = NText()
+            else:
+                if IS_TDS71_PLUS(self):
+                    column.type = NVarChar71(size, self.conn.collation)
+                else:
+                    column.type = NVarChar70(size)
         elif isinstance(value, datetime):
             if IS_TDS73_PLUS(self):
-                handler = MsDatetimeHandler
+                if value.tzinfo and not self.use_tz:
+                    column.type = DateTimeOffset(6)
+                else:
+                    column.type = DateTime2(6, self.use_tz)
             else:
-                handler = DatetimeHandler
+                column.type = DateTime()
         elif isinstance(value, date):
             if IS_TDS73_PLUS(self):
-                handler = MsDatetimeHandler
+                column.type = MsDate()
             else:
-                handler = DatetimeHandler
+                column.type = DateTime()
         elif isinstance(value, time):
             if not IS_TDS73_PLUS(self):
                 raise DataError('Time type is not supported on MSSQL 2005 and lower')
-            handler = MsDatetimeHandler
+            column.type = MsTime(6, self.use_tz)
         elif isinstance(value, Decimal):
-            handler = NumericHandler
+            column.type = MsDecimal.from_value(value)
         elif isinstance(value, uuid.UUID):
-            handler = DefaultHandler
+            column.type = MsUnique()
         else:
             raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
-        column.funcs = handler
-        column.value = column.funcs.from_python(self, column, value)
         return column
 
     def _convert_params(self, parameters):
@@ -896,8 +1395,18 @@ class _TdsSession(object):
             w.put_usmallint(flags)
             params = self._convert_params(params)
             for param in params:
-                self.put_data_info(param)
-                param.funcs.put_data(self, param)
+                w.put_byte(len(param.column_name))
+                w.write_ucs2(param.column_name)
+                #
+                # TODO support other flags (use defaul null/no metadata)
+                # bit 1 (2 as flag) in TDS7+ is "default value" bit
+                # (what's the meaning of "default value" ?)
+                #
+                w.put_byte(param.flags)
+                # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
+                w.put_byte(param.type.type)
+                param.type.write_info(w)
+                param.type.write(w, param.value)
             #self.query_flush_packet()
         elif IS_TDS5_PLUS(self):
             w.begin_packet(TDS_NORMAL)
@@ -954,7 +1463,7 @@ class _TdsSession(object):
             else:
                 params = self._convert_params(params)
                 param_definition = ','.join(
-                    '{0} {1}'.format(p.column_name, p.funcs.get_declaration(self, p))
+                    '{0} {1}'.format(p.column_name, p.type.get_declaration())
                     for p in params)
                 self._submit_rpc(SP_EXECUTESQL,
                             [query, param_definition] + params, 0)
@@ -988,36 +1497,7 @@ class _TdsSession(object):
 
         return rc
 
-    def put_data_info(self, curcol):
-        w = self._writer
-        if IS_TDS7_PLUS(self):
-            w.put_byte(len(curcol.column_name))
-            w.write_ucs2(curcol.column_name)
-        else:
-            # TODO ICONV convert
-            w.put_byte(len(curcol.column_name))
-            w.write(curcol.column_name)
-        #
-        # TODO support other flags (use defaul null/no metadata)
-        # bit 1 (2 as flag) in TDS7+ is "default value" bit
-        # (what's the meaning of "default value" ?)
-        #
-
-        w.put_byte(curcol.flags)
-        if not IS_TDS7_PLUS(self):
-            w.put_int(curcol.column_usertype)  # usertype
-        # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
-        w.put_byte(curcol.column_type)
-
-        curcol.funcs.put_info(self, curcol)
-
-        # TODO needed in TDS4.2 ?? now is called only is TDS >= 5
-        if not IS_TDS7_PLUS(self):
-            w.put_byte(0)  # locale info length
-
-
     _begin_tran_struct_72 = struct.Struct('<HBB')
-
 
     def submit_begin_tran(self, isolation_level=0):
         logger.debug('submit_begin_tran()')
@@ -1717,24 +2197,6 @@ class NumericHandler(object):
         if colsize <= 0:
             return None
 
-        #
-        # Since these can be passed around independent
-        # of the original column they came from, we embed the TDS_NUMERIC datatype in the row buffer
-        # instead of using the wire representation, even though it uses a few more bytes.
-        #
-        # TODO perhaps it would be fine to change format ??
-        #num.precision = curcol.column_prec
-        scale = curcol.column_scale
-
-        # server is going to crash freetds ??
-        # TODO close connection it server try to do so ??
-        if colsize > cls.MAX_NUMERIC:
-            raise Exception('TDS_FAIL')
-        positive = r.get_byte()
-        buf = readall(r, colsize - 1)
-
-        if IS_TDS7_PLUS(tds):
-            return cls.ms_parse_numeric(positive, buf, scale)
         else:
             raise Exception('not supported')
 

@@ -206,6 +206,18 @@ class Collation(object):
         self.binary2 = binary2
         self.version = version
 
+    def __repr__(self):
+        return 'Collation(lcid={}, sort_id={}, ignore_case={}, ignore_accent={}, ignore_width={}, ignore_kana={}, binary={}, binary2={}, version={})'.format(
+            self.lcid,
+            self.sort_id,
+            self.ignore_case,
+            self.ignore_accent,
+            self.ignore_width,
+            self.ignore_kana,
+            self.binary,
+            self.binary2,
+            self.version)
+
     @classmethod
     def unpack(cls, b):
         lump, sort_id = cls._coll_struct.unpack_from(b)

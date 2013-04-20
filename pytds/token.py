@@ -813,7 +813,6 @@ _flt4_struct = struct.Struct('f')
 _flt8_struct = struct.Struct('d')
 _slong_struct = struct.Struct('<l')
 _money8_struct = struct.Struct('<lL')
-_numeric_info_struct = struct.Struct('BBB')
 _base_date = datetime(1900, 1, 1)
 
 
@@ -916,7 +915,8 @@ def tds_get_type_info(tds, curcol):
         if size == 4:
             return lambda: r.unpack(_flt4_struct)[0] if r.get_byte() else None
         elif size == 8:
-            return lambda: r.unpack(_flt8_struct)[0] if r.get_byte() else None
+            type = FloatN()
+            return lambda: type.read(r)
         else:
             raise InterfaceError('Invalid SYBFLTN size', size)
 
@@ -1030,8 +1030,8 @@ def tds_get_type_info(tds, curcol):
             return lambda: readall(r, r.get_smallint())
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
-        curcol.column_size, curcol.column_prec, curcol.column_scale = r.unpack(_numeric_info_struct)
-        return lambda: NumericHandler.get_data(tds, curcol)
+        type = MsDecimal.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBVARIANT:
         curcol.column_size = r.get_int()
