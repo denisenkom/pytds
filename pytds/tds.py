@@ -910,12 +910,44 @@ class Image(object):
         return 'IMAGE'
 
 
+class BaseDateTime(object):
+    _base_date = datetime(1900, 1, 1)
+    _min_date = datetime(1753, 1, 1, 0, 0, 0)
+    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
+
+class SmallDateTime(BaseDateTime):
+    type = SYBDATETIME4
+
+    _min_date = datetime(1753, 1, 1, 0, 0, 0)
+    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
+    def __init__(self, use_tz):
+        self._use_tz = use_tz
+
+    def get_declaration(self):
+        return 'SMALLDATETIME'
+
+    def write_info(self, w):
+        w.put_byte(4)
+
+    def write(self, w, val):
+        w.write(Datetime.encode(value))
+
+    def read(self, r):
+        days, time = rdr.unpack(TDS_DATETIME)
+        return _applytz(Datetime.decode(days, time), self._use_tz)
+
+
 class DateTime(object):
-    type = SYBDATETIMN
+    type = SYBDATETIME
 
     _base_date = datetime(1900, 1, 1)
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
+    def __init__(self, use_tz):
+        self._use_tz = use_tz
 
     def get_declaration(self):
         return 'DATETIME'
@@ -925,6 +957,58 @@ class DateTime(object):
 
     def write(self, w, val):
         w.write(Datetime.encode(value))
+
+    def read(self, r):
+        days, time = rdr.unpack(TDS_DATETIME4)
+        return _applytz(Datetime.decode(days, time), self._use_tz)
+
+
+class DateTimeN(object):
+    type = SYBDATETIMN
+
+    _base_date = datetime(1900, 1, 1)
+    _min_date = datetime(1753, 1, 1, 0, 0, 0)
+    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
+    def __init__(self, size, use_tz):
+        assert size in (4, 8)
+        self._size = size
+        self._use_tz = use_tz
+
+    @classmethod
+    def from_stream(self, r, use_tz):
+        size = r.get_byte()
+        if size not in (4, 8):
+            raise InterfaceError('Invalid SYBDATETIMN size', size)
+        return DateTimeN(size, use_tz)
+
+    def get_declaration(self):
+        if self._size == 8:
+            return 'DATETIME'
+        elif self._size == 4:
+            return 'SMALLDATETIME'
+
+    def write_info(self, w):
+        w.put_byte(self._size)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(0)
+        else:
+            w.put_byte(8)
+            w.write(Datetime.encode(value))
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        if size == 4:
+            days, time = rdr.unpack(TDS_DATETIME4)
+        elif size == 8:
+            days, time = rdr.unpack(TDS_DATETIME)
+        else:
+            raise InterfaceError('Invalid datetimn size')
+        return _applytz(Datetime.decode(days, time), self._use_tz)
 
 
 class BaseDateTime73(object):
@@ -939,19 +1023,36 @@ class BaseDateTime73(object):
         7: 5,
         }
 
-    _base_date2 = datetime(1, 1, 1)
+    _base_date = datetime(1, 1, 1)
 
     def _write_time(self, w, t, prec):
         secs = t.hour * 60 * 60 + t.minute * 60 + t.second
         val = (secs * 10 ** 7 + t.microsecond * 10) // (10 ** (7 - prec))
         w.write(struct.pack('<Q', val)[:self._precision_to_len[prec]])
 
+    def _read_time(self, r, size, prec, use_tz):
+        time_buf = readall(r, size)
+        val = _decode_num(time_buf)
+        val *= 10 ** (7 - prec)
+        nanoseconds = val * 100
+        hours = nanoseconds // 1000000000 // 60 // 60
+        nanoseconds -= hours * 60 * 60 * 1000000000
+        minutes = nanoseconds // 1000000000 // 60
+        nanoseconds -= minutes * 60 * 1000000000
+        seconds = nanoseconds // 1000000000
+        nanoseconds -= seconds * 1000000000
+        return time(hours, minutes, seconds, nanoseconds // 1000, tzinfo=use_tz)
+
     def _write_date(self, w, value):
         if type(value) == date:
             value = datetime.combine(value, time(0, 0, 0))
-        days = (value - self._base_date2).days
+        days = (value - self._base_date).days
         buf = struct.pack('<l', days)[:3]
         w.write(buf)
+
+    def _read_date(self, r):
+        days = _decode_num(readall(r, 3))
+        return (self._base_date + timedelta(days=days)).date()
 
 
 class MsDate(BaseDateTime73):
@@ -970,6 +1071,12 @@ class MsDate(BaseDateTime73):
             w.put_byte(3)
             self._write_date(w, value)
 
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        return self._read_date(r)
+
 
 class MsTime(BaseDateTime73):
     type = SYBMSTIME
@@ -978,6 +1085,11 @@ class MsTime(BaseDateTime73):
         self._prec = prec
         self._size = self._precision_to_len[prec]
         self._use_tz = use_tz
+
+    @classmethod
+    def from_stream(cls, r, use_tz=None):
+        prec = r.get_byte()
+        return cls(prec, use_tz)
 
     def get_declaration(self):
         return 'TIME({})'.format(self._prec)
@@ -996,6 +1108,12 @@ class MsTime(BaseDateTime73):
             w.put_byte(self._size)
             self._write_time(w, value, self._prec)
 
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        return self._read_time(r, size, self._prec, self._use_tz)
+
 
 class DateTime2(BaseDateTime73):
     type = SYBMSDATETIME2
@@ -1004,6 +1122,11 @@ class DateTime2(BaseDateTime73):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 3
         self._use_tz = use_tz
+
+    @classmethod
+    def from_stream(cls, r, use_tz=None):
+        prec = r.get_byte()
+        return cls(prec, use_tz)
 
     def get_declaration(self):
         return 'DATETIME2({})'.format(self._prec)
@@ -1023,6 +1146,14 @@ class DateTime2(BaseDateTime73):
             self._write_time(w, value, self._prec)
             self._write_date(w, value)
 
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        time = self._read_time(r, size - 3, self._prec, self._use_tz)
+        date = self._read_date(r)
+        return datetime.combine(date, time)
+
 
 class DateTimeOffset(BaseDateTime73):
     type = SYBMSDATETIMEOFFSET
@@ -1030,6 +1161,11 @@ class DateTimeOffset(BaseDateTime73):
     def __init__(self, prec):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 5
+
+    @classmethod
+    def from_stream(cls, r):
+        prec = r.get_byte()
+        return cls(prec)
 
     def get_declaration(self):
         return 'DATETIMEOFFSET({})'.format(self._prec)
@@ -1048,6 +1184,15 @@ class DateTimeOffset(BaseDateTime73):
             self._write_time(w, value, self._prec)
             self._write_date(w, value)
             w.put_smallint(int(utcoffset.total_seconds()) // 60)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        time = self._read_time(r, size - 5, self._prec, _utc)
+        date = self._read_date(r)
+        tz = tzoffset('', r.get_smallint() * 60)
+        return datetime.combine(date, time).astimezone(tz)
 
 
 class MsDecimal(object):
@@ -1073,6 +1218,14 @@ class MsDecimal(object):
 
     _info_struct = struct.Struct('BBB')
 
+    @property
+    def scale(self):
+        return self._scale
+
+    @property
+    def precision(self):
+        return self._prec
+
     def __init__(self, scale, prec):
         if prec > 38:
             raise DataError('Precision of decimal value is out of range')
@@ -1097,8 +1250,6 @@ class MsDecimal(object):
     @classmethod
     def from_stream(cls, r):
         size, prec, scale = r.unpack(cls._info_struct)
-        if size != self._bytes_per_prec[prec]:
-            raise InterfaceError("Invalid DECIMAL type, size doesn't match precision")
         return cls(scale=scale, prec=prec)
 
     def get_declaration(self):
@@ -1135,7 +1286,7 @@ class MsDecimal(object):
             ctx.prec = 38
             if not positive:
                 val *= -1
-            val /= 10 ** self.scale
+            val /= 10 ** self._scale
         return val
 
     def read(self, r):
@@ -1143,8 +1294,6 @@ class MsDecimal(object):
         if size <= 0:
             return None
 
-        if size != self._size:
-            raise InterfaceError('Invalid DECIMAL size')
         positive = r.get_byte()
         buf = readall(r, size - 1)
         return self._decode(positive, buf)
@@ -1345,12 +1494,12 @@ class _TdsSession(object):
                 else:
                     column.type = DateTime2(6, self.use_tz)
             else:
-                column.type = DateTime()
+                column.type = DateTimeN()
         elif isinstance(value, date):
             if IS_TDS73_PLUS(self):
                 column.type = MsDate()
             else:
-                column.type = DateTime()
+                column.type = DateTimeN()
         elif isinstance(value, time):
             if not IS_TDS73_PLUS(self):
                 raise DataError('Time type is not supported on MSSQL 2005 and lower')
@@ -2483,157 +2632,6 @@ def tds_convert_string(tds, char_codec, s):
     return char_codec.encode(s)[0]
 
 _utc = tzutc()
-
-
-class MsDatetimeHandler(object):
-    @staticmethod
-    def get_info(tds, col):
-        r = tds._reader
-        col.scale = col.prec = 0
-        if col.column_type != SYBMSDATE:
-            col.scale = col.prec = r.get_byte()
-            if col.prec > 7:
-                raise Exception('TDS_FAIL')
-
-    @staticmethod
-    def get_data(tds, col):
-        r = tds._reader
-        size = r.get_byte()
-        if size == 0:
-            return None
-
-        if col.column_type == SYBMSDATETIMEOFFSET:
-            size -= 2
-        if col.column_type != SYBMSTIME:
-            size -= 3
-        if size < 0:
-            raise Exception('TDS_FAIL')
-
-        # get time part
-        nanoseconds = 0
-        if col.column_type != SYBMSDATE:
-            assert size >= 3 and size <= 5
-            if size < 3 or size > 5:
-                raise Exception('TDS_FAIL')
-            time_buf = readall(r, size)
-            val = _decode_num(time_buf)
-            val *= 10 ** (7 - col.prec)
-            nanoseconds = val * 100
-
-        # get date part
-        days = 0
-        if col.column_type != SYBMSTIME:
-            date_buf = readall(r, 3)
-            days = _decode_num(date_buf)
-
-        # get time offset
-        if col.column_type == SYBMSTIME:
-            hours = nanoseconds // 1000000000 // 60 // 60
-            nanoseconds -= hours * 60 * 60 * 1000000000
-            minutes = nanoseconds // 1000000000 // 60
-            nanoseconds -= minutes * 60 * 1000000000
-            seconds = nanoseconds // 1000000000
-            nanoseconds -= seconds * 1000000000
-            return time(hours, minutes, seconds, nanoseconds // 1000)
-        elif col.column_type == SYBMSDATE:
-            return _applytz(date(1, 1, 1) + timedelta(days=days), tds.use_tz)
-        elif col.column_type == SYBMSDATETIME2:
-            return _applytz(datetime(1, 1, 1) + timedelta(days=days, microseconds=nanoseconds // 1000), tds.use_tz)
-        elif col.column_type == SYBMSDATETIMEOFFSET:
-            offset = r.get_smallint()
-            if offset > 840 or offset < -840:
-                raise Exception('TDS_FAIL')
-            tz = tzoffset('', offset * 60)
-            return (datetime(1, 1, 1, tzinfo=_utc) + timedelta(days=days, microseconds=nanoseconds // 1000)).astimezone(tz)
-
-    @staticmethod
-    def from_python(tds, col, value):
-        if isinstance(value, datetime):
-            if value.tzinfo and not tds.use_tz:
-                col.column_type = SYBMSDATETIMEOFFSET
-            else:
-                col.column_type = SYBMSDATETIME2
-            col.prec = col.scale = 6
-        elif isinstance(value, date):
-            col.column_type = SYBMSDATE
-        elif isinstance(value, time):
-            if value.tzinfo and not tds.use_tz:
-                col.column_type = SYBMSDATETIMEOFFSET
-            else:
-                col.column_type = SYBMSTIME
-            col.prec = col.scale = 6
-        return value
-
-    @staticmethod
-    def get_declaration(tds, col):
-        t = col.column_type
-        if t == SYBMSTIME:
-            return "TIME({0})".format(col.scale)
-        elif t == SYBMSDATE:
-            return "DATE"
-        elif t == SYBMSDATETIME2:
-            return "DATETIME2({0})".format(col.scale)
-        elif t == SYBMSDATETIMEOFFSET:
-            return "DATETIMEOFFSET({0})".format(col.scale)
-
-    @staticmethod
-    def put_info(tds, col):
-        w = tds._writer
-        if col.column_type != SYBMSDATE:
-            w.put_byte(col.prec)
-
-    _base_date2 = datetime(1, 1, 1)
-    _base_date2_utc = datetime(1, 1, 1, tzinfo=_utc)
-
-    _precision_to_len = {
-        0: 3,
-        1: 3,
-        2: 3,
-        3: 4,
-        4: 4,
-        5: 5,
-        6: 5,
-        7: 5,
-        }
-
-    @staticmethod
-    def put_data(tds, col):
-        w = tds._writer
-        if col.value is None:
-            w.put_byte(0)
-            return
-
-        value = col.value
-        tzinf = getattr(value, 'tzinfo', None)
-        utcoffset = None
-        if tzinf:
-            utcoffset = value.utcoffset()
-            if tds.use_tz:
-                value = value.astimezone(tds.use_tz).replace(tzinfo=None)
-            else:
-                value = value.astimezone(_utc).replace(tzinfo=None)
-        parts = []
-        if col.column_type != SYBMSDATE:
-            # Encoding time part
-            t = value
-            secs = t.hour * 60 * 60 + t.minute * 60 + t.second
-            val = (secs * 10 ** 7 + t.microsecond * 10) // (10 ** (7 - col.prec))
-            parts.append(struct.pack('<Q', val)[:MsDatetimeHandler._precision_to_len[col.prec]])
-        if col.column_type != SYBMSTIME:
-            # Encoding date part
-            if type(value) == date:
-                value = datetime.combine(value, time(0, 0, 0))
-            days = (value - MsDatetimeHandler._base_date2).days
-            buf = struct.pack('<l', days)[:3]
-            parts.append(buf)
-        if col.column_type == SYBMSDATETIMEOFFSET:
-            # Encoding timezone part
-            assert utcoffset is not None
-            parts.append(struct.pack('<h', int(utcoffset.total_seconds()) // 60))
-        size = reduce(lambda a, b: a + len(b), parts, 0)
-        w.put_byte(size)
-        for part in parts:
-            w.write(part)
 
 
 class DatetimeHandler(object):

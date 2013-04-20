@@ -826,16 +826,6 @@ def _decode_money8(rdr):
     return Decimal(val) / 10000
 
 
-def _decode_datetime4(rdr, tz):
-    days, time = rdr.unpack(TDS_DATETIME4)
-    return _applytz(_base_date + timedelta(days=days, minutes=time), tz)
-
-
-def _decode_datetime8(rdr, tz):
-    days, time = rdr.unpack(TDS_DATETIME)
-    return _applytz(Datetime.decode(days, time), tz)
-
-
 def _decode_text(rdr, codec):
     size = rdr.get_byte()
     if size == 16:  # Jeff's hack
@@ -1031,27 +1021,39 @@ def tds_get_type_info(tds, curcol):
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
         type = MsDecimal.from_stream(r)
+        curcol.column_scale = type.scale
+        curcol.column_prec = type.precision
         return lambda: type.read(r)
 
     elif type == SYBVARIANT:
         curcol.column_size = r.get_int()
         return lambda: VariantHandler.get_data(tds, curcol)
 
-    elif type in (SYBMSDATE, SYBMSTIME, SYBMSDATETIME2, SYBMSDATETIMEOFFSET):
-        MsDatetimeHandler.get_info(tds, curcol)
-        return lambda: MsDatetimeHandler.get_data(tds, curcol)
+    elif type == SYBMSDATE:
+        type = MsDate()
+        return lambda: type.read(r)
+
+    elif type == SYBMSTIME:
+        type = MsTime.from_stream(r, tds.use_tz)
+        return lambda: type.read(r)
+
+    elif type == SYBMSDATETIME2:
+        type = DateTime2.from_stream(r, tds.use_tz)
+        return lambda: type.read(r)
+
+    elif type == SYBMSDATETIMEOFFSET:
+        type = DateTimeOffset.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBDATETIME4:
-        return lambda: _decode_datetime4(r, tds.use_tz)
+        type = SmallDateTime(tds.use_tz)
+        return lambda: type.read(r)
     elif type == SYBDATETIME:
-        return lambda: _decode_datetime8(r, tds.use_tz)
+        type = DateTime(tds.use_tz)
+        return lambda: type.read(r)
     elif type == SYBDATETIMN:
-        curcol.column_size = size = r.get_byte()
-        if size == 4:
-            return lambda: _decode_datetime4(r, tds.use_tz) if r.get_byte() else None
-        elif size == 8:
-            return lambda: _decode_datetime8(r, tds.use_tz) if r.get_byte() else None
-        raise InterfaceError('Invalid SYBDATETIMN size', size)
+        type = DateTimeN.from_stream(r, tds.use_tz)
+        return lambda: type.read(r)
 
     elif type == SYBUNIQUE:
         curcol.column_size = r.get_byte()
