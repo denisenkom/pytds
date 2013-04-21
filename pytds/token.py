@@ -809,33 +809,6 @@ def tds7_process_result(tds):
     info.description = tuple(header_tuple)
     return info
 
-_flt4_struct = struct.Struct('f')
-_flt8_struct = struct.Struct('d')
-_slong_struct = struct.Struct('<l')
-_money8_struct = struct.Struct('<lL')
-_base_date = datetime(1900, 1, 1)
-
-
-def _decode_money4(rdr):
-    return Decimal(rdr.get_int()) / 10000
-
-
-def _decode_money8(rdr):
-    hi, lo = rdr.unpack(_money8_struct)
-    val = hi * (2 ** 32) + lo
-    return Decimal(val) / 10000
-
-
-def _decode_text(rdr, codec):
-    size = rdr.get_byte()
-    if size == 16:  # Jeff's hack
-        readall(rdr, 16)  # textptr
-        readall(rdr, 8)  # timestamp
-        colsize = rdr.get_int()
-        return rdr.read_str(colsize, codec)
-    else:
-        return None
-
 
 def tds_get_type_info(tds, curcol):
     r = tds._reader
@@ -886,17 +859,14 @@ def tds_get_type_info(tds, curcol):
         return lambda: type.read(r)
 
     elif type == SYBMONEY4:
-        return lambda: _decode_money4(r)
+        type = Money4.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBMONEY:
-        return lambda: _decode_money8(r)
+        type = Money8.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBMONEYN:
-        curcol.column_size = size = r.get_byte()
-        if size == 4:
-            return lambda: _decode_money4(r) if r.get_byte() else None
-        elif size == 8:
-            return lambda: _decode_money8(r) if r.get_byte() else None
-        else:
-            raise InterfaceError('Invalid SYBMONEYN size', size)
+        type = MoneyN.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == XSYBCHAR:
         size = r.get_smallint()

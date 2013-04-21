@@ -1790,6 +1790,60 @@ class MsDecimal(object):
         return self._decode(positive, buf)
 
 
+class Money4(object):
+    type = SYBMONEY4
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls.instance
+
+    def read(self, r):
+        return Decimal(r.get_int()) / 10000
+Money4.instance = Money4()
+
+
+class Money8(object):
+    type = SYBMONEY
+    _struct = struct.Struct('<lL')
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls.instance
+
+    def read(self, r):
+        hi, lo = r.unpack(self._struct)
+        val = hi * (2 ** 32) + lo
+        return Decimal(val) / 10000
+Money8.instance = Money4()
+
+
+class MoneyN(object):
+    type = SYBMONEYN
+    _subtypes = {
+        4: Money4(),
+        8: Money8(),
+        }
+
+    def __init__(self, size):
+        self._size = size
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size not in (4, 8):
+            raise InterfaceError('Invalid SYBMONEYN size', size)
+        return cls(size)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        if size not in (4, 8):
+            raise InterfaceError('Invalid SYBMONEYN size', size)
+        return self._subtypes[size].read(r)
+
+
+
 class MsUnique(object):
     type = SYBUNIQUE
 
