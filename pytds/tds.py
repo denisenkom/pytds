@@ -710,10 +710,37 @@ class MemoryStrChunkedHandler(object):
 
 
 class Bit(object):
+    type = SYBBIT
+
+    def get_declaration(self):
+        return 'BIT'
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def write_info(self, w):
+        w.put_byte(1)
+
+    def write(self, w, value):
+        w.put_byte(1 if value else 0)
+
+    def read(self, r):
+        return bool(r.get_byte())
+
+
+class BitN(object):
     type = SYBBITN
 
     def get_declaration(self):
         return 'BIT'
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size != 1:
+            raise InterfaceError('Invalid BIT field size', size)
+        return cls()
 
     def write_info(self, w):
         w.put_byte(1)
@@ -725,40 +752,147 @@ class Bit(object):
             w.put_byte(1)
             w.put_byte(1 if value else 0)
 
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        if size != 1:
+            raise InterfaceError('Invalid BIT field size', size)
+        return bool(r.get_byte())
+
+
+class IntN(object):
+    type = SYBINTN
+
+    _declarations = {
+        1: 'TINYINT',
+        2: 'SMALLINT',
+        4: 'INT',
+        8: 'BIGINT',
+        }
+
+    _struct = {
+        1: struct.Struct('b'),
+        2: struct.Struct('<h'),
+        4: struct.Struct('<l'),
+        8: struct.Struct('<q'),
+        }
+
+    _valid_sizes = {1, 2, 4, 8}
+
+    def __init__(self, size):
+        assert size in self._valid_sizes
+        self._size = size
+        self._current_struct = self._struct[size]
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size not in cls._valid_sizes:
+            raise InterfaceError('Invalid size of INTN field', size)
+        return cls(size)
+
+    def get_declaration(self):
+        return self._declarations[self._size]
+
+    def write_info(self, w):
+        w.put_byte(self._size)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(0)
+        else:
+            w.put_byte(self._size)
+            w.pack(self._current_struct, val)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        if size not in self._valid_sizes:
+            raise InterfaceError('Invalid size of INTN field', size)
+        return r.unpack(self._struct[size])[0]
+
+
+class TinyInt(object):
+    type = SYBINT1
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def get_declaration(self):
+        return 'TINYINT'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.put_tinyint(val)
+
+    def read(self, r):
+        return r.get_tinyint()
+
+
+class SmallInt(object):
+    type = SYBINT2
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def get_declaration(self):
+        return 'SMALLINT'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.put_smallint(val)
+
+    def read(self, r):
+        return r.get_smallint()
+
 
 class Int(object):
-    type = SYBINTN
+    type = SYBINT4
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
 
     def get_declaration(self):
         return 'INT'
 
     def write_info(self, w):
-        w.put_byte(4)
+        pass
 
     def write(self, w, val):
-        if val is None:
-            w.put_byte(-1)
-        else:
-            w.put_byte(4)
-            w.put_int(val)
+        w.put_int(val)
+
+    def read(self, r):
+        return r.get_int()
 
 
 class BigInt(object):
-    type = SYBINTN
+    type = SYBINT8
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
 
     def get_declaration(self):
         return 'BIGINT'
 
     def write_info(self, w):
-        w.put_byte(8)
+        pass
 
     def write(self, w, val):
-        if val is None:
-            w.put_byte(-1)
-        else:
-            w.put_byte(8)
-            w.put_int8(val)
- 
+        w.put_int8(val)
+
+    def read(self, r):
+        return r.get_int()
+
 
 class Real(object):
     type = SYBREAL
@@ -1803,12 +1937,12 @@ class _TdsSession(object):
             else:
                 column.type = NVarChar70(1)
         elif isinstance(value, bool):
-            column.type = Bit()
+            column.type = BitN()
         elif isinstance(value, six.integer_types):
             if -2 ** 31 <= value <= 2 ** 31 - 1:
-                column.type = Int()
+                column.type = IntN(4)
             elif -2 ** 63 <= value <= 2 ** 63 - 1:
-                column.type = BigInt()
+                column.type = IntN(8)
             elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
                 column.type = MsDecimal(0, 38)
             else:

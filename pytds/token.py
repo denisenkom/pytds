@@ -852,34 +852,32 @@ def tds_get_type_info(tds, curcol):
     # set type
     curcol.column_type = type
     if type == SYBINT1:
-        return lambda: r.get_tinyint()
+        type = TinyInt.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBINT2:
-        return lambda: r.get_smallint()
+        type = SmallInt.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBINT4:
-        return lambda: r.get_int()
+        type = Int.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBINT8:
-        return lambda: r.get_int8()
+        type = BigInt.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBINTN:
-        curcol.column_size = size = r.get_byte()
-        if size == 1:
-            return lambda: r.get_tinyint() if r.get_byte() else None
-        elif size == 2:
-            return lambda: r.get_smallint() if r.get_byte() else None
-        elif size == 4:
-            return lambda: r.get_int() if r.get_byte() else None
-        elif size == 8:
-            return lambda: r.get_int8() if r.get_byte() else None
-        else:
-            raise InterfaceError('Invalid SYBINTN size', size)
+        type = IntN.from_stream(r)
+        curcol.column_size = type._size
+        return lambda: type.read(r)
 
     elif type == SYBBIT:
-        return lambda: bool(r.get_byte())
+        type = Bit.from_stream(r)
+        return lambda: type.read(r)
     elif type == SYBBITN:
-        r.get_byte() # ignore column size
-        return lambda: bool(r.get_byte()) if r.get_byte() else None
+        type = BitN.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBREAL:
-        return lambda: r.unpack(_flt4_struct)[0]
+        type = Real()
+        return lambda: type.read(r)
     elif type == SYBFLT8:
         type = Float()
         return lambda: type.read(r)
