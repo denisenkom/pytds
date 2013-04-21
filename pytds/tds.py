@@ -1394,6 +1394,24 @@ class SmallDateTime(BaseDateTime):
     def __init__(self, use_tz):
         self._use_tz = use_tz
 
+    def validate(self, value):
+        if not (cls.min <= value <= cls.max):
+            raise DataError('Date is out of range')
+
+    def encode(self, value):
+        cls.validate(value)
+        if type(value) == date:
+            value = datetime.combine(value, time(0, 0, 0))
+        days = (value - cls.base_date).days
+        ms = value.microsecond // 1000
+        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
+        return TDS_DATETIME.pack(days, tm)
+
+    def decode(self, days, time):
+        ms = int(round(time % 300 * 10 / 3.0))
+        secs = time // 300
+        return cls.base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
+
     def get_declaration(self):
         return 'SMALLDATETIME'
 
@@ -3199,31 +3217,3 @@ def tds_get_char_data(tds, wire_size, curcol):
         return curcol.char_codec.decode(readall(r, wire_size))[0]
     else:
         return readall(r, wire_size)
-
-
-class Datetime:
-    base_date = datetime(1900, 1, 1)
-    min = datetime(1753, 1, 1, 0, 0, 0)
-    max = datetime(9999, 12, 31, 23, 59, 59, 997000)
-    size = 8
-
-    @classmethod
-    def validate(cls, value):
-        if not (cls.min <= value <= cls.max):
-            raise DataError('Date is out of range')
-
-    @classmethod
-    def encode(cls, value):
-        cls.validate(value)
-        if type(value) == date:
-            value = datetime.combine(value, time(0, 0, 0))
-        days = (value - cls.base_date).days
-        ms = value.microsecond // 1000
-        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
-        return TDS_DATETIME.pack(days, tm)
-
-    @classmethod
-    def decode(cls, days, time):
-        ms = int(round(time % 300 * 10 / 3.0))
-        secs = time // 300
-        return cls.base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
