@@ -837,24 +837,6 @@ def _decode_text(rdr, codec):
         return None
 
 
-def _decode_image(rdr):
-    size = rdr.get_byte()
-    if size == 16:  # Jeff's hack
-        readall(rdr, 16)  # textptr
-        readall(rdr, 8)  # timestamp
-        colsize = rdr.get_int()
-        return readall(rdr, colsize)
-    else:
-        return None
-
-
-def _decode_short_str(rdr, codec):
-    size = rdr.get_smallint()
-    if size < 0:
-        return None
-    return rdr.read_str(size, codec)
-
-
 def tds_get_type_info(tds, curcol):
     r = tds._reader
     # User defined data type of the column
@@ -899,16 +881,11 @@ def tds_get_type_info(tds, curcol):
     elif type == SYBREAL:
         return lambda: r.unpack(_flt4_struct)[0]
     elif type == SYBFLT8:
-        return lambda: r.unpack(_flt8_struct)[0]
+        type = Float()
+        return lambda: type.read(r)
     elif type == SYBFLTN:
-        curcol.column_size = size = r.get_byte()
-        if size == 4:
-            return lambda: r.unpack(_flt4_struct)[0] if r.get_byte() else None
-        elif size == 8:
-            type = FloatN()
-            return lambda: type.read(r)
-        else:
-            raise InterfaceError('Invalid SYBFLTN size', size)
+        type = FloatN.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBMONEY4:
         return lambda: _decode_money4(r)
@@ -924,100 +901,84 @@ def tds_get_type_info(tds, curcol):
             raise InterfaceError('Invalid SYBMONEYN size', size)
 
     elif type == XSYBCHAR:
-        curcol.column_size = size = r.get_smallint()
-        codec = None
+        size = r.get_smallint()
         if IS_TDS71_PLUS(tds):
-            curcol.column_collation = r.get_collation()
-            codec = curcol.column_collation.get_codec()
-        return lambda: _decode_short_str(r, codec)
+            type = VarChar71.from_stream(r, size)
+        else:
+            type = VarChar70.from_stream(r, size)
+        return lambda: type.read(r)
 
     elif type == XSYBNCHAR:
-        curcol.column_size = r.get_smallint()
+        size = r.get_smallint()
         if IS_TDS71_PLUS(tds):
-            curcol.column_collation = r.get_collation()
-        return lambda: _decode_short_str(r, ucs2_codec)
+            type = NVarChar71.from_stream(r, size)
+        else:
+            type = NVarChar70.from_stream(r, size)
+        return lambda: type.read(r)
 
     elif type == XSYBVARCHAR:
         curcol.column_size = size = r.get_smallint()
-        codec = None
-        if IS_TDS71_PLUS(tds):
-            curcol.column_collation = r.get_collation()
-            codec = curcol.column_collation.get_codec()
-        # under TDS9 this means ?var???(MAX)
-        if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, codec)
-        else:
-            return lambda: _decode_short_str(r, codec)
+        if IS_TDS72_PLUS(tds):
+            if size < 0:
+                type = VarCharMax.from_stream(r)
+            else:
+                type = VarChar71.from_stream(r, size)
+        elif IS_TDS71_PLUS(tds):
+            type = VarChar71.from_stream(r, size)
+        return lambda: type.read(r)
 
     elif type == XSYBNVARCHAR:
         curcol.column_size = size = r.get_smallint()
-        if IS_TDS71_PLUS(tds):
-            curcol.column_collation = r.get_collation()
-        # under TDS9 this means ?var???(MAX)
-        if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, ucs2_codec)
-        else:
-            return lambda: _decode_short_str(r, ucs2_codec)
+        if IS_TDS72_PLUS(tds):
+            if size < 0:
+                type = NVarCharMax.from_stream(r)
+            else:
+                type = NVarChar71.from_stream(r, size)
+        elif IS_TDS71_PLUS(tds):
+            type = NVarChar71.from_stream(r, size)
+        return lambda: type.read(r)
 
     elif type == SYBTEXT:
-        curcol.column_size = r.get_int()
-        if IS_TDS71_PLUS(tds):
-            curcol.column_collation = collation = r.get_collation()
-            codec = collation.get_codec()
-        else:
-            codec = None
         if IS_TDS72_PLUS(tds):
-            num_parts = r.get_byte()
-            for _ in range(num_parts):
-                curcol.table_name = r.read_ucs2(r.get_smallint())
+            type = Text72.from_stream(r)
+        elif IS_TDS71_PLUS(tds):
+            type = Text71.from_stream(r)
         else:
-            curcol.table_name = r.read_ucs2(r.get_smallint())
-        return lambda: _decode_text(r, codec)
+            type = Text.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBNTEXT:
-        curcol.column_size = r.get_int()
-        if IS_TDS71_PLUS(tds):
-            curcol.column_collation = collation = r.get_collation()
-            codec = ucs2_codec
-        else:
-            codec = None
         if IS_TDS72_PLUS(tds):
-            num_parts = r.get_byte()
-            for _ in range(num_parts):
-                curcol.table_name = r.read_ucs2(r.get_smallint())
+            type = NText72.from_stream(r)
+        elif IS_TDS71_PLUS(tds):
+            type = NText71.from_stream(r)
         else:
-            curcol.table_name = r.read_ucs2(r.get_smallint())
-        return lambda: _decode_text(r, codec)
+            type = NText.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBMSXML:
-        curcol.has_schema = has_schema = r.get_byte()
-        if has_schema:
-            # discard schema informations
-            curcol.schema_dbname = r.read_ucs2(r.get_byte())        # dbname
-            curcol.schema_owner = r.read_ucs2(r.get_byte())        # schema owner
-            curcol.schema_collection = r.read_ucs2(r.get_smallint())    # schema collection
-        return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, ucs2_codec)
+        type = Xml.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == XSYBBINARY:
         curcol.column_size = r.get_smallint()
-        return lambda: readall(r, r.get_smallint())
+        type = VarBinary(curcol.column_size)
+        return lambda: type.read(r)
 
     elif type == SYBIMAGE:
-        curcol.column_size = r.get_int()
         if IS_TDS72_PLUS(tds):
-            num_parts = r.get_byte()
-            for _ in range(num_parts):
-                curcol.table_name = r.read_ucs2(r.get_smallint())
+            type = Image72.from_stream(r)
         else:
-            curcol.table_name = r.read_ucs2(r.get_smallint())
-        return lambda: _decode_image(r)
+            type = Image.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == XSYBVARBINARY:
         curcol.column_size = size = r.get_smallint()
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, None)
+            type = VarBinaryMax()
         else:
-            return lambda: readall(r, r.get_smallint())
+            type = VarBinary(size)
+        return lambda: type.read(r)
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
         type = MsDecimal.from_stream(r)
@@ -1032,15 +993,12 @@ def tds_get_type_info(tds, curcol):
     elif type == SYBMSDATE:
         type = MsDate()
         return lambda: type.read(r)
-
     elif type == SYBMSTIME:
         type = MsTime.from_stream(r, tds.use_tz)
         return lambda: type.read(r)
-
     elif type == SYBMSDATETIME2:
         type = DateTime2.from_stream(r, tds.use_tz)
         return lambda: type.read(r)
-
     elif type == SYBMSDATETIMEOFFSET:
         type = DateTimeOffset.from_stream(r)
         return lambda: type.read(r)
@@ -1056,8 +1014,8 @@ def tds_get_type_info(tds, curcol):
         return lambda: type.read(r)
 
     elif type == SYBUNIQUE:
-        curcol.column_size = r.get_byte()
-        return lambda: uuid.UUID(bytes_le=readall(r, 16)) if r.get_byte() else None
+        type = MsUnique.from_stream(r)
+        return lambda: type.read(r)
 
     else:
         raise InterfaceError('Invalid type', type)

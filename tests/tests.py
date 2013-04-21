@@ -81,6 +81,7 @@ class TestCase2(TestCase):
         assert b'test' == cur.execute_scalar("select cast('test' as varbinary(4)) as fieldname")
         assert b'test' == cur.execute_scalar("select cast('test' as image) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as image) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as varbinary(10)) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as ntext) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as nvarchar(max)) as fieldname")
         self.assertEqual(None, cur.execute_scalar("select cast(NULL as varchar(max)) as fieldname"))

@@ -758,16 +758,61 @@ class BigInt(object):
         else:
             w.put_byte(8)
             w.put_int8(val)
+ 
+
+class Real(object):
+    type = SYBREAL
+
+    def get_declaration(self):
+        return 'REAL'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.pack(_SYBFLT4_STRUCT, val)
+
+    def read(self, r):
+        return r.unpack(_SYBFLT4_STRUCT)[0]
 
 
-class FloatN(object):
-    type = SYBFLTN
+class Float(object):
+    type = SYBFLT8
 
     def get_declaration(self):
         return 'FLOAT'
 
     def write_info(self, w):
-        w.put_byte(8)
+        pass
+
+    def write(self, w, val):
+        w.pack(_SYBFLT8_STRUCT, val)
+
+    def read(self, r):
+        return r.unpack(_SYBFLT8_STRUCT)[0]
+
+
+class FloatN(object):
+    type = SYBFLTN
+
+    def __init__(self, size):
+        self._size = size
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size not in (4, 8):
+            raise InterfaceError('Invalid SYBFLTN size', size)
+        return cls(size)
+
+    def get_declaration(self):
+        if self._size == 8:
+            return 'FLOAT'
+        else:
+            return 'REAL'
+
+    def write_info(self, w):
+        w.put_byte(self._size)
 
     def write(self, w, val):
         if val is None:
@@ -781,16 +826,76 @@ class FloatN(object):
         if not size:
             return None
         else:
-            if size != 8:
+            if size == 8:
+                return r.unpack(_SYBFLT8_STRUCT)[0]
+            elif size == 4:
+                return r.unpack(_SYBFLT4_STRUCT)[0]
+            else:
                 raise InterfaceError('Invalid SYBFLTN size', size)
-            return r.unpack(_SYBFLT8_STRUCT)[0]
 
 
-class NVarCharMax(object):
-    type = XSYBNVARCHAR
+class VarChar70(object):
+    type = XSYBVARCHAR
+
+    def __init__(self, size):
+        if size <= 0 or size > 8000:
+            raise DataError('Invalid size for VARCHAR field')
+        self._size = size
+
+    def get_declaration(self):
+        return 'VARCHAR({})'.format(self._size)
+
+    def write_info(self, w):
+        w.put_smallint(self._size)
+        #w.put_smallint(self._size)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_smallint(-1)
+        else:
+            #if isinstance(val, bytes):
+            #    val = val.decode('utf8')
+            #w.put_smallint(len(val) * 2)
+            #w.put_smallint(len(val))
+            #w.write_ucs2(val)
+            raise NotImplementedError
+
+    def read(self, r):
+        size = r.get_smallint()
+        if size < 0:
+            return None
+        return r.read_str(size, self._codec)
+
+
+class VarChar71(VarChar70):
+    type = XSYBVARCHAR
+
+    def __init__(self, size, collation):
+        super(VarChar71, self).__init__(size)
+        self._collation = collation
+        self._codec = collation.get_codec()
+
+    @classmethod
+    def from_stream(cls, r, size):
+        collation = r.get_collation()
+        return cls(size, collation)
+
+    def write_info(self, w):
+        super(VarChar71, self).write_info(w)
+        w.put_collation(self._collation)
+
+
+class VarCharMax(object):
+    type = XSYBVARCHAR
 
     def __init__(self, collation):
         self._collation = collation
+        self._codec = collation.get_codec()
+
+    @classmethod
+    def from_stream(cls, r):
+        collation = r.get_collation()
+        return cls(collation)
 
     def get_declaration(self):
         return 'NVARCHAR(MAX)'
@@ -809,6 +914,72 @@ class NVarCharMax(object):
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
             w.put_int(0)
+
+    def read(self, r):
+        size = r.get_int8()
+        if size == -1:
+            return None
+        chunks = []
+        decoder = self._codec.incrementaldecoder()
+        while True:
+            chunk_len = r.get_int()
+            if chunk_len <= 0:
+                chunks.append(decoder.decode(b'', True))
+                return ''.join(chunks)
+            left = chunk_len
+            while left:
+                buf = r.read(left)
+                chunk = decoder.decode(buf)
+                left -= len(buf)
+                chunks.append(chunk)
+
+
+class NVarCharMax(object):
+    type = XSYBNVARCHAR
+
+    def __init__(self, collation):
+        self._collation = collation
+
+    @classmethod
+    def from_stream(cls, r):
+        collation = r.get_collation()
+        return cls(collation)
+
+    def get_declaration(self):
+        return 'NVARCHAR(MAX)'
+
+    def write_info(self, w):
+        w.put_smallint(-1)
+        w.put_collation(self._collation)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int8(-1)
+        else:
+            if isinstance(val, bytes):
+                val = val.decode('utf8')
+            w.put_int8(len(val) * 2)
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+            w.put_int(0)
+
+    def read(self, r):
+        size = r.get_int8()
+        if size == -1:
+            return None
+        chunks = []
+        decoder = ucs2_codec.incrementaldecoder()
+        while True:
+            chunk_len = r.get_int()
+            if chunk_len <= 0:
+                chunks.append(decoder.decode(b'', True))
+                return ''.join(chunks)
+            left = chunk_len
+            while left:
+                buf = r.read(left)
+                chunk = decoder.decode(buf)
+                left -= len(buf)
+                chunks.append(chunk)
 
 
 class NVarChar70(object):
@@ -836,6 +1007,12 @@ class NVarChar70(object):
             #w.put_smallint(len(val))
             w.write_ucs2(val)
 
+    def read(self, r):
+        size = r.get_smallint()
+        if size < 0:
+            return None
+        return r.read_str(size, ucs2_codec)
+
 
 class NVarChar71(NVarChar70):
     type = XSYBNVARCHAR
@@ -844,14 +1021,43 @@ class NVarChar71(NVarChar70):
         super(NVarChar71, self).__init__(size)
         self._collation = collation
 
+    @classmethod
+    def from_stream(cls, r, size):
+        collation = r.get_collation()
+        return cls(size, collation)
+
     def write_info(self, w):
         super(NVarChar71, self).write_info(w)
         w.put_collation(self._collation)
 
 
-class NText(object):
-    def __init__(self, size):
+class Xml(NVarCharMax):
+    type = SYBMSXML
+
+    @classmethod
+    def from_stream(cls, r):
+        has_schema = r.get_byte()
+        schema = {}
+        if has_schema:
+            schema['dbname'] = r.read_ucs2(r.get_byte())
+            schema['owner'] = r.read_ucs2(r.get_byte())
+            schema['collection'] = r.read_ucs2(r.get_smallint())
+        return cls(schema)
+
+
+class Text71(object):
+    def __init__(self, size, table_name, collation):
         self._size = size
+        self._collation = collation
+        self._codec = collation.get_codec()
+        self._table_name = table_name
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        collation = r.get_collation()
+        table_name = r.read_ucs2(r.get_smallint())
+        return cls(size, table_name, collation)
 
     def write_info(self, w):
         w.put_int(self._size * 2)
@@ -862,6 +1068,83 @@ class NText(object):
         else:
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 16:  # Jeff's hack
+            readall(r, 16)  # textptr
+            readall(r, 8)  # timestamp
+            colsize = r.get_int()
+            return r.read_str(colsize, self._codec)
+        else:
+            return None
+
+
+class Text72(Text71):
+    def __init__(self, size, table_name_parts, collation):
+        super(Text72, self).__init__(size, '.'.join(table_name_parts), collation)
+        self._table_name_parts = table_name_parts
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        collation = r.get_collation()
+        num_parts = r.get_byte()
+        parts = []
+        for _ in range(num_parts):
+            parts.append(r.read_ucs2(r.get_smallint()))
+        return cls(size, parts, collation)
+
+
+class NText71(object):
+    def __init__(self, size, table_name, collation):
+        self._size = size
+        self._collation = collation
+        self._table_name = table_name
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        collation = r.get_collation()
+        table_name = r.read_ucs2(r.get_smallint())
+        return cls(size, table_name, collation)
+
+    def write_info(self, w):
+        w.put_int(self._size * 2)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int(-1)
+        else:
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 16:  # Jeff's hack
+            readall(r, 16)  # textptr
+            readall(r, 8)  # timestamp
+            colsize = r.get_int()
+            return r.read_str(colsize, ucs2_codec)
+        else:
+            return None
+
+
+class NText72(NText71):
+    def __init__(self, size, table_name_parts, collation):
+        self._size = size
+        self._collation = collation
+        self._table_name_parts = table_name_parts
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        collation = r.get_collation()
+        num_parts = r.get_byte()
+        parts = []
+        for _ in range(num_parts):
+            parts.append(r.read_ucs2(r.get_smallint()))
+        return cls(size, parts, collation)
 
 
 class VarBinaryMax(object):
@@ -881,6 +1164,21 @@ class VarBinaryMax(object):
             w.put_int(len(val))
             w.write(val)
             w.put_int(0)
+
+    def read(self, r):
+        size = r.get_int8()
+        if size == -1:
+            return None
+        chunks = []
+        while True:
+            chunk_len = r.get_int()
+            if chunk_len <= 0:
+                return b''.join(chunks)
+            left = chunk_len
+            while left:
+                chunk = r.read(left)
+                left -= len(chunk)
+                chunks.append(chunk)
 
 
 class VarBinary(object):
@@ -902,13 +1200,50 @@ class VarBinary(object):
             w.put_smallint(len(val))
             w.write(val)
 
+    def read(self, r):
+        return readall(r, r.get_smallint())
+
 
 class Image(object):
-    type = SYBIMAGE
+    def __init__(self, size, table_name):
+        self._table_name = table_name
+        self._size = size
 
     def get_declaration(self):
         return 'IMAGE'
 
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        table_name = r.read_ucs2(r.get_smallint())
+        return cls(size, table_name)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 16:  # Jeff's hack
+            readall(r, 16)  # textptr
+            readall(r, 8)  # timestamp
+            colsize = r.get_int()
+            return readall(r, colsize)
+        else:
+            return None
+
+
+class Image72(Image):
+    type = SYBIMAGE
+
+    def __init__(self, size, parts):
+        self._parts = parts
+        self._size = size
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        num_parts = r.get_byte()
+        parts = []
+        for _ in range(num_parts):
+            parts.append(r.read_ucs2(r.get_smallint()))
+        return Image72(size, parts)
 
 class BaseDateTime(object):
     _base_date = datetime(1900, 1, 1)
@@ -935,8 +1270,8 @@ class SmallDateTime(BaseDateTime):
         w.write(Datetime.encode(value))
 
     def read(self, r):
-        days, time = rdr.unpack(TDS_DATETIME)
-        return _applytz(Datetime.decode(days, time), self._use_tz)
+        days, minutes = r.unpack(TDS_DATETIME4)
+        return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=self._use_tz)
 
 
 class DateTime(object):
@@ -959,7 +1294,7 @@ class DateTime(object):
         w.write(Datetime.encode(value))
 
     def read(self, r):
-        days, time = rdr.unpack(TDS_DATETIME4)
+        days, time = r.unpack(TDS_DATETIME)
         return _applytz(Datetime.decode(days, time), self._use_tz)
 
 
@@ -1003,12 +1338,13 @@ class DateTimeN(object):
         if size == 0:
             return None
         if size == 4:
-            days, time = rdr.unpack(TDS_DATETIME4)
+            days, minutes = r.unpack(TDS_DATETIME4)
+            return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=self._use_tz)
         elif size == 8:
-            days, time = rdr.unpack(TDS_DATETIME)
+            days, time = r.unpack(TDS_DATETIME)
+            return _applytz(Datetime.decode(days, time), self._use_tz)
         else:
             raise InterfaceError('Invalid datetimn size')
-        return _applytz(Datetime.decode(days, time), self._use_tz)
 
 
 class BaseDateTime73(object):
@@ -1302,6 +1638,13 @@ class MsDecimal(object):
 class MsUnique(object):
     type = SYBUNIQUE
 
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size != 16:
+            raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
+        return MsUnique()
+
     def get_declaration(self):
         return 'UNIQUEIDENTIFIER'
 
@@ -1314,6 +1657,14 @@ class MsUnique(object):
         else:
             w.put_byte(16)
             w.write(value.bytes_le)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        if size != 16:
+            raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
+        return uuid.UUID(bytes_le=readall(r, 16))
 
 
 class _TdsSession(object):
@@ -1463,7 +1814,7 @@ class _TdsSession(object):
             else:
                 raise DataError('Numeric value out or range')
         elif isinstance(value, float):
-            column.type = FloatN()
+            column.type = FloatN(8)
         elif isinstance(value, Binary):
             size = len(value)
             if size > 8000:
