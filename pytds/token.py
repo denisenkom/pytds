@@ -985,8 +985,8 @@ def tds_get_type_info(tds, curcol):
         return lambda: type.read(r)
 
     elif type == SYBVARIANT:
-        curcol.column_size = r.get_int()
-        return lambda: VariantHandler.get_data(tds, curcol)
+        type = Variant.from_stream(r)
+        return lambda: type.read(r)
 
     elif type == SYBMSDATE:
         type = MsDate()

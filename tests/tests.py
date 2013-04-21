@@ -11,7 +11,7 @@ from dateutil.tz import tzoffset, tzutc
 from six import text_type
 from six.moves import xrange
 from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
-    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth,\
+    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime, SspiAuth,\
     tds_process_tokens, TDS_TOKEN_RESULTS, TDS_DATETIME
 
 # set decimal precision to match mssql maximum precision
@@ -522,7 +522,7 @@ class Extensions(TestCase):
         with self.conn.cursor() as cur:
             self.assertEqual(cur.connection, self.conn)
 
-class SmallDateTime(TestCase):
+class SmallDateTimeTest(TestCase):
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as smalldatetime)', (val,))
@@ -536,18 +536,18 @@ class SmallDateTime(TestCase):
         with self.assertRaises(Error):
             self._testval(Timestamp(2080, 1, 1, 0, 0, 0))
 
-class DateTime(DbTestCase):
+class DateTimeTest(DbTestCase):
     def _testencdec(self, val):
-        self.assertEqual(val, Datetime.decode(*TDS_DATETIME.unpack(Datetime.encode(val))))
+        self.assertEqual(val, DateTime.decode(*TDS_DATETIME.unpack(DateTime.encode(val))))
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        self.assertEqual(Datetime.decode(*TDS_DATETIME.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
-        self.assertEqual(Datetime.decode(*TDS_DATETIME.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), Datetime.max)
-        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', Datetime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
-        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', Datetime.encode(Datetime.max))
+        self.assertEqual(DateTime.decode(*TDS_DATETIME.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
+        self.assertEqual(DateTime.decode(*TDS_DATETIME.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTime._max_date)
+        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
+        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTime.encode(DateTime._max_date))
         with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T23:59:59.997' as datetime)")
             self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 997000),)])
@@ -623,6 +623,7 @@ class DateTime2(TestCase):
         self._testval(Timestamp(2010, 1, 2, 0, 0, 0))
         self._testval(Timestamp(1, 1, 1, 0, 0, 0))
         self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999))
+
 
 class DateTest(TestCase):
     def _testval(self, val):

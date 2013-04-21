@@ -1394,24 +1394,6 @@ class SmallDateTime(BaseDateTime):
     def __init__(self, use_tz):
         self._use_tz = use_tz
 
-    def validate(self, value):
-        if not (cls.min <= value <= cls.max):
-            raise DataError('Date is out of range')
-
-    def encode(self, value):
-        cls.validate(value)
-        if type(value) == date:
-            value = datetime.combine(value, time(0, 0, 0))
-        days = (value - cls.base_date).days
-        ms = value.microsecond // 1000
-        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
-        return TDS_DATETIME.pack(days, tm)
-
-    def decode(self, days, time):
-        ms = int(round(time % 300 * 10 / 3.0))
-        secs = time // 300
-        return cls.base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
-
     def get_declaration(self):
         return 'SMALLDATETIME'
 
@@ -1426,7 +1408,7 @@ class SmallDateTime(BaseDateTime):
         return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=self._use_tz)
 
 
-class DateTime(object):
+class DateTime(BaseDateTime):
     type = SYBDATETIME
 
     _base_date = datetime(1900, 1, 1)
@@ -1443,11 +1425,32 @@ class DateTime(object):
         w.put_byte(8)
 
     def write(self, w, val):
-        w.write(Datetime.encode(value))
+        w.write(self.encode(value))
 
     def read(self, r):
         days, time = r.unpack(TDS_DATETIME)
-        return _applytz(Datetime.decode(days, time), self._use_tz)
+        return _applytz(self.decode(days, time), self._use_tz)
+
+    @classmethod
+    def validate(cls, value):
+        if not (cls._min_date <= value <= cls._max_date):
+            raise DataError('Date is out of range')
+
+    @classmethod
+    def encode(cls, value):
+        cls.validate(value)
+        if type(value) == date:
+            value = datetime.combine(value, time(0, 0, 0))
+        days = (value - cls._base_date).days
+        ms = value.microsecond // 1000
+        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
+        return TDS_DATETIME.pack(days, tm)
+
+    @classmethod
+    def decode(cls, days, time):
+        ms = int(round(time % 300 * 10 / 3.0))
+        secs = time // 300
+        return cls._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
 
 
 class DateTimeN(object):
@@ -1483,7 +1486,7 @@ class DateTimeN(object):
             w.put_byte(0)
         else:
             w.put_byte(8)
-            w.write(Datetime.encode(value))
+            w.write(DateTime.encode(value))
 
     def read(self, r):
         size = r.get_byte()
@@ -1494,7 +1497,7 @@ class DateTimeN(object):
             return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=self._use_tz)
         elif size == 8:
             days, time = r.unpack(TDS_DATETIME)
-            return _applytz(Datetime.decode(days, time), self._use_tz)
+            return _applytz(DateTime.decode(days, time), self._use_tz)
         else:
             raise InterfaceError('Invalid datetimn size')
 
@@ -1817,6 +1820,76 @@ class MsUnique(object):
         if size != 16:
             raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return uuid.UUID(bytes_le=readall(r, 16))
+
+
+class Variant(object):
+    type = SYBVARIANT
+
+    def __init__(self, size):
+        self._size = size
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_int()
+        return Variant(size)
+
+    def read(self, r):
+        colsize = r.get_int()
+        curcol = _Column()
+        # NULL
+        try:
+            if colsize < 2:
+                r.skip(colsize)
+                return None
+
+            type = r.get_byte()
+            info_len = r.get_byte()
+            colsize -= 2
+            if info_len > colsize:
+                raise Exception('TDS_FAIL')
+            if is_collate_type(type):
+                if Collation.wire_size > info_len:
+                    raise Exception('TDS_FAIL')
+                curcol.collation = collation = r.get_collation()
+                colsize -= Collation.wire_size
+                info_len -= Collation.wire_size
+                curcol.char_codec = ucs2_codec if is_unicode_type(type) else\
+                    collation.get_codec()
+            # special case for numeric
+            if is_numeric_type(type):
+                if info_len != 2:
+                    raise Exception('TDS_FAIL')
+                curcol.precision = r.get_byte()
+                curcol.scale = scale = r.get_byte()
+                colsize -= 2
+                # FIXME check prec/scale, don't let server crash us
+                if colsize > NumericHandler.MAX_NUMERIC:
+                    raise Exception('TDS_FAIL')
+                positive = r.get_byte()
+                buf = readall(r, colsize - 1)
+                return NumericHandler.ms_parse_numeric(positive, buf, scale)
+            varint = 0 if type == SYBUNIQUE else tds_get_varint_size(r._session, type)
+            if varint != info_len:
+                raise Exception('TDS_FAIL')
+            if varint == 0:
+                size = tds_get_size_by_type(type)
+            elif varint == 1:
+                size = r.get_byte()
+            elif varint == 2:
+                size = r.get_smallint()
+            else:
+                raise Exception('TDS_FAIL')
+            colsize -= info_len
+            if colsize:
+                if curcol.char_codec:
+                    data = tds_get_char_data(r._session, colsize, curcol)
+                else:
+                    data = readall(r, colsize)
+            colsize = 0
+            return to_python(r._session, data, type, colsize)
+        except:
+            r.skip(colsize)
+            raise
 
 
 class _TdsSession(object):
@@ -2918,75 +2991,6 @@ class NumericHandler(object):
             w.put_byte(int(val % 256))
             val //= 256
         assert val == 0
-
-
-#
-# This strange type has following structure
-# 0 len (int32) -- NULL
-# len (int32), type (int8), data -- ints, date, etc
-# len (int32), type (int8), 7 (int8), collation, column size (int16) -- [n]char, [n]varchar, binary, varbinary
-# BLOBS (text/image) not supported
-#
-class VariantHandler(object):
-    @staticmethod
-    def get_data(tds, curcol):
-        r = tds._reader
-        colsize = r.get_int()
-
-        # NULL
-        try:
-            if colsize < 2:
-                r.skip(colsize)
-                return None
-
-            type = r.get_byte()
-            info_len = r.get_byte()
-            colsize -= 2
-            if info_len > colsize:
-                raise Exception('TDS_FAIL')
-            if is_collate_type(type):
-                if Collation.wire_size > info_len:
-                    raise Exception('TDS_FAIL')
-                curcol.collation = collation = r.get_collation()
-                colsize -= Collation.wire_size
-                info_len -= Collation.wire_size
-                curcol.char_codec = ucs2_codec if is_unicode_type(type) else\
-                    collation.get_codec()
-            # special case for numeric
-            if is_numeric_type(type):
-                if info_len != 2:
-                    raise Exception('TDS_FAIL')
-                curcol.precision = r.get_byte()
-                curcol.scale = scale = r.get_byte()
-                colsize -= 2
-                # FIXME check prec/scale, don't let server crash us
-                if colsize > NumericHandler.MAX_NUMERIC:
-                    raise Exception('TDS_FAIL')
-                positive = r.get_byte()
-                buf = readall(r, colsize - 1)
-                return NumericHandler.ms_parse_numeric(positive, buf, scale)
-            varint = 0 if type == SYBUNIQUE else tds_get_varint_size(tds, type)
-            if varint != info_len:
-                raise Exception('TDS_FAIL')
-            if varint == 0:
-                size = tds_get_size_by_type(type)
-            elif varint == 1:
-                size = r.get_byte()
-            elif varint == 2:
-                size = r.get_smallint()
-            else:
-                raise Exception('TDS_FAIL')
-            colsize -= info_len
-            if colsize:
-                if curcol.char_codec:
-                    data = tds_get_char_data(tds, colsize, curcol)
-                else:
-                    data = readall(r, colsize)
-            colsize = 0
-            return to_python(tds, data, type, colsize)
-        except:
-            r.skip(colsize)
-            raise
 
 
 def gen_get_varint_size():
