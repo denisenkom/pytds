@@ -905,21 +905,22 @@ def tds_get_type_info(tds, curcol):
         type = Xml.from_stream(r)
 
     elif type == XSYBBINARY:
-        curcol.column_size = r.get_smallint()
-        type = VarBinary(curcol.column_size)
+        if IS_TDS72_PLUS(tds):
+            type = VarBinary72.from_stream(r)
+        else:
+            type = VarBinary.from_stream(r)
+
+    elif type == XSYBVARBINARY:
+        if IS_TDS72_PLUS(tds):
+            type = VarBinary72.from_stream(r)
+        else:
+            type = VarBinary.from_stream(r)
 
     elif type == SYBIMAGE:
         if IS_TDS72_PLUS(tds):
             type = Image72.from_stream(r)
         else:
             type = Image.from_stream(r)
-
-    elif type == XSYBVARBINARY:
-        curcol.column_size = size = r.get_smallint()
-        if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
-            type = VarBinaryMax()
-        else:
-            type = VarBinary(size)
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
         type = MsDecimal.from_stream(r)

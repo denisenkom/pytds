@@ -1332,45 +1332,16 @@ class NText72(NText71):
         return cls(size, parts, collation)
 
 
-class VarBinaryMax(BaseType):
-    type = XSYBVARBINARY
-
-    def get_declaration(self):
-        return 'VARBINARY(MAX)'
-
-    def write_info(self, w):
-        w.put_smallint(-1)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_int8(-1)
-        else:
-            w.put_int8(len(val))
-            w.put_int(len(val))
-            w.write(val)
-            w.put_int(0)
-
-    def read(self, r):
-        size = r.get_int8()
-        if size == -1:
-            return None
-        chunks = []
-        while True:
-            chunk_len = r.get_int()
-            if chunk_len <= 0:
-                return b''.join(chunks)
-            left = chunk_len
-            while left:
-                chunk = r.read(left)
-                left -= len(chunk)
-                chunks.append(chunk)
-
-
 class VarBinary(BaseType):
     type = XSYBVARBINARY
 
     def __init__(self, size):
         self._size = size
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_smallint()
+        return cls(size)
 
     def get_declaration(self):
         return 'VARBINARY({})'.format(self._size)
@@ -1387,6 +1358,46 @@ class VarBinary(BaseType):
 
     def read(self, r):
         return readall(r, r.get_smallint())
+
+
+class VarBinary72(VarBinary):
+    def __init__(self, size):
+        self._size = size
+        if size == -1:
+            self.read = self._read_max
+            self.write = self._write_max
+            self.write_info = self._write_info_max
+            self.get_declaration = self._get_declaration_max
+
+    def _get_declaration_max(self):
+        return 'VARBINARY(MAX)'
+
+    def _write_info_max(self, w):
+        w.put_smallint(-1)
+
+    def _write_max(self, w, val):
+        if val is None:
+            w.put_int8(-1)
+        else:
+            w.put_int8(len(val))
+            w.put_int(len(val))
+            w.write(val)
+            w.put_int(0)
+
+    def _read_max(self, r):
+        size = r.get_int8()
+        if size == -1:
+            return None
+        chunks = []
+        while True:
+            chunk_len = r.get_int()
+            if chunk_len <= 0:
+                return b''.join(chunks)
+            left = chunk_len
+            while left:
+                chunk = r.read(left)
+                left -= len(chunk)
+                chunks.append(chunk)
 
 
 class Image(BaseType):
@@ -2157,7 +2168,7 @@ class _TdsSession(object):
             size = len(value)
             if size > 8000:
                 if IS_TDS72_PLUS(tds):
-                    column.type = VarBinaryMax()
+                    column.type = VarBinary72(-1)
                 else:
                     column.type = Image()
             else:
