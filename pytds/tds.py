@@ -1004,6 +1004,11 @@ class VarChar70(BaseType):
             raise DataError('Invalid size for VARCHAR field')
         self._size = size
 
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_smallint()
+        return cls(size)
+
     def get_declaration(self):
         return 'VARCHAR({})'.format(self._size)
 
@@ -1038,7 +1043,8 @@ class VarChar71(VarChar70):
         self._codec = collation.get_codec()
 
     @classmethod
-    def from_stream(cls, r, size):
+    def from_stream(cls, r):
+        size = r.get_smallint()
         collation = r.get_collation()
         return cls(size, collation)
 
@@ -1047,26 +1053,30 @@ class VarChar71(VarChar70):
         w.put_collation(self._collation)
 
 
-class VarCharMax(BaseType):
+class VarChar72(VarChar71):
     type = XSYBVARCHAR
 
-    def __init__(self, collation):
+    def __init__(self, size, collation):
         self._collation = collation
         self._codec = collation.get_codec()
+        self._size = size
+        if size == -1:
+            self.read = self._read_max
+            self.write = self._write_max
 
     @classmethod
     def from_stream(cls, r):
+        size = r.get_smallint()
         collation = r.get_collation()
-        return cls(collation)
+        return cls(size, collation)
 
     def get_declaration(self):
-        return 'NVARCHAR(MAX)'
+        if self._size == -1:
+            return 'VARCHAR(MAX)'
+        else:
+            super(VarChar72, self).get_declaration()
 
-    def write_info(self, w):
-        w.put_smallint(-1)
-        w.put_collation(self._collation)
-
-    def write(self, w, val):
+    def _write_max(self, w, val):
         if val is None:
             w.put_int8(-1)
         else:
@@ -1077,7 +1087,7 @@ class VarCharMax(BaseType):
             w.write_ucs2(val)
             w.put_int(0)
 
-    def read(self, r):
+    def _read_max(self, r):
         size = r.get_int8()
         if size == -1:
             return None
@@ -1096,60 +1106,12 @@ class VarCharMax(BaseType):
                 chunks.append(chunk)
 
 
-class NVarCharMax(BaseType):
-    type = XSYBNVARCHAR
-
-    def __init__(self, collation):
-        self._collation = collation
-
-    @classmethod
-    def from_stream(cls, r):
-        collation = r.get_collation()
-        return cls(collation)
-
-    def get_declaration(self):
-        return 'NVARCHAR(MAX)'
-
-    def write_info(self, w):
-        w.put_smallint(-1)
-        w.put_collation(self._collation)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_int8(-1)
-        else:
-            if isinstance(val, bytes):
-                val = val.decode('utf8')
-            w.put_int8(len(val) * 2)
-            w.put_int(len(val) * 2)
-            w.write_ucs2(val)
-            w.put_int(0)
-
-    def read(self, r):
-        size = r.get_int8()
-        if size == -1:
-            return None
-        chunks = []
-        decoder = ucs2_codec.incrementaldecoder()
-        while True:
-            chunk_len = r.get_int()
-            if chunk_len <= 0:
-                chunks.append(decoder.decode(b'', True))
-                return ''.join(chunks)
-            left = chunk_len
-            while left:
-                buf = r.read(left)
-                chunk = decoder.decode(buf)
-                left -= len(buf)
-                chunks.append(chunk)
-
-
 class NVarChar70(BaseType):
     type = XSYBNVARCHAR
 
     def __init__(self, size):
-        if size <= 0 or size > 4000:
-            raise DataError('Invalid size for NVARCHAR field')
+        #if size <= 0 or size > 4000:
+        #    raise DataError('Invalid size for NVARCHAR field')
         self._size = size
 
     def get_declaration(self):
@@ -1177,14 +1139,13 @@ class NVarChar70(BaseType):
 
 
 class NVarChar71(NVarChar70):
-    type = XSYBNVARCHAR
-
     def __init__(self, size, collation):
         super(NVarChar71, self).__init__(size)
         self._collation = collation
 
     @classmethod
-    def from_stream(cls, r, size):
+    def from_stream(cls, r):
+        size = r.get_smallint()
         collation = r.get_collation()
         return cls(size, collation)
 
@@ -1193,8 +1154,66 @@ class NVarChar71(NVarChar70):
         w.put_collation(self._collation)
 
 
-class Xml(NVarCharMax):
+class NVarChar72(NVarChar71):
+    def __init__(self, size, collation):
+        super(NVarChar72, self).__init__(size, collation)
+        if size == -1:
+            self.read = self._read_max
+            self.write = self._write_max
+            self.write_info = self._write_info_max
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_smallint()
+        collation = r.get_collation()
+        return cls(size, collation)
+
+    def get_declaration(self):
+        if self._size == -1:
+            return 'NVARCHAR(MAX)'
+        else:
+            return super(NVarChar72, self).get_declaration()
+
+    def _write_info_max(self, w):
+        w.put_smallint(-1)
+        w.put_collation(self._collation)
+
+    def _write_max(self, w, val):
+        if val is None:
+            w.put_int8(-1)
+        else:
+            if isinstance(val, bytes):
+                val = val.decode('utf8')
+            w.put_int8(len(val) * 2)
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+            w.put_int(0)
+
+    def _read_max(self, r):
+        size = r.get_int8()
+        if size == -1:
+            return None
+        chunks = []
+        decoder = ucs2_codec.incrementaldecoder()
+        while True:
+            chunk_len = r.get_int()
+            if chunk_len <= 0:
+                chunks.append(decoder.decode(b'', True))
+                return ''.join(chunks)
+            left = chunk_len
+            while left:
+                buf = r.read(left)
+                chunk = decoder.decode(buf)
+                left -= len(buf)
+                chunks.append(chunk)
+
+
+class Xml(NVarChar72):
     type = SYBMSXML
+
+    def __init__(self, schema):
+        super(Xml, self).__init__(-1, None)
+        self._schema = schema
 
     @classmethod
     def from_stream(cls, r):
@@ -2149,7 +2168,7 @@ class _TdsSession(object):
                 size = 1
             if size > 4000:
                 if IS_TDS72_PLUS(self):
-                    column.type = NVarCharMax(self.conn.collation)
+                    column.type = NVarChar72(-1, self.conn.collation)
                 else:
                     column.type = NText()
             else:

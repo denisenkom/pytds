@@ -832,7 +832,6 @@ def tds_get_type_info(tds, curcol):
         return BigInt.from_stream(r)
     elif type == SYBINTN:
         type = IntN.from_stream(r)
-        #curcol.column_size = type._size
         return type
 
     elif type == SYBBIT:
@@ -855,38 +854,36 @@ def tds_get_type_info(tds, curcol):
         return MoneyN.from_stream(r)
 
     elif type == XSYBCHAR:
-        size = r.get_smallint()
-        if IS_TDS71_PLUS(tds):
-            type = VarChar71.from_stream(r, size)
+        if IS_TDS72_PLUS(tds):
+            type = VarChar72.from_stream(r)
+        elif IS_TDS71_PLUS(tds):
+            type = VarChar71.from_stream(r)
         else:
-            type = VarChar70.from_stream(r, size)
-
-    elif type == XSYBNCHAR:
-        size = r.get_smallint()
-        if IS_TDS71_PLUS(tds):
-            type = NVarChar71.from_stream(r, size)
-        else:
-            type = NVarChar70.from_stream(r, size)
+            type = VarChar70.from_stream(r)
 
     elif type == XSYBVARCHAR:
-        curcol.column_size = size = r.get_smallint()
         if IS_TDS72_PLUS(tds):
-            if size < 0:
-                type = VarCharMax.from_stream(r)
-            else:
-                type = VarChar71.from_stream(r, size)
+            type = VarChar72.from_stream(r)
         elif IS_TDS71_PLUS(tds):
-            type = VarChar71.from_stream(r, size)
+            type = VarChar71.from_stream(r)
+        else:
+            type = VarChar70.from_stream(r)
+
+    elif type == XSYBNCHAR:
+        if IS_TDS72_PLUS(tds):
+            type = NVarChar72.from_stream(r)
+        elif IS_TDS71_PLUS(tds):
+            type = NVarChar71.from_stream(r)
+        else:
+            type = NVarChar70.from_stream(r)
 
     elif type == XSYBNVARCHAR:
-        curcol.column_size = size = r.get_smallint()
         if IS_TDS72_PLUS(tds):
-            if size < 0:
-                type = NVarCharMax.from_stream(r)
-            else:
-                type = NVarChar71.from_stream(r, size)
+            type = NVarChar72.from_stream(r)
         elif IS_TDS71_PLUS(tds):
-            type = NVarChar71.from_stream(r, size)
+            type = NVarChar71.from_stream(r)
+        else:
+            type = NVarChar70.from_stream(r)
 
     elif type == SYBTEXT:
         if IS_TDS72_PLUS(tds):
