@@ -315,7 +315,7 @@ class _Connection(object):
             elif result_type == TDS_STATUS_RESULT:
                 continue
             else:
-                logger.error('logic error: tds_process_tokens result_type %d', result_type)
+                raise InterfaceError('logic error: tds_process_tokens result_type %d' % result_type)
 
     def _fetchone(self, cursor):
         """
@@ -449,7 +449,7 @@ class _Connection(object):
                     self._state = DB_RES_NO_MORE_RESULTS
                 break
             else:
-                logger.error('logic error: tds_process_tokens result_type %d', result_type)
+                raise InterfaceError('logic error: tds_process_tokens result_type %d' % result_type)
 
     def _callproc(self, cursor, procname, parameters):
         #logger.debug('callproc begin')

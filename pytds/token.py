@@ -158,6 +158,7 @@ def tds_process_default_tokens(tds, marker):
 # tds_process_row() processes rows and places them in the row buffer.
 #
 def tds_process_row(tds):
+    r = tds._reader
     info = tds.current_results
     #if not info:
     #    raise Exception('TDS_FAIL')
@@ -167,7 +168,7 @@ def tds_process_row(tds):
     info.row_count += 1
     for curcol in info.columns:
         #logger.debug("tds_process_row(): reading column %d" % i)
-        curcol.value = curcol._read()
+        curcol.value = curcol.type.read(r)
     return TDS_SUCCESS
 
 
@@ -196,7 +197,7 @@ def tds_process_nbcrow(tds):
         if _ord(nbc[i // 8]) & (1 << (i % 8)):
             curcol.value = None
         else:
-            curcol.value = curcol._read()
+            curcol.value = curcol.type.read(r)
     return TDS_SUCCESS
 
 
@@ -793,19 +794,16 @@ def tds7_process_result(tds):
     for col in range(num_cols):
         curcol = _Column()
         info.columns.append(curcol)
-        curcol._read = tds_get_type_info(tds, curcol)
+        curcol.type = tds_get_type_info(tds, curcol)
 
         #
         # under 7.0 lengths are number of characters not
         # number of bytes... read_ucs2 handles this
         #
         curcol.column_name = r.read_ucs2(r.get_byte())
-        coltype = curcol.column_type
-        if coltype == SYBINTN:
-            coltype = {1: SYBINT1, 2: SYBINT2, 4: SYBINT4, 8: SYBINT8}[curcol.column_size]
         precision = curcol.column_prec if hasattr(curcol, 'column_prec') else None
         scale = curcol.column_scale if hasattr(curcol, 'column_scale') else None
-        header_tuple.append((curcol.column_name, coltype, None, None, precision, scale, curcol.column_nullable))
+        header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, None, precision, scale, curcol.column_nullable))
     info.description = tuple(header_tuple)
     return info
 
@@ -825,48 +823,36 @@ def tds_get_type_info(tds, curcol):
     # set type
     curcol.column_type = type
     if type == SYBINT1:
-        type = TinyInt.from_stream(r)
-        return lambda: type.read(r)
+        return TinyInt.from_stream(r)
     elif type == SYBINT2:
-        type = SmallInt.from_stream(r)
-        return lambda: type.read(r)
+        return SmallInt.from_stream(r)
     elif type == SYBINT4:
-        type = Int.from_stream(r)
-        return lambda: type.read(r)
+        return Int.from_stream(r)
     elif type == SYBINT8:
-        type = BigInt.from_stream(r)
-        return lambda: type.read(r)
+        return BigInt.from_stream(r)
     elif type == SYBINTN:
         type = IntN.from_stream(r)
-        curcol.column_size = type._size
-        return lambda: type.read(r)
+        #curcol.column_size = type._size
+        return type
 
     elif type == SYBBIT:
-        type = Bit.from_stream(r)
-        return lambda: type.read(r)
+        return Bit.from_stream(r)
     elif type == SYBBITN:
-        type = BitN.from_stream(r)
-        return lambda: type.read(r)
+        return BitN.from_stream(r)
 
     elif type == SYBREAL:
-        type = Real()
-        return lambda: type.read(r)
+        return Real()
     elif type == SYBFLT8:
-        type = Float()
-        return lambda: type.read(r)
+        return Float()
     elif type == SYBFLTN:
-        type = FloatN.from_stream(r)
-        return lambda: type.read(r)
+        return FloatN.from_stream(r)
 
     elif type == SYBMONEY4:
-        type = Money4.from_stream(r)
-        return lambda: type.read(r)
+        return Money4.from_stream(r)
     elif type == SYBMONEY:
-        type = Money8.from_stream(r)
-        return lambda: type.read(r)
+        return Money8.from_stream(r)
     elif type == SYBMONEYN:
-        type = MoneyN.from_stream(r)
-        return lambda: type.read(r)
+        return MoneyN.from_stream(r)
 
     elif type == XSYBCHAR:
         size = r.get_smallint()
@@ -874,7 +860,6 @@ def tds_get_type_info(tds, curcol):
             type = VarChar71.from_stream(r, size)
         else:
             type = VarChar70.from_stream(r, size)
-        return lambda: type.read(r)
 
     elif type == XSYBNCHAR:
         size = r.get_smallint()
@@ -882,7 +867,6 @@ def tds_get_type_info(tds, curcol):
             type = NVarChar71.from_stream(r, size)
         else:
             type = NVarChar70.from_stream(r, size)
-        return lambda: type.read(r)
 
     elif type == XSYBVARCHAR:
         curcol.column_size = size = r.get_smallint()
@@ -893,7 +877,6 @@ def tds_get_type_info(tds, curcol):
                 type = VarChar71.from_stream(r, size)
         elif IS_TDS71_PLUS(tds):
             type = VarChar71.from_stream(r, size)
-        return lambda: type.read(r)
 
     elif type == XSYBNVARCHAR:
         curcol.column_size = size = r.get_smallint()
@@ -904,7 +887,6 @@ def tds_get_type_info(tds, curcol):
                 type = NVarChar71.from_stream(r, size)
         elif IS_TDS71_PLUS(tds):
             type = NVarChar71.from_stream(r, size)
-        return lambda: type.read(r)
 
     elif type == SYBTEXT:
         if IS_TDS72_PLUS(tds):
@@ -913,7 +895,6 @@ def tds_get_type_info(tds, curcol):
             type = Text71.from_stream(r)
         else:
             type = Text.from_stream(r)
-        return lambda: type.read(r)
 
     elif type == SYBNTEXT:
         if IS_TDS72_PLUS(tds):
@@ -922,23 +903,19 @@ def tds_get_type_info(tds, curcol):
             type = NText71.from_stream(r)
         else:
             type = NText.from_stream(r)
-        return lambda: type.read(r)
 
     elif type == SYBMSXML:
         type = Xml.from_stream(r)
-        return lambda: type.read(r)
 
     elif type == XSYBBINARY:
         curcol.column_size = r.get_smallint()
         type = VarBinary(curcol.column_size)
-        return lambda: type.read(r)
 
     elif type == SYBIMAGE:
         if IS_TDS72_PLUS(tds):
             type = Image72.from_stream(r)
         else:
             type = Image.from_stream(r)
-        return lambda: type.read(r)
 
     elif type == XSYBVARBINARY:
         curcol.column_size = size = r.get_smallint()
@@ -946,47 +923,37 @@ def tds_get_type_info(tds, curcol):
             type = VarBinaryMax()
         else:
             type = VarBinary(size)
-        return lambda: type.read(r)
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
         type = MsDecimal.from_stream(r)
         curcol.column_scale = type.scale
         curcol.column_prec = type.precision
-        return lambda: type.read(r)
 
     elif type == SYBVARIANT:
         type = Variant.from_stream(r)
-        return lambda: type.read(r)
 
     elif type == SYBMSDATE:
         type = MsDate()
-        return lambda: type.read(r)
     elif type == SYBMSTIME:
         type = MsTime.from_stream(r, tds.use_tz)
-        return lambda: type.read(r)
     elif type == SYBMSDATETIME2:
         type = DateTime2.from_stream(r, tds.use_tz)
-        return lambda: type.read(r)
     elif type == SYBMSDATETIMEOFFSET:
         type = DateTimeOffset.from_stream(r)
-        return lambda: type.read(r)
 
     elif type == SYBDATETIME4:
         type = SmallDateTime(tds.use_tz)
-        return lambda: type.read(r)
     elif type == SYBDATETIME:
         type = DateTime(tds.use_tz)
-        return lambda: type.read(r)
     elif type == SYBDATETIMN:
         type = DateTimeN.from_stream(r, tds.use_tz)
-        return lambda: type.read(r)
 
     elif type == SYBUNIQUE:
-        type = MsUnique.from_stream(r)
-        return lambda: type.read(r)
+        return MsUnique.from_stream(r)
 
     else:
         raise InterfaceError('Invalid type', type)
+    return type
 
 
 _prtype_map = dict((
@@ -1050,7 +1017,8 @@ def tds_process_param_result_tokens(tds):
             r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
             param = _Column()
             param.column_name = name
-            param.value = tds_get_type_info(tds, param)()
+            type = tds_get_type_info(tds, param)
+            param.value = type.read(r)
             tds.output_params[ordinal] = param
         else:
             r.unget_byte()

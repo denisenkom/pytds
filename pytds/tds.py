@@ -709,7 +709,12 @@ class MemoryStrChunkedHandler(object):
         return ''.join(self._chunks)
 
 
-class Bit(object):
+class BaseType(object):
+    def get_typeid(self):
+        return self.type
+
+
+class Bit(BaseType):
     type = SYBBIT
 
     def get_declaration(self):
@@ -729,7 +734,7 @@ class Bit(object):
         return bool(r.get_byte())
 
 
-class BitN(object):
+class BitN(BaseType):
     type = SYBBITN
 
     def get_declaration(self):
@@ -761,7 +766,91 @@ class BitN(object):
         return bool(r.get_byte())
 
 
-class IntN(object):
+class TinyInt(BaseType):
+    type = SYBINT1
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def get_declaration(self):
+        return 'TINYINT'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.put_tinyint(val)
+
+    def read(self, r):
+        return r.get_tinyint()
+TinyInt.instance = TinyInt()
+
+
+class SmallInt(BaseType):
+    type = SYBINT2
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def get_declaration(self):
+        return 'SMALLINT'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.put_smallint(val)
+
+    def read(self, r):
+        return r.get_smallint()
+SmallInt.instance = SmallInt()
+
+
+class Int(BaseType):
+    type = SYBINT4
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def get_declaration(self):
+        return 'INT'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.put_int(val)
+
+    def read(self, r):
+        return r.get_int()
+Int.instance = Int()
+
+
+class BigInt(BaseType):
+    type = SYBINT8
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
+    def get_declaration(self):
+        return 'BIGINT'
+
+    def write_info(self, w):
+        pass
+
+    def write(self, w, val):
+        w.put_int8(val)
+
+    def read(self, r):
+        return r.get_int()
+BigInt.instance = BigInt()
+
+
+class IntN(BaseType):
     type = SYBINTN
 
     _declarations = {
@@ -778,12 +867,23 @@ class IntN(object):
         8: struct.Struct('<q'),
         }
 
+    _subtype = {
+        1: TinyInt.instance,
+        2: SmallInt.instance,
+        4: Int.instance,
+        8: BigInt.instance,
+        }
+
     _valid_sizes = {1, 2, 4, 8}
 
     def __init__(self, size):
         assert size in self._valid_sizes
         self._size = size
         self._current_struct = self._struct[size]
+        self._typeid = self._subtype[size].type
+
+    def get_typeid(self):
+        return self._typeid
 
     @classmethod
     def from_stream(cls, r):
@@ -814,87 +914,7 @@ class IntN(object):
         return r.unpack(self._struct[size])[0]
 
 
-class TinyInt(object):
-    type = SYBINT1
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'TINYINT'
-
-    def write_info(self, w):
-        pass
-
-    def write(self, w, val):
-        w.put_tinyint(val)
-
-    def read(self, r):
-        return r.get_tinyint()
-
-
-class SmallInt(object):
-    type = SYBINT2
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'SMALLINT'
-
-    def write_info(self, w):
-        pass
-
-    def write(self, w, val):
-        w.put_smallint(val)
-
-    def read(self, r):
-        return r.get_smallint()
-
-
-class Int(object):
-    type = SYBINT4
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'INT'
-
-    def write_info(self, w):
-        pass
-
-    def write(self, w, val):
-        w.put_int(val)
-
-    def read(self, r):
-        return r.get_int()
-
-
-class BigInt(object):
-    type = SYBINT8
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'BIGINT'
-
-    def write_info(self, w):
-        pass
-
-    def write(self, w, val):
-        w.put_int8(val)
-
-    def read(self, r):
-        return r.get_int()
-
-
-class Real(object):
+class Real(BaseType):
     type = SYBREAL
 
     def get_declaration(self):
@@ -908,9 +928,10 @@ class Real(object):
 
     def read(self, r):
         return r.unpack(_SYBFLT4_STRUCT)[0]
+Real.instance = Real()
 
 
-class Float(object):
+class Float(BaseType):
     type = SYBFLT8
 
     def get_declaration(self):
@@ -924,13 +945,20 @@ class Float(object):
 
     def read(self, r):
         return r.unpack(_SYBFLT8_STRUCT)[0]
+Float.instance = Float()
 
 
-class FloatN(object):
+class FloatN(BaseType):
     type = SYBFLTN
+
+    _subtype = {
+        4: Real.instance,
+        8: Float.instance,
+        }
 
     def __init__(self, size):
         self._size = size
+        self._typeid = self._subtype[size].type
 
     @classmethod
     def from_stream(cls, r):
@@ -968,7 +996,7 @@ class FloatN(object):
                 raise InterfaceError('Invalid SYBFLTN size', size)
 
 
-class VarChar70(object):
+class VarChar70(BaseType):
     type = XSYBVARCHAR
 
     def __init__(self, size):
@@ -1019,7 +1047,7 @@ class VarChar71(VarChar70):
         w.put_collation(self._collation)
 
 
-class VarCharMax(object):
+class VarCharMax(BaseType):
     type = XSYBVARCHAR
 
     def __init__(self, collation):
@@ -1068,7 +1096,7 @@ class VarCharMax(object):
                 chunks.append(chunk)
 
 
-class NVarCharMax(object):
+class NVarCharMax(BaseType):
     type = XSYBNVARCHAR
 
     def __init__(self, collation):
@@ -1116,7 +1144,7 @@ class NVarCharMax(object):
                 chunks.append(chunk)
 
 
-class NVarChar70(object):
+class NVarChar70(BaseType):
     type = XSYBNVARCHAR
 
     def __init__(self, size):
@@ -1179,7 +1207,9 @@ class Xml(NVarCharMax):
         return cls(schema)
 
 
-class Text71(object):
+class Text71(BaseType):
+    type = SYBTEXT
+
     def __init__(self, size, table_name, collation):
         self._size = size
         self._collation = collation
@@ -1230,7 +1260,9 @@ class Text72(Text71):
         return cls(size, parts, collation)
 
 
-class NText71(object):
+class NText71(BaseType):
+    type = SYBNTEXT
+
     def __init__(self, size, table_name, collation):
         self._size = size
         self._collation = collation
@@ -1281,7 +1313,7 @@ class NText72(NText71):
         return cls(size, parts, collation)
 
 
-class VarBinaryMax(object):
+class VarBinaryMax(BaseType):
     type = XSYBVARBINARY
 
     def get_declaration(self):
@@ -1315,7 +1347,7 @@ class VarBinaryMax(object):
                 chunks.append(chunk)
 
 
-class VarBinary(object):
+class VarBinary(BaseType):
     type = XSYBVARBINARY
 
     def __init__(self, size):
@@ -1338,7 +1370,7 @@ class VarBinary(object):
         return readall(r, r.get_smallint())
 
 
-class Image(object):
+class Image(BaseType):
     def __init__(self, size, table_name):
         self._table_name = table_name
         self._size = size
@@ -1379,7 +1411,8 @@ class Image72(Image):
             parts.append(r.read_ucs2(r.get_smallint()))
         return Image72(size, parts)
 
-class BaseDateTime(object):
+
+class BaseDateTime(BaseType):
     _base_date = datetime(1900, 1, 1)
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
@@ -1453,7 +1486,7 @@ class DateTime(BaseDateTime):
         return cls._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
 
 
-class DateTimeN(object):
+class DateTimeN(BaseType):
     type = SYBDATETIMN
 
     _base_date = datetime(1900, 1, 1)
@@ -1502,7 +1535,7 @@ class DateTimeN(object):
             raise InterfaceError('Invalid datetimn size')
 
 
-class BaseDateTime73(object):
+class BaseDateTime73(BaseType):
     _precision_to_len = {
         0: 3,
         1: 3,
@@ -1686,7 +1719,7 @@ class DateTimeOffset(BaseDateTime73):
         return datetime.combine(date, time).astimezone(tz)
 
 
-class MsDecimal(object):
+class MsDecimal(BaseType):
     type = SYBDECIMAL
 
     _max_size = 33
@@ -1790,7 +1823,7 @@ class MsDecimal(object):
         return self._decode(positive, buf)
 
 
-class Money4(object):
+class Money4(BaseType):
     type = SYBMONEY4
 
     @classmethod
@@ -1802,13 +1835,16 @@ class Money4(object):
 Money4.instance = Money4()
 
 
-class Money8(object):
+class Money8(BaseType):
     type = SYBMONEY
     _struct = struct.Struct('<lL')
 
     @classmethod
     def from_stream(cls, r):
         return cls.instance
+
+    def get_typeid(self):
+        return self.type
 
     def read(self, r):
         hi, lo = r.unpack(self._struct)
@@ -1817,7 +1853,7 @@ class Money8(object):
 Money8.instance = Money4()
 
 
-class MoneyN(object):
+class MoneyN(BaseType):
     type = SYBMONEYN
     _subtypes = {
         4: Money4(),
@@ -1826,6 +1862,10 @@ class MoneyN(object):
 
     def __init__(self, size):
         self._size = size
+        self._typeid = self._subtypes[size].type
+
+    def get_typeid(self):
+        return self._typeid
 
     @classmethod
     def from_stream(cls, r):
@@ -1844,7 +1884,7 @@ class MoneyN(object):
 
 
 
-class MsUnique(object):
+class MsUnique(BaseType):
     type = SYBUNIQUE
 
     @classmethod
@@ -1876,7 +1916,7 @@ class MsUnique(object):
         return uuid.UUID(bytes_le=readall(r, 16))
 
 
-class Variant(object):
+class Variant(BaseType):
     type = SYBVARIANT
 
     def __init__(self, size):
