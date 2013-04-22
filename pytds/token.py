@@ -801,8 +801,8 @@ def tds7_process_result(tds):
         # number of bytes... read_ucs2 handles this
         #
         curcol.column_name = r.read_ucs2(r.get_byte())
-        precision = curcol.column_prec if hasattr(curcol, 'column_prec') else None
-        scale = curcol.column_scale if hasattr(curcol, 'column_scale') else None
+        precision = curcol.type.precision if hasattr(curcol.type, 'precision') else None
+        scale = curcol.type.scale if hasattr(curcol.type, 'scale') else None
         header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, None, precision, scale, curcol.column_nullable))
     info.description = tuple(header_tuple)
     return info
@@ -924,8 +924,6 @@ def tds_get_type_info(tds, curcol):
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
         type = MsDecimal.from_stream(r)
-        curcol.column_scale = type.scale
-        curcol.column_prec = type.precision
 
     elif type == SYBVARIANT:
         type = Variant.from_stream(r)
