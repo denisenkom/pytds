@@ -731,7 +731,7 @@ class Bit(BaseType):
 
     @classmethod
     def from_stream(cls, r):
-        return cls()
+        return cls.instance
 
     def write_info(self, w):
         w.put_byte(1)
@@ -741,6 +741,7 @@ class Bit(BaseType):
 
     def read(self, r):
         return bool(r.get_byte())
+Bit.instance = Bit()
 
 
 class BitN(BaseType):
@@ -789,10 +790,10 @@ class TinyInt(BaseType):
         pass
 
     def write(self, w, val):
-        w.put_tinyint(val)
+        w.put_byte(val)
 
     def read(self, r):
-        return r.get_tinyint()
+        return r.get_byte()
 TinyInt.instance = TinyInt()
 
 
@@ -855,7 +856,7 @@ class BigInt(BaseType):
         w.put_int8(val)
 
     def read(self, r):
-        return r.get_int()
+        return r.get_int8()
 BigInt.instance = BigInt()
 
 
@@ -933,10 +934,10 @@ class Real(BaseType):
         pass
 
     def write(self, w, val):
-        w.pack(_SYBFLT4_STRUCT, val)
+        w.pack(_flt4_struct, val)
 
     def read(self, r):
-        return r.unpack(_SYBFLT4_STRUCT)[0]
+        return r.unpack(_flt4_struct)[0]
 Real.instance = Real()
 
 
@@ -1491,6 +1492,7 @@ class SmallDateTime(BaseDateTime):
     def read(self, r):
         days, minutes = r.unpack(TDS_DATETIME4)
         return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
+SmallDateTime.instance = SmallDateTime()
 
 
 class DateTime(BaseDateTime):
@@ -1537,6 +1539,7 @@ class DateTime(BaseDateTime):
         ms = int(round(time % 300 * 10 / 3.0))
         secs = time // 300
         return cls._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
+DateTime.instance = DateTime()
 
 
 class DateTimeN(BaseType):
@@ -1651,11 +1654,15 @@ class MsDate(BaseDateTime73):
             w.put_byte(3)
             self._write_date(w, value)
 
+    def read_fixed(self, r):
+        return self._read_date(r)
+
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
         return self._read_date(r)
+MsDate.instance = MsDate()
 
 
 class MsTime(BaseDateTime73):
@@ -1687,11 +1694,14 @@ class MsTime(BaseDateTime73):
             w.put_byte(self._size)
             self._write_time(w, value, self._prec)
 
+    def read_fixed(self, r, size):
+        return self._read_time(r, size, self._prec, r.session.use_tz)
+
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
-        return self._read_time(r, size, self._prec, r.session.use_tz)
+        return self.read_fixed(r, size)
 
 
 class DateTime2(BaseDateTime73):
@@ -1724,13 +1734,16 @@ class DateTime2(BaseDateTime73):
             self._write_time(w, value, self._prec)
             self._write_date(w, value)
 
+    def read_fixed(self, r, size):
+        time = self._read_time(r, size - 3, self._prec, r.session.use_tz)
+        date = self._read_date(r)
+        return datetime.combine(date, time)
+
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
-        time = self._read_time(r, size - 3, self._prec, r.session.use_tz)
-        date = self._read_date(r)
-        return datetime.combine(date, time)
+        return self.read_fixed(r, size)
 
 
 class DateTimeOffset(BaseDateTime73):
@@ -1763,20 +1776,23 @@ class DateTimeOffset(BaseDateTime73):
             self._write_date(w, value)
             w.put_smallint(int(utcoffset.total_seconds()) // 60)
 
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
+    def read_fixed(self, r, size):
         time = self._read_time(r, size - 5, self._prec, _utc)
         date = self._read_date(r)
         tz = tzoffset('', r.get_smallint() * 60)
         return datetime.combine(date, time).astimezone(tz)
 
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        return self.read_fixed(r, size)
+
 
 class MsDecimal(BaseType):
     type = SYBDECIMAL
 
-    _max_size = 33
+    _max_size = 17
 
     _bytes_per_prec = [
         #
@@ -1784,14 +1800,10 @@ class MsDecimal(BaseType):
         # core if for some bug it's 0...
         #
         1,
-        2, 2, 3, 3, 4, 4, 4, 5, 5,
-        6, 6, 6, 7, 7, 8, 8, 9, 9, 9,
-        10, 10, 11, 11, 11, 12, 12, 13, 13, 14,
-        14, 14, 15, 15, 16, 16, 16, 17, 17, 18,
-        18, 19, 19, 19, 20, 20, 21, 21, 21, 22,
-        22, 23, 23, 24, 24, 24, 25, 25, 26, 26,
-        26, 27, 27, 28, 28, 28, 29, 29, 30, 30,
-        31, 31, 31, 32, 32, 33, 33, 33
+        5, 5, 5, 5, 5, 5, 5, 5, 5,
+        9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+        13, 13, 13, 13, 13, 13, 13, 13, 13,
+        17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
         ]
 
     _info_struct = struct.Struct('BBB')
@@ -1867,14 +1879,16 @@ class MsDecimal(BaseType):
             val /= 10 ** self._scale
         return val
 
+    def read_fixed(self, r, size):
+        positive = r.get_byte()
+        buf = readall(r, size - 1)
+        return self._decode(positive, buf)
+
     def read(self, r):
         size = r.get_byte()
         if size <= 0:
             return None
-
-        positive = r.get_byte()
-        buf = readall(r, size - 1)
-        return self._decode(positive, buf)
+        return self.read_fixed(r, size)
 
 
 class Money4(BaseType):
@@ -1904,7 +1918,7 @@ class Money8(BaseType):
         hi, lo = r.unpack(self._struct)
         val = hi * (2 ** 32) + lo
         return Decimal(val) / 10000
-Money8.instance = Money4()
+Money8.instance = Money8()
 
 
 class MoneyN(BaseType):
@@ -1946,7 +1960,7 @@ class MsUnique(BaseType):
         size = r.get_byte()
         if size != 16:
             raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
-        return MsUnique()
+        return cls.instance
 
     def get_declaration(self):
         return 'UNIQUEIDENTIFIER'
@@ -1961,17 +1975,77 @@ class MsUnique(BaseType):
             w.put_byte(16)
             w.write(value.bytes_le)
 
+    def read_fixed(self, r, size):
+        return uuid.UUID(bytes_le=readall(r, size))
+
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
         if size != 16:
             raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
-        return uuid.UUID(bytes_le=readall(r, 16))
+        return self.read_fixed(r, size)
+MsUnique.instance = MsUnique()
+
+
+def _variant_read_str(r, size):
+    collation = r.get_collation()
+    r.get_usmallint()
+    return r.read_str(size, collation.get_codec())
+
+
+def _variant_read_nstr(r, size):
+    r.get_collation()
+    r.get_usmallint()
+    return r.read_str(size, ucs2_codec)
+
+
+def _variant_read_decimal(r, size):
+    prec, scale = r.unpack(Variant._decimal_info_struct)
+    return MsDecimal(prec=prec, scale=scale).read_fixed(r, size)
+
+
+def _variant_read_binary(r, size):
+    r.get_usmallint()
+    return readall(r, size)
 
 
 class Variant(BaseType):
     type = SYBVARIANT
+
+    _decimal_info_struct = struct.Struct('BB')
+
+    _type_map = {
+        GUIDTYPE: lambda r, size: MsUnique.instance.read_fixed(r, size),
+        BITTYPE: lambda r, size: Bit.instance.read(r),
+        INT1TYPE: lambda r, size: TinyInt.instance.read(r),
+        INT2TYPE: lambda r, size: SmallInt.instance.read(r),
+        INT4TYPE: lambda r, size: Int.instance.read(r),
+        INT8TYPE: lambda r, size: BigInt.instance.read(r),
+        DATETIMETYPE: lambda r, size: DateTime.instance.read(r),
+        DATETIM4TYPE: lambda r, size: SmallDateTime.instance.read(r),
+        FLT4TYPE: lambda r, size: Real.instance.read(r),
+        FLT8TYPE: lambda r, size: Float.instance.read(r),
+        MONEYTYPE: lambda r, size: Money8.instance.read(r),
+        MONEY4TYPE: lambda r, size: Money4.instance.read(r),
+        DATENTYPE: lambda r, size: MsDate.instance.read_fixed(r),
+
+        TIMENTYPE: lambda r, size: MsTime(prec=r.get_byte()).read_fixed(r, size),
+        DATETIME2NTYPE: lambda r, size: DateTime2(prec=r.get_byte()).read_fixed(r, size),
+        DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffset(prec=r.get_byte()).read_fixed(r, size),
+
+        BIGVARBINTYPE: _variant_read_binary,
+        BIGBINARYTYPE: _variant_read_binary,
+
+        NUMERICNTYPE: _variant_read_decimal,
+        DECIMALNTYPE: _variant_read_decimal,
+
+        BIGVARCHRTYPE: _variant_read_str,
+        BIGCHARTYPE: _variant_read_str,
+        NVARCHARTYPE: _variant_read_nstr,
+        NCHARTYPE: _variant_read_nstr,
+
+        }
 
     def __init__(self, size):
         self._size = size
@@ -1982,62 +2056,16 @@ class Variant(BaseType):
         return Variant(size)
 
     def read(self, r):
-        colsize = r.get_int()
-        curcol = _Column()
-        # NULL
-        try:
-            if colsize < 2:
-                r.skip(colsize)
-                return None
+        size = r.get_int()
+        if size == 0:
+            return None
 
-            type = r.get_byte()
-            info_len = r.get_byte()
-            colsize -= 2
-            if info_len > colsize:
-                raise Exception('TDS_FAIL')
-            if is_collate_type(type):
-                if Collation.wire_size > info_len:
-                    raise Exception('TDS_FAIL')
-                curcol.collation = collation = r.get_collation()
-                colsize -= Collation.wire_size
-                info_len -= Collation.wire_size
-                curcol.char_codec = ucs2_codec if is_unicode_type(type) else\
-                    collation.get_codec()
-            # special case for numeric
-            if is_numeric_type(type):
-                if info_len != 2:
-                    raise Exception('TDS_FAIL')
-                curcol.precision = r.get_byte()
-                curcol.scale = scale = r.get_byte()
-                colsize -= 2
-                # FIXME check prec/scale, don't let server crash us
-                if colsize > NumericHandler.MAX_NUMERIC:
-                    raise Exception('TDS_FAIL')
-                positive = r.get_byte()
-                buf = readall(r, colsize - 1)
-                return NumericHandler.ms_parse_numeric(positive, buf, scale)
-            varint = 0 if type == SYBUNIQUE else tds_get_varint_size(r._session, type)
-            if varint != info_len:
-                raise Exception('TDS_FAIL')
-            if varint == 0:
-                size = tds_get_size_by_type(type)
-            elif varint == 1:
-                size = r.get_byte()
-            elif varint == 2:
-                size = r.get_smallint()
-            else:
-                raise Exception('TDS_FAIL')
-            colsize -= info_len
-            if colsize:
-                if curcol.char_codec:
-                    data = tds_get_char_data(r._session, colsize, curcol)
-                else:
-                    data = readall(r, colsize)
-            colsize = 0
-            return to_python(r._session, data, type, colsize)
-        except:
-            r.skip(colsize)
-            raise
+        type_id = r.get_byte()
+        prop_bytes = r.get_byte()
+        type_factory = self._type_map.get(type_id)
+        if not type_factory:
+            r.bad_stream('Variant type invalid', type_id)
+        return type_factory(r, size - prop_bytes - 2)
 
 
 _type_map = {
@@ -2077,7 +2105,8 @@ _type_map = {
     SYBUNIQUE: MsUnique,
     }
 
-_type_map71 = _type_map.copy().update({
+_type_map71 = _type_map.copy()
+_type_map71.update({
     XSYBCHAR: VarChar71,
     XSYBNCHAR: NVarChar71,
     XSYBVARCHAR: VarChar71,
@@ -2086,7 +2115,8 @@ _type_map71 = _type_map.copy().update({
     SYBNTEXT: NText71,
     })
 
-_type_map72 = _type_map.copy().update({
+_type_map72 = _type_map.copy()
+_type_map72.update({
     XSYBCHAR: VarChar72,
     XSYBNCHAR: NVarChar72,
     XSYBVARCHAR: VarChar72,
@@ -2123,6 +2153,12 @@ class _TdsSession(object):
         self.rows_affected = -1
         self.use_tz = tds._login.use_tz
         self._spid = 0
+
+    def get_type_factory(self, type_id):
+        factory = self._tds._type_map.get(type_id)
+        if not factory:
+            raise InterfaceError('Invalid type id', type_id)
+        return factory
 
     def is_dead(self):
         return self.state == TDS_DEAD
@@ -2589,6 +2625,12 @@ class _TdsSocket(object):
                 try:
                     from .login import tds_login
                     tds_login(self._main_session, login)
+                    if IS_TDS72_PLUS(self):
+                        self._type_map = _type_map72
+                    elif IS_TDS71_PLUS(self):
+                        self._type_map = _type_map71
+                    else:
+                        self._type_map = _type_map
                     text_size = login.text_size
                     if self.mars_enabled:
                         self._setup_smp()

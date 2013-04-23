@@ -308,23 +308,40 @@ class NoRows(DbTestCase):
         cur.execute('select * from testtable')
         self.assertEqual([], cur.fetchall())
 
-class SqlVariant(TestCase):
+class TestVariant(TestCase):
+    def _t(self, result, sql):
+        with self.conn.cursor() as cur:
+            cur.execute("select cast({} as sql_variant)".format(sql))
+            val, = cur.fetchone()
+            self.assertEqual(result, val)
+
     def runTest(self):
-        cur = self.conn.cursor()
-        cur.execute("select cast('test' as sql_variant)")
-        self.assertEqual([('test',)], cur.fetchall())
-
-        cur.execute("select cast(N'test' as sql_variant)")
-        self.assertEqual([('test',)], cur.fetchall())
-
-        cur.execute("select cast(100 as sql_variant)")
-        self.assertEqual([(100,)], cur.fetchall())
-
-        cur.execute("select cast(cast(100.55555 as decimal(8,5)) as sql_variant)")
-        self.assertEqual([(Decimal('100.55555'),)], cur.fetchall())
-
-        cur.execute("select cast(cast('test' as varbinary) as sql_variant)")
-        self.assertEqual([(b'test',)], cur.fetchall())
+        self._t(None, "cast(NULL as varchar)")
+        self._t('test', "cast('test' as varchar)")
+        self._t('test ', "cast('test' as char(5))")
+        self._t('test', "cast(N'test' as nvarchar)")
+        self._t('test ', "cast(N'test' as nchar(5))")
+        self._t(Decimal('100.55555'), "cast(100.55555 as decimal(8,5))")
+        self._t(Decimal('100.55555'), "cast(100.55555 as numeric(8,5))")
+        self._t(b'test', "cast('test' as varbinary)")
+        self._t(b'test\x00', "cast('test' as binary(5))")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003000' as datetime2)")
+        self._t(time(10, 11, 12, 3000), "cast('10:11:12.003000' as time)")
+        self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3*60*60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003' as datetime)")
+        self._t(datetime(2011, 2, 3, 10, 11, 0), "cast('2011-02-03T10:11:00' as smalldatetime)")
+        val = uuid.uuid4()
+        self._t(val, "cast('{}' as uniqueidentifier)".format(val))
+        self._t(True, "cast(1 as bit)")
+        self._t(128, "cast(128 as tinyint)")
+        self._t(-32000, "cast(-32000 as smallint)")
+        self._t(2000000000, "cast(2000000000 as int)")
+        self._t(2000000000000, "cast(2000000000000 as bigint)")
+        self._t(0.12345, "cast(0.12345 as float)")
+        self._t(0.25, "cast(0.25 as real)")
+        self._t(Decimal('922337203685477.5807'), "cast('922,337,203,685,477.5807' as money)")
+        self._t(Decimal('-214748.3648'), "cast('- 214,748.3648' as smallmoney)")
 
 class BadConnection(unittest.TestCase):
     def runTest(self):
@@ -418,12 +435,14 @@ class BinaryTest(TestCase):
             cur.execute('select %s', (Binary(binary),))
             self.assertEqual([(binary,)], cur.fetchall())
 
+
 class GuidTest(TestCase):
     def runTest(self):
         cur = self.conn.cursor()
         val = uuid.uuid4()
         cur.execute('select %s', (val,))
         self.assertEqual([(val,)], cur.fetchall())
+
 
 #class EncryptionTest(unittest.TestCase):
 #    def runTest(self):
