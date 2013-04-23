@@ -8,7 +8,6 @@ import six
 from . import lcid
 from .tds import *
 from .login import *
-from .token import tds_process_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +258,7 @@ class _Connection(object):
             return
 
         # Get the row from the TDS stream.
-        rc, res_type, done_flags = tds_process_tokens(session, self._nextrow_mask)
+        rc, res_type, done_flags = session.process_tokens(self._nextrow_mask)
         if done_flags & TDS_DONE_ERROR:
             raise_db_exception(session)
             assert False
@@ -268,13 +267,13 @@ class _Connection(object):
             if res_type in (TDS_ROW_RESULT, TDS_COMPUTE_RESULT):
                 # Add the row to the row buffer, whose capacity is always at least 1
                 resinfo = session.current_results
-                #_, res_type, _ = tds_process_tokens(session, TDS_TOKEN_TRAILING)
+                #_, res_type, _ = session.process_tokens(TDS_TOKEN_TRAILING)
             else:
                 self._state = DB_RES_NEXT_RESULT
         elif rc == TDS_NO_MORE_RESULTS:
             self._state = DB_RES_NEXT_RESULT
         else:
-            raise Exception("unexpected result from tds_process_tokens")
+            raise Exception("unexpected result from process_tokens")
 
     def _sqlok(self, session):
         #logger.debug("dbsqlok()")
@@ -285,9 +284,9 @@ class _Connection(object):
         # submitted returned no data (like an insert) -- then
         # we process the end token to extract the status code.
         #
-        #logger.debug("dbsqlok() not done, calling tds_process_tokens()")
+        #logger.debug("dbsqlok() not done, calling process_tokens()")
         while True:
-            tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
+            tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
 
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
@@ -315,7 +314,7 @@ class _Connection(object):
             elif result_type == TDS_STATUS_RESULT:
                 continue
             else:
-                raise InterfaceError('logic error: tds_process_tokens result_type %d' % result_type)
+                raise InterfaceError('logic error: process_tokens result_type %d' % result_type)
 
     def _fetchone(self, cursor):
         """
@@ -361,7 +360,7 @@ class _Connection(object):
         if session is None:
             return None
         if not session.has_status:
-            tds_process_tokens(session, TDS_RETURN_PROC)
+            session.process_tokens(TDS_RETURN_PROC)
         return session.ret_status if session.has_status else None
 
     def _description(self, cursor):
@@ -402,7 +401,7 @@ class _Connection(object):
             if not (cursor is self._active_cursor or self._active_cursor is None):
                 session = conn.main_session
                 if session.state == TDS_PENDING:
-                    rc, result_type, _ = tds_process_tokens(session, TDS_TOKEN_TRAILING)
+                    rc, result_type, _ = session.process_tokens(TDS_TOKEN_TRAILING)
                     if rc != TDS_NO_MORE_RESULTS:
                         raise InterfaceError('Results are still pending on connection')
                 if cursor is not None:
@@ -418,7 +417,7 @@ class _Connection(object):
         session.submit_query(operation, params)
         self._state = DB_RES_INIT
         while True:
-            tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
+            tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
 
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
@@ -449,7 +448,7 @@ class _Connection(object):
                     self._state = DB_RES_NO_MORE_RESULTS
                 break
             else:
-                raise InterfaceError('logic error: tds_process_tokens result_type %d' % result_type)
+                raise InterfaceError('logic error: process_tokens result_type %d' % result_type)
 
     def _callproc(self, cursor, procname, parameters):
         #logger.debug('callproc begin')
@@ -462,7 +461,7 @@ class _Connection(object):
         session.output_params = {}
         self._state = DB_RES_INIT
         while True:
-            tds_code, result_type, done_flags = tds_process_tokens(session, TDS_TOKEN_RESULTS)
+            tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
             #
             # The error flag may be set for any intervening DONEINPROC packet, in particular
             # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
@@ -491,7 +490,7 @@ class _Connection(object):
                     self._state = DB_RES_NO_MORE_RESULTS
                 break
             else:
-                logger.error('logic error: tds_process_tokens result_type %d', result_type)
+                logger.error('logic error: process_tokens result_type %d', result_type)
         #logger.debug('callproc end')
         results = list(parameters)
         for key, param in session.output_params.items():
