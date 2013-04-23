@@ -1,19 +1,16 @@
 import struct
 import logging
 import socket
-import errno
 import os
 import select
 import sys
-import six
+import traceback
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from dateutil.tz import tzoffset, tzutc, tzlocal
 import uuid
 import six
-import struct
-import sys
-from six.moves import map, reduce
+from six.moves import reduce
 from six.moves import xrange
 try:
     import ssl
@@ -103,52 +100,52 @@ TDS_REQUEST_USER_INSTANCE = 0x04
 TDS_UNKNOWN_COLLATION_HANDLING = 0x08
 TDS_ANY_COLLATION = 0x10
 
-TDS5_PARAMFMT2_TOKEN      =  32  # 0x20
-TDS_LANGUAGE_TOKEN        =  33  # 0x20    TDS 5.0 only
-TDS_ORDERBY2_TOKEN        =  34  # 0x22
-TDS_ROWFMT2_TOKEN         =  97  # 0x61    TDS 5.0 only
-TDS_LOGOUT_TOKEN          = 113  # 0x71    TDS 5.0 only?
-TDS_RETURNSTATUS_TOKEN    = 121  # 0x79
-TDS_PROCID_TOKEN          = 124  # 0x7C    TDS 4.2 only
-TDS7_RESULT_TOKEN         = 129  # 0x81    TDS 7.0 only
+TDS5_PARAMFMT2_TOKEN = 32  # 0x20
+TDS_LANGUAGE_TOKEN = 33  # 0x20    TDS 5.0 only
+TDS_ORDERBY2_TOKEN = 34  # 0x22
+TDS_ROWFMT2_TOKEN = 97  # 0x61    TDS 5.0 only
+TDS_LOGOUT_TOKEN = 113  # 0x71    TDS 5.0 only?
+TDS_RETURNSTATUS_TOKEN = 121  # 0x79
+TDS_PROCID_TOKEN = 124  # 0x7C    TDS 4.2 only
+TDS7_RESULT_TOKEN = 129  # 0x81    TDS 7.0 only
 TDS7_COMPUTE_RESULT_TOKEN = 136  # 0x88    TDS 7.0 only
-TDS_COLNAME_TOKEN         = 160  # 0xA0    TDS 4.2 only
-TDS_COLFMT_TOKEN          = 161  # 0xA1    TDS 4.2 only
-TDS_DYNAMIC2_TOKEN        = 163  # 0xA3
-TDS_TABNAME_TOKEN         = 164  # 0xA4
-TDS_COLINFO_TOKEN         = 165  # 0xA5
-TDS_OPTIONCMD_TOKEN       = 166  # 0xA6
-TDS_COMPUTE_NAMES_TOKEN   = 167  # 0xA7
-TDS_COMPUTE_RESULT_TOKEN  = 168  # 0xA8
-TDS_ORDERBY_TOKEN         = 169  # 0xA9
-TDS_ERROR_TOKEN           = 170  # 0xAA
-TDS_INFO_TOKEN            = 171  # 0xAB
-TDS_PARAM_TOKEN           = 172  # 0xAC
-TDS_LOGINACK_TOKEN        = 173  # 0xAD
-TDS_CONTROL_TOKEN         = 174  # 0xAE
-TDS_ROW_TOKEN             = 209  # 0xD1
-TDS_NBC_ROW_TOKEN         = 210  # 0xD2    as of TDS 7.3.B
-TDS_CMP_ROW_TOKEN         = 211  # 0xD3
-TDS5_PARAMS_TOKEN         = 215  # 0xD7    TDS 5.0 only
-TDS_CAPABILITY_TOKEN      = 226  # 0xE2
-TDS_ENVCHANGE_TOKEN       = 227  # 0xE3
-TDS_EED_TOKEN             = 229  # 0xE5
-TDS_DBRPC_TOKEN           = 230  # 0xE6
-TDS5_DYNAMIC_TOKEN        = 231  # 0xE7    TDS 5.0 only
-TDS5_PARAMFMT_TOKEN       = 236  # 0xEC    TDS 5.0 only
-TDS_AUTH_TOKEN            = 237  # 0xED    TDS 7.0 only
-TDS_RESULT_TOKEN          = 238  # 0xEE
-TDS_DONE_TOKEN            = 253  # 0xFD
-TDS_DONEPROC_TOKEN        = 254  # 0xFE
-TDS_DONEINPROC_TOKEN      = 255  # 0xFF
+TDS_COLNAME_TOKEN = 160  # 0xA0    TDS 4.2 only
+TDS_COLFMT_TOKEN = 161  # 0xA1    TDS 4.2 only
+TDS_DYNAMIC2_TOKEN = 163  # 0xA3
+TDS_TABNAME_TOKEN = 164  # 0xA4
+TDS_COLINFO_TOKEN = 165  # 0xA5
+TDS_OPTIONCMD_TOKEN = 166  # 0xA6
+TDS_COMPUTE_NAMES_TOKEN = 167  # 0xA7
+TDS_COMPUTE_RESULT_TOKEN = 168  # 0xA8
+TDS_ORDERBY_TOKEN = 169  # 0xA9
+TDS_ERROR_TOKEN = 170  # 0xAA
+TDS_INFO_TOKEN = 171  # 0xAB
+TDS_PARAM_TOKEN = 172  # 0xAC
+TDS_LOGINACK_TOKEN = 173  # 0xAD
+TDS_CONTROL_TOKEN = 174  # 0xAE
+TDS_ROW_TOKEN = 209  # 0xD1
+TDS_NBC_ROW_TOKEN = 210  # 0xD2    as of TDS 7.3.B
+TDS_CMP_ROW_TOKEN = 211  # 0xD3
+TDS5_PARAMS_TOKEN = 215  # 0xD7    TDS 5.0 only
+TDS_CAPABILITY_TOKEN = 226  # 0xE2
+TDS_ENVCHANGE_TOKEN = 227  # 0xE3
+TDS_EED_TOKEN = 229  # 0xE5
+TDS_DBRPC_TOKEN = 230  # 0xE6
+TDS5_DYNAMIC_TOKEN = 231  # 0xE7    TDS 5.0 only
+TDS5_PARAMFMT_TOKEN = 236  # 0xEC    TDS 5.0 only
+TDS_AUTH_TOKEN = 237  # 0xED    TDS 7.0 only
+TDS_RESULT_TOKEN = 238  # 0xEE
+TDS_DONE_TOKEN = 253  # 0xFD
+TDS_DONEPROC_TOKEN = 254  # 0xFE
+TDS_DONEINPROC_TOKEN = 255  # 0xFF
 
 # CURSOR support: TDS 5.0 only
-TDS_CURCLOSE_TOKEN       = 128  # 0x80    TDS 5.0 only
-TDS_CURDELETE_TOKEN      = 129  # 0x81    TDS 5.0 only
-TDS_CURFETCH_TOKEN       = 130  # 0x82    TDS 5.0 only
-TDS_CURINFO_TOKEN        = 131  # 0x83    TDS 5.0 only
-TDS_CUROPEN_TOKEN        = 132  # 0x84    TDS 5.0 only
-TDS_CURDECLARE_TOKEN     = 134  # 0x86    TDS 5.0 only
+TDS_CURCLOSE_TOKEN = 128  # 0x80    TDS 5.0 only
+TDS_CURDELETE_TOKEN = 129  # 0x81    TDS 5.0 only
+TDS_CURFETCH_TOKEN = 130  # 0x82    TDS 5.0 only
+TDS_CURINFO_TOKEN = 131  # 0x83    TDS 5.0 only
+TDS_CUROPEN_TOKEN = 132  # 0x84    TDS 5.0 only
+TDS_CURDECLARE_TOKEN = 134  # 0x86    TDS 5.0 only
 
 # environment type field
 TDS_ENV_DATABASE = 1
@@ -433,11 +430,7 @@ class SimpleLoadBalancer(object):
 # \result written chars (not including needed terminator)
 #
 def tds_quote_id(tds, id):
-    # quote always for mssql
-    if TDS_IS_MSSQL(tds) or tds_conn(tds).product_version >= TDS_SYB_VER(12, 5, 1):
-        return '[{0}]'.format(id.replace(']', ']]'))
-
-    return '"{0}"'.format(id.replace('"', '""'))
+    return '[{0}]'.format(id.replace(']', ']]'))
 
 
 def tds7_crypt_pass(password):
@@ -533,6 +526,7 @@ class ProgrammingError(DatabaseError):
 
 class NotSupportedError(DatabaseError):
     pass
+
 
 #############################
 ## DB-API type definitions ##
@@ -974,6 +968,7 @@ class _TdsWriter(object):
         self._transport.send(self._buf[:self._pos], final)
         self._pos = 8
 
+
 class MemoryChunkedHandler(object):
     def begin(self, column, size):
         self.size = size
@@ -1283,7 +1278,7 @@ class FloatN(BaseType):
             if size == 8:
                 return r.unpack(_SYBFLT8_STRUCT)[0]
             elif size == 4:
-                return r.unpack(_SYBFLT4_STRUCT)[0]
+                return r.unpack(_flt4_struct)[0]
             else:
                 raise InterfaceError('Invalid SYBFLTN size', size)
 
@@ -1769,7 +1764,7 @@ class SmallDateTime(BaseDateTime):
         w.put_byte(4)
 
     def write(self, w, val):
-        w.write(Datetime.encode(value))
+        raise NotImplementedError
 
     def read(self, r):
         days, minutes = r.unpack(TDS_DATETIME4)
@@ -1795,11 +1790,11 @@ class DateTime(BaseDateTime):
         w.put_byte(8)
 
     def write(self, w, val):
-        w.write(self.encode(value))
+        w.write(self.encode(val))
 
     def read(self, r):
-        days, time = r.unpack(TDS_DATETIME)
-        return _applytz(self.decode(days, time), r.session.use_tz)
+        days, t = r.unpack(TDS_DATETIME)
+        return _applytz(self.decode(days, t), r.session.use_tz)
 
     @classmethod
     def validate(cls, value):
@@ -1856,7 +1851,7 @@ class DateTimeN(BaseType):
             w.put_byte(0)
         else:
             w.put_byte(8)
-            w.write(DateTime.encode(value))
+            w.write(DateTime.encode(val))
 
     def read(self, r):
         size = r.get_byte()
@@ -2231,7 +2226,6 @@ class MoneyN(BaseType):
         if size not in (4, 8):
             raise InterfaceError('Invalid SYBMONEYN size', size)
         return self._subtypes[size].read(r)
-
 
 
 class MsUnique(BaseType):
@@ -2654,7 +2648,7 @@ class _TdsSession(object):
         r.get_usmallint()  # cur_cmd
         more_results = status & TDS_DONE_MORE_RESULTS != 0
         was_cancelled = status & TDS_DONE_CANCELLED != 0
-        error = status & TDS_DONE_ERROR != 0
+        #error = status & TDS_DONE_ERROR != 0
         done_count_valid = status & TDS_DONE_COUNT != 0
         #logger.debug(
         #    'process_end: more_results = {0}\n'
@@ -2704,7 +2698,7 @@ class _TdsSession(object):
             r.skip(r.get_byte())
         elif type == TDS_ENV_PACKSIZE:
             newval = r.read_ucs2(r.get_byte())
-            oldval = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
             new_block_size = int(newval)
             if new_block_size >= 512:
                 #logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
@@ -2716,21 +2710,21 @@ class _TdsSession(object):
                 self._writer.bufsize = new_block_size
         elif type == TDS_ENV_DATABASE:
             newval = r.read_ucs2(r.get_byte())
-            oldval = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
             self.conn.env.database = newval
         elif type == TDS_ENV_LANG:
             newval = r.read_ucs2(r.get_byte())
-            oldval = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
             self.conn.env.language = newval
         elif type == TDS_ENV_CHARSET:
             newval = r.read_ucs2(r.get_byte())
-            oldval = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
             #logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
             self.conn.env.charset = newval
-            tds_srv_charset_changed(self, newval)
+            #tds_srv_charset_changed(self, newval)
         elif type == TDS_ENV_DB_MIRRORING_PARTNER:
-            newval = r.read_ucs2(r.get_byte())
-            oldval = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
 
         else:
             # discard byte values, not still supported
@@ -2877,7 +2871,7 @@ class _TdsSession(object):
         elif isinstance(value, Binary):
             size = len(value)
             if size > 8000:
-                if IS_TDS72_PLUS(tds):
+                if IS_TDS72_PLUS(self):
                     column.type = VarBinary72(-1)
                 else:
                     column.type = Image()
@@ -2967,24 +2961,26 @@ class _TdsSession(object):
                 param.type.write_info(w)
                 param.type.write(w, param.value)
             #self.query_flush_packet()
-        elif IS_TDS5_PLUS(self):
-            w.begin_packet(TDS_NORMAL)
-            w.put_byte(TDS_DBRPC_TOKEN)
-            # TODO ICONV convert rpc name
-            w.put_smallint(len(rpc_name) + 3)
-            w.put_byte(len(rpc_name))
-            w.write(rpc_name)
-            # TODO flags
-            w.put_smallint(2 if params else 0)
-
-            if params:
-                self.put_params(params, TDS_PUT_DATA_USE_NAME)
-
-            # send it
-            #self.query_flush_packet()
         else:
-            # emulate it for TDS4.x, send RPC for mssql
-            return tds_send_emulated_rpc(self, rpc_name, params)
+            raise NotImplementedError
+        #elif IS_TDS5_PLUS(self):
+        #    w.begin_packet(TDS_NORMAL)
+        #    w.put_byte(TDS_DBRPC_TOKEN)
+        #    # TODO ICONV convert rpc name
+        #    w.put_smallint(len(rpc_name) + 3)
+        #    w.put_byte(len(rpc_name))
+        #    w.write(rpc_name)
+        #    # TODO flags
+        #    w.put_smallint(2 if params else 0)
+
+        #    if params:
+        #        self.put_params(params, TDS_PUT_DATA_USE_NAME)
+
+        #    # send it
+        #    #self.query_flush_packet()
+        #else:
+        #    # emulate it for TDS4.x, send RPC for mssql
+        #    return tds_send_emulated_rpc(self, rpc_name, params)
 
     def submit_rpc(self, rpc_name, params=(), flags=0):
         with self.state_context(TDS_QUERYING):
@@ -3000,11 +2996,11 @@ class _TdsSession(object):
             self.res_info = None
             w = self._writer
             if IS_TDS50(self):
-                new_query = None
+                #new_query = None
                 # are there '?' style parameters ?
-                if tds_next_placeholder(query):
-                    new_query = tds5_fix_dot_query(query, params)
-                    query = new_query
+                #if tds_next_placeholder(query):
+                #    new_query = tds5_fix_dot_query(query, params)
+                #    query = new_query
 
                 w.begin_packet(TDS_NORMAL)
                 w.put_byte(TDS_LANGUAGE_TOKEN)
@@ -3025,7 +3021,7 @@ class _TdsSession(object):
                     '{0} {1}'.format(p.column_name, p.type.get_declaration())
                     for p in params)
                 self._submit_rpc(SP_EXECUTESQL,
-                            [query, param_definition] + params, 0)
+                                 [query, param_definition] + params, 0)
                 self.internal_sp_called = TDS_SP_EXECUTESQL
             self.query_flush_packet()
 
@@ -3068,7 +3064,7 @@ class _TdsSession(object):
             w.begin_packet(TDS7_TRANS)
             self._start_query()
             w.pack(self._begin_tran_struct_72,
-                   5, # TM_BEGIN_XACT
+                   5,  # TM_BEGIN_XACT
                    isolation_level,
                    0,  # new transaction name
                    )
@@ -3140,12 +3136,12 @@ class _TdsSession(object):
     def _start_query(self):
         w = self._writer
         w.pack(_TdsSession._tds72_query_start,
-            0x16,  # total length
-            0x12,  # length
-            2,  # type
-            self.conn.tds72_transaction,
-            1,  # request count
-            )
+               0x16,  # total length
+               0x12,  # length
+               2,  # type
+               self.conn.tds72_transaction,
+               1,  # request count
+               )
 
     VERSION = 0
     ENCRYPTION = 1
@@ -3704,8 +3700,8 @@ class _TdsSession(object):
                     if SET_RETURN(TDS_DONEPROC_RESULT, TDS_RETURN_DONE, TDS_STOPAT_DONE):
                         rc, done_flags = tds.process_end(marker)
                         if tds.internal_sp_called in (0, TDS_SP_PREPARE,
-                                                    TDS_SP_PREPEXEC, TDS_SP_EXECUTE,
-                                                    TDS_SP_UNPREPARE, TDS_SP_EXECUTESQL):
+                                                      TDS_SP_PREPEXEC, TDS_SP_EXECUTE,
+                                                      TDS_SP_UNPREPARE, TDS_SP_EXECUTESQL):
                             pass
                         elif tds.internal_sp_called == TDS_SP_CURSOROPEN:
                                 parent['result_type'] = TDS_DONE_RESULT
@@ -3755,6 +3751,7 @@ class _TdsSession(object):
                 if tds.state == TDS_DEAD:
                     # TODO free all results ??
                     return TDS_FAIL, parent['result_type'], done_flags
+
 
 class _StateContext(object):
     def __init__(self, session, state):
@@ -3848,8 +3845,8 @@ class _TdsSocket(object):
                     if login.database and self.env.database != login.database:
                         q.append('use ' + tds_quote_id(self, login.database))
                     if q:
-                        tds._main_session.submit_query(''.join(q))
-                        tds_process_simple_query(tds._main_session)
+                        self._main_session.submit_query(''.join(q))
+                        tds_process_simple_query(self._main_session)
                 except Exception as e:
                     self._sock.close()
                     err = e
@@ -3976,13 +3973,13 @@ def tds_open_socket(tds, host, port, timeout=0):
     return tds
 
 
-def tds_ssl_deinit(tds):
-    if tds_conn(tds).tls_session:
-        gnutls_deinit(tds_conn(tds).tls_session)
-        #tds_conn(tds).tls_session = None
-    if tds_conn(tds).tls_credentials:
-        gnutls_certificate_free_credentials(tds_conn(tds).tls_credentials)
-        #tds_conn(tds).tls_credentials = None
+#def tds_ssl_deinit(tds):
+#    if tds_conn(tds).tls_session:
+#        gnutls_deinit(tds_conn(tds).tls_session)
+#        #tds_conn(tds).tls_session = None
+#    if tds_conn(tds).tls_credentials:
+#        gnutls_certificate_free_credentials(tds_conn(tds).tls_credentials)
+#        #tds_conn(tds).tls_credentials = None
 
 
 #
@@ -3992,6 +3989,7 @@ def tds_ssl_deinit(tds):
 #
 def tds7_get_instances(ip_addr):
     s = socket.socket(type=socket.SOCK_DGRAM)
+    name = None
     try:
         #
         # Request the instance's port from the server.
