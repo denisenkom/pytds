@@ -99,7 +99,7 @@ class NtlmAuth(object):
 
 def tds_login(tds, login):
     if IS_TDS71_PLUS(tds):
-        tds71_do_login(tds, login)
+        tds.tds71_do_login(login)
     elif IS_TDS7_PLUS(tds):
         tds7_send_login(tds, login)
     else:
@@ -229,107 +229,3 @@ def tds7_crypt_pass(password):
     for i, ch in enumerate(encoded):
         encoded[i] = ((ch << 4) & 0xff | (ch >> 4)) ^ 0xA5
     return encoded
-
-VERSION = 0
-ENCRYPTION = 1
-INSTOPT = 2
-THREADID = 3
-MARS = 4
-TRACEID = 5
-TERMINATOR = 0xff
-
-
-def tds71_do_login(tds, login):
-    instance_name = login.instance_name or 'MSSQLServer'
-    encryption_level = login.encryption_level
-    if IS_TDS72_PLUS(tds):
-        START_POS = 26
-        buf = struct.pack(
-            b'>BHHBHHBHHBHHBHHB',
-            #netlib version
-            VERSION, START_POS, 6,
-            #encryption
-            ENCRYPTION, START_POS + 6, 1,
-            #instance
-            INSTOPT, START_POS + 6 + 1, len(instance_name) + 1,
-            # thread id
-            THREADID, START_POS + 6 + 1 + len(instance_name) + 1, 4,
-            # MARS enabled
-            MARS, START_POS + 6 + 1 + len(instance_name) + 1 + 4, 1,
-            # end
-            TERMINATOR
-            )
-    else:
-        START_POS = 21
-        buf = struct.pack(
-            b'>BHHBHHBHHBHHB',
-            #netlib version
-            VERSION, START_POS, 6,
-            #encryption
-            ENCRYPTION, START_POS + 6, 1,
-            #instance
-            INSTOPT, START_POS + 6 + 1, len(instance_name) + 1,
-            # thread id
-            THREADID, START_POS + 6 + 1 + len(instance_name) + 1, 4,
-            # end
-            TERMINATOR
-            )
-    assert START_POS == len(buf)
-    w = tds._writer
-    w.begin_packet(TDS71_PRELOGIN)
-    w.write(buf)
-    from pytds import intversion
-    w.put_uint_be(intversion)
-    w.put_usmallint_be(0)
-    # encryption
-    if ENCRYPTION_ENABLED and encryption_supported:
-        w.put_byte(1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
-    else:
-        if encryption_level >= TDS_ENCRYPTION_REQUIRE:
-            raise Error('Client requested encryption but it is not supported')
-        # not supported
-        w.put_byte(2)
-    w.write(instance_name.encode('ascii'))
-    w.put_byte(0)  # zero terminate instance_name
-    w.put_int(os.getpid())  # TODO: change this to thread id
-    if IS_TDS72_PLUS(tds):
-        # MARS (1 enabled)
-        w.put_byte(1 if login.use_mars else 0)
-    w.flush()
-    p = tds._reader.read_whole_packet()
-    size = len(p)
-    if size <= 0 or tds._reader.packet_type != 4:
-        raise Error('TDS_FAIL')
-    # default 2, no certificate, no encryptption
-    crypt_flag = 2
-    i = 0
-    byte_struct = struct.Struct('B')
-    off_len_struct = struct.Struct('>HH')
-    prod_version_struct = struct.Struct('>LH')
-    while True:
-        if i >= size:
-            raise Error('TDS_FAIL')
-        type, = byte_struct.unpack_from(p, i)
-        if type == 0xff:
-            break
-        if i + 4 > size:
-            raise Error('TDS_FAIL')
-        off, l = off_len_struct.unpack_from(p, i + 1)
-        if off > size or off + l > size:
-            raise Error('TDS_FAIL')
-        if type == VERSION:
-            tds.conn.product_version = prod_version_struct.unpack_from(p, off)
-        elif type == ENCRYPTION and l >= 1:
-            crypt_flag, = byte_struct.unpack_from(p, off)
-        elif type == MARS:
-            tds.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
-        i += 5
-    # we readed all packet
-    logger.debug('detected flag %d', crypt_flag)
-    # if server do not has certificate do normal login
-    if crypt_flag == 2:
-        if encryption_level >= TDS_ENCRYPTION_REQUIRE:
-            raise Error('Server required encryption but it is not supported')
-        return tds7_send_login(tds, login)
-    tds._sock = ssl.wrap_socket(tds._sock, ssl_version=ssl.PROTOCOL_SSLv3)
-    return tds7_send_login(tds, login)
