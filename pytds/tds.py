@@ -2367,6 +2367,37 @@ class _TdsSession(object):
                 curcol.value = curcol.type.read(r)
         return TDS_SUCCESS
 
+    def process_end(self, marker):
+        r = self._reader
+        status = r.get_usmallint()
+        r.get_usmallint()  # cur_cmd
+        more_results = status & TDS_DONE_MORE_RESULTS != 0
+        was_cancelled = status & TDS_DONE_CANCELLED != 0
+        error = status & TDS_DONE_ERROR != 0
+        done_count_valid = status & TDS_DONE_COUNT != 0
+        #logger.debug(
+        #    'process_end: more_results = {0}\n'
+        #    '\t\twas_cancelled = {1}\n'
+        #    '\t\terror = {2}\n'
+        #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
+        if self.res_info:
+            self.res_info.more_results = more_results
+            if not self.current_results:
+                self.current_results = self.res_info
+        rows_affected = r.get_int8() if IS_TDS72_PLUS(self) else r.get_int()
+        #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
+        if was_cancelled or (not more_results and not self.in_cancel):
+            #logger.debug('process_end() state set to TDS_IDLE')
+            self.in_cancel = False
+            self.set_state(TDS_IDLE)
+        if self.is_dead():
+            raise Exception('TDS_FAIL')
+        if done_count_valid:
+            self.rows_affected = rows_affected
+        else:
+            self.rows_affected = -1
+        return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), status
+
     def is_dead(self):
         return self.state == TDS_DEAD
 

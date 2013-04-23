@@ -75,7 +75,7 @@ def tds_process_default_tokens(tds, marker):
     elif marker == TDS_ENVCHANGE_TOKEN:
         return tds_process_env_chg(tds)
     elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-        rc, _ = tds_process_end(tds, marker)
+        rc, _ = tds.process_end(marker)
         return rc
     elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
         tds.process_msg(marker)
@@ -152,54 +152,6 @@ def tds_process_default_tokens(tds, marker):
     else:
         tds.close()
         raise Error('Invalid TDS marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
-
-
-if sys.version_info[0] >= 3:
-    def _ord(val):
-        return val
-else:
-    def _ord(val):
-        return ord(val)
-
-
-#
-# tds_process_end() processes any of the DONE, DONEPROC, or DONEINPROC
-# tokens.
-# \param tds        state information for the socket and the TDS protocol
-# \param marker     TDS token number
-# \param flags_parm filled with bit flags (see TDS_DONE_ constants).
-#        Is NULL nothing is returned
-#
-def tds_process_end(tds, marker):
-    r = tds._reader
-    status = r.get_usmallint()
-    r.get_usmallint()  # cur_cmd
-    more_results = status & TDS_DONE_MORE_RESULTS != 0
-    was_cancelled = status & TDS_DONE_CANCELLED != 0
-    error = status & TDS_DONE_ERROR != 0
-    done_count_valid = status & TDS_DONE_COUNT != 0
-    #logger.debug(
-    #    'tds_process_end: more_results = {0}\n'
-    #    '\t\twas_cancelled = {1}\n'
-    #    '\t\terror = {2}\n'
-    #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
-    if tds.res_info:
-        tds.res_info.more_results = more_results
-        if not tds.current_results:
-            tds.current_results = tds.res_info
-    rows_affected = r.get_int8() if IS_TDS72_PLUS(tds) else r.get_int()
-    #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
-    if was_cancelled or (not more_results and not tds.in_cancel):
-        #logger.debug('tds_process_end() state set to TDS_IDLE')
-        tds.in_cancel = False
-        tds.set_state(TDS_IDLE)
-    if tds.is_dead():
-        raise Exception('TDS_FAIL')
-    if done_count_valid:
-        tds.rows_affected = rows_affected
-    else:
-        tds.rows_affected = -1
-    return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), status
 
 
 def tds_process_env_chg(tds):
@@ -547,7 +499,7 @@ def tds_process_tokens(tds, flag):
                         if tds.cur_dyn and tds.cur_dyn.emulated:
                             marker = r.get_byte()
                             if marker == TDS_DONE_TOKEN:
-                                rc, done_flags = tds_process_end(tds, marker)
+                                rc, done_flags = tds.process_end(marker)
                                 done_flags &= ~TDS_DONE_ERROR
                                 # FIXME warning to macro expansion
                                 SET_RETURN(TDS_DONE_RESULT, tdsflags.TDS_RETURN_DONE, tdsflags.TDS_STOPAT_DONE)
@@ -568,10 +520,10 @@ def tds_process_tokens(tds, flag):
                 rc = tds_process_cursor_tokens(tds)
             elif marker == TDS_DONE_TOKEN:
                 if SET_RETURN(TDS_DONE_RESULT, tdsflags.TDS_RETURN_DONE, tdsflags.TDS_STOPAT_DONE):
-                    rc, done_flags = tds_process_end(tds, marker)
+                    rc, done_flags = tds.process_end(marker)
             elif marker == TDS_DONEPROC_TOKEN:
                 if SET_RETURN(TDS_DONEPROC_RESULT, tdsflags.TDS_RETURN_DONE, tdsflags.TDS_STOPAT_DONE):
-                    rc, done_flags = tds_process_end(tds, marker)
+                    rc, done_flags = tds.process_end(marker)
                     if tds.internal_sp_called in (0, TDS_SP_PREPARE,
                                                   TDS_SP_PREPEXEC, TDS_SP_EXECUTE,
                                                   TDS_SP_UNPREPARE, TDS_SP_EXECUTESQL):
@@ -595,12 +547,12 @@ def tds_process_tokens(tds, flag):
                         rc = TDS_NO_MORE_RESULTS
             elif marker == TDS_DONEINPROC_TOKEN:
                 if tds.internal_sp_called in (TDS_SP_CURSOROPEN, TDS_SP_CURSORFETCH, TDS_SP_PREPARE, TDS_SP_CURSORCLOSE):
-                    rc, done_flags = tds_process_end(tds, marker)
+                    rc, done_flags = tds.process_end(marker)
                     if tds.rows_affected != TDS_NO_COUNT:
                         saved_rows_affected = tds.rows_affected
                 else:
                     if SET_RETURN(TDS_DONEINPROC_RESULT, tdsflags.TDS_RETURN_DONE, tdsflags.TDS_STOPAT_DONE):
-                        rc, done_flags = tds_process_end(tds, marker)
+                        rc, done_flags = tds.process_end(marker)
             elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
                 if SET_RETURN(TDS_MSG_RESULT, tdsflags.TDS_RETURN_MSG, tdsflags.TDS_STOPAT_MSG):
                     rc = tds_process_default_tokens(tds, marker)
