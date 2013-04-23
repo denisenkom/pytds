@@ -2160,6 +2160,68 @@ class _TdsSession(object):
             raise InterfaceError('Invalid type id', type_id)
         return factory
 
+    def get_type_info(self, curcol):
+        r = self._reader
+        # User defined data type of the column
+        curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(self) else r.get_usmallint()
+        curcol.column_flags = r.get_usmallint()  # Flags
+        curcol.column_nullable = curcol.column_flags & 0x01
+        curcol.column_writeable = (curcol.column_flags & 0x08) > 0
+        curcol.column_identity = (curcol.column_flags & 0x10) > 0
+        type_id = r.get_byte()
+        curcol.type = self.get_type_factory(type_id).from_stream(r)
+
+    def tds7_process_result(self):
+        r = self._reader
+        #logger.debug("processing TDS7 result metadata.")
+
+        # read number of columns and allocate the columns structure
+
+        num_cols = r.get_smallint()
+
+        # This can be a DUMMY results token from a cursor fetch
+
+        if num_cols == -1:
+            #logger.debug("no meta data")
+            return TDS_SUCCESS
+
+        self.res_info = None
+        self.param_info = None
+        self.has_status = False
+        self.ret_status = False
+        self.current_results = None
+        self.rows_affected = TDS_NO_COUNT
+
+        self.current_results = info = _Results()
+        if self.cur_cursor:
+            self.cur_cursor.res_info = info
+            #logger.debug("set current_results to cursor->res_info")
+        else:
+            self.res_info = info
+            #logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols == 1 else "s")))
+
+        #
+        # loop through the columns populating COLINFO struct from
+        # server response
+        #
+        #logger.debug("setting up {0} columns".format(num_cols))
+        header_tuple = []
+        for col in range(num_cols):
+            curcol = _Column()
+            info.columns.append(curcol)
+            self.get_type_info(curcol)
+
+            #
+            # under 7.0 lengths are number of characters not
+            # number of bytes... read_ucs2 handles this
+            #
+            curcol.column_name = r.read_ucs2(r.get_byte())
+            precision = curcol.type.precision if hasattr(curcol.type, 'precision') else None
+            scale = curcol.type.scale if hasattr(curcol.type, 'scale') else None
+            header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, None, precision, scale, curcol.column_nullable))
+        info.description = tuple(header_tuple)
+        return info
+
     def is_dead(self):
         return self.state == TDS_DEAD
 

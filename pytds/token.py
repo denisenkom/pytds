@@ -112,7 +112,7 @@ def tds_process_default_tokens(tds, marker):
         r.unget_byte()
         return tds_process_param_result_tokens(tds)
     elif marker == TDS7_RESULT_TOKEN:
-        return tds7_process_result(tds)
+        return tds.tds7_process_result()
     elif marker == TDS_OPTIONCMD_TOKEN:
         return tds5_process_optioncmd(tds)
     elif marker == TDS_RESULT_TOKEN:
@@ -530,7 +530,7 @@ def tds_process_tokens(tds, flag):
                 # TDS_ROWFMT_RESULT to the calling API
                 #
                 if tds.internal_sp_called == TDS_SP_CURSORFETCH:
-                    rc = tds7_process_result(tds)
+                    rc = tds.tds7_process_result()
                     marker = r.get_byte()
                     if marker != TDS_TABNAME_TOKEN:
                         r.unget_byte()
@@ -538,7 +538,7 @@ def tds_process_tokens(tds, flag):
                         rc = tds_process_tabname(tds)
                 else:
                     if SET_RETURN(TDS_ROWFMT_RESULT, tdsflags.TDS_RETURN_ROWFMT, tdsflags.TDS_STOPAT_ROWFMT):
-                        rc = tds7_process_result(tds)
+                        rc = tds.tds7_process_result()
                         # handle browse information (if presents)
                         marker = r.get_byte()
                         if marker != TDS_TABNAME_TOKEN:
@@ -751,78 +751,6 @@ def tds_process_cancel(tds):
             return TDS_SUCCESS
 
 
-#/**
-# * tds7_process_result() is the TDS 7.0 result set processing routine.  It
-# * is responsible for populating the tds->res_info structure.
-# * This is a TDS 7.0 only function
-# */
-def tds7_process_result(tds):
-    r = tds._reader
-    #logger.debug("processing TDS7 result metadata.")
-
-    # read number of columns and allocate the columns structure
-
-    num_cols = r.get_smallint()
-
-    # This can be a DUMMY results token from a cursor fetch
-
-    if num_cols == -1:
-        #logger.debug("no meta data")
-        return TDS_SUCCESS
-
-    tds.res_info = None
-    tds.param_info = None
-    tds.has_status = False
-    tds.ret_status = False
-    tds.current_results = None
-    tds.rows_affected = TDS_NO_COUNT
-
-    tds.current_results = info = _Results()
-    if tds.cur_cursor:
-        tds.cur_cursor.res_info = info
-        #logger.debug("set current_results to cursor->res_info")
-    else:
-        tds.res_info = info
-        #logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols == 1 else "s")))
-
-    #
-    # loop through the columns populating COLINFO struct from
-    # server response
-    #
-    #logger.debug("setting up {0} columns".format(num_cols))
-    header_tuple = []
-    for col in range(num_cols):
-        curcol = _Column()
-        info.columns.append(curcol)
-        curcol.type = tds_get_type_info(tds, curcol)
-
-        #
-        # under 7.0 lengths are number of characters not
-        # number of bytes... read_ucs2 handles this
-        #
-        curcol.column_name = r.read_ucs2(r.get_byte())
-        precision = curcol.type.precision if hasattr(curcol.type, 'precision') else None
-        scale = curcol.type.scale if hasattr(curcol.type, 'scale') else None
-        header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, None, precision, scale, curcol.column_nullable))
-    info.description = tuple(header_tuple)
-    return info
-
-
-def tds_get_type_info(tds, curcol):
-    r = tds._reader
-    # User defined data type of the column
-    curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(tds) else r.get_usmallint()
-
-    curcol.column_flags = r.get_usmallint()  # Flags
-
-    curcol.column_nullable = curcol.column_flags & 0x01
-    curcol.column_writeable = (curcol.column_flags & 0x08) > 0
-    curcol.column_identity = (curcol.column_flags & 0x10) > 0
-
-    type_id = r.get_byte()
-    return tds.get_type_factory(type_id).from_stream(r)
-
-
 _prtype_map = dict((
     (SYBAOPAVG, "avg"),
     (SYBAOPCNT, "count"),
@@ -884,8 +812,8 @@ def tds_process_param_result_tokens(tds):
             r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
             param = _Column()
             param.column_name = name
-            type = tds_get_type_info(tds, param)
-            param.value = type.read(r)
+            tds.get_type_info(param)
+            param.value = param.type.read(r)
             tds.output_params[ordinal] = param
         else:
             r.unget_byte()
