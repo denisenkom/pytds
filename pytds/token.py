@@ -840,9 +840,9 @@ def tds_get_type_info(tds, curcol):
         return BitN.from_stream(r)
 
     elif type == SYBREAL:
-        return Real()
+        return Real.from_stream(r)
     elif type == SYBFLT8:
-        return Float()
+        return Float.from_stream(r)
     elif type == SYBFLTN:
         return FloatN.from_stream(r)
 
@@ -929,7 +929,7 @@ def tds_get_type_info(tds, curcol):
         type = Variant.from_stream(r)
 
     elif type == SYBMSDATE:
-        type = MsDate()
+        type = MsDate.from_stream(r)
     elif type == SYBMSTIME:
         type = MsTime.from_stream(r, tds.use_tz)
     elif type == SYBMSDATETIME2:
@@ -938,9 +938,9 @@ def tds_get_type_info(tds, curcol):
         type = DateTimeOffset.from_stream(r)
 
     elif type == SYBDATETIME4:
-        type = SmallDateTime(tds.use_tz)
+        type = SmallDateTime.from_stream(r, tds.use_tz)
     elif type == SYBDATETIME:
-        type = DateTime(tds.use_tz)
+        type = DateTime.from_stream(r, tds.use_tz)
     elif type == SYBDATETIMN:
         type = DateTimeN.from_stream(r, tds.use_tz)
 

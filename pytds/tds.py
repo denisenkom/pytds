@@ -1481,6 +1481,10 @@ class DateTime(BaseDateTime):
     def __init__(self, use_tz):
         self._use_tz = use_tz
 
+    @classmethod
+    def from_stream(cls, r, use_tz):
+        return cls(use_tz)
+
     def get_declaration(self):
         return 'DATETIME'
 
@@ -1611,6 +1615,10 @@ class BaseDateTime73(BaseType):
 
 class MsDate(BaseDateTime73):
     type = SYBMSDATE
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
 
     def get_declaration(self):
         return 'DATE'
