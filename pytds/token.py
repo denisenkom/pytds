@@ -51,18 +51,6 @@ def tds_token_name(marker):
     return token_names.get(marker, '')
 
 
-def tds_process_auth(tds):
-    r = tds._reader
-    w = tds._writer
-    pdu_size = r.get_smallint()
-    if not tds.authentication:
-        raise Error('Got unexpected token')
-    packet = tds.authentication.handle_next(readall(r, pdu_size))
-    if packet:
-        w.write(packet)
-        w.flush()
-
-
 def tds_process_default_tokens(tds, marker):
     r = tds._reader
     #logger.debug('tds_process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
@@ -71,7 +59,7 @@ def tds_process_default_tokens(tds, marker):
         tds.close()
         raise Exception('TDS_FAIL')
     if marker == TDS_AUTH_TOKEN:
-        return tds_process_auth(tds)
+        return tds.process_auth()
     elif marker == TDS_ENVCHANGE_TOKEN:
         return tds.process_env_chg()
     elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):

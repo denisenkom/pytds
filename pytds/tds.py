@@ -2459,6 +2459,17 @@ class _TdsSession(object):
             # discard old one
             r.skip(r.get_byte())
 
+    def process_auth(self):
+        r = self._reader
+        w = self._writer
+        pdu_size = r.get_smallint()
+        if not self.authentication:
+            raise Error('Got unexpected token')
+        packet = self.authentication.handle_next(readall(r, pdu_size))
+        if packet:
+            w.write(packet)
+            w.flush()
+
     def is_dead(self):
         return self.state == TDS_DEAD
 
