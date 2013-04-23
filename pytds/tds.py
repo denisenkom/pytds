@@ -692,7 +692,6 @@ class _TdsWriter(object):
         self._transport.send(self._buf[:self._pos], final)
         self._pos = 8
 
-
 class MemoryChunkedHandler(object):
     def begin(self, column, size):
         self.size = size
@@ -1236,9 +1235,15 @@ class Xml(NVarChar72):
         return cls(schema)
 
 
-class Text71(BaseType):
+class Text(BaseType):
     type = SYBTEXT
 
+    @classmethod
+    def from_stream(cls, r):
+        raise NotImplementedError
+
+
+class Text71(Text):
     def __init__(self, size, table_name, collation):
         self._size = size
         self._collation = collation
@@ -1289,9 +1294,15 @@ class Text72(Text71):
         return cls(size, parts, collation)
 
 
-class NText71(BaseType):
+class NText(BaseType):
     type = SYBNTEXT
 
+    @classmethod
+    def from_stream(cls, r):
+        raise NotImplementedError
+
+
+class NText71(NText):
     def __init__(self, size, table_name, collation):
         self._size = size
         self._collation = collation
@@ -2027,6 +2038,65 @@ class Variant(BaseType):
         except:
             r.skip(colsize)
             raise
+
+
+_type_map = {
+    SYBINT1: TinyInt,
+    SYBINT2: SmallInt,
+    SYBINT4: Int,
+    SYBINT8: BigInt,
+    SYBINTN: IntN,
+    SYBBIT: Bit,
+    SYBBITN: BitN,
+    SYBREAL: Real,
+    SYBFLT8: Float,
+    SYBFLTN: FloatN,
+    SYBMONEY4: Money4,
+    SYBMONEY: Money8,
+    SYBMONEYN: MoneyN,
+    XSYBCHAR: VarChar70,
+    XSYBVARCHAR: VarChar70,
+    XSYBNCHAR: NVarChar70,
+    XSYBNVARCHAR: NVarChar70,
+    SYBTEXT: Text,
+    SYBNTEXT: NText,
+    SYBMSXML: Xml,
+    XSYBBINARY: VarBinary,
+    XSYBVARBINARY: VarBinary,
+    SYBIMAGE: Image,
+    SYBNUMERIC: MsDecimal,
+    SYBDECIMAL: MsDecimal,
+    SYBVARIANT: Variant,
+    SYBMSDATE: MsDate,
+    SYBMSTIME: MsTime,
+    SYBMSDATETIME2: DateTime2,
+    SYBMSDATETIMEOFFSET: DateTimeOffset,
+    SYBDATETIME4: SmallDateTime,
+    SYBDATETIME: DateTime,
+    SYBDATETIMN: DateTimeN,
+    SYBUNIQUE: MsUnique,
+    }
+
+_type_map71 = _type_map.copy().update({
+    XSYBCHAR: VarChar71,
+    XSYBNCHAR: NVarChar71,
+    XSYBVARCHAR: VarChar71,
+    XSYBNVARCHAR: NVarChar71,
+    SYBTEXT: Text71,
+    SYBNTEXT: NText71,
+    })
+
+_type_map72 = _type_map.copy().update({
+    XSYBCHAR: VarChar72,
+    XSYBNCHAR: NVarChar72,
+    XSYBVARCHAR: VarChar72,
+    XSYBNVARCHAR: NVarChar72,
+    SYBTEXT: Text72,
+    SYBNTEXT: NText72,
+    XSYBBINARY: VarBinary72,
+    XSYBVARBINARY: VarBinary72,
+    SYBIMAGE: Image72,
+    })
 
 
 class _TdsSession(object):
