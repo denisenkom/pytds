@@ -2222,6 +2222,46 @@ class _TdsSession(object):
         info.description = tuple(header_tuple)
         return info
 
+    def process_param_result_tokens(self):
+        r = self._reader
+        while True:
+            token = r.get_byte()
+            if token == TDS_PARAM_TOKEN:
+                ordinal = r.get_usmallint()
+                name = r.read_ucs2(r.get_byte())
+                r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
+                param = _Column()
+                param.column_name = name
+                self.get_type_info(param)
+                param.value = param.type.read(r)
+                self.output_params[ordinal] = param
+            else:
+                r.unget_byte()
+                return
+
+    def process_cancel(self):
+        '''
+        Process the incoming token stream until it finds
+        an end token (DONE, DONEPROC, DONEINPROC) with the cancel flag set.
+        At that point the connection should be ready to handle a new query.
+        '''
+        from .token import tds_process_tokens
+        # silly cases, nothing to do
+        if not self.in_cancel:
+            return TDS_SUCCESS
+        # TODO handle cancellation sending data
+        if self.state != TDS_PENDING:
+            return TDS_SUCCESS
+
+        # TODO support TDS5 cancel, wait for cancel packet first, then wait for done
+        while True:
+            rc, result_type, _ = tds_process_tokens(self, 0)
+
+            if rc == TDS_FAIL:
+                raise Exception('TDS_FAIL')
+            elif rc in (TDS_CANCELLED, TDS_SUCCESS, TDS_NO_MORE_RESULTS):
+                return TDS_SUCCESS
+
     def is_dead(self):
         return self.state == TDS_DEAD
 

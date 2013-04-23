@@ -110,7 +110,7 @@ def tds_process_default_tokens(tds, marker):
             # PARAM_TOKEN can be returned inserting text in db, to return new timestamp
     elif marker == TDS_PARAM_TOKEN:
         r.unget_byte()
-        return tds_process_param_result_tokens(tds)
+        return tds.process_param_result_tokens()
     elif marker == TDS7_RESULT_TOKEN:
         return tds.tds7_process_result()
     elif marker == TDS_OPTIONCMD_TOKEN:
@@ -589,7 +589,7 @@ def tds_process_tokens(tds, flag):
                             tds.cur_dyn.num_id = curcol.value
                 else:
                     if SET_RETURN(TDS_PARAM_RESULT, tdsflags.TDS_RETURN_PROC, tdsflags.TDS_STOPAT_PROC):
-                        rc = tds_process_param_result_tokens(tds)
+                        rc = tds.process_param_result_tokens()
             elif marker == TDS_COMPUTE_NAMES_TOKEN:
                 rc = tds_process_compute_names(tds)
             elif marker == TDS_COMPUTE_RESULT_TOKEN:
@@ -728,29 +728,6 @@ def tds_process_tokens(tds, flag):
                 return TDS_FAIL, parent['result_type'], done_flags
 
 
-#
-# \remarks Process the incoming token stream until it finds
-# an end token (DONE, DONEPROC, DONEINPROC) with the cancel flag set.
-# At that point the connection should be ready to handle a new query.
-#
-def tds_process_cancel(tds):
-    # silly cases, nothing to do
-    if not tds.in_cancel:
-        return TDS_SUCCESS
-    # TODO handle cancellation sending data
-    if tds.state != TDS_PENDING:
-        return TDS_SUCCESS
-
-    # TODO support TDS5 cancel, wait for cancel packet first, then wait for done
-    while True:
-        rc, result_type, _ = tds_process_tokens(tds, 0)
-
-        if rc == TDS_FAIL:
-            raise Exception('TDS_FAIL')
-        elif rc in (TDS_CANCELLED, TDS_SUCCESS, TDS_NO_MORE_RESULTS):
-            return TDS_SUCCESS
-
-
 _prtype_map = dict((
     (SYBAOPAVG, "avg"),
     (SYBAOPCNT, "count"),
@@ -800,21 +777,3 @@ _prtype_map = dict((
 
 def tds_prtype(token):
     return _prtype_map.get(token, '')
-
-
-def tds_process_param_result_tokens(tds):
-    r = tds._reader
-    while True:
-        token = r.get_byte()
-        if token == TDS_PARAM_TOKEN:
-            ordinal = r.get_usmallint()
-            name = r.read_ucs2(r.get_byte())
-            r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
-            param = _Column()
-            param.column_name = name
-            tds.get_type_info(param)
-            param.value = param.type.read(r)
-            tds.output_params[ordinal] = param
-        else:
-            r.unget_byte()
-            return

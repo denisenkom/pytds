@@ -218,7 +218,7 @@ class _Connection(object):
         #logger.debug("MSSQLConnection._cancel()")
         session.messages = []
         session.send_cancel()
-        tds_process_cancel(session)
+        session.process_cancel()
 
     def close(self):
         """
