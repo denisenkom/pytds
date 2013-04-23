@@ -2129,6 +2129,14 @@ _type_map72.update({
     })
 
 
+if sys.version_info[0] >= 3:
+    def _ord(val):
+        return val
+else:
+    def _ord(val):
+        return ord(val)
+
+
 class _TdsSession(object):
     def __init__(self, tds, transport):
         self.out_pos = 8
@@ -2261,6 +2269,103 @@ class _TdsSession(object):
                 raise Exception('TDS_FAIL')
             elif rc in (TDS_CANCELLED, TDS_SUCCESS, TDS_NO_MORE_RESULTS):
                 return TDS_SUCCESS
+
+    def process_msg(self, marker):
+        r = self._reader
+        r.get_smallint()  # size
+        msg = {}
+        msg['marker'] = marker
+        msg['msgno'] = r.get_int()
+        msg['state'] = r.get_byte()
+        msg['severity'] = r.get_byte()
+        msg['sql_state'] = None
+        has_eed = False
+        if marker == TDS_EED_TOKEN:
+            if msg['severity'] <= 10:
+                msg['priv_msg_type'] = 0
+            else:
+                msg['priv_msg_type'] = 1
+            len_sqlstate = r.get_byte()
+            msg['sql_state'] = readall(r, len_sqlstate)
+            has_eed = r.get_byte()
+            # junk status and transaction state
+            r.get_smallint()
+        elif marker == TDS_INFO_TOKEN:
+            msg['priv_msg_type'] = 0
+        elif marker == TDS_ERROR_TOKEN:
+            msg['priv_msg_type'] = 1
+        else:
+            logger.error('tds_process_msg() called with unknown marker "{0}"'.format(marker))
+        #logger.debug('tds_process_msg() reading message {0} from server'.format(msg['msgno']))
+        msg['message'] = r.read_ucs2(r.get_smallint())
+        # server name
+        msg['server'] = r.read_ucs2(r.get_byte())
+        if not msg['server'] and self.login:
+            msg['server'] = self.server_name
+        # stored proc name if available
+        msg['proc_name'] = r.read_ucs2(r.get_byte())
+        msg['line_number'] = r.get_int() if IS_TDS72_PLUS(self) else r.get_smallint()
+        if not msg['sql_state']:
+            #msg['sql_state'] = tds_alloc_lookup_sqlstate(self, msg['msgno'])
+            pass
+        # in case extended error data is sent, we just try to discard it
+        if has_eed:
+            while True:
+                next_marker = r.get_byte()
+                if next_marker in (TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN, TDS5_PARAMS_TOKEN):
+                    tds_process_default_tokens(self, next_marker)
+                else:
+                    break
+            r.unget_byte()
+
+        # call msg_handler
+
+        # special case
+        if marker == TDS_EED_TOKEN and self.cur_dyn and self.is_mssql() and msg['msgno'] == 2782:
+            self.cur_dyn.emulated = 1
+        elif marker == TDS_INFO_TOKEN and msg['msgno'] == 16954 and \
+                self.is_mssql() and self.internal_sp_called == TDS_SP_CURSOROPEN and\
+                self.cur_cursor:
+                    # here mssql say "Executing SQL directly; no cursor." opening cursor
+                        pass
+        else:
+            # EED can be followed to PARAMFMT/PARAMS, do not store it in dynamic
+            self.cur_dyn = None
+        self.messages.append(msg)
+
+    def process_row(self):
+        r = self._reader
+        info = self.current_results
+        #if not info:
+        #    raise Exception('TDS_FAIL')
+
+        #assert len(info.columns) > 0
+
+        info.row_count += 1
+        for curcol in info.columns:
+            #logger.debug("process_row(): reading column %d" % i)
+            curcol.value = curcol.type.read(r)
+        return TDS_SUCCESS
+
+    # NBC=null bitmap compression row
+    # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
+    def process_nbcrow(self):
+        r = self._reader
+        info = self.current_results
+        if not info:
+            raise Exception('TDS_FAIL')
+        assert len(info.columns) > 0
+        info.row_count += 1
+
+        # reading bitarray for nulls, 1 represent null values for
+        # corresponding fields
+        nbc = readall(r, (len(info.columns) + 7) // 8)
+        for i, curcol in enumerate(info.columns):
+            if _ord(nbc[i // 8]) & (1 << (i % 8)):
+                curcol.value = None
+            else:
+                curcol.value = curcol.type.read(r)
+        return TDS_SUCCESS
 
     def is_dead(self):
         return self.state == TDS_DEAD

@@ -78,7 +78,7 @@ def tds_process_default_tokens(tds, marker):
         rc, _ = tds_process_end(tds, marker)
         return rc
     elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
-        tds_process_msg(tds, marker)
+        tds.process_msg(marker)
     elif marker == TDS_CAPABILITY_TOKEN:
         # TODO split two part of capability and use it
         tok_size = r.get_smallint()
@@ -124,7 +124,7 @@ def tds_process_default_tokens(tds, marker):
     elif marker == TDS_COLFMT_TOKEN:
         return tds_process_col_fmt(tds)
     elif marker == TDS_ROW_TOKEN:
-        return tds_process_row(tds)
+        return tds.process_row()
     elif marker == TDS5_PARAMFMT_TOKEN:
         # store discarded parameters in param_info, not in old dynamic
         tds.cur_dyn = None
@@ -154,51 +154,12 @@ def tds_process_default_tokens(tds, marker):
         raise Error('Invalid TDS marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
 
 
-#
-# tds_process_row() processes rows and places them in the row buffer.
-#
-def tds_process_row(tds):
-    r = tds._reader
-    info = tds.current_results
-    #if not info:
-    #    raise Exception('TDS_FAIL')
-
-    #assert len(info.columns) > 0
-
-    info.row_count += 1
-    for curcol in info.columns:
-        #logger.debug("tds_process_row(): reading column %d" % i)
-        curcol.value = curcol.type.read(r)
-    return TDS_SUCCESS
-
-
 if sys.version_info[0] >= 3:
     def _ord(val):
         return val
 else:
     def _ord(val):
         return ord(val)
-
-
-# NBC=null bitmap compression row
-# http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
-def tds_process_nbcrow(tds):
-    r = tds._reader
-    info = tds.current_results
-    if not info:
-        raise Exception('TDS_FAIL')
-    assert len(info.columns) > 0
-    info.row_count += 1
-
-    # reading bitarray for nulls, 1 represent null values for
-    # corresponding fields
-    nbc = readall(r, (len(info.columns) + 7) // 8)
-    for i, curcol in enumerate(info.columns):
-        if _ord(nbc[i // 8]) & (1 << (i % 8)):
-            curcol.value = None
-        else:
-            curcol.value = curcol.type.read(r)
-    return TDS_SUCCESS
 
 
 #
@@ -302,69 +263,6 @@ def tds_process_env_chg(tds):
         # discard old one
         r.skip(r.get_byte())
 
-
-def tds_process_msg(tds, marker):
-    r = tds._reader
-    r.get_smallint()  # size
-    msg = {}
-    msg['marker'] = marker
-    msg['msgno'] = r.get_int()
-    msg['state'] = r.get_byte()
-    msg['severity'] = r.get_byte()
-    msg['sql_state'] = None
-    has_eed = False
-    if marker == TDS_EED_TOKEN:
-        if msg['severity'] <= 10:
-            msg['priv_msg_type'] = 0
-        else:
-            msg['priv_msg_type'] = 1
-        len_sqlstate = r.get_byte()
-        msg['sql_state'] = readall(r, len_sqlstate)
-        has_eed = r.get_byte()
-        # junk status and transaction state
-        r.get_smallint()
-    elif marker == TDS_INFO_TOKEN:
-        msg['priv_msg_type'] = 0
-    elif marker == TDS_ERROR_TOKEN:
-        msg['priv_msg_type'] = 1
-    else:
-        logger.error('tds_process_msg() called with unknown marker "{0}"'.format(marker))
-    #logger.debug('tds_process_msg() reading message {0} from server'.format(msg['msgno']))
-    msg['message'] = r.read_ucs2(r.get_smallint())
-    # server name
-    msg['server'] = r.read_ucs2(r.get_byte())
-    if not msg['server'] and tds.login:
-        msg['server'] = tds.server_name
-    # stored proc name if available
-    msg['proc_name'] = r.read_ucs2(r.get_byte())
-    msg['line_number'] = r.get_int() if IS_TDS72_PLUS(tds) else r.get_smallint()
-    if not msg['sql_state']:
-        #msg['sql_state'] = tds_alloc_lookup_sqlstate(tds, msg['msgno'])
-        pass
-    # in case extended error data is sent, we just try to discard it
-    if has_eed:
-        while True:
-            next_marker = r.get_byte()
-            if next_marker in (TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN, TDS5_PARAMS_TOKEN):
-                tds_process_default_tokens(tds, next_marker)
-            else:
-                break
-        r.unget_byte()
-
-    # call msg_handler
-
-    # special case
-    if marker == TDS_EED_TOKEN and tds.cur_dyn and tds.is_mssql() and msg['msgno'] == 2782:
-        tds.cur_dyn.emulated = 1
-    elif marker == TDS_INFO_TOKEN and msg['msgno'] == 16954 and \
-            tds.is_mssql() and tds.internal_sp_called == TDS_SP_CURSOROPEN and\
-            tds.cur_cursor:
-                # here mssql say "Executing SQL directly; no cursor." opening cursor
-                    pass
-    else:
-        # EED can be followed to PARAMFMT/PARAMS, do not store it in dynamic
-        tds.cur_dyn = None
-    tds.messages.append(msg)
 
 _SERVER_TO_CLIENT_MAPPING = {
     0x07000000: TDS70,
@@ -614,9 +512,9 @@ def tds_process_tokens(tds, flag):
                     tds.current_results.rows_exist = 1
                 if SET_RETURN(TDS_ROW_RESULT, tdsflags.TDS_RETURN_ROW, tdsflags.TDS_STOPAT_ROW):
                     if marker == TDS_NBC_ROW_TOKEN:
-                        rc = tds_process_nbcrow(tds)
+                        rc = tds.process_nbcrow()
                     else:
-                        rc = tds_process_row(tds)
+                        rc = tds.process_row()
             elif marker == TDS_CMP_ROW_TOKEN:
                 # I don't know when this it's false but it happened, also server can send garbage...
                 if tds.res_info:
@@ -645,7 +543,7 @@ def tds_process_tokens(tds, flag):
                 if tds.cur_dyn and not tds.cur_dyn.emulated:
                     marker = r.get_byte()
                     if marker == TDS_EED_TOKEN:
-                        tds_process_msg(tds, marker)
+                        tds.process_msg(marker)
                         if tds.cur_dyn and tds.cur_dyn.emulated:
                             marker = r.get_byte()
                             if marker == TDS_DONE_TOKEN:
