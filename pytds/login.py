@@ -5,7 +5,6 @@ from dateutil.tz import tzlocal
 import uuid
 import os
 import logging
-ENCRYPTION_ENABLED = False
 try:
     import ssl
 except:
@@ -86,7 +85,7 @@ class NtlmAuth(object):
 
     def create_packet(self):
         import ntlm
-        return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(this_host_name, self._domain)
+        return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(socket.gethostname(), self._domain)
 
     def handle_next(self, packet):
         import ntlm
@@ -101,7 +100,7 @@ def tds_login(tds, login):
     if IS_TDS71_PLUS(tds):
         tds.tds71_do_login(login)
     elif IS_TDS7_PLUS(tds):
-        tds7_send_login(tds, login)
+        tds.tds7_send_login(login)
     else:
         raise NotImplementedError('This TDS version is not supported')
         tds._writer.begin_packet(TDS_LOGIN)
@@ -109,123 +108,3 @@ def tds_login(tds, login):
     if not tds_process_login_tokens(tds):
         raise_db_exception(tds)
         #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
-
-this_host_name = socket.gethostname()
-mins_fix = tzlocal().utcoffset(datetime.now()).total_seconds() / 60
-mac_address = struct.pack('>Q', uuid.getnode())[:6]
-
-
-def tds7_send_login(tds, login):
-    option_flag2 = login.option_flag2
-    user_name = login.user_name
-    w = tds._writer
-    w.begin_packet(TDS7_LOGIN)
-    tds.authentication = None
-    if len(login.password) > 128:
-        raise Error('Password should be not more than 128 characters')
-    current_pos = 86 + 8 if IS_TDS72_PLUS(tds) else 86
-    client_host_name = this_host_name
-    login.client_host_name = client_host_name
-    packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database)) * 2
-    if login.auth:
-        tds.authentication = login.auth
-        auth_packet = login.auth.create_packet()
-        packet_size += len(auth_packet)
-    else:
-        auth_packet = ''
-        packet_size += (len(user_name) + len(login.password)) * 2
-    w.put_int(packet_size)
-    w.put_uint(login.tds_version)
-    w.put_int(w.bufsize)
-    from pytds import intversion
-    w.put_uint(intversion)
-    w.put_int(os.getpid())
-    w.put_uint(0)  # connection id
-    option_flag1 = TDS_SET_LANG_ON | TDS_USE_DB_NOTIFY | TDS_INIT_DB_FATAL
-    if not login.bulk_copy:
-        option_flag1 |= TDS_DUMPLOAD_OFF
-    w.put_byte(option_flag1)
-    if tds.authentication:
-        option_flag2 |= TDS_INTEGRATED_SECURITY_ON
-    w.put_byte(option_flag2)
-    type_flags = 0
-    if login.readonly:
-        type_flags |= (2 << 5)
-    w.put_byte(type_flags)
-    option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
-    w.put_byte(option_flag3 if IS_TDS73_PLUS(tds) else 0)
-    w.put_int(int(mins_fix))
-    w.put_int(login.client_lcid)
-    w.put_smallint(current_pos)
-    w.put_smallint(len(client_host_name))
-    current_pos += len(client_host_name) * 2
-    if tds.authentication:
-        w.put_smallint(0)
-        w.put_smallint(0)
-        w.put_smallint(0)
-        w.put_smallint(0)
-    else:
-        w.put_smallint(current_pos)
-        w.put_smallint(len(user_name))
-        current_pos += len(user_name) * 2
-        w.put_smallint(current_pos)
-        w.put_smallint(len(login.password))
-        current_pos += len(login.password) * 2
-    w.put_smallint(current_pos)
-    w.put_smallint(len(login.app_name))
-    current_pos += len(login.app_name) * 2
-    # server name
-    w.put_smallint(current_pos)
-    w.put_smallint(len(login.server_name))
-    current_pos += len(login.server_name) * 2
-    # reserved
-    w.put_smallint(0)
-    w.put_smallint(0)
-    # library name
-    w.put_smallint(current_pos)
-    w.put_smallint(len(login.library))
-    current_pos += len(login.library) * 2
-    # language
-    w.put_smallint(current_pos)
-    w.put_smallint(len(login.language))
-    current_pos += len(login.language) * 2
-    # database name
-    w.put_smallint(current_pos)
-    w.put_smallint(len(login.database))
-    current_pos += len(login.database) * 2
-    # ClientID
-    w.write(mac_address)
-    # authentication
-    w.put_smallint(current_pos)
-    w.put_smallint(len(auth_packet))
-    current_pos += len(auth_packet)
-    # db file
-    w.put_smallint(current_pos)
-    w.put_smallint(len(login.attach_db_file))
-    current_pos += len(login.attach_db_file) * 2
-    if IS_TDS72_PLUS(tds):
-        # new password
-        w.put_smallint(current_pos)
-        w.put_smallint(0)
-        # sspi long
-        w.put_int(0)
-    w.write_ucs2(client_host_name)
-    if not tds.authentication:
-        w.write_ucs2(user_name)
-        w.write(tds7_crypt_pass(login.password))
-    w.write_ucs2(login.app_name)
-    w.write_ucs2(login.server_name)
-    w.write_ucs2(login.library)
-    w.write_ucs2(login.language)
-    w.write_ucs2(login.database)
-    if tds.authentication:
-        w.write(auth_packet)
-    w.write_ucs2(login.attach_db_file)
-    w.flush()
-
-
-def tds7_crypt_pass(password):
-    encoded = bytearray(ucs2_codec.encode(password)[0])
-    for i, ch in enumerate(encoded):
-        encoded[i] = ((ch << 4) & 0xff | (ch >> 4)) ^ 0xA5
-    return encoded
