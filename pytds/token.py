@@ -73,7 +73,7 @@ def tds_process_default_tokens(tds, marker):
     if marker == TDS_AUTH_TOKEN:
         return tds_process_auth(tds)
     elif marker == TDS_ENVCHANGE_TOKEN:
-        return tds_process_env_chg(tds)
+        return tds.process_env_chg()
     elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
         rc, _ = tds.process_end(marker)
         return rc
@@ -152,68 +152,6 @@ def tds_process_default_tokens(tds, marker):
     else:
         tds.close()
         raise Error('Invalid TDS marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
-
-
-def tds_process_env_chg(tds):
-    r = tds._reader
-    size = r.get_smallint()
-    type = r.get_byte()
-    if type == TDS_ENV_SQLCOLLATION:
-        size = r.get_byte()
-        #logger.debug("tds_process_env_chg(): {0} bytes of collation data received".format(size))
-        #logger.debug("tds.collation was {0}".format(tds.conn.collation))
-        tds.conn.collation = r.get_collation()
-        r.skip(size - 5)
-        #tds7_srv_charset_changed(tds, tds.conn.collation)
-        #logger.debug("tds.collation now {0}".format(tds.conn.collation))
-        # discard old one
-        r.skip(r.get_byte())
-    elif type == TDS_ENV_BEGINTRANS:
-        size = r.get_byte()
-        # TODO: parse transaction
-        tds.conn.tds72_transaction = r.get_uint8()
-        r.skip(r.get_byte())
-    elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
-        tds.conn.tds72_transaction = 0
-        r.skip(r.get_byte())
-        r.skip(r.get_byte())
-    elif type == TDS_ENV_PACKSIZE:
-        newval = r.read_ucs2(r.get_byte())
-        oldval = r.read_ucs2(r.get_byte())
-        new_block_size = int(newval)
-        if new_block_size >= 512:
-            #logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
-            #
-            # Is possible to have a shrink if server limits packet
-            # size more than what we specified
-            #
-            # Reallocate buffer if possible (strange values from server or out of memory) use older buffer */
-            tds._writer.bufsize = new_block_size
-    elif type == TDS_ENV_DATABASE:
-        newval = r.read_ucs2(r.get_byte())
-        oldval = r.read_ucs2(r.get_byte())
-        tds.conn.env.database = newval
-    elif type == TDS_ENV_LANG:
-        newval = r.read_ucs2(r.get_byte())
-        oldval = r.read_ucs2(r.get_byte())
-        tds.conn.env.language = newval
-    elif type == TDS_ENV_CHARSET:
-        newval = r.read_ucs2(r.get_byte())
-        oldval = r.read_ucs2(r.get_byte())
-        #logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
-        tds.conn.env.charset = newval
-        tds_srv_charset_changed(tds, newval)
-    elif type == TDS_ENV_DB_MIRRORING_PARTNER:
-        newval = r.read_ucs2(r.get_byte())
-        oldval = r.read_ucs2(r.get_byte())
-
-    else:
-        # discard byte values, not still supported
-        # TODO support them
-        # discard new one
-        r.skip(r.get_byte())
-        # discard old one
-        r.skip(r.get_byte())
 
 
 _SERVER_TO_CLIENT_MAPPING = {
