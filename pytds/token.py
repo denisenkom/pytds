@@ -931,18 +931,18 @@ def tds_get_type_info(tds, curcol):
     elif type == SYBMSDATE:
         type = MsDate.from_stream(r)
     elif type == SYBMSTIME:
-        type = MsTime.from_stream(r, tds.use_tz)
+        type = MsTime.from_stream(r)
     elif type == SYBMSDATETIME2:
-        type = DateTime2.from_stream(r, tds.use_tz)
+        type = DateTime2.from_stream(r)
     elif type == SYBMSDATETIMEOFFSET:
         type = DateTimeOffset.from_stream(r)
 
     elif type == SYBDATETIME4:
-        type = SmallDateTime.from_stream(r, tds.use_tz)
+        type = SmallDateTime.from_stream(r)
     elif type == SYBDATETIME:
-        type = DateTime.from_stream(r, tds.use_tz)
+        type = DateTime.from_stream(r)
     elif type == SYBDATETIMN:
-        type = DateTimeN.from_stream(r, tds.use_tz)
+        type = DateTimeN.from_stream(r)
 
     elif type == SYBUNIQUE:
         return MsUnique.from_stream(r)

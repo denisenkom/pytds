@@ -383,7 +383,7 @@ class _TdsConn:
 class _TdsEnv:
     pass
 
-_header = struct.Struct('>BBHHxx')
+_header = struct.Struct('>BBHHBx')
 _byte = struct.Struct('B')
 _tinyint = struct.Struct('b')
 _smallint_le = struct.Struct('<h')
@@ -452,6 +452,10 @@ class _TdsReader(object):
         self._type = None
         self._status = None
         self._emul_little_endian = emul_little_endian
+
+    @property
+    def session(self):
+        return self._session
 
     @property
     def packet_type(self):
@@ -559,7 +563,7 @@ class _TdsReader(object):
             self._session._put_cancel()
             raise
         self._pos = 0
-        self._type, self._status, self._size, self._session._spid = _header.unpack(header)
+        self._type, self._status, self._size, self._session._spid, _ = _header.unpack(header)
         self._have = _header.size
         assert self._size > self._have, 'Empty packet doesn make any sense'
         self._buf = self._transport.read(self._size - self._have)
@@ -571,11 +575,18 @@ class _TdsReader(object):
 
 
 class _TdsWriter(object):
-    def __init__(self, tds, bufsize):
-        self._tds = tds
-        self._transport = tds
+    def __init__(self, session, bufsize, little_endian):
+        self._session = session
+        self._tds = session
+        self._transport = session
         self._pos = 0
         self._buf = bytearray(bufsize)
+        self._little_endian = little_endian
+        self._packet_no = 0
+
+    @property
+    def session(self):
+        return self._session
 
     @property
     def bufsize(self):
@@ -602,7 +613,7 @@ class _TdsWriter(object):
         self.pack(_byte, value)
 
     def _le(self):
-        return tds_conn(self._tds).emul_little_endian
+        return self._little_endian
 
     def put_smallint(self, value):
         if self._le():
@@ -676,9 +687,8 @@ class _TdsWriter(object):
 
     def _write_packet(self, final):
         status = 1 if final else 0
-        _header.pack_into(self._buf, 0, self._type, status, self._pos, 0)
-        if IS_TDS7_PLUS(self._tds) and not self._tds.login:
-            self._buf[6] = 0x01
+        _header.pack_into(self._buf, 0, self._type, status, self._pos, 0, self._packet_no)
+        self._packet_no = (self._packet_no + 1) % 256
         self._transport.send(self._buf[:self._pos], final)
         self._pos = 8
 
@@ -1454,8 +1464,9 @@ class SmallDateTime(BaseDateTime):
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
-    def __init__(self, use_tz):
-        self._use_tz = use_tz
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
 
     def get_declaration(self):
         return 'SMALLDATETIME'
@@ -1468,7 +1479,7 @@ class SmallDateTime(BaseDateTime):
 
     def read(self, r):
         days, minutes = r.unpack(TDS_DATETIME4)
-        return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=self._use_tz)
+        return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
 
 
 class DateTime(BaseDateTime):
@@ -1478,12 +1489,9 @@ class DateTime(BaseDateTime):
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
-    def __init__(self, use_tz):
-        self._use_tz = use_tz
-
     @classmethod
-    def from_stream(cls, r, use_tz):
-        return cls(use_tz)
+    def from_stream(cls, r):
+        return cls()
 
     def get_declaration(self):
         return 'DATETIME'
@@ -1496,7 +1504,7 @@ class DateTime(BaseDateTime):
 
     def read(self, r):
         days, time = r.unpack(TDS_DATETIME)
-        return _applytz(self.decode(days, time), self._use_tz)
+        return _applytz(self.decode(days, time), r.session.use_tz)
 
     @classmethod
     def validate(cls, value):
@@ -1527,17 +1535,16 @@ class DateTimeN(BaseType):
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
-    def __init__(self, size, use_tz):
+    def __init__(self, size):
         assert size in (4, 8)
         self._size = size
-        self._use_tz = use_tz
 
     @classmethod
-    def from_stream(self, r, use_tz):
+    def from_stream(self, r):
         size = r.get_byte()
         if size not in (4, 8):
             raise InterfaceError('Invalid SYBDATETIMN size', size)
-        return DateTimeN(size, use_tz)
+        return DateTimeN(size)
 
     def get_declaration(self):
         if self._size == 8:
@@ -1561,10 +1568,10 @@ class DateTimeN(BaseType):
             return None
         if size == 4:
             days, minutes = r.unpack(TDS_DATETIME4)
-            return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=self._use_tz)
+            return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
         elif size == 8:
             days, time = r.unpack(TDS_DATETIME)
-            return _applytz(DateTime.decode(days, time), self._use_tz)
+            return _applytz(DateTime.decode(days, time), r.session.use_tz)
         else:
             raise InterfaceError('Invalid datetimn size')
 
@@ -1643,15 +1650,14 @@ class MsDate(BaseDateTime73):
 class MsTime(BaseDateTime73):
     type = SYBMSTIME
 
-    def __init__(self, prec, use_tz=None):
+    def __init__(self, prec):
         self._prec = prec
         self._size = self._precision_to_len[prec]
-        self._use_tz = use_tz
 
     @classmethod
-    def from_stream(cls, r, use_tz=None):
+    def from_stream(cls, r):
         prec = r.get_byte()
-        return cls(prec, use_tz)
+        return cls(prec)
 
     def get_declaration(self):
         return 'TIME({})'.format(self._prec)
@@ -1664,9 +1670,9 @@ class MsTime(BaseDateTime73):
             w.put_byte(0)
         else:
             if value.tzinfo:
-                if not self._use_tz:
+                if not w.session.use_tz:
                     raise DataError('Timezone-aware datetime is used without specifying use_tz')
-                value = value.astimezone(self._use_tz).replace(tzinfo=None)
+                value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
             self._write_time(w, value, self._prec)
 
@@ -1674,21 +1680,20 @@ class MsTime(BaseDateTime73):
         size = r.get_byte()
         if size == 0:
             return None
-        return self._read_time(r, size, self._prec, self._use_tz)
+        return self._read_time(r, size, self._prec, r.session.use_tz)
 
 
 class DateTime2(BaseDateTime73):
     type = SYBMSDATETIME2
 
-    def __init__(self, prec, use_tz):
+    def __init__(self, prec):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 3
-        self._use_tz = use_tz
 
     @classmethod
-    def from_stream(cls, r, use_tz=None):
+    def from_stream(cls, r):
         prec = r.get_byte()
-        return cls(prec, use_tz)
+        return cls(prec)
 
     def get_declaration(self):
         return 'DATETIME2({})'.format(self._prec)
@@ -1701,9 +1706,9 @@ class DateTime2(BaseDateTime73):
             w.put_byte(0)
         else:
             if value.tzinfo:
-                if not self._use_tz:
+                if not w.session.use_tz:
                     raise DataError('Timezone-aware datetime is used without specifying use_tz')
-                value = value.astimezone(self._use_tz).replace(tzinfo=None)
+                value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
             self._write_time(w, value, self._prec)
             self._write_date(w, value)
@@ -1712,7 +1717,7 @@ class DateTime2(BaseDateTime73):
         size = r.get_byte()
         if size == 0:
             return None
-        time = self._read_time(r, size - 3, self._prec, self._use_tz)
+        time = self._read_time(r, size - 3, self._prec, r.session.use_tz)
         date = self._read_date(r)
         return datetime.combine(date, time)
 
@@ -2037,7 +2042,7 @@ class _TdsSession(object):
         self._transport = transport
         self._reader = _TdsReader(self, tds.emul_little_endian)
         self._reader._transport = transport
-        self._writer = _TdsWriter(tds, tds._bufsize)
+        self._writer = _TdsWriter(self, tds._bufsize, tds.emul_little_endian)
         self._writer._transport = transport
         self.in_buf_max = 0
         self.state = TDS_IDLE
@@ -2200,7 +2205,7 @@ class _TdsSession(object):
                 if value.tzinfo and not self.use_tz:
                     column.type = DateTimeOffset(6)
                 else:
-                    column.type = DateTime2(6, self.use_tz)
+                    column.type = DateTime2(6)
             else:
                 column.type = DateTimeN()
         elif isinstance(value, date):
@@ -2211,7 +2216,7 @@ class _TdsSession(object):
         elif isinstance(value, time):
             if not IS_TDS73_PLUS(self):
                 raise DataError('Time type is not supported on MSSQL 2005 and lower')
-            column.type = MsTime(6, self.use_tz)
+            column.type = MsTime(6)
         elif isinstance(value, Decimal):
             column.type = MsDecimal.from_value(value)
         elif isinstance(value, uuid.UUID):
