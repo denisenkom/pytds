@@ -6,8 +6,19 @@ __version__ = '1.5.0'
 import logging
 import six
 from . import lcid
-from .tds import *
-from .login import *
+from datetime import date, datetime, time
+from tds import (
+    Error, tds_quote_id, TDS_RETURN_COMPUTE,
+    TDS_RETURN_DONE, TDS_RETURN_ROW,
+    TDS_DONE_ERROR, raise_db_exception, TDS_SUCCESS,
+    TDS_STOPAT_ROWFMT, TDS_ROW_RESULT,
+    TDS_COMPUTE_RESULT, TDS_NO_MORE_RESULTS, TDS_TOKEN_RESULTS,
+    TDS_ROWFMT_RESULT, TDS_DONEINPROC_RESULT, TDS_DONE_COUNT,
+    TDS_DONEPROC_RESULT, TDS_DONE_RESULT, TDS_DONE_MORE_RESULTS,
+    TDS_STATUS_RESULT, InterfaceError, TDS_RETURN_PROC,
+    TDS_PENDING, TDS_TOKEN_TRAILING, TDS_PARAM_RESULT, TDS74,
+    TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -776,7 +787,6 @@ def DateFromTicks(ticks):
 
 
 def Time(hour, minute, second, microsecond=0):
-    from datetime import time
     return time(hour, minute, second, microsecond)
 
 

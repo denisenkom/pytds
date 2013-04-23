@@ -21,7 +21,7 @@ except:
     encryption_supported = False
 else:
     encryption_supported = True
-from .collate import *
+from .collate import ucs2_codec, Collation
 from .tdsproto import *
 
 logger = logging.getLogger()

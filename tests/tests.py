@@ -10,9 +10,9 @@ import socket
 from dateutil.tz import tzoffset, tzutc
 from six import text_type
 from six.moves import xrange
-from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
-    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime, SspiAuth,\
-    TDS_TOKEN_RESULTS, TDS_DATETIME
+from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
+    Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime,
+    TDS_TOKEN_RESULTS, TDS_DATETIME)
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -670,6 +670,7 @@ class Auth(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform.startswith("win"), "requires Windows")
     def test_sspi(self):
+        from pytds.login import SspiAuth
         with connect(settings.HOST, auth=SspiAuth()) as conn:
             with conn.cursor() as cursor:
                 cursor.execute('select 1')
