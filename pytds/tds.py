@@ -2328,7 +2328,7 @@ class _TdsSession(object):
             while True:
                 next_marker = r.get_byte()
                 if next_marker in (TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN, TDS5_PARAMS_TOKEN):
-                    tds_process_default_tokens(self, next_marker)
+                    self.process_default_tokens(next_marker)
                 else:
                     break
             r.unget_byte()
@@ -3094,6 +3094,173 @@ class _TdsSession(object):
         w.write_ucs2(login.attach_db_file)
         w.flush()
 
+    _SERVER_TO_CLIENT_MAPPING = {
+        0x07000000: TDS70,
+        0x07010000: TDS71,
+        0x71000001: TDS71rev1,
+        TDS72: TDS72,
+        TDS73A: TDS73A,
+        TDS73B: TDS73B,
+        TDS74: TDS74,
+        }
+
+    def process_login_tokens(self):
+        r = self._reader
+        succeed = False
+        #logger.debug('process_login_tokens()')
+        ver = {}
+        while True:
+            marker = r.get_byte()
+            #logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
+            if marker == TDS_LOGINACK_TOKEN:
+                self.tds71rev1 = 0
+                size = r.get_smallint()
+                ack = r.get_byte()
+                version = r.get_uint_be()
+                ver['reported'] = version
+                self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING[version]
+                if self.conn.tds_version == TDS71rev1:
+                    self.tds71rev1 = True
+                if ver['reported'] == TDS70:
+                    ver['name'] = '7.0'
+                elif ver['reported'] == TDS71:
+                    ver['name'] = '2000'
+                elif ver['reported'] == TDS71rev1:
+                    ver['name'] = '2000 SP1'
+                elif ver['reported'] == TDS72:
+                    ver['name'] = '2005'
+                elif ver['reported'] == TDS73A:
+                    ver['name'] = '2008 (no NBCROW of fSparseColumnSet)'
+                elif ver['reported'] == TDS73B:
+                    ver['name'] = '2008'
+                elif version == TDS74:
+                    ver['name'] = '2012'
+                else:
+                    ver['name'] = 'unknown'
+                logger.debug('server reports TDS version {0:x}'.format(version))
+                # get server product name
+                # ignore product name length, some servers seem to set it incorrectly
+                r.get_byte()
+                product_version = 0
+                size -= 10
+                if IS_TDS7_PLUS(self):
+                    product_version = 0x80000000
+                    self.conn.product_name = r.read_ucs2(size // 2)
+                elif IS_TDS5_PLUS(self):
+                    raise NotImplementedError()
+                    #self.product_name = tds_get_string(self, size)
+                else:
+                    raise NotImplementedError()
+                    #self.product_name = tds_get_string(self, size)
+                product_version = r.get_uint_be()
+                # MSSQL 6.5 and 7.0 seem to return strange values for this
+                # using TDS 4.2, something like 5F 06 32 FF for 6.50
+                self.conn.product_version = product_version
+                logger.debug('Product version {0:x}'.format(product_version))
+                # TDS 5.0 reports 5 on success 6 on failure
+                # TDS 4.2 reports 1 on success and is not present of failure
+                if ack == 5 or ack == 1:
+                    succeed = True
+                if self.conn.authentication:
+                    self.conn.authentication.close()
+                    self.conn.authentication = None
+            else:
+                self.process_default_tokens(marker)
+            if marker == TDS_DONE_TOKEN:
+                break
+        self.spid = self.rows_affected
+        return succeed
+
+    def process_default_tokens(self, marker):
+        r = self._reader
+        #logger.debug('process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
+        if self.is_dead():
+            #logger.debug('leaving tds_process_login_tokens() connection dead')
+            self.close()
+            raise Exception('TDS_FAIL')
+        if marker == TDS_AUTH_TOKEN:
+            return self.process_auth()
+        elif marker == TDS_ENVCHANGE_TOKEN:
+            return self.process_env_chg()
+        elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+            rc, _ = self.process_end(marker)
+            return rc
+        elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
+            self.process_msg(marker)
+        elif marker == TDS_CAPABILITY_TOKEN:
+            # TODO split two part of capability and use it
+            tok_size = r.get_smallint()
+            # vicm
+            #
+            # Sybase 11.0 servers return the wrong length in the capability packet, causing use to read
+            # past the done packet.
+            #
+            if not TDS_IS_MSSQL(self) and tds_conn(self).product_version < TDS_SYB_VER(12, 0, 0):
+                raise NotImplementedError
+                #p = tds_conn(self).capabilities;
+                #pend = tds_conn(self)->capabilities + TDS_MAX_CAPABILITY;
+
+                #while True:
+                #    type = r.get_byte()
+                #    size = r.get_byte()
+                #    if ((p + 2) > pend)
+                #        break
+                #    *p++ = type;
+                #    *p++ = size;
+                #    if ((p + size) > pend)
+                #        break
+                #    if (tds_get_n(self, p, size) == NULL)
+                #        return TDS_FAIL;
+                #    if type == 2:
+                #        break
+            else:
+                tds_conn(self).capabilities = readall(r, min(tok_size, TDS_MAX_CAPABILITY))
+                # PARAM_TOKEN can be returned inserting text in db, to return new timestamp
+        elif marker == TDS_PARAM_TOKEN:
+            r.unget_byte()
+            return self.process_param_result_tokens()
+        elif marker == TDS7_RESULT_TOKEN:
+            return self.tds7_process_result()
+        elif marker == TDS_OPTIONCMD_TOKEN:
+            return tds5_process_optioncmd(self)
+        elif marker == TDS_RESULT_TOKEN:
+            return tds_process_result(self)
+        elif marker == TDS_ROWFMT2_TOKEN:
+            return tds5_process_result(self)
+        elif marker == TDS_COLNAME_TOKEN:
+            return tds_process_col_name(self)
+        elif marker == TDS_COLFMT_TOKEN:
+            return tds_process_col_fmt(self)
+        elif marker == TDS_ROW_TOKEN:
+            return self.process_row()
+        elif marker == TDS5_PARAMFMT_TOKEN:
+            # store discarded parameters in param_info, not in old dynamic
+            self.cur_dyn = None
+            return tds_process_dyn_result(self)
+        elif marker == TDS5_PARAMFMT2_TOKEN:
+            self.cur_dyn = None
+            return tds5_process_dyn_result2(self)
+        elif marker == TDS5_PARAMS_TOKEN:
+            # save params
+            return tds_process_params_result_token(self)
+        elif marker == TDS_CURINFO_TOKEN:
+            return tds_process_cursor_tokens(self)
+        elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
+            #logger.warning("Eating %s token", tds_token_name(marker))
+            r.skip(r.get_smallint())
+        elif marker == TDS_TABNAME_TOKEN:  # used for FOR BROWSE query
+            return tds_process_tabname(self)
+        elif marker == TDS_COLINFO_TOKEN:
+            return tds_process_colinfo(self, None, 0)
+        elif marker == TDS_ORDERBY2_TOKEN:
+            #logger.warning("Eating %s token", tds_token_name(marker))
+            r.skip(r.get_int())
+        elif marker == TDS_NBC_ROW_TOKEN:
+            return tds_process_nbcrow(self)
+        else:
+            self.close()
+            raise Error('Invalid TDS marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
+
 
 class _StateContext(object):
     def __init__(self, session, state):
@@ -3168,8 +3335,7 @@ class _TdsSocket(object):
                         raise NotImplementedError('This TDS version is not supported')
                         self._main_session._writer.begin_packet(TDS_LOGIN)
                         self._main_session.tds_send_login(login)
-                    from .token import tds_process_login_tokens
-                    if not tds_process_login_tokens(self._main_session):
+                    if not self._main_session.process_login_tokens():
                         raise_db_exception(self._main_session)
                         #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
                     if IS_TDS72_PLUS(self):
