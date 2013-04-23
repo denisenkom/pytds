@@ -8,7 +8,7 @@ import six
 from . import lcid
 from .tds import *
 from .login import *
-from .query import *
+from .token import tds_process_tokens
 
 logger = logging.getLogger(__name__)
 

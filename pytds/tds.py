@@ -15,6 +15,12 @@ import struct
 import sys
 from six.moves import map, reduce
 from six.moves import xrange
+try:
+    import ssl
+except:
+    encryption_supported = False
+else:
+    encryption_supported = True
 from .collate import *
 from .tdsproto import *
 
@@ -3154,8 +3160,18 @@ class _TdsSocket(object):
                     err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
                     continue
                 try:
-                    from .login import tds_login
-                    tds_login(self._main_session, login)
+                    if IS_TDS71_PLUS(self):
+                        self._main_session.tds71_do_login(login)
+                    elif IS_TDS7_PLUS(self):
+                        self._main_session.tds7_send_login(login)
+                    else:
+                        raise NotImplementedError('This TDS version is not supported')
+                        self._main_session._writer.begin_packet(TDS_LOGIN)
+                        self._main_session.tds_send_login(login)
+                    from .token import tds_process_login_tokens
+                    if not tds_process_login_tokens(self._main_session):
+                        raise_db_exception(self._main_session)
+                        #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
                     if IS_TDS72_PLUS(self):
                         self._type_map = _type_map72
                     elif IS_TDS71_PLUS(self):

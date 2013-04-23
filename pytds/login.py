@@ -1,19 +1,6 @@
 # vim: set fileencoding=utf8 :
-import struct
 import socket
-from dateutil.tz import tzlocal
-import uuid
-import os
 import logging
-try:
-    import ssl
-except:
-    encryption_supported = False
-else:
-    encryption_supported = True
-from .tdsproto import *
-from .tds import *
-from .token import *
 
 logger = logging.getLogger(__name__)
 
@@ -94,17 +81,3 @@ class NtlmAuth(object):
 
     def close(self):
         pass
-
-
-def tds_login(tds, login):
-    if IS_TDS71_PLUS(tds):
-        tds.tds71_do_login(login)
-    elif IS_TDS7_PLUS(tds):
-        tds.tds7_send_login(login)
-    else:
-        raise NotImplementedError('This TDS version is not supported')
-        tds._writer.begin_packet(TDS_LOGIN)
-        tds_send_login(tds, login)
-    if not tds_process_login_tokens(tds):
-        raise_db_exception(tds)
-        #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
