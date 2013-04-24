@@ -127,6 +127,7 @@ class DbTests(DbTestCase):
         with self.conn.cursor() as cur:
             cur.execute('create table test_autocommit(field int)')
             self.conn.commit()
+            self.assertEqual(self.conn._trancount(), 1)
             cur.execute('insert into test_autocommit(field) values(1)')
             self.assertEqual(self.conn._trancount(), 1)
             cur.execute('select field from test_autocommit')

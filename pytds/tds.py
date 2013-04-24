@@ -3130,7 +3130,7 @@ class _TdsSession(object):
                        )
             self.query_flush_packet()
         else:
-            self.submit_query("IF @@TRANCOUNT > 1 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
+            self.submit_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
 
     def _START_QUERY(self):
         if IS_TDS72_PLUS(self):
