@@ -2437,29 +2437,6 @@ class _TdsSession(object):
         self.output_params[ordinal] = param
         self.return_value_index += 1
 
-    def process_param_result_tokens(self):
-        r = self._reader
-        i = 0
-        while True:
-            token = r.get_byte()
-            if token == TDS_PARAM_TOKEN:
-                if IS_TDS72_PLUS(self):
-                    ordinal = r.get_usmallint()
-                else:
-                    r.get_usmallint()  # ignore size
-                    ordinal = self._out_params_indexes[i]
-                name = r.read_ucs2(r.get_byte())
-                r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
-                param = _Column()
-                param.column_name = name
-                self.get_type_info(param)
-                param.value = param.type.read(r)
-                self.output_params[ordinal] = param
-                i += 1
-            else:
-                r.unget_byte()
-                return
-
     def process_cancel(self):
         '''
         Process the incoming token stream until it finds
@@ -2707,8 +2684,6 @@ class _TdsSession(object):
         self._transport.close()
 
     def set_state(self, state):
-        assert 0 <= state < len(state_names)
-        assert 0 <= self.state < len(state_names)
         prior_state = self.state
         if state == prior_state:
             return state
