@@ -1,4 +1,5 @@
 import struct
+import codecs
 import logging
 import socket
 import os
@@ -18,7 +19,7 @@ except:
     encryption_supported = False
 else:
     encryption_supported = True
-from .collate import ucs2_codec, Collation
+from .collate import ucs2_codec, Collation, lcid2charset
 
 logger = logging.getLogger()
 
@@ -1318,7 +1319,7 @@ class VarChar70(BaseType):
         size = r.get_smallint()
         if size < 0:
             return None
-        return r.read_str(size, self._codec)
+        return r.read_str(size, r.session.conn.server_codec)
 
 
 class VarChar71(VarChar70):
@@ -1338,6 +1339,12 @@ class VarChar71(VarChar70):
     def write_info(self, w):
         super(VarChar71, self).write_info(w)
         w.put_collation(self._collation)
+
+    def read(self, r):
+        size = r.get_smallint()
+        if size < 0:
+            return None
+        return r.read_str(size, self._codec)
 
 
 class VarChar72(VarChar71):
@@ -1521,9 +1528,24 @@ class Xml(NVarChar72):
 class Text(BaseType):
     type = SYBTEXT
 
+    def __init__(self, size, table_name):
+        self._size = size
+        self._table_name = table_name
+
     @classmethod
     def from_stream(cls, r):
-        raise NotImplementedError
+        size = r.get_int()
+        table_name = r.read_ucs2(r.get_smallint())
+        return cls(size, table_name)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        readall(r, size)  # textptr
+        readall(r, 8)  # timestamp
+        colsize = r.get_int()
+        return r.read_str(colsize, r.session.conn.server_codec)
 
 
 class Text71(Text):
@@ -1552,13 +1574,12 @@ class Text71(Text):
 
     def read(self, r):
         size = r.get_byte()
-        if size == 16:  # Jeff's hack
-            readall(r, 16)  # textptr
-            readall(r, 8)  # timestamp
-            colsize = r.get_int()
-            return r.read_str(colsize, self._codec)
-        else:
+        if size == 0:
             return None
+        readall(r, size)  # textptr
+        readall(r, 8)  # timestamp
+        colsize = r.get_int()
+        return r.read_str(colsize, self._codec)
 
 
 class Text72(Text71):
@@ -1580,12 +1601,27 @@ class Text72(Text71):
 class NText(BaseType):
     type = SYBNTEXT
 
+    def __init__(self, size, table_name):
+        self._size = size
+        self._table_name = table_name
+
     @classmethod
     def from_stream(cls, r):
-        raise NotImplementedError
+        size = r.get_int()
+        table_name = r.read_ucs2(r.get_smallint())
+        return cls(size, table_name)
 
     def get_declaration(self):
         return 'NTEXT'
+
+    def read(self, r):
+        textptr_size = r.get_byte()
+        if textptr_size == 0:
+            return None
+        readall(r, textptr_size)  # textptr
+        readall(r, 8)  # timestamp
+        colsize = r.get_int()
+        return r.read_str(colsize, ucs2_codec)
 
 
 class NText71(NText):
@@ -2740,7 +2776,8 @@ class _TdsSession(object):
             r.read_ucs2(r.get_byte())
             r.read_ucs2(r.get_byte())
         elif type == TDS_ENV_LCID:
-            self.lcid = r.read_ucs2(r.get_byte())
+            lcid = int(r.read_ucs2(r.get_byte()))
+            self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
         else:
             # discard byte values, not still supported
