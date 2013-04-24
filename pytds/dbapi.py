@@ -81,16 +81,16 @@ class _Connection(object):
                         self._try_activate_cursor(None)
                         self._cancel(self._conn.main_session)
                         self._conn.main_session.submit_commit(False)
-                        self._sqlok(self._conn.main_session)
+                        self._conn.main_session.process_simple_request()
                 else:
                     self._try_activate_cursor(None)
                     self._cancel(self._conn.main_session)
                     self._conn.main_session.submit_commit(False)
-                    self._sqlok(self._conn.main_session)
+                    self._conn.main_session.process_simple_request()
             else:
                 self._cancel(self._conn.main_session)
                 self._conn.main_session.submit_begin_tran(isolation_level=self._isolation_level)
-                self._sqlok(self._conn.main_session)
+                self._conn.main_session.process_simple_request()
             self._autocommit = value
 
     @property
@@ -153,7 +153,7 @@ class _Connection(object):
         self._conn = _TdsSocket(self._login)
         if not self._autocommit:
             self._conn.main_session.submit_begin_tran(isolation_level=self._isolation_level)
-            self._sqlok(self._conn.main_session)
+            self._conn.main_session.process_simple_request()
 
     def __init__(self, login, as_dict, autocommit=False):
         self._autocommit = autocommit
@@ -184,9 +184,7 @@ class _Connection(object):
         conn.main_session.messages = []
         self._cancel(conn.main_session)
         conn.main_session.submit_commit(True, isolation_level=self._isolation_level)
-        self._sqlok(conn.main_session)
-        while self._nextset(conn.main_session):
-            pass
+        conn.main_session.process_simple_request()
 
     def cursor(self):
         """
@@ -215,9 +213,7 @@ class _Connection(object):
             self._cancel(session)
             self._active_cursor = None
             session.submit_rollback(True, isolation_level=self._isolation_level)
-            self._sqlok(session)
-            while self._nextset(session):
-                pass
+            self._conn.main_session.process_simple_request()
         except:
             logger.exception('unexpected error in rollback')
 

@@ -359,23 +359,6 @@ TDS_TOKEN_RESULTS = TDS_RETURN_ROWFMT | TDS_RETURN_COMPUTEFMT | TDS_RETURN_DONE 
 TDS_TOKEN_TRAILING = TDS_STOPAT_ROWFMT | TDS_STOPAT_COMPUTEFMT | TDS_STOPAT_ROW |\
     TDS_STOPAT_COMPUTE | TDS_STOPAT_MSG | TDS_STOPAT_OTHERS
 
-TDS_DONE_FINAL = 0x00  # final result set, command completed successfully.
-TDS_DONE_MORE_RESULTS = 0x01  # more results follow
-TDS_DONE_ERROR = 0x02  # error occurred
-TDS_DONE_INXACT = 0x04  # transaction in progress
-TDS_DONE_PROC = 0x08  # results are from a stored procedure
-TDS_DONE_COUNT = 0x10  # count field in packet is valid
-TDS_DONE_CANCELLED = 0x20  # acknowledging an attention command (usually a cancel)
-TDS_DONE_EVENT = 0x40  # part of an event notification.
-TDS_DONE_SRVERROR = 0x100  # SQL server server error
-
-# after the above flags, a TDS_DONE packet has a field describing the state of the transaction
-TDS_DONE_NO_TRAN = 0        # No transaction in effect
-TDS_DONE_TRAN_SUCCEED = 1   # Transaction completed successfully
-TDS_DONE_TRAN_PROGRESS = 2  # Transaction in progress
-TDS_DONE_STMT_ABORT = 3     # A statement aborted
-TDS_DONE_TRAN_ABORT = 4     # Transaction aborted
-
 TDS_NO_MORE_RESULTS = 1
 TDS_SUCCESS = 0
 TDS_FAIL = -1
@@ -3514,16 +3497,30 @@ class _TdsSession(object):
         self.spid = self.rows_affected
         return succeed
 
-    def process_default_tokens(self, marker):
-        #logger.debug('process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
-        if self.is_dead():
-            #logger.debug('leaving tds_process_login_tokens() connection dead')
-            self.close()
-            raise Exception('TDS_FAIL')
+    def process_token(self, marker):
         handler = _token_map.get(marker)
         if not handler:
             self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(marker))
         return handler(self)
+
+    def process_default_tokens(self, marker):
+        return self.process_token(marker)
+
+    def process_simple_request(self):
+        r = self._reader
+        with self.state_context(TDS_READING):
+            while True:
+                marker = r.get_byte()
+                if marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+                    _, self.done_flags = self.process_end(marker)
+                    if self.done_flags & TDS_DONE_ERROR:
+                        raise_db_exception(self)
+                    if self.done_flags & TDS_DONE_MORE_RESULTS:
+                        # skip results that don't event have rowcount
+                        continue
+                    return
+                else:
+                    self.process_token(marker)
 
     def sqlok(self):
         if self.state == TDS_IDLE:
@@ -3532,35 +3529,44 @@ class _TdsSession(object):
         with self.state_context(TDS_READING):
             while True:
                 marker = r.get_byte()
-                tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
-
-                #
-                # The error flag may be set for any intervening DONEINPROC packet, in particular
-                # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
-                #/
-                if done_flags & TDS_DONE_ERROR:
-                    raise_db_exception(session)
-                    assert False
-                    raise Exception('FAIL')
-                if result_type == TDS_ROWFMT_RESULT:
-                    self._state = DB_RES_RESULTSET_ROWS
-                    break
-                elif result_type == TDS_DONEINPROC_RESULT:
-                    if not done_flags & TDS_DONE_COUNT:
+                if marker == TDS7_RESULT_TOKEN:
+                    self.process_token(marker)
+                    return
+                elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+                    _, self.done_flags = self.process_end(marker)
+                    if self.done_flags & TDS_DONE_ERROR:
+                        raise_db_exception(self)
+                    if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
                         # skip results that don't event have rowcount
                         continue
-                    self._state = DB_RES_RESULTSET_EMPTY
-                    break
-                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                    if done_flags & TDS_DONE_MORE_RESULTS:
-                        self._state = DB_RES_NEXT_RESULT
-                    else:
-                        self._state = DB_RES_NO_MORE_RESULTS
-                    break
-                elif result_type == TDS_STATUS_RESULT:
-                    continue
+                    return
                 else:
-                    raise InterfaceError('logic error: process_tokens result_type %d' % result_type)
+                    self.process_token(marker)
+                #tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
+
+                ##
+                ## The error flag may be set for any intervening DONEINPROC packet, in particular
+                ## by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
+                ##/
+                #if result_type == TDS_ROWFMT_RESULT:
+                #    self._state = DB_RES_RESULTSET_ROWS
+                #    break
+                #elif result_type == TDS_DONEINPROC_RESULT:
+                #    if not done_flags & TDS_DONE_COUNT:
+                #        # skip results that don't event have rowcount
+                #        continue
+                #    self._state = DB_RES_RESULTSET_EMPTY
+                #    break
+                #elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                #    if done_flags & TDS_DONE_MORE_RESULTS:
+                #        self._state = DB_RES_NEXT_RESULT
+                #    else:
+                #        self._state = DB_RES_NO_MORE_RESULTS
+                #    break
+                #elif result_type == TDS_STATUS_RESULT:
+                #    continue
+                #else:
+                #    raise InterfaceError('logic error: process_tokens result_type %d' % result_type)
 
     def process_tokens(tds, flag):
         parent = {'result_type': 0, 'return_flag': 0}
