@@ -2395,7 +2395,7 @@ class Variant(BaseType):
         prop_bytes = r.get_byte()
         type_factory = self._type_map.get(type_id)
         if not type_factory:
-            r.bad_stream('Variant type invalid', type_id)
+            r.session.bad_stream('Variant type invalid', type_id)
         return type_factory(r, size - prop_bytes - 2)
 
 
@@ -2570,7 +2570,7 @@ class _TdsSession(object):
                 if IS_TDS72_PLUS(self):
                     ordinal = r.get_usmallint()
                 else:
-                    r.get_usmallint() # ignore size
+                    r.get_usmallint()  # ignore size
                     ordinal = self._out_params_indexes[i]
                 name = r.read_ucs2(r.get_byte())
                 r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
@@ -2703,6 +2703,14 @@ class _TdsSession(object):
                 curcol.value = curcol.type.read(r)
         return TDS_SUCCESS
 
+    def process_orderby(self):
+        r = self._reader
+        r.skip(r.get_smallint())
+
+    def process_orderby2(self):
+        r = self._reader
+        r.skip(r.get_int())
+
     def process_end(self, marker):
         r = self._reader
         status = r.get_usmallint()
@@ -2812,6 +2820,10 @@ class _TdsSession(object):
 
     def is_connected(self):
         return self._transport.is_connected()
+
+    def bad_stream(self, msg):
+        self.close()
+        raise InterfaceError(msg)
 
     @property
     def tds_version(self):
@@ -3503,94 +3515,52 @@ class _TdsSession(object):
         return succeed
 
     def process_default_tokens(self, marker):
-        r = self._reader
         #logger.debug('process_default_tokens() marker is {0:x}({1})'.format(marker, tds_token_name(marker)))
         if self.is_dead():
             #logger.debug('leaving tds_process_login_tokens() connection dead')
             self.close()
             raise Exception('TDS_FAIL')
-        if marker == TDS_AUTH_TOKEN:
-            return self.process_auth()
-        elif marker == TDS_ENVCHANGE_TOKEN:
-            return self.process_env_chg()
-        elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-            rc, _ = self.process_end(marker)
-            return rc
-        elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
-            self.process_msg(marker)
-        elif marker == TDS_CAPABILITY_TOKEN:
-            # TODO split two part of capability and use it
-            tok_size = r.get_smallint()
-            # vicm
-            #
-            # Sybase 11.0 servers return the wrong length in the capability packet, causing use to read
-            # past the done packet.
-            #
-            if not TDS_IS_MSSQL(self) and tds_conn(self).product_version < TDS_SYB_VER(12, 0, 0):
-                raise NotImplementedError
-                #p = tds_conn(self).capabilities;
-                #pend = tds_conn(self)->capabilities + TDS_MAX_CAPABILITY;
+        handler = _token_map.get(marker)
+        if not handler:
+            self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(marker))
+        return handler(self)
 
-                #while True:
-                #    type = r.get_byte()
-                #    size = r.get_byte()
-                #    if ((p + 2) > pend)
-                #        break
-                #    *p++ = type;
-                #    *p++ = size;
-                #    if ((p + size) > pend)
-                #        break
-                #    if (tds_get_n(self, p, size) == NULL)
-                #        return TDS_FAIL;
-                #    if type == 2:
-                #        break
-            else:
-                tds_conn(self).capabilities = readall(r, min(tok_size, TDS_MAX_CAPABILITY))
-                # PARAM_TOKEN can be returned inserting text in db, to return new timestamp
-        elif marker == TDS_PARAM_TOKEN:
-            r.unget_byte()
-            return self.process_param_result_tokens()
-        elif marker == TDS7_RESULT_TOKEN:
-            return self.tds7_process_result()
-        elif marker == TDS_OPTIONCMD_TOKEN:
-            return tds5_process_optioncmd(self)
-        elif marker == TDS_RESULT_TOKEN:
-            return tds_process_result(self)
-        elif marker == TDS_ROWFMT2_TOKEN:
-            return tds5_process_result(self)
-        elif marker == TDS_COLNAME_TOKEN:
-            return tds_process_col_name(self)
-        elif marker == TDS_COLFMT_TOKEN:
-            return tds_process_col_fmt(self)
-        elif marker == TDS_ROW_TOKEN:
-            return self.process_row()
-        elif marker == TDS5_PARAMFMT_TOKEN:
-            # store discarded parameters in param_info, not in old dynamic
-            self.cur_dyn = None
-            return tds_process_dyn_result(self)
-        elif marker == TDS5_PARAMFMT2_TOKEN:
-            self.cur_dyn = None
-            return tds5_process_dyn_result2(self)
-        elif marker == TDS5_PARAMS_TOKEN:
-            # save params
-            return tds_process_params_result_token(self)
-        elif marker == TDS_CURINFO_TOKEN:
-            return tds_process_cursor_tokens(self)
-        elif marker in (TDS5_DYNAMIC_TOKEN, TDS_LOGINACK_TOKEN, TDS_ORDERBY_TOKEN, TDS_CONTROL_TOKEN):
-            #logger.warning("Eating %s token", tds_token_name(marker))
-            r.skip(r.get_smallint())
-        elif marker == TDS_TABNAME_TOKEN:  # used for FOR BROWSE query
-            return tds_process_tabname(self)
-        elif marker == TDS_COLINFO_TOKEN:
-            return tds_process_colinfo(self, None, 0)
-        elif marker == TDS_ORDERBY2_TOKEN:
-            #logger.warning("Eating %s token", tds_token_name(marker))
-            r.skip(r.get_int())
-        elif marker == TDS_NBC_ROW_TOKEN:
-            return tds_process_nbcrow(self)
-        else:
-            self.close()
-            raise Error('Invalid TDS marker: {0}({0:x}) {1}'.format(marker, ''.join(traceback.format_stack())))
+    def sqlok(self):
+        if self.state == TDS_IDLE:
+            return
+        r = self._reader
+        with self.state_context(TDS_READING):
+            while True:
+                marker = r.get_byte()
+                tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
+
+                #
+                # The error flag may be set for any intervening DONEINPROC packet, in particular
+                # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
+                #/
+                if done_flags & TDS_DONE_ERROR:
+                    raise_db_exception(session)
+                    assert False
+                    raise Exception('FAIL')
+                if result_type == TDS_ROWFMT_RESULT:
+                    self._state = DB_RES_RESULTSET_ROWS
+                    break
+                elif result_type == TDS_DONEINPROC_RESULT:
+                    if not done_flags & TDS_DONE_COUNT:
+                        # skip results that don't event have rowcount
+                        continue
+                    self._state = DB_RES_RESULTSET_EMPTY
+                    break
+                elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
+                    if done_flags & TDS_DONE_MORE_RESULTS:
+                        self._state = DB_RES_NEXT_RESULT
+                    else:
+                        self._state = DB_RES_NO_MORE_RESULTS
+                    break
+                elif result_type == TDS_STATUS_RESULT:
+                    continue
+                else:
+                    raise InterfaceError('logic error: process_tokens result_type %d' % result_type)
 
     def process_tokens(tds, flag):
         parent = {'result_type': 0, 'return_flag': 0}
@@ -3820,6 +3790,25 @@ class _TdsSession(object):
                 if tds.state == TDS_DEAD:
                     # TODO free all results ??
                     return TDS_FAIL, parent['result_type'], done_flags
+
+
+_token_map = {
+    TDS_AUTH_TOKEN: _TdsSession.process_auth,
+    TDS_ENVCHANGE_TOKEN: _TdsSession.process_env_chg,
+    TDS_DONE_TOKEN: lambda self: self.process_end(TDS_DONE_TOKEN),
+    TDS_DONEPROC_TOKEN: lambda self: self.process_end(TDS_DONEPROC_TOKEN),
+    TDS_DONEINPROC_TOKEN: lambda self: self.process_end(TDS_DONEINPROC_TOKEN),
+    TDS_ERROR_TOKEN: lambda self: self.process_msg(TDS_ERROR_TOKEN),
+    TDS_INFO_TOKEN: lambda self: self.process_msg(TDS_INFO_TOKEN),
+    TDS_EED_TOKEN: lambda self: self.process_msg(TDS_EED_TOKEN),
+    TDS_CAPABILITY_TOKEN: lambda self: self.process_msg(TDS_CAPABILITY_TOKEN),
+    TDS_PARAM_TOKEN: lambda self: self.process_param(),
+    TDS7_RESULT_TOKEN: lambda self: self.tds7_process_result(),
+    TDS_ROW_TOKEN: lambda self: self.process_row(),
+    TDS_NBC_ROW_TOKEN: lambda self: self.process_nbcrow(),
+    TDS_ORDERBY2_TOKEN: lambda self: self.process_orderby2(),
+    TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
+    }
 
 
 class _StateContext(object):
