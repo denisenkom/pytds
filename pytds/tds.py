@@ -2497,7 +2497,7 @@ class _TdsSession(object):
             while True:
                 next_marker = r.get_byte()
                 if next_marker in (TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN, TDS5_PARAMS_TOKEN):
-                    self.process_default_tokens(next_marker)
+                    self.process_token(next_marker)
                 else:
                     break
             r.unget_byte()
@@ -3292,7 +3292,7 @@ class _TdsSession(object):
                     self.conn.authentication.close()
                     self.conn.authentication = None
             else:
-                self.process_default_tokens(marker)
+                self.process_token(marker)
             if marker == TDS_DONE_TOKEN:
                 break
         self.spid = self.rows_affected
@@ -3307,9 +3307,6 @@ class _TdsSession(object):
         if not handler:
             self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(marker))
         return handler(self)
-
-    def process_default_tokens(self, marker):
-        return self.process_token(marker)
 
     def get_token_id(self):
         self.set_state(TDS_READING)
