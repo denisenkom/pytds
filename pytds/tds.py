@@ -3813,7 +3813,10 @@ class _TdsSocket(object):
             err = None
             for host in login.load_balancer.choose():
                 try:
-                    tds_open_socket(self, host, login.port, connect_timeout)
+                    self._sock = socket.create_connection(
+                        (host, login.port),
+                        connect_timeout or 90000)
+                    self._sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
                 except socket.error as e:
                     err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
                     continue
@@ -3947,30 +3950,6 @@ class _Results(object):
     def __init__(self):
         self.columns = []
         self.row_count = 0
-
-
-def tds_open_socket(tds, host, port, timeout=0):
-    #tds = _Tds(socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0))
-    #tds._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, struct.pack('i', 1))
-    #tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, struct.pack('i', 1))
-    #if not timeout:
-    #    timeout = 90000
-    #tds._sock.setblocking(0)
-    #try:
-    #    tds._sock.connect((host, port))
-    #except socket.error as e:
-    #    if e.errno != errno.EINPROGRESS:
-    #        raise e
-    #if not tds_select(tds, TDSSELWRITE|TDSSELERR, timeout):
-    #    tds_close_socket(tds)
-    #    logger.error('tds_open_socket() failed')
-    #    raise Exception('TDSECONN')
-    #print socket.getsockopt(tds._sock, SOL_SOCKET, SO_ERROR)
-    if not timeout:
-        timeout = 90000
-    tds._sock = socket.create_connection((host, port), timeout)
-    tds._sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-    return tds
 
 
 #def tds_ssl_deinit(tds):
