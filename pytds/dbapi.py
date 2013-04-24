@@ -14,6 +14,7 @@ from .tds import (
     TDS_PENDING, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS72_PLUS, TDS_IDLE,
+    _TdsSocket,
     )
 
 logger = logging.getLogger(__name__)
@@ -26,13 +27,6 @@ threadsafety = 1
 
 # this module uses extended python format codes
 paramstyle = 'pyformat'
-
-DB_RES_INIT = 0
-DB_RES_RESULTSET_EMPTY = 1
-DB_RES_RESULTSET_ROWS = 2
-DB_RES_NEXT_RESULT = 3
-DB_RES_NO_MORE_RESULTS = 4
-DB_RES_SUCCEED = 5
 
 
 class _TdsLogin:
@@ -140,9 +134,7 @@ class _Connection(object):
         return self._conn.mars_enabled
 
     def _open(self):
-        self._state = DB_RES_NO_MORE_RESULTS
         self._active_cursor = None
-        from .tds import _TdsSocket
         self._conn = None
         self._conn = _TdsSocket(self._login)
         if not self._autocommit:
@@ -350,7 +342,6 @@ class _Connection(object):
         session.messages = []
         self._cancel(session)
         session.submit_query(operation, params)
-        self._state = DB_RES_INIT
         session.find_result_or_done()
 
     def _callproc(self, cursor, procname, parameters):
@@ -362,7 +353,6 @@ class _Connection(object):
         self._cancel(session)
         session.submit_rpc(procname, parameters)
         session.output_params = {}
-        self._state = DB_RES_INIT
         session.process_rpc()
         results = list(parameters)
         for key, param in session.output_params.items():
