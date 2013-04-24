@@ -12,7 +12,7 @@ from six import text_type
 from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime,
-    TDS_TOKEN_RESULTS, TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS)
+    TDS_TOKEN_RESULTS, TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS)
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -335,6 +335,8 @@ class TestVariant(TestCase):
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3*60*60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
 
     def test_regular(self):
+        if not IS_TDS71_PLUS(self.conn):
+            self.skipTest('Requires TDS7.1+')
         self._t(None, "cast(NULL as varchar)")
         self._t('test', "cast('test' as varchar)")
         self._t('test ', "cast('test' as char(5))")

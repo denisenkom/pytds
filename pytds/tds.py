@@ -1401,6 +1401,11 @@ class NVarChar70(BaseType):
         #    raise DataError('Invalid size for NVARCHAR field')
         self._size = size
 
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_smallint()
+        return cls(size)
+
     def get_declaration(self):
         return 'NVARCHAR({})'.format(self._size)
 
@@ -2685,6 +2690,7 @@ class _TdsSession(object):
         r = self._reader
         size = r.get_smallint()
         type = r.get_byte()
+        #logger.debug("process_env_chg: type: {0}".format(type))
         if type == TDS_ENV_SQLCOLLATION:
             size = r.get_byte()
             #logger.debug("process_env_chg(): {0} bytes of collation data received".format(size))
@@ -2733,14 +2739,13 @@ class _TdsSession(object):
         elif type == TDS_ENV_DB_MIRRORING_PARTNER:
             r.read_ucs2(r.get_byte())
             r.read_ucs2(r.get_byte())
-
+        elif type == TDS_ENV_LCID:
+            self.lcid = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
         else:
             # discard byte values, not still supported
             # TODO support them
-            # discard new one
-            r.skip(r.get_byte())
-            # discard old one
-            r.skip(r.get_byte())
+            r.skip(size - 1)
 
     def process_auth(self):
         r = self._reader
@@ -2948,6 +2953,8 @@ class _TdsSession(object):
                 w.put_smallint(-1)
                 w.put_smallint(rpc_name.proc_id)
             else:
+                if isinstance(rpc_name, InternalProc):
+                    rpc_name = rpc_name.name
                 w.put_smallint(len(rpc_name))
                 w.write_ucs2(rpc_name)
             #
