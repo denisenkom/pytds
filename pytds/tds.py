@@ -2563,10 +2563,15 @@ class _TdsSession(object):
 
     def process_param_result_tokens(self):
         r = self._reader
+        i = 0
         while True:
             token = r.get_byte()
             if token == TDS_PARAM_TOKEN:
-                ordinal = r.get_usmallint()
+                if IS_TDS72_PLUS(self):
+                    ordinal = r.get_usmallint()
+                else:
+                    r.get_usmallint() # ignore size
+                    ordinal = self._out_params_indexes[i]
                 name = r.read_ucs2(r.get_byte())
                 r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
                 param = _Column()
@@ -2574,6 +2579,7 @@ class _TdsSession(object):
                 self.get_type_info(param)
                 param.value = param.type.read(r)
                 self.output_params[ordinal] = param
+                i += 1
             else:
                 r.unget_byte()
                 return
@@ -3007,7 +3013,10 @@ class _TdsSession(object):
             #
             w.put_usmallint(flags)
             params = self._convert_params(params)
-            for param in params:
+            self._out_params_indexes = []
+            for i, param in enumerate(params):
+                if param.flags & fByRefValue:
+                    self._out_params_indexes.append(i)
                 w.put_byte(len(param.column_name))
                 w.write_ucs2(param.column_name)
                 #
