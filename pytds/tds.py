@@ -320,7 +320,7 @@ _int8_le = struct.Struct('<q')
 _int8_be = struct.Struct('>q')
 _uint8_le = struct.Struct('<Q')
 _uint8_be = struct.Struct('>Q')
-_SYBFLT8_STRUCT = struct.Struct('d')
+_flt8_struct = struct.Struct('d')
 _flt4_struct = struct.Struct('f')
 
 
@@ -1077,10 +1077,10 @@ class Float(BaseType):
         pass
 
     def write(self, w, val):
-        w.pack(_SYBFLT8_STRUCT, val)
+        w.pack(_flt8_struct, val)
 
     def read(self, r):
-        return r.unpack(_SYBFLT8_STRUCT)[0]
+        return r.unpack(_flt8_struct)[0]
 Float.instance = Float()
 
 
@@ -1117,7 +1117,7 @@ class FloatN(BaseType):
             w.put_byte(-1)
         else:
             w.put_byte(8)
-            w.pack(_SYBFLT8_STRUCT, val)
+            w.pack(_flt8_struct, val)
 
     def read(self, r):
         size = r.get_byte()
@@ -1125,7 +1125,7 @@ class FloatN(BaseType):
             return None
         else:
             if size == 8:
-                return r.unpack(_SYBFLT8_STRUCT)[0]
+                return r.unpack(_flt8_struct)[0]
             elif size == 4:
                 return r.unpack(_flt4_struct)[0]
             else:
