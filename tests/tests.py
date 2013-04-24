@@ -235,10 +235,6 @@ class MultipleRecordsetsTestCase(TestCase):
 
 class TransactionsTestCase(DbTestCase):
     def runTest(self):
-        def trancount():
-            cur.execute('select @@trancount')
-            return cur.fetchone()[0]
-
         self.conn.autocommit = False
         with self.conn.cursor() as cur:
             cur.execute('''
@@ -247,11 +243,11 @@ class TransactionsTestCase(DbTestCase):
             cur.execute("select object_id('testtable')")
             self.assertNotEqual((None,), cur.fetchone())
 
-            self.assertEqual(1, trancount())
+            self.assertEqual(1, self.conn._trancount())
 
             self.conn.rollback()
 
-            self.assertEqual(1, trancount())
+            self.assertEqual(1, self.conn._trancount())
 
             cur.execute("select object_id('testtable')")
             self.assertEqual((None,), cur.fetchone())
