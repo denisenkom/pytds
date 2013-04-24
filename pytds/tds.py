@@ -1703,7 +1703,10 @@ class VarBinary(BaseType):
             w.write(val)
 
     def read(self, r):
-        return readall(r, r.get_smallint())
+        size = r.get_smallint()
+        if size == -1:
+            return None
+        return readall(r, size)
 
 
 class VarBinary72(VarBinary):
