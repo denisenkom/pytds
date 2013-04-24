@@ -1601,7 +1601,7 @@ class Text72(Text71):
 class NText(BaseType):
     type = SYBNTEXT
 
-    def __init__(self, size, table_name):
+    def __init__(self, size=100, table_name=''):
         self._size = size
         self._table_name = table_name
 
@@ -1623,6 +1623,16 @@ class NText(BaseType):
         colsize = r.get_int()
         return r.read_str(colsize, ucs2_codec)
 
+    def write_info(self, w):
+        w.put_int(self._size * 2)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int(0)
+        else:
+            w.put_int(len(val) * 2)
+            w.write_ucs2(val)
+
 
 class NText71(NText):
     def __init__(self, size, table_name, collation):
@@ -1640,13 +1650,6 @@ class NText71(NText):
     def write_info(self, w):
         w.put_int(self._size * 2)
         w.put_collation(self._collation)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_int(0)
-        else:
-            w.put_int(len(val) * 2)
-            w.write_ucs2(val)
 
     def read(self, r):
         textptr_size = r.get_byte()
