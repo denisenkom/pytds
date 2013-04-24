@@ -490,26 +490,6 @@ class InternalProc(object):
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
 
 
-def tds_mutex_trylock(mutex):
-    pass
-
-
-def tds_mutex_unlock(mutex):
-    pass
-
-
-TDS_MUTEX_TRYLOCK = tds_mutex_trylock
-TDS_MUTEX_UNLOCK = tds_mutex_unlock
-
-
-def TDS_MUTEX_LOCK(mutex):
-    pass
-
-
-def TDS_MUTEX_INIT(something):
-    return None
-
-
 class _TdsConn:
     def __init__(self):
         self.tls_session = None
@@ -2347,7 +2327,6 @@ class _TdsSession(object):
         self._writer._transport = transport
         self.in_buf_max = 0
         self.state = TDS_IDLE
-        self.write_mtx = TDS_MUTEX_INIT(self.wire_mtx)
         self._tds = tds
         self.messages = []
         self.chunk_handler = tds.chunk_handler
@@ -2746,14 +2725,11 @@ class _TdsSession(object):
         if state == TDS_PENDING:
             if prior_state in (TDS_READING, TDS_QUERYING):
                 self.state = TDS_PENDING
-                #tds_mutex_unlock(self.wire_mtx)
             else:
                 raise InterfaceError('logic error: cannot chage query state from {0} to {1}'.
                                      format(state_names[prior_state], state_names[state]))
         elif state == TDS_READING:
             # transition to READING are valid only from PENDING
-            #if tds_mutex_trylock(self.wire_mtx):
-            #    return self.state
             if self.state != TDS_PENDING:
                 raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
                                      format(state_names[prior_state], state_names[state]))
@@ -2763,22 +2739,14 @@ class _TdsSession(object):
             if prior_state == TDS_DEAD:
                 raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
                                      format(state_names[prior_state], state_names[state]))
-            #elif prior_state in (TDS_READING, TDS_QUERYING):
-            #    tds_mutex_unlock(self.wire_mtx)
             self.state = state
         elif state == TDS_DEAD:
-            #if prior_state in (TDS_READING, TDS_QUERYING):
-            #    tds_mutex_unlock(self.wire_mtx)
             self.state = state
         elif state == TDS_QUERYING:
-            #if tds_mutex_trylock(self.wire_mtx):
-            #    return self.state
             if self.state == TDS_DEAD:
-                #tds_mutex_unlock(self.wire_mtx)
                 raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
                                      format(state_names[prior_state], state_names[state]))
             elif self.state != TDS_IDLE:
-                #tds_mutex_unlock(self.wire_mtx)
                 raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
                                      format(state_names[prior_state], state_names[state]))
             else:
@@ -2996,24 +2964,15 @@ class _TdsSession(object):
         self.in_cancel = 1
 
     def send_cancel(self):
-        if TDS_MUTEX_TRYLOCK(self.wire_mtx):
-            # TODO check
-            # signal other socket
-            raise NotImplementedError
-            #tds_conn(tds).s_signal.send((void*) &tds, sizeof(tds))
-            return
-
         #logger.debug("send_cancel: %sin_cancel and %sidle".format(
         #            ('' if self.in_cancel else "not "), ('' if self.state == TDS_IDLE else "not ")))
 
         # one cancel is sufficient
         if self.in_cancel or self.state == TDS_IDLE:
-            TDS_MUTEX_UNLOCK(self.wire_mtx)
             return
 
         self.res_info = None
         self._put_cancel()
-        TDS_MUTEX_UNLOCK(self.wire_mtx)
 
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
