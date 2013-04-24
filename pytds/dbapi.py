@@ -5,9 +5,10 @@ __version__ = '1.5.0'
 
 import logging
 import six
+from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
-from tds import (
+from .tds import (
     Error, tds_quote_id, TDS_RETURN_COMPUTE,
     TDS_RETURN_DONE, TDS_RETURN_ROW,
     TDS_DONE_ERROR, raise_db_exception, TDS_SUCCESS,

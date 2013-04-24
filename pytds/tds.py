@@ -3345,7 +3345,7 @@ class _TdsSession(object):
         w.put_byte(type_flags)
         option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if IS_TDS73_PLUS(self) else 0)
-        mins_fix = tzlocal().utcoffset(datetime.now()).total_seconds() // 60
+        mins_fix = int(tzlocal().utcoffset(datetime.now()).total_seconds()) // 60
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)
