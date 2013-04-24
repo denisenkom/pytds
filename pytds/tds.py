@@ -333,11 +333,6 @@ def tds7_crypt_pass(password):
     return encoded
 
 
-# Check if product is Sybase (such as Adaptive Server Enterrprice). x should be a TDSSOCKET*.
-TDS_IS_SYBASE = lambda x: not tds_conn(x).product_version & 0x80000000
-# Check if product is Microsft SQL Server. x should be a TDSSOCKET*.
-TDS_IS_MSSQL = lambda x: tds_conn(x).product_version & 0x80000000
-
 # store a tuple of programming error codes
 prog_errors = (
     102,    # syntax error
@@ -482,34 +477,6 @@ class _Default:
 
 default = _Default()
 
-
-def raise_db_exception(tds):
-    while True:
-        msg = tds.messages[-1]
-        if msg['msgno'] == 3621:  # the statement has been terminated
-            tds.messages = tds.messages[:-1]
-        else:
-            break
-
-    msg_no = msg['msgno']
-    error_msg = ' '.join(msg['message'] for msg in tds.messages)
-    if msg_no in prog_errors:
-        ex = ProgrammingError(error_msg)
-    elif msg_no in integrity_errors:
-        ex = IntegrityError(error_msg)
-    else:
-        ex = OperationalError(error_msg)
-    ex.msg_no = msg['msgno']
-    ex.text = msg['message']
-    ex.srvname = msg['server']
-    ex.procname = msg['proc_name']
-    ex.number = msg['msgno']
-    ex.severity = msg['severity']
-    ex.state = msg['state']
-    ex.line = msg['line_number']
-    #self.cancel()
-    tds.messages = []
-    raise ex
 
 
 class InternalProc(object):
@@ -2388,6 +2355,34 @@ class _TdsSession(object):
         self.use_tz = tds._login.use_tz
         self._spid = 0
 
+    def raise_db_exception(self):
+        while True:
+            msg = self.messages[-1]
+            if msg['msgno'] == 3621:  # the statement has been terminated
+                self.messages = self.messages[:-1]
+            else:
+                break
+
+        msg_no = msg['msgno']
+        error_msg = ' '.join(msg['message'] for msg in self.messages)
+        if msg_no in prog_errors:
+            ex = ProgrammingError(error_msg)
+        elif msg_no in integrity_errors:
+            ex = IntegrityError(error_msg)
+        else:
+            ex = OperationalError(error_msg)
+        ex.msg_no = msg['msgno']
+        ex.text = msg['message']
+        ex.srvname = msg['server']
+        ex.procname = msg['proc_name']
+        ex.number = msg['msgno']
+        ex.severity = msg['severity']
+        ex.state = msg['state']
+        ex.line = msg['line_number']
+        #self.cancel()
+        self.messages = []
+        raise ex
+
     def get_type_factory(self, type_id):
         factory = self._tds._type_map.get(type_id)
         if not factory:
@@ -2645,6 +2640,8 @@ class _TdsSession(object):
         else:
             self.rows_affected = -1
         self.done_flags = status
+        if self.done_flags & TDS_DONE_ERROR and not was_cancelled or self.in_cancel:
+            self.raise_db_exception()
 
     def process_env_chg(self):
         r = self._reader
@@ -3420,8 +3417,6 @@ class _TdsSession(object):
             marker = self.get_token_id()
             if marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_ERROR:
-                    raise_db_exception(self)
                 if self.done_flags & TDS_DONE_MORE_RESULTS:
                     # skip results that don't event have rowcount
                     continue
@@ -3439,8 +3434,6 @@ class _TdsSession(object):
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_ERROR:
-                    raise_db_exception(self)
                 return False
             else:
                 self.process_token(marker)
@@ -3454,8 +3447,6 @@ class _TdsSession(object):
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_ERROR:
-                    raise_db_exception(self)
                 if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
                     # skip results that don't event have rowcount
                     continue
@@ -3473,8 +3464,6 @@ class _TdsSession(object):
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_ERROR:
-                    raise_db_exception(self)
                 if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
                     # skip results that don't event have rowcount
                     continue
@@ -3587,7 +3576,7 @@ class _TdsSocket(object):
                         self._main_session._writer.begin_packet(TDS_LOGIN)
                         self._main_session.tds_send_login(login)
                     if not self._main_session.process_login_tokens():
-                        raise_db_exception(self._main_session)
+                        self._main_session.raise_db_exception()
                         #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
                     if IS_TDS72_PLUS(self):
                         self._type_map = _type_map72
