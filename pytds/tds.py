@@ -1790,6 +1790,10 @@ class DateTime(BaseDateTime):
         w.put_byte(8)
 
     def write(self, w, val):
+        if val.tzinfo:
+            if not w.session.use_tz:
+                raise DataError('Timezone-aware datetime is used without specifying use_tz')
+            val = val.astimezone(w.session.use_tz).replace(tzinfo=None)
         w.write(self.encode(val))
 
     def read(self, r):
@@ -1803,7 +1807,7 @@ class DateTime(BaseDateTime):
 
     @classmethod
     def encode(cls, value):
-        cls.validate(value)
+        #cls.validate(value)
         if type(value) == date:
             value = datetime.combine(value, time(0, 0, 0))
         days = (value - cls._base_date).days
@@ -1851,7 +1855,8 @@ class DateTimeN(BaseType):
             w.put_byte(0)
         else:
             w.put_byte(8)
-            w.write(DateTime.encode(val))
+            DateTime.instance.write(w, val)
+            #w.write(DateTime.encode(val))
 
     def read(self, r):
         size = r.get_byte()
@@ -2898,12 +2903,12 @@ class _TdsSession(object):
                 else:
                     column.type = DateTime2(6)
             else:
-                column.type = DateTimeN()
+                column.type = DateTimeN(8)
         elif isinstance(value, date):
             if IS_TDS73_PLUS(self):
                 column.type = MsDate()
             else:
-                column.type = DateTimeN()
+                column.type = DateTimeN(8)
         elif isinstance(value, time):
             if not IS_TDS73_PLUS(self):
                 raise DataError('Time type is not supported on MSSQL 2005 and lower')

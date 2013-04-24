@@ -12,7 +12,7 @@ from six import text_type
 from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime,
-    TDS_TOKEN_RESULTS, TDS_DATETIME)
+    TDS_TOKEN_RESULTS, TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS)
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -308,6 +308,7 @@ class NoRows(DbTestCase):
         cur.execute('select * from testtable')
         self.assertEqual([], cur.fetchall())
 
+
 class TestVariant(TestCase):
     def _t(self, result, sql):
         with self.conn.cursor() as cur:
@@ -315,7 +316,15 @@ class TestVariant(TestCase):
             val, = cur.fetchone()
             self.assertEqual(result, val)
 
-    def runTest(self):
+    def test_new_datetime(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003000' as datetime2)")
+        self._t(time(10, 11, 12, 3000), "cast('10:11:12.003000' as time)")
+        self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3*60*60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
+
+    def test_regular(self):
         self._t(None, "cast(NULL as varchar)")
         self._t('test', "cast('test' as varchar)")
         self._t('test ', "cast('test' as char(5))")
@@ -325,10 +334,6 @@ class TestVariant(TestCase):
         self._t(Decimal('100.55555'), "cast(100.55555 as numeric(8,5))")
         self._t(b'test', "cast('test' as varbinary)")
         self._t(b'test\x00', "cast('test' as binary(5))")
-        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003000' as datetime2)")
-        self._t(time(10, 11, 12, 3000), "cast('10:11:12.003000' as time)")
-        self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
-        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3*60*60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003' as datetime)")
         self._t(datetime(2011, 2, 3, 10, 11, 0), "cast('2011-02-03T10:11:00' as smalldatetime)")
         val = uuid.uuid4()
@@ -474,20 +479,24 @@ class Bug3(TestCase):
 
 class DateAndTimeParams(TestCase):
     def test_date(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
         with self.conn.cursor() as cur:
             date = Date(2012, 10, 6)
             cur.execute('select %s', (date, ))
             self.assertEqual(cur.fetchall(), [(date,)])
 
     def test_time(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
         with self.conn.cursor() as cur:
-            time = Time(8, 7, 4, 123456)
+            time = Time(8, 7, 4, 123000)
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 
     def test_datetime(self):
         with self.conn.cursor() as cur:
-            time = Timestamp(2013, 7, 9, 8, 7, 4, 123456)
+            time = Timestamp(2013, 7, 9, 8, 7, 4, 123000)
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 
@@ -592,73 +601,65 @@ class DateTimeTest(DbTestCase):
             cur.execute('select col from testtable')
             self.assertEqual(cur.fetchone(), (dt,))
 
-class DateTimeOffset(TestCase):
-    def _testval(self, val):
-        with self.conn.cursor() as cur:
-            cur.execute('select cast(%s as datetimeoffset)', (val,))
-            self.assertEqual(cur.fetchall(), [(val,)])
-    def runTest(self):
-        if self.conn.tds_version < TDS72:
-            return
+
+class NewDateTimeTest(TestCase):
+    def test_datetimeoffset(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
+        def _testval(val):
+            with self.conn.cursor() as cur:
+                cur.execute('select cast(%s as datetimeoffset)', (val,))
+                self.assertEqual(cur.fetchall(), [(val,)])
         with self.conn.cursor() as cur:
             cur.execute("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset)")
             self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5*60*60)), cur.fetchone()[0])
-        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))
-        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 5*60*60)))
-        self._testval(Timestamp(1, 1, 1, 0, 0, 0, 0, tzutc()))
-        self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
-        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 14*60)))
-        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14*60)))
-        self._testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15*60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 5*60*60)))
+        _testval(Timestamp(1, 1, 1, 0, 0, 0, 0, tzutc()))
+        _testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 14*60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14*60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15*60)))
 
-class TimeTest(TestCase):
-    def _testval(self, val):
-        with self.conn.cursor() as cur:
-            cur.execute('select cast(%s as time)', (val,))
-            self.assertEqual(cur.fetchall(), [(val,)])
-    def runTest(self):
-        with self.conn.cursor() as cur:
-            cur.execute("select cast('20:21:22.1234567' as time)")
-            self.assertEqual(Time(20, 21, 22, 123456), cur.fetchone()[0])
-        self._testval(Time(14,16,18,123456))
-        self._testval(Time(0, 0, 0, 0))
-        self._testval(Time(0, 0, 0, 0))
-        self._testval(Time(0, 0, 0, 0))
-        self._testval(Time(23, 59, 59, 999999))
-        self._testval(Time(0, 0, 0, 0))
-        self._testval(Time(0, 0, 0, 0))
-        self._testval(Time(0, 0, 0, 0))
+    def test_time(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
+        def testval(val):
+            with self.conn.cursor() as cur:
+                cur.execute('select cast(%s as time)', (val,))
+                self.assertEqual(cur.fetchall(), [(val,)])
+        testval(Time(14,16,18,123456))
+        testval(Time(0, 0, 0, 0))
+        testval(Time(0, 0, 0, 0))
+        testval(Time(0, 0, 0, 0))
+        testval(Time(23, 59, 59, 999999))
+        testval(Time(0, 0, 0, 0))
+        testval(Time(0, 0, 0, 0))
+        testval(Time(0, 0, 0, 0))
 
-class DateTime2(TestCase):
-    def _testval(self, val):
-        with self.conn.cursor() as cur:
-            cur.execute('select cast(%s as datetime2)', (val,))
-            self.assertEqual(cur.fetchall(), [(val,)])
-    def runTest(self):
-        with self.conn.cursor() as cur:
-            cur.execute("select cast('9999-12-31T23:59:59.999999' as datetime2)")
-            self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 999999),)])
-        self._testval(Timestamp(2010, 1, 2, 20, 21, 22, 345678))
-        self._testval(Timestamp(2010, 1, 2, 0, 0, 0))
-        self._testval(Timestamp(1, 1, 1, 0, 0, 0))
-        self._testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999))
+    def test_datetime2(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
+        def testval(val):
+            with self.conn.cursor() as cur:
+                cur.execute('select cast(%s as datetime2)', (val,))
+                self.assertEqual(cur.fetchall(), [(val,)])
+        testval(Timestamp(2010, 1, 2, 20, 21, 22, 345678))
+        testval(Timestamp(2010, 1, 2, 0, 0, 0))
+        testval(Timestamp(1, 1, 1, 0, 0, 0))
+        testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999))
 
-
-class DateTest(TestCase):
-    def _testval(self, val):
-        with self.conn.cursor() as cur:
-            cur.execute('select cast(%s as date)', (val,))
-            self.assertEqual(cur.fetchall(), [(val,)])
-    def runTest(self):
-        if self.conn.tds_version < TDS72:
-            return
-        with self.conn.cursor() as cur:
-            cur.execute("select cast('9999-12-31T00:00:00' as date)")
-            self.assertEqual(cur.fetchall(), [(Date(9999, 12, 31),)])
-        self._testval(Date(2010, 1, 2))
-        self._testval(Date(2010, 1, 2))
-        self._testval(Date(1, 1, 1))
-        self._testval(Date(9999, 12, 31))
+    def test_date(self):
+        if not IS_TDS73_PLUS(self.conn):
+            self.skipTest('Requires TDS7.3+')
+        def testval(val):
+            with self.conn.cursor() as cur:
+                cur.execute('select cast(%s as date)', (val,))
+                self.assertEqual(cur.fetchall(), [(val,)])
+        testval(Date(2010, 1, 2))
+        testval(Date(2010, 1, 2))
+        testval(Date(1, 1, 1))
+        testval(Date(9999, 12, 31))
 
 
 class Auth(unittest.TestCase):
@@ -747,4 +748,5 @@ class TimezoneTests(unittest.TestCase):
             self.check_val(conn, '%s', dt, dt)
             # Aware time should be converted to use_tz if not using datetimeoffset type
             dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 60))
-            self.check_val(conn, 'cast(%s as datetime2)', dt, dt.astimezone(use_tz))
+            if IS_TDS73_PLUS(conn):
+                self.check_val(conn, 'cast(%s as datetime2)', dt, dt.astimezone(use_tz))
