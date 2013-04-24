@@ -330,36 +330,6 @@ TDS_DONEPROC_RESULT = 4053
 TDS_DONEINPROC_RESULT = 4054
 TDS_OTHERS_RESULT = 4055
 
-TDS_TOKEN_RES_OTHERS = 0
-TDS_TOKEN_RES_ROWFMT = 1
-TDS_TOKEN_RES_COMPUTEFMT = 2
-TDS_TOKEN_RES_PARAMFMT = 3
-TDS_TOKEN_RES_DONE = 4
-TDS_TOKEN_RES_ROW = 5
-TDS_TOKEN_RES_COMPUTE = 6
-TDS_TOKEN_RES_PROC = 7
-TDS_TOKEN_RES_MSG = 8
-
-TDS_HANDLE_ALL = 0
-
-
-def _gen_return_flags():
-    _globs = {}
-    prefix = 'TDS_TOKEN_RES_'
-    for key, value in globals().items():
-        if key.startswith(prefix):
-            _globs['TDS_RETURN_' + key[len(prefix):]] = 1 << (value * 2)
-            _globs['TDS_STOPAT_' + key[len(prefix):]] = 2 << (value * 2)
-    globals().update(_globs)
-_gen_return_flags()
-
-
-TDS_TOKEN_RESULTS = TDS_RETURN_ROWFMT | TDS_RETURN_COMPUTEFMT | TDS_RETURN_DONE |\
-    TDS_STOPAT_ROW | TDS_STOPAT_COMPUTE | TDS_RETURN_PROC
-TDS_TOKEN_TRAILING = TDS_STOPAT_ROWFMT | TDS_STOPAT_COMPUTEFMT | TDS_STOPAT_ROW |\
-    TDS_STOPAT_COMPUTE | TDS_STOPAT_MSG | TDS_STOPAT_OTHERS
-
-TDS_NO_MORE_RESULTS = 1
 TDS_SUCCESS = 0
 TDS_FAIL = -1
 TDS_CANCELLED = -2
@@ -2587,21 +2557,19 @@ class _TdsSession(object):
     def process_cancel(self):
         '''
         Process the incoming token stream until it finds
-        an end token (DONE, DONEPROC, DONEINPROC) with the cancel flag set.
+        an end token DONE with the cancel flag set.
         At that point the connection should be ready to handle a new query.
         '''
         # silly cases, nothing to do
         if not self.in_cancel:
-            return TDS_SUCCESS
+            return
 
         # TODO support TDS5 cancel, wait for cancel packet first, then wait for done
         while True:
-            rc, result_type, _ = self.process_tokens(0)
-
-            if rc == TDS_FAIL:
-                raise Exception('TDS_FAIL')
-            elif rc in (TDS_CANCELLED, TDS_SUCCESS, TDS_NO_MORE_RESULTS):
-                return TDS_SUCCESS
+            token_id = self.get_token_id()
+            self.process_token(token_id)
+            if not self.in_cancel:
+                return
 
     def process_msg(self, marker):
         r = self._reader
@@ -3606,235 +3574,6 @@ class _TdsSession(object):
             self.process_token(marker)
             if marker == TDS_RETURNSTATUS_TOKEN:
                 return
-
-    def process_tokens(tds, flag):
-        parent = {'result_type': 0, 'return_flag': 0}
-        done_flags = 0
-        saved_rows_affected = tds.rows_affected
-        cancel_seen = 0
-        r = tds._reader
-
-        def SET_RETURN(ret, return_flag, stopat_flag):
-            parent['result_type'] = ret
-            parent['return_flag'] = return_flag | stopat_flag
-            if flag & stopat_flag:
-                r.unget_byte()
-                #logger.debug("process_tokens::SET_RETURN stopping on current token")
-                return False
-            return True
-
-        if tds.state == TDS_IDLE:
-            #logger.debug("process_tokens() state is COMPLETED")
-            return TDS_NO_MORE_RESULTS, TDS_DONE_RESULT, done_flags
-
-        with tds.state_context(TDS_READING):
-            rc = TDS_SUCCESS
-            while True:
-                marker = r.get_byte()
-                #logger.info("processing result tokens.  marker is  {0:x}({1})".format(marker, tds_token_name(marker)))
-                if marker == TDS7_RESULT_TOKEN:
-                    #
-                    # If we're processing the results of a cursor fetch
-                    # from sql server we don't want to pass back the
-                    # TDS_ROWFMT_RESULT to the calling API
-                    #
-                    if tds.internal_sp_called == TDS_SP_CURSORFETCH:
-                        rc = tds.tds7_process_result()
-                        marker = r.get_byte()
-                        if marker != TDS_TABNAME_TOKEN:
-                            r.unget_byte()
-                        else:
-                            rc = tds_process_tabname(tds)
-                    else:
-                        if SET_RETURN(TDS_ROWFMT_RESULT, TDS_RETURN_ROWFMT, TDS_STOPAT_ROWFMT):
-                            rc = tds.tds7_process_result()
-                            # handle browse information (if presents)
-                            marker = r.get_byte()
-                            if marker != TDS_TABNAME_TOKEN:
-                                r.unget_byte()
-                                rc = TDS_SUCCESS
-                            else:
-                                rc = tds_process_tabname(tds)
-                elif marker == TDS_RESULT_TOKEN:
-                    if SET_RETURN(TDS_ROWFMT_RESULT, TDS_RETURN_ROWFMT, TDS_STOPAT_ROWFMT):
-                        rc = tds_process_result(tds)
-                elif marker == TDS_ROWFMT2_TOKEN:
-                    if SET_RETURN(TDS_ROWFMT_RESULT, TDS_RETURN_ROWFMT, TDS_STOPAT_ROWFMT):
-                        rc = tds5_process_result(tds)
-                elif marker == TDS_COLNAME_TOKEN:
-                    rc = tds_process_col_name(tds)
-                elif marker == TDS_COLFMT_TOKEN:
-                    if SET_RETURN(TDS_ROWFMT_RESULT, TDS_RETURN_ROWFMT, TDS_STOPAT_ROWFMT):
-                        rc = tds_process_col_fmt(tds)
-                        # handle browse information (if present)
-                        marker = r.get_byte()
-                        if marker == TDS_TABNAME_TOKEN:
-                            rc = tds_process_tabname(tds)
-                        else:
-                            r.unget_byte()
-                elif marker == TDS_PARAM_TOKEN:
-                    r.unget_byte()
-                    if tds.internal_sp_called:
-                        #logger.debug("processing parameters for sp {0}".formst(tds.internal_sp_called))
-                        while True:
-                            marker = r.get_byte()
-                            if marker != TDS_PARAM_TOKEN:
-                                break
-                            #logger.debug("calling tds_process_param_result")
-                            pinfo = tds_process_param_result(tds)
-                        r.unget_byte()
-                        #logger.debug("{0} hidden return parameters".format(pinfo.num_cols if pinfo else -1))
-                        if pinfo and pinfo.num_cols > 0:
-                            curcol = pinfo.columns[0]
-                            if tds.internal_sp_called == TDS_SP_CURSOROPEN and tds.cur_cursor:
-                                cursor = tds.cur_cursor
-
-                                cursor.cursor_id = curcol.value
-                                #logger.debug("stored internal cursor id {0}".format(cursor.cursor_id))
-                                cursor.srv_status &= ~(TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_OPEN | TDS_CUR_ISTAT_DEALLOC)
-                                cursor.srv_status |= TDS_CUR_ISTAT_OPEN if cursor.cursor_id else TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_DEALLOC
-                            if (tds.internal_sp_called == TDS_SP_PREPARE or tds.internal_sp_called == TDS_SP_PREPEXEC)\
-                                    and tds.cur_dyn and tds.cur_dyn.num_id == 0 and curcol.value:
-                                tds.cur_dyn.num_id = curcol.value
-                    else:
-                        if SET_RETURN(TDS_PARAM_RESULT, TDS_RETURN_PROC, TDS_STOPAT_PROC):
-                            rc = tds.process_param_result_tokens()
-                elif marker == TDS_COMPUTE_NAMES_TOKEN:
-                    rc = tds_process_compute_names(tds)
-                elif marker == TDS_COMPUTE_RESULT_TOKEN:
-                    if SET_RETURN(TDS_COMPUTEFMT_RESULT, TDS_RETURN_COMPUTEFMT, TDS_STOPAT_COMPUTEFMT):
-                        rc = tds_process_compute_result(tds)
-                elif marker == TDS7_COMPUTE_RESULT_TOKEN:
-                    if SET_RETURN(TDS_COMPUTEFMT_RESULT, TDS_RETURN_COMPUTEFMT, TDS_STOPAT_COMPUTEFMT):
-                        rc = tds7_process_compute_result(tds)
-                elif marker in (TDS_ROW_TOKEN, TDS_NBC_ROW_TOKEN):
-                    # overstepped the mark...
-                    if tds.cur_cursor:
-                        cursor = tds.cur_cursor
-
-                        tds.current_results = cursor.res_info
-                        #logger.debug("process_tokens(). set current_results to cursor->res_info")
-                    else:
-                        # assure that we point to row, not to compute
-                        if tds.res_info:
-                            tds.current_results = tds.res_info
-                    # I don't know when this it's false but it happened, also server can send garbage...
-                    if tds.current_results:
-                        tds.current_results.rows_exist = 1
-                    if SET_RETURN(TDS_ROW_RESULT, TDS_RETURN_ROW, TDS_STOPAT_ROW):
-                        if marker == TDS_NBC_ROW_TOKEN:
-                            rc = tds.process_nbcrow()
-                        else:
-                            rc = tds.process_row()
-                elif marker == TDS_CMP_ROW_TOKEN:
-                    # I don't know when this it's false but it happened, also server can send garbage...
-                    if tds.res_info:
-                        tds.res_info.rows_exist = 1
-                    if SET_RETURN(TDS_COMPUTE_RESULT, TDS_RETURN_COMPUTE, TDS_STOPAT_COMPUTE):
-                        rc = tds_process_compute(tds, NULL)
-                elif marker == TDS_RETURNSTATUS_TOKEN:
-                    ret_status = r.get_int()
-                    marker = r.peek()
-                    if marker in (TDS_PARAM_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONE_TOKEN, TDS5_PARAMFMT_TOKEN, TDS5_PARAMFMT2_TOKEN):
-                        if tds.internal_sp_called:
-                            # TODO perhaps we should use ret_status ??
-                            pass
-                        else:
-                            # TODO optimize
-                            flag &= ~TDS_STOPAT_PROC
-                            if SET_RETURN(TDS_STATUS_RESULT, TDS_RETURN_PROC, TDS_STOPAT_PROC):
-                                tds.has_status = True
-                                tds.ret_status = ret_status
-                                #logger.debug("process_tokens: return status is {0}".format(tds.ret_status))
-                                rc = TDS_SUCCESS
-                elif marker == TDS5_DYNAMIC_TOKEN:
-                    # process acknowledge dynamic
-                    tds.cur_dyn = tds_process_dynamic(tds)
-                    # special case, prepared statement cannot be prepared
-                    if tds.cur_dyn and not tds.cur_dyn.emulated:
-                        marker = r.get_byte()
-                        if marker == TDS_EED_TOKEN:
-                            tds.process_msg(marker)
-                            if tds.cur_dyn and tds.cur_dyn.emulated:
-                                marker = r.get_byte()
-                                if marker == TDS_DONE_TOKEN:
-                                    rc, done_flags = tds.process_end(marker)
-                                    done_flags &= ~TDS_DONE_ERROR
-                                    # FIXME warning to macro expansion
-                                    SET_RETURN(TDS_DONE_RESULT, TDS_RETURN_DONE, TDS_STOPAT_DONE)
-                                else:
-                                    r.unget_byte()
-                        else:
-                            r.unget_byte()
-                elif marker == TDS5_PARAMFMT_TOKEN:
-                    if SET_RETURN(TDS_DESCRIBE_RESULT, TDS_RETURN_PARAMFMT, TDS_STOPAT_PARAMFMT):
-                        rc = tds_process_dyn_result(tds)
-                elif marker == TDS5_PARAMFMT2_TOKEN:
-                    if SET_RETURN(TDS_DESCRIBE_RESULT, TDS_RETURN_PARAMFMT, TDS_STOPAT_PARAMFMT):
-                        rc = tds5_process_dyn_result2(tds)
-                elif marker == TDS5_PARAMS_TOKEN:
-                    if SET_RETURN(TDS_PARAM_RESULT, TDS_RETURN_PROC, TDS_STOPAT_PROC):
-                        rc = tds_process_params_result_token(tds)
-                elif marker == TDS_CURINFO_TOKEN:
-                    rc = tds_process_cursor_tokens(tds)
-                elif marker == TDS_DONE_TOKEN:
-                    if SET_RETURN(TDS_DONE_RESULT, TDS_RETURN_DONE, TDS_STOPAT_DONE):
-                        rc, done_flags = tds.process_end(marker)
-                elif marker == TDS_DONEPROC_TOKEN:
-                    if SET_RETURN(TDS_DONEPROC_RESULT, TDS_RETURN_DONE, TDS_STOPAT_DONE):
-                        rc, done_flags = tds.process_end(marker)
-                        if tds.internal_sp_called in (0, TDS_SP_PREPARE,
-                                                      TDS_SP_PREPEXEC, TDS_SP_EXECUTE,
-                                                      TDS_SP_UNPREPARE, TDS_SP_EXECUTESQL):
-                            pass
-                        elif tds.internal_sp_called == TDS_SP_CURSOROPEN:
-                                parent['result_type'] = TDS_DONE_RESULT
-                                tds.rows_affected = saved_rows_affected
-                        elif tds.internal_sp_called == TDS_SP_CURSORCLOSE:
-                            #logger.debug("TDS_SP_CURSORCLOSE")
-                            if tds.cur_cursor:
-                                cursor = tds.cur_cursor
-
-                                cursor.srv_status &= ~TDS_CUR_ISTAT_OPEN
-                                cursor.srv_status |= TDS_CUR_ISTAT_CLOSED | TDS_CUR_ISTAT_DECLARED
-                                if cursor.status.dealloc == TDS_CURSOR_STATE_SENT:
-                                    tds_cursor_deallocated(tds, cursor)
-                            parent['result_type'] = TDS_NO_MORE_RESULTS
-                            rc = TDS_NO_MORE_RESULTS
-                        else:
-                            parent['result_type'] = TDS_NO_MORE_RESULTS
-                            rc = TDS_NO_MORE_RESULTS
-                elif marker == TDS_DONEINPROC_TOKEN:
-                    if tds.internal_sp_called in (TDS_SP_CURSOROPEN, TDS_SP_CURSORFETCH, TDS_SP_PREPARE, TDS_SP_CURSORCLOSE):
-                        rc, done_flags = tds.process_end(marker)
-                        if tds.rows_affected != TDS_NO_COUNT:
-                            saved_rows_affected = tds.rows_affected
-                    else:
-                        if SET_RETURN(TDS_DONEINPROC_RESULT, TDS_RETURN_DONE, TDS_STOPAT_DONE):
-                            rc, done_flags = tds.process_end(marker)
-                elif marker in (TDS_ERROR_TOKEN, TDS_INFO_TOKEN, TDS_EED_TOKEN):
-                    if SET_RETURN(TDS_MSG_RESULT, TDS_RETURN_MSG, TDS_STOPAT_MSG):
-                        rc = tds.process_default_tokens(marker)
-                else:
-                    if SET_RETURN(TDS_OTHERS_RESULT, TDS_RETURN_OTHERS, TDS_STOPAT_OTHERS):
-                        rc = tds.process_default_tokens(marker)
-
-                cancel_seen |= tds.in_cancel
-                if cancel_seen:
-                    # during cancel handle all tokens
-                    flag = TDS_HANDLE_ALL
-
-                if parent['return_flag'] & flag != 0:
-                    if tds.state != TDS_IDLE:
-                        tds.set_state(TDS_PENDING)
-                    return rc, parent['result_type'], done_flags
-
-                if tds.state == TDS_IDLE:
-                    return (TDS_CANCELLED if cancel_seen else TDS_NO_MORE_RESULTS), parent['result_type'], done_flags
-
-                if tds.state == TDS_DEAD:
-                    # TODO free all results ??
-                    return TDS_FAIL, parent['result_type'], done_flags
 
 
 _token_map = {

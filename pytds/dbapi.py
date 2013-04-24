@@ -9,15 +9,9 @@ from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
 from .tds import (
-    Error, tds_quote_id, TDS_RETURN_COMPUTE,
-    TDS_RETURN_DONE, TDS_RETURN_ROW,
-    TDS_DONE_ERROR, raise_db_exception, TDS_SUCCESS,
-    TDS_STOPAT_ROWFMT, TDS_ROW_RESULT,
-    TDS_COMPUTE_RESULT, TDS_NO_MORE_RESULTS, TDS_TOKEN_RESULTS,
-    TDS_ROWFMT_RESULT, TDS_DONEINPROC_RESULT, TDS_DONE_COUNT,
-    TDS_DONEPROC_RESULT, TDS_DONE_RESULT, TDS_DONE_MORE_RESULTS,
-    TDS_STATUS_RESULT, InterfaceError, TDS_RETURN_PROC,
-    TDS_PENDING, TDS_TOKEN_TRAILING, TDS_PARAM_RESULT, TDS74,
+    Error, tds_quote_id,
+    InterfaceError,
+    TDS_PENDING, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS72_PLUS, TDS_IDLE,
     )
@@ -291,7 +285,6 @@ class _Connection(object):
             return False
         if session.find_result_or_done():
             return True
-        #return True if session.done_flags & TDS_DONE_MORE_RESULTS else None
 
     def _rowcount(self, cursor):
         session = cursor._session
@@ -345,9 +338,7 @@ class _Connection(object):
             if not (cursor is self._active_cursor or self._active_cursor is None):
                 session = conn.main_session
                 if session.state == TDS_PENDING:
-                    rc, result_type, _ = session.process_tokens(TDS_TOKEN_TRAILING)
-                    if rc != TDS_NO_MORE_RESULTS:
-                        raise InterfaceError('Results are still pending on connection')
+                    raise InterfaceError('Results are still pending on connection')
                 if cursor is not None:
                     cursor._session = session
             self._active_cursor = cursor
@@ -372,39 +363,7 @@ class _Connection(object):
         session.submit_rpc(procname, parameters)
         session.output_params = {}
         self._state = DB_RES_INIT
-        #while True:
         session.process_rpc()
-        #    tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
-        #    #
-        #    # The error flag may be set for any intervening DONEINPROC packet, in particular
-        #    # by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
-        #    #/
-        #    if done_flags & TDS_DONE_ERROR:
-        #        raise_db_exception(session)
-        #        assert False
-        #        raise Exception('FAIL')
-        #    if result_type == TDS_STATUS_RESULT:
-        #        continue
-        #    elif result_type == TDS_PARAM_RESULT:
-        #        continue
-        #    elif result_type == TDS_DONEINPROC_RESULT:
-        #        self._state = DB_RES_RESULTSET_EMPTY
-        #        continue
-        #    elif result_type == TDS_ROWFMT_RESULT:
-        #        self._state = DB_RES_RESULTSET_ROWS
-        #        break
-        #    elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-        #        if done_flags & TDS_DONE_MORE_RESULTS:
-        #            if not done_flags & TDS_DONE_COUNT:
-        #                # skip results that don't event have rowcount
-        #                continue
-        #            self._state = DB_RES_NEXT_RESULT
-        #        else:
-        #            self._state = DB_RES_NO_MORE_RESULTS
-        #        break
-        #    else:
-        #        logger.error('logic error: process_tokens result_type %d', result_type)
-        #logger.debug('callproc end')
         results = list(parameters)
         for key, param in session.output_params.items():
             results[key] = param.value

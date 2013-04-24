@@ -12,7 +12,7 @@ from six import text_type
 from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime,
-    TDS_TOKEN_RESULTS, TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS,
+    TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS,
     output, default)
 
 # set decimal precision to match mssql maximum precision
