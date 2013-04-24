@@ -1579,6 +1579,9 @@ class NText(BaseType):
     def from_stream(cls, r):
         raise NotImplementedError
 
+    def get_declaration(self):
+        return 'NTEXT'
+
 
 class NText71(NText):
     def __init__(self, size, table_name, collation):
@@ -1595,23 +1598,28 @@ class NText71(NText):
 
     def write_info(self, w):
         w.put_int(self._size * 2)
+        w.put_collation(self._collation)
+        w.put_smallint(len(self._table_name))
+        w.write_ucs2(self._table_name)
 
     def write(self, w, val):
         if val is None:
-            w.put_int(-1)
+            w.put_int(0)
         else:
+            #w.put_byte(16)
+            #w.write(b'\x00' * 16)
+            #w.put_int8(0)
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
 
     def read(self, r):
-        size = r.get_byte()
-        if size == 16:  # Jeff's hack
-            readall(r, 16)  # textptr
-            readall(r, 8)  # timestamp
-            colsize = r.get_int()
-            return r.read_str(colsize, ucs2_codec)
-        else:
+        textptr_size = r.get_byte()
+        if textptr_size == 0:
             return None
+        readall(r, textptr_size)  # textptr
+        readall(r, 8)  # timestamp
+        colsize = r.get_int()
+        return r.read_str(colsize, ucs2_codec)
 
 
 class NText72(NText71):
@@ -2889,6 +2897,8 @@ class _TdsSession(object):
             if size > 4000:
                 if IS_TDS72_PLUS(self):
                     column.type = NVarChar72(-1, self.conn.collation)
+                elif IS_TDS71_PLUS(self):
+                    column.type = NText71(-1, '', self.conn.collation)
                 else:
                     column.type = NText()
             else:
