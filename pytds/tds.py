@@ -1700,6 +1700,8 @@ class VarBinary72(VarBinary):
 
 
 class Image(BaseType):
+    type = SYBIMAGE
+
     def __init__(self, size, table_name):
         self._table_name = table_name
         self._size = size
@@ -1725,8 +1727,6 @@ class Image(BaseType):
 
 
 class Image72(Image):
-    type = SYBIMAGE
-
     def __init__(self, size, parts):
         self._parts = parts
         self._size = size

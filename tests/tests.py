@@ -167,36 +167,36 @@ class TableTestCase(DbTestCase):
     def runTest(self):
         cur = self.conn.cursor()
         cur.execute(u'''
-        create table testtable (id int, _text text, _xml xml, vcm varchar(max), vc varchar(10))
+        create table #testtable (id int, _text text, _xml xml, vcm varchar(max), vc varchar(10))
         ''')
         cur.execute(u'''
-        insert into testtable (id, _text, _xml, vcm, vc) values (1, 'text', '<root/>', '', NULL)
+        insert into #testtable (id, _text, _xml, vcm, vc) values (1, 'text', '<root/>', '', NULL)
         ''')
-        cur.execute('select id from testtable order by id')
+        cur.execute('select id from #testtable order by id')
         self.assertEqual([(1,)], cur.fetchall())
 
         cur = self.conn.cursor()
-        cur.execute('select _text from testtable order by id')
+        cur.execute('select _text from #testtable order by id')
         self.assertEqual([(u'text',)], cur.fetchall())
 
         cur = self.conn.cursor()
-        cur.execute('select _xml from testtable order by id')
+        cur.execute('select _xml from #testtable order by id')
         self.assertEqual([('<root/>',)], cur.fetchall())
 
         cur = self.conn.cursor()
-        cur.execute('select id, _text, _xml, vcm, vc from testtable order by id')
+        cur.execute('select id, _text, _xml, vcm, vc from #testtable order by id')
         self.assertTupleEqual((1, 'text', '<root/>', '', None), cur.fetchone())
 
         cur = self.conn.cursor()
-        cur.execute('select vc from testtable order by id')
+        cur.execute('select vc from #testtable order by id')
         self.assertEqual([(None,)], cur.fetchall())
 
         cur = self.conn.cursor()
-        cur.execute('insert into testtable (_xml) values (%s)', ('<some/>',))
+        cur.execute('insert into #testtable (_xml) values (%s)', ('<some/>',))
 
     def tearDown(self):
         cur = self.conn.cursor()
-        cur.execute(u'drop table testtable')
+        cur.execute(u'drop table #testtable')
         super(TableTestCase, self).tearDown()
 
 class StoredProcsTestCase(DbTestCase):
