@@ -490,12 +490,6 @@ class InternalProc(object):
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
 
 
-class _TdsConn:
-    def __init__(self):
-        self.tls_session = None
-        self.tls_credentials = None
-
-
 class _TdsEnv:
     pass
 
