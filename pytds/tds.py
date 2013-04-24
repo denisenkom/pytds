@@ -321,16 +321,7 @@ _int8_be = struct.Struct('>q')
 _uint8_le = struct.Struct('<Q')
 _uint8_be = struct.Struct('>Q')
 _SYBFLT8_STRUCT = struct.Struct('d')
-_ubyte_struct = struct.Struct('B')
-_sbyte_struct = struct.Struct('b')
-_sshort_struct = struct.Struct('<h')
-_slong_struct = struct.Struct('<l')
-_slong8_struct = struct.Struct('<q')
 _flt4_struct = struct.Struct('f')
-_money8_struct = struct.Struct('<lL')
-_simple_types = {SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,
-                 SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,
-                 XSYBVARBINARY, XSYBBINARY, SYBVARBINARY}
 
 
 class SimpleLoadBalancer(object):
