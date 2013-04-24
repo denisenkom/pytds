@@ -297,13 +297,6 @@ USE_CORK = hasattr(socket, 'TCP_CORK')
 
 TDS_NO_COUNT = -1
 
-TDS_SUCCESS = 0
-TDS_FAIL = -1
-TDS_CANCELLED = -2
-
-TDS_FAILED = lambda rc: rc < 0
-TDS_SUCCEED = lambda rc: rc >= 0
-
 tds_conn = lambda tds: tds
 
 TDS_DEF_BLKSZ = 512
@@ -2602,7 +2595,7 @@ class _TdsSession(object):
         r = self._reader
         info = self.current_results
         if not info:
-            raise Exception('TDS_FAIL')
+            self.bad_stream('got row without info')
         assert len(info.columns) > 0
         info.row_count += 1
 
@@ -2647,8 +2640,6 @@ class _TdsSession(object):
             #logger.debug('process_end() state set to TDS_IDLE')
             self.in_cancel = False
             self.set_state(TDS_IDLE)
-        if self.is_dead():
-            raise Exception('TDS_FAIL')
         if done_count_valid:
             self.rows_affected = rows_affected
         else:
@@ -3032,8 +3023,7 @@ class _TdsSession(object):
     def submit_begin_tran(self, isolation_level=0):
         logger.debug('submit_begin_tran()')
         if IS_TDS72_PLUS(self):
-            if self.set_state(TDS_QUERYING) != TDS_QUERYING:
-                raise Exception('TDS_FAIL')
+            self.set_state(TDS_QUERYING)
 
             w = self._writer
             w.begin_packet(TDS7_TRANS)
@@ -3053,8 +3043,7 @@ class _TdsSession(object):
     def submit_rollback(self, cont, isolation_level=0):
         logger.debug('submit_rollback(%s, %s)', id(self), cont)
         if IS_TDS72_PLUS(self):
-            if self.set_state(TDS_QUERYING) != TDS_QUERYING:
-                raise Exception('TDS_FAIL')
+            self.set_state(TDS_QUERYING)
 
             w = self._writer
             w.begin_packet(TDS7_TRANS)
@@ -3079,8 +3068,7 @@ class _TdsSession(object):
     def submit_commit(self, cont, isolation_level=0):
         logger.debug('submit_commit(%s)', cont)
         if IS_TDS72_PLUS(self):
-            if self.set_state(TDS_QUERYING) != TDS_QUERYING:
-                raise Exception('TDS_FAIL')
+            self.set_state(TDS_QUERYING)
 
             w = self._writer
             w.begin_packet(TDS7_TRANS)
