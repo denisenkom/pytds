@@ -353,8 +353,12 @@ integrity_errors = (
 
 if sys.version_info[0] >= 3:
     exc_base_class = Exception
+    def _ord(val):
+        return val
 else:
     exc_base_class = StandardError
+    def _ord(val):
+        return ord(val)
 
 
 # exception hierarchy
@@ -2294,14 +2298,6 @@ _type_map72.update({
     XSYBVARBINARY: VarBinary72,
     SYBIMAGE: Image72,
     })
-
-
-if sys.version_info[0] >= 3:
-    def _ord(val):
-        return val
-else:
-    def _ord(val):
-        return ord(val)
 
 
 class _TdsSession(object):
