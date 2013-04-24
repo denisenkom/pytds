@@ -2640,7 +2640,7 @@ class _TdsSession(object):
         else:
             self.rows_affected = -1
         self.done_flags = status
-        if self.done_flags & TDS_DONE_ERROR and not was_cancelled or self.in_cancel:
+        if self.done_flags & TDS_DONE_ERROR and not was_cancelled and not self.in_cancel:
             self.raise_db_exception()
 
     def process_env_chg(self):
