@@ -5,7 +5,6 @@ import socket
 import os
 import select
 import sys
-import traceback
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from dateutil.tz import tzoffset, tzutc, tzlocal
@@ -326,7 +325,6 @@ tds_conn = lambda tds: tds
 TDS_DEF_BLKSZ = 512
 TDS_DEF_CHARSET = "iso_1"
 TDS_DEF_LANG = "us_english"
-
 
 
 class SimpleLoadBalancer(object):
@@ -2781,20 +2779,20 @@ class _TdsSession(object):
                 #tds_mutex_unlock(self.wire_mtx)
             else:
                 raise InterfaceError('logic error: cannot chage query state from {0} to {1}'.
-                             format(state_names[prior_state], state_names[state]))
+                                     format(state_names[prior_state], state_names[state]))
         elif state == TDS_READING:
             # transition to READING are valid only from PENDING
             #if tds_mutex_trylock(self.wire_mtx):
             #    return self.state
             if self.state != TDS_PENDING:
                 raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
-                             format(state_names[prior_state], state_names[state]))
+                                     format(state_names[prior_state], state_names[state]))
             else:
                 self.state = state
         elif state == TDS_IDLE:
             if prior_state == TDS_DEAD:
                 raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
-                             format(state_names[prior_state], state_names[state]))
+                                     format(state_names[prior_state], state_names[state]))
             #elif prior_state in (TDS_READING, TDS_QUERYING):
             #    tds_mutex_unlock(self.wire_mtx)
             self.state = state
@@ -3008,23 +3006,7 @@ class _TdsSession(object):
         with self.state_context(TDS_QUERYING):
             self.res_info = None
             w = self._writer
-            if IS_TDS50(self):
-                #new_query = None
-                # are there '?' style parameters ?
-                #if tds_next_placeholder(query):
-                #    new_query = tds5_fix_dot_query(query, params)
-                #    query = new_query
-
-                w.begin_packet(TDS_NORMAL)
-                w.put_byte(TDS_LANGUAGE_TOKEN)
-                # TODO ICONV use converted size, not input size and convert string
-                w.put_int(len(query) + 1)
-                w.put_byte(1 if params else 0)  # 1 if there are params, 0 otherwise
-                w.write(self, query)
-                if params:
-                    # add on parameters
-                    self.put_params(params, TDS_PUT_DATA_USE_NAME if params.columns[0].column_name else 0)
-            elif not IS_TDS7_PLUS(self) or not params:
+            if not IS_TDS7_PLUS(self) or not params:
                 w.begin_packet(TDS_QUERY)
                 self._START_QUERY()
                 w.write_ucs2(query)
@@ -3421,9 +3403,6 @@ class _TdsSession(object):
                 if IS_TDS7_PLUS(self):
                     product_version = 0x80000000
                     self.conn.product_name = r.read_ucs2(size // 2)
-                elif IS_TDS5_PLUS(self):
-                    raise NotImplementedError()
-                    #self.product_name = tds_get_string(self, size)
                 else:
                     raise NotImplementedError()
                     #self.product_name = tds_get_string(self, size)
@@ -3524,7 +3503,7 @@ class _TdsSession(object):
             if marker == TDS7_RESULT_TOKEN:
                 self.process_token(marker)
                 return True
-            elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN):#, TDS_DONEINPROC_TOKEN):
+            elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN):
                 _, self.done_flags = self.process_end(marker)
                 if self.done_flags & TDS_DONE_ERROR:
                     raise_db_exception(self)
@@ -3659,7 +3638,7 @@ class _TdsSocket(object):
                         q.append('use ' + tds_quote_id(self, login.database))
                     if q:
                         self._main_session.submit_query(''.join(q))
-                        tds_process_simple_query(self._main_session)
+                        self._main_session.process_simple_request()
                 except Exception as e:
                     self._sock.close()
                     err = e
