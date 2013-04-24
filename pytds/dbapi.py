@@ -176,7 +176,7 @@ class _Connection(object):
             return
 
         conn = self._conn
-        if not conn.tds72_transaction:
+        if IS_TDS72_PLUS(self) and not conn.tds72_transaction:
             return
 
         self._try_activate_cursor(None)
@@ -206,7 +206,7 @@ class _Connection(object):
             if not self._conn or not self._conn.is_connected():
                 return
 
-            if not self._conn.tds72_transaction:
+            if IS_TDS72_PLUS(self) and not self._conn.tds72_transaction:
                 return
 
             session = self._conn.main_session
