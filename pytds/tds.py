@@ -1599,16 +1599,11 @@ class NText71(NText):
     def write_info(self, w):
         w.put_int(self._size * 2)
         w.put_collation(self._collation)
-        w.put_smallint(len(self._table_name))
-        w.write_ucs2(self._table_name)
 
     def write(self, w, val):
         if val is None:
             w.put_int(0)
         else:
-            #w.put_byte(16)
-            #w.write(b'\x00' * 16)
-            #w.put_int8(0)
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
 
