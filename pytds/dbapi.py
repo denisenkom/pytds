@@ -18,6 +18,7 @@ from tds import (
     TDS_STATUS_RESULT, InterfaceError, TDS_RETURN_PROC,
     TDS_PENDING, TDS_TOKEN_TRAILING, TDS_PARAM_RESULT, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
+    IS_TDS72_PLUS,
     )
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,13 @@ class _Connection(object):
     def autocommit(self, value):
         if self._autocommit != value:
             if value:
-                if self._conn.tds72_transaction:
+                if IS_TDS72_PLUS(self):
+                    if self._conn.tds72_transaction:
+                        self._try_activate_cursor(None)
+                        self._cancel(self._conn.main_session)
+                        self._conn.main_session.submit_commit(False)
+                        self._sqlok(self._conn.main_session)
+                else:
                     self._try_activate_cursor(None)
                     self._cancel(self._conn.main_session)
                     self._conn.main_session.submit_commit(False)
