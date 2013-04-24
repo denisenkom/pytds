@@ -2513,6 +2513,7 @@ class _TdsSession(object):
         self.ret_status = False
         self.current_results = None
         self.rows_affected = TDS_NO_COUNT
+        self.more_rows = True
 
         self.current_results = info = _Results()
         if self.cur_cursor:
@@ -2543,6 +2544,22 @@ class _TdsSession(object):
             header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, None, precision, scale, curcol.column_nullable))
         info.description = tuple(header_tuple)
         return info
+
+    def process_param(self):
+        r = self._reader
+        if IS_TDS72_PLUS(self):
+            ordinal = r.get_usmallint()
+        else:
+            r.get_usmallint()  # ignore size
+            ordinal = self._out_params_indexes[self.return_value_index]
+        name = r.read_ucs2(r.get_byte())
+        r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
+        param = _Column()
+        param.column_name = name
+        self.get_type_info(param)
+        param.value = param.type.read(r)
+        self.output_params[ordinal] = param
+        self.return_value_index += 1
 
     def process_param_result_tokens(self):
         r = self._reader
@@ -2575,9 +2592,6 @@ class _TdsSession(object):
         '''
         # silly cases, nothing to do
         if not self.in_cancel:
-            return TDS_SUCCESS
-        # TODO handle cancellation sending data
-        if self.state != TDS_PENDING:
             return TDS_SUCCESS
 
         # TODO support TDS5 cancel, wait for cancel packet first, then wait for done
@@ -2695,6 +2709,7 @@ class _TdsSession(object):
         r.skip(r.get_int())
 
     def process_end(self, marker):
+        self.more_rows = False
         r = self._reader
         status = r.get_usmallint()
         r.get_usmallint()  # cur_cmd
@@ -2830,21 +2845,20 @@ class _TdsSession(object):
                 self.state = TDS_PENDING
                 #tds_mutex_unlock(self.wire_mtx)
             else:
-                logger.error('logic error: cannot chage query state from {0} to {1}'.
+                raise InterfaceError('logic error: cannot chage query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
         elif state == TDS_READING:
             # transition to READING are valid only from PENDING
             #if tds_mutex_trylock(self.wire_mtx):
             #    return self.state
             if self.state != TDS_PENDING:
-                #tds_mutex_unlock(self.wire_mtx)
-                logger.error('logic error: cannot change query state from {0} to {1}'.
+                raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
             else:
                 self.state = state
         elif state == TDS_IDLE:
             if prior_state == TDS_DEAD:
-                logger.error('logic error: cannot change query state from {0} to {1}'.
+                raise InterfaceError('logic error: cannot change query state from {0} to {1}'.
                              format(state_names[prior_state], state_names[state]))
             #elif prior_state in (TDS_READING, TDS_QUERYING):
             #    tds_mutex_unlock(self.wire_mtx)
@@ -3102,8 +3116,8 @@ class _TdsSession(object):
             #tds_conn(tds).s_signal.send((void*) &tds, sizeof(tds))
             return TDS_SUCCESS
 
-        logger.debug("send_cancel: %sin_cancel and %sidle".format(
-                    ('' if self.in_cancel else "not "), ('' if self.state == TDS_IDLE else "not ")))
+        #logger.debug("send_cancel: %sin_cancel and %sidle".format(
+        #            ('' if self.in_cancel else "not "), ('' if self.state == TDS_IDLE else "not ")))
 
         # one cancel is sufficient
         if self.in_cancel or self.state == TDS_IDLE:
@@ -3497,6 +3511,10 @@ class _TdsSession(object):
         self.spid = self.rows_affected
         return succeed
 
+    def process_returnstatus(self):
+        self.ret_status = self._reader.get_int()
+        self.has_status = True
+
     def process_token(self, marker):
         handler = _token_map.get(marker)
         if not handler:
@@ -3506,67 +3524,88 @@ class _TdsSession(object):
     def process_default_tokens(self, marker):
         return self.process_token(marker)
 
+    def get_token_id(self):
+        self.set_state(TDS_READING)
+        try:
+            marker = self._reader.get_byte()
+        except TimeoutError:
+            self.set_state(TDS_PENDING)
+            raise
+        return marker
+
     def process_simple_request(self):
-        r = self._reader
-        with self.state_context(TDS_READING):
-            while True:
-                marker = r.get_byte()
-                if marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-                    _, self.done_flags = self.process_end(marker)
-                    if self.done_flags & TDS_DONE_ERROR:
-                        raise_db_exception(self)
-                    if self.done_flags & TDS_DONE_MORE_RESULTS:
-                        # skip results that don't event have rowcount
-                        continue
-                    return
-                else:
-                    self.process_token(marker)
+        while True:
+            marker = self.get_token_id()
+            if marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+                _, self.done_flags = self.process_end(marker)
+                if self.done_flags & TDS_DONE_ERROR:
+                    raise_db_exception(self)
+                if self.done_flags & TDS_DONE_MORE_RESULTS:
+                    # skip results that don't event have rowcount
+                    continue
+                return
+            else:
+                self.process_token(marker)
 
-    def sqlok(self):
-        if self.state == TDS_IDLE:
-            return
-        r = self._reader
-        with self.state_context(TDS_READING):
-            while True:
-                marker = r.get_byte()
-                if marker == TDS7_RESULT_TOKEN:
-                    self.process_token(marker)
-                    return
-                elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-                    _, self.done_flags = self.process_end(marker)
-                    if self.done_flags & TDS_DONE_ERROR:
-                        raise_db_exception(self)
-                    if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
-                        # skip results that don't event have rowcount
-                        continue
-                    return
-                else:
-                    self.process_token(marker)
-                #tds_code, result_type, done_flags = session.process_tokens(TDS_TOKEN_RESULTS)
+    def next_row(self):
+        if not self.more_rows:
+            return False
+        while True:
+            marker = self.get_token_id()
+            if marker in (TDS_ROW_TOKEN, TDS_NBC_ROW_TOKEN):
+                self.process_token(marker)
+                return True
+            elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+                _, self.done_flags = self.process_end(marker)
+                if self.done_flags & TDS_DONE_ERROR:
+                    raise_db_exception(self)
+                return False
+            else:
+                self.process_token(marker)
 
-                ##
-                ## The error flag may be set for any intervening DONEINPROC packet, in particular
-                ## by a RAISERROR statement.  Microsoft db-lib returns FAIL in that case.
-                ##/
-                #if result_type == TDS_ROWFMT_RESULT:
-                #    self._state = DB_RES_RESULTSET_ROWS
-                #    break
-                #elif result_type == TDS_DONEINPROC_RESULT:
-                #    if not done_flags & TDS_DONE_COUNT:
-                #        # skip results that don't event have rowcount
-                #        continue
-                #    self._state = DB_RES_RESULTSET_EMPTY
-                #    break
-                #elif result_type in (TDS_DONE_RESULT, TDS_DONEPROC_RESULT):
-                #    if done_flags & TDS_DONE_MORE_RESULTS:
-                #        self._state = DB_RES_NEXT_RESULT
-                #    else:
-                #        self._state = DB_RES_NO_MORE_RESULTS
-                #    break
-                #elif result_type == TDS_STATUS_RESULT:
-                #    continue
-                #else:
-                #    raise InterfaceError('logic error: process_tokens result_type %d' % result_type)
+    def find_result_or_done(self):
+        self.done_flags = 0
+        while True:
+            marker = self.get_token_id()
+            if marker == TDS7_RESULT_TOKEN:
+                self.process_token(marker)
+                return True
+            elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+                _, self.done_flags = self.process_end(marker)
+                if self.done_flags & TDS_DONE_ERROR:
+                    raise_db_exception(self)
+                if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
+                    # skip results that don't event have rowcount
+                    continue
+                return False
+            else:
+                self.process_token(marker)
+
+    def process_rpc(self):
+        self.done_flags = 0
+        self.return_value_index = 0
+        while True:
+            marker = self.get_token_id()
+            if marker == TDS7_RESULT_TOKEN:
+                self.process_token(marker)
+                return True
+            elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN):#, TDS_DONEINPROC_TOKEN):
+                _, self.done_flags = self.process_end(marker)
+                if self.done_flags & TDS_DONE_ERROR:
+                    raise_db_exception(self)
+                if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
+                    # skip results that don't event have rowcount
+                    continue
+                return False
+            else:
+                self.process_token(marker)
+
+    def find_return_status(self):
+        while True:
+            marker = self.get_token_id()
+            self.process_token(marker)
+            if marker == TDS_RETURNSTATUS_TOKEN:
+                return
 
     def process_tokens(tds, flag):
         parent = {'result_type': 0, 'return_flag': 0}
@@ -3814,6 +3853,7 @@ _token_map = {
     TDS_NBC_ROW_TOKEN: lambda self: self.process_nbcrow(),
     TDS_ORDERBY2_TOKEN: lambda self: self.process_orderby2(),
     TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
+    TDS_RETURNSTATUS_TOKEN: lambda self: self.process_returnstatus(),
     }
 
 

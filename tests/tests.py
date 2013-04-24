@@ -210,6 +210,7 @@ class StoredProcsTestCase(DbTestCase):
         create procedure testproc (@param int, @add int = 2, @outparam int output)
         as
         begin
+            set nocount on
             --select @param
             set @outparam = @param + @add
             return @outparam
@@ -234,13 +235,22 @@ class CursorCloseTestCase(TestCase):
 
 
 class MultipleRecordsetsTestCase(TestCase):
-    def runTest(self):
-        cur = self.conn.cursor()
-        cur.execute('select 10; select 12')
-        self.assertEqual((10,), cur.fetchone())
-        self.assertTrue(cur.nextset())
-        self.assertEqual((12,), cur.fetchone())
-        self.assertFalse(cur.nextset())
+    def test_fetchone(self):
+        with self.conn.cursor() as cur:
+            cur.execute('select 10; select 12')
+            self.assertEqual((10,), cur.fetchone())
+            self.assertTrue(cur.nextset())
+            self.assertEqual((12,), cur.fetchone())
+            self.assertFalse(cur.nextset())
+
+    def test_fetchall(self):
+        with self.conn.cursor() as cur:
+            cur.execute('select 10; select 12')
+            self.assertEqual([(10,)], cur.fetchall())
+            self.assertTrue(cur.nextset())
+            self.assertEqual([(12,)], cur.fetchall())
+            self.assertFalse(cur.nextset())
+
 
 class TransactionsTestCase(DbTestCase):
     def runTest(self):
