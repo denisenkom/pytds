@@ -34,9 +34,6 @@ TDS73 = TDS73A
 TDS73B = 0x730B0003
 TDS74 = 0x74000004
 
-IS_TDS42 = lambda x: x.tds_version == 0x402
-IS_TDS46 = lambda x: x.tds_version == 0x406
-IS_TDS50 = lambda x: x.tds_version == 0x500
 IS_TDS70 = lambda x: x.tds_version == TDS70
 IS_TDS71 = lambda x: x.tds_version in (TDS71, TDS71rev1)
 IS_TDS72 = lambda x: x.tds_version == TDS72
@@ -185,7 +182,6 @@ TDS_SP_PREPEXECRPC = 14
 TDS_SP_UNPREPARE = 15
 
 # Flags returned in TDS_DONE token
-TDS_DONE_FINAL = 0x00  # final result set, command completed successfully.
 TDS_DONE_MORE_RESULTS = 0x01  # more results follow
 TDS_DONE_ERROR = 0x02  # error occurred
 TDS_DONE_INXACT = 0x04  # transaction in progress
@@ -195,12 +191,6 @@ TDS_DONE_CANCELLED = 0x20  # acknowledging an attention command (usually a cance
 TDS_DONE_EVENT = 0x40  # part of an event notification.
 TDS_DONE_SRVERROR = 0x100  # SQL server server error
 
-# after the above flags, a TDS_DONE packet has a field describing the state of the transaction
-TDS_DONE_NO_TRAN = 0  # No transaction in effect
-TDS_DONE_TRAN_SUCCEED = 1  # Transaction completed successfully
-TDS_DONE_TRAN_PROGRESS = 2  # Transaction in progress
-TDS_DONE_STMT_ABORT = 3  # A statement aborted
-TDS_DONE_TRAN_ABORT = 4  # Transaction aborted
 
 SYBVOID = 31  # 0x1F
 IMAGETYPE = SYBIMAGE = 34  # 0x22
@@ -299,17 +289,11 @@ TDS_READING = 3
 TDS_DEAD = 4
 state_names = ['IDLE', 'QUERYING', 'PENDING', 'READING', 'DEAD']
 
-SUPPORT_NBCROW = True
-
 TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
 USE_CORK = hasattr(socket, 'TCP_CORK')
-TDSSELREAD = 1
-TDSSELWRITE = 2
-TDSSELERR = 0
-TDSPOLLURG = 0x8000
 
 TDS_NO_COUNT = -1
 
@@ -2440,7 +2424,7 @@ class _TdsSession(object):
 
         if num_cols == -1:
             #logger.debug("no meta data")
-            return TDS_SUCCESS
+            return
 
         self.res_info = None
         self.param_info = None
@@ -2611,7 +2595,6 @@ class _TdsSession(object):
         for curcol in info.columns:
             #logger.debug("process_row(): reading column %d" % i)
             curcol.value = curcol.type.read(r)
-        return TDS_SUCCESS
 
     # NBC=null bitmap compression row
     # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
@@ -2631,7 +2614,6 @@ class _TdsSession(object):
                 curcol.value = None
             else:
                 curcol.value = curcol.type.read(r)
-        return TDS_SUCCESS
 
     def process_orderby(self):
         r = self._reader
@@ -2671,7 +2653,7 @@ class _TdsSession(object):
             self.rows_affected = rows_affected
         else:
             self.rows_affected = -1
-        return (TDS_CANCELLED if was_cancelled else TDS_SUCCESS), status
+        self.done_flags = status
 
     def process_env_chg(self):
         r = self._reader
@@ -3031,7 +3013,7 @@ class _TdsSession(object):
             # signal other socket
             raise NotImplementedError
             #tds_conn(tds).s_signal.send((void*) &tds, sizeof(tds))
-            return TDS_SUCCESS
+            return
 
         #logger.debug("send_cancel: %sin_cancel and %sidle".format(
         #            ('' if self.in_cancel else "not "), ('' if self.state == TDS_IDLE else "not ")))
@@ -3039,13 +3021,11 @@ class _TdsSession(object):
         # one cancel is sufficient
         if self.in_cancel or self.state == TDS_IDLE:
             TDS_MUTEX_UNLOCK(self.wire_mtx)
-            return TDS_SUCCESS
+            return
 
         self.res_info = None
-        rc = self._put_cancel()
+        self._put_cancel()
         TDS_MUTEX_UNLOCK(self.wire_mtx)
-
-        return rc
 
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
@@ -3451,7 +3431,7 @@ class _TdsSession(object):
         while True:
             marker = self.get_token_id()
             if marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-                _, self.done_flags = self.process_end(marker)
+                self.process_end(marker)
                 if self.done_flags & TDS_DONE_ERROR:
                     raise_db_exception(self)
                 if self.done_flags & TDS_DONE_MORE_RESULTS:
@@ -3470,7 +3450,7 @@ class _TdsSession(object):
                 self.process_token(marker)
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-                _, self.done_flags = self.process_end(marker)
+                self.process_end(marker)
                 if self.done_flags & TDS_DONE_ERROR:
                     raise_db_exception(self)
                 return False
@@ -3485,7 +3465,7 @@ class _TdsSession(object):
                 self.process_token(marker)
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
-                _, self.done_flags = self.process_end(marker)
+                self.process_end(marker)
                 if self.done_flags & TDS_DONE_ERROR:
                     raise_db_exception(self)
                 if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
@@ -3504,7 +3484,7 @@ class _TdsSession(object):
                 self.process_token(marker)
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN):
-                _, self.done_flags = self.process_end(marker)
+                self.process_end(marker)
                 if self.done_flags & TDS_DONE_ERROR:
                     raise_db_exception(self)
                 if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
