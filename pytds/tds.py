@@ -2730,22 +2730,6 @@ class _TdsSession(object):
         self.set_state(TDS_PENDING)
         self._writer.flush()
 
-    def _write_nvarchar_max(self, w, val):
-        if val is None:
-            w.put_int8(-1)
-        else:
-            w.put_int8(len(val) * 2)
-            w.put_int(len(val) * 2)
-            w.write_ucs2(val)
-            w.put_int(0)
-
-    def _write_nvarchar(self, w, val):
-        if val is None:
-            w.put_smallint(-1)
-        else:
-            w.put_smallint(len(val) * 2)
-            w.write_ucs2(val)
-
     def make_param(self, name, value):
         column = _Column()
         column.column_name = name
