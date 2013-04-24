@@ -321,32 +321,12 @@ TDS_CANCELLED = -2
 TDS_FAILED = lambda rc: rc < 0
 TDS_SUCCEED = lambda rc: rc >= 0
 
-is_blob_type = lambda x: x in (SYBTEXT, SYBIMAGE, SYBNTEXT)
-is_blob_col = lambda col: (col.column_varint_size > 2)
-# large type means it has a two byte size field
-# define is_large_type(x) (x>128)
-is_numeric_type = lambda x: x in (SYBNUMERIC, SYBDECIMAL)
-is_unicode_type = lambda x: x in (XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT, SYBMSXML)
-is_collate_type = lambda x: x in (XSYBVARCHAR, XSYBCHAR, SYBTEXT, XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT)
-is_ascii_type = lambda x: x in (XSYBCHAR, XSYBVARCHAR, SYBTEXT, SYBCHAR, SYBVARCHAR)
-is_char_type = lambda x: is_unicode_type(x) or is_ascii_type(x)
-is_similar_type = lambda x, y: is_char_type(x) and is_char_type(y) or is_unicode_type(x) and is_unicode_type(y)
-
 tds_conn = lambda tds: tds
-
-IS_TDSDEAD = lambda tds: tds is None or tds._sock is None
 
 TDS_DEF_BLKSZ = 512
 TDS_DEF_CHARSET = "iso_1"
 TDS_DEF_LANG = "us_english"
 
-TDS_ADDITIONAL_SPACE = 0
-
-to_server = 0
-to_client = 1
-
-TDS_DATETIME = struct.Struct('<ll')
-TDS_DATETIME4 = struct.Struct('<HH')
 
 
 class SimpleLoadBalancer(object):
@@ -1739,6 +1719,7 @@ class SmallDateTime(BaseDateTime):
 
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+    _struct = struct.Struct('<HH')
 
     @classmethod
     def from_stream(cls, r):
@@ -1754,13 +1735,15 @@ class SmallDateTime(BaseDateTime):
         raise NotImplementedError
 
     def read(self, r):
-        days, minutes = r.unpack(TDS_DATETIME4)
+        days, minutes = r.unpack(self._struct)
         return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
 SmallDateTime.instance = SmallDateTime()
 
 
 class DateTime(BaseDateTime):
     type = SYBDATETIME
+
+    _struct = struct.Struct('<ll')
 
     _base_date = datetime(1900, 1, 1)
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
@@ -1784,7 +1767,7 @@ class DateTime(BaseDateTime):
         w.write(self.encode(val))
 
     def read(self, r):
-        days, t = r.unpack(TDS_DATETIME)
+        days, t = r.unpack(self._struct)
         return _applytz(self.decode(days, t), r.session.use_tz)
 
     @classmethod
@@ -1800,7 +1783,7 @@ class DateTime(BaseDateTime):
         days = (value - cls._base_date).days
         ms = value.microsecond // 1000
         tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
-        return TDS_DATETIME.pack(days, tm)
+        return cls._struct.pack(days, tm)
 
     @classmethod
     def decode(cls, days, time):
@@ -1850,10 +1833,10 @@ class DateTimeN(BaseType):
         if size == 0:
             return None
         if size == 4:
-            days, minutes = r.unpack(TDS_DATETIME4)
+            days, minutes = r.unpack(SmallDateTime._struct)
             return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
         elif size == 8:
-            days, time = r.unpack(TDS_DATETIME)
+            days, time = r.unpack(DateTime._struct)
             return _applytz(DateTime.decode(days, time), r.session.use_tz)
         else:
             raise InterfaceError('Invalid datetimn size')

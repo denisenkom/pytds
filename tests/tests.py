@@ -12,7 +12,7 @@ from six import text_type
 from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime,
-    TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS,
+    IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS,
     output, default)
 
 # set decimal precision to match mssql maximum precision
@@ -594,14 +594,14 @@ class SmallDateTimeTest(TestCase):
 
 class DateTimeTest(DbTestCase):
     def _testencdec(self, val):
-        self.assertEqual(val, DateTime.decode(*TDS_DATETIME.unpack(DateTime.encode(val))))
+        self.assertEqual(val, DateTime.decode(*DateTime._struct.unpack(DateTime.encode(val))))
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
     def runTest(self):
-        self.assertEqual(DateTime.decode(*TDS_DATETIME.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
-        self.assertEqual(DateTime.decode(*TDS_DATETIME.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTime._max_date)
+        self.assertEqual(DateTime.decode(*DateTime._struct.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
+        self.assertEqual(DateTime.decode(*DateTime._struct.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTime._max_date)
         self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
         self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTime.encode(DateTime._max_date))
         with self.conn.cursor() as cur:
