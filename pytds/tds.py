@@ -303,6 +303,35 @@ TDS_DEF_BLKSZ = 512
 TDS_DEF_CHARSET = "iso_1"
 TDS_DEF_LANG = "us_english"
 
+_utc = tzutc()
+
+_header = struct.Struct('>BBHHBx')
+_byte = struct.Struct('B')
+_tinyint = struct.Struct('b')
+_smallint_le = struct.Struct('<h')
+_smallint_be = struct.Struct('>h')
+_usmallint_le = struct.Struct('<H')
+_usmallint_be = struct.Struct('>H')
+_int_le = struct.Struct('<l')
+_int_be = struct.Struct('>l')
+_uint_le = struct.Struct('<L')
+_uint_be = struct.Struct('>L')
+_int8_le = struct.Struct('<q')
+_int8_be = struct.Struct('>q')
+_uint8_le = struct.Struct('<Q')
+_uint8_be = struct.Struct('>Q')
+_SYBFLT8_STRUCT = struct.Struct('d')
+_ubyte_struct = struct.Struct('B')
+_sbyte_struct = struct.Struct('b')
+_sshort_struct = struct.Struct('<h')
+_slong_struct = struct.Struct('<l')
+_slong8_struct = struct.Struct('<q')
+_flt4_struct = struct.Struct('f')
+_money8_struct = struct.Struct('<lL')
+_simple_types = {SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,
+                 SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,
+                 XSYBVARBINARY, XSYBBINARY, SYBVARBINARY}
+
 
 class SimpleLoadBalancer(object):
     def __init__(self, hosts):
@@ -353,12 +382,20 @@ integrity_errors = (
 
 if sys.version_info[0] >= 3:
     exc_base_class = Exception
+
     def _ord(val):
         return val
+
+    def _decode_num(buf):
+        return reduce(lambda acc, val: acc * 256 + val, reversed(buf), 0)
 else:
     exc_base_class = StandardError
+
     def _ord(val):
         return ord(val)
+
+    def _decode_num(buf):
+        return reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
 
 
 # exception hierarchy
@@ -482,7 +519,6 @@ class _Default:
 default = _Default()
 
 
-
 class InternalProc(object):
     def __init__(self, proc_id, name):
         self.proc_id = proc_id
@@ -496,22 +532,6 @@ SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
 
 class _TdsEnv:
     pass
-
-_header = struct.Struct('>BBHHBx')
-_byte = struct.Struct('B')
-_tinyint = struct.Struct('b')
-_smallint_le = struct.Struct('<h')
-_smallint_be = struct.Struct('>h')
-_usmallint_le = struct.Struct('<H')
-_usmallint_be = struct.Struct('>H')
-_int_le = struct.Struct('<l')
-_int_be = struct.Struct('>l')
-_uint_le = struct.Struct('<L')
-_uint_be = struct.Struct('>L')
-_int8_le = struct.Struct('<q')
-_int8_be = struct.Struct('>q')
-_uint8_le = struct.Struct('<Q')
-_uint8_be = struct.Struct('>Q')
 
 
 def skipall(stm, size):
@@ -3660,27 +3680,3 @@ def _applytz(dt, tz):
         return dt
     dt = dt.replace(tzinfo=tz)
     return dt
-
-
-_SYBFLT8_STRUCT = struct.Struct('d')
-_ubyte_struct = struct.Struct('B')
-_sbyte_struct = struct.Struct('b')
-_sshort_struct = struct.Struct('<h')
-_slong_struct = struct.Struct('<l')
-_slong8_struct = struct.Struct('<q')
-_flt4_struct = struct.Struct('f')
-_money8_struct = struct.Struct('<lL')
-_simple_types = {SYBVARCHAR, SYBCHAR, SYBTEXT, SYBBINARY,
-                 SYBNVARCHAR, XSYBVARCHAR, XSYBNVARCHAR, XSYBCHAR, XSYBNCHAR,
-                 XSYBVARBINARY, XSYBBINARY, SYBVARBINARY}
-
-
-if sys.version_info[0] >= 3:
-    def _decode_num(buf):
-        return reduce(lambda acc, val: acc * 256 + val, reversed(buf), 0)
-else:
-    def _decode_num(buf):
-        return reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
-
-
-_utc = tzutc()
