@@ -12,7 +12,8 @@ from six import text_type
 from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, DateTime,
-    TDS_TOKEN_RESULTS, TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS)
+    TDS_TOKEN_RESULTS, TDS_DATETIME, IS_TDS72_PLUS, IS_TDS73_PLUS, IS_TDS71_PLUS,
+    output, default)
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -201,21 +202,26 @@ class TableTestCase(DbTestCase):
         cur.execute(u'drop table #testtable')
         super(TableTestCase, self).tearDown()
 
+
 class StoredProcsTestCase(DbTestCase):
     def runTest(self):
         cur = self.conn.cursor()
         cur.execute('''
-        create procedure testproc (@param int)
+        create procedure testproc (@param int, @add int = 2, @outparam int output)
         as
         begin
-            select @param
-            return @param + 1
+            --select @param
+            set @outparam = @param + @add
+            return @outparam
         end
         ''')
         val = 45
-        cur.callproc('testproc', {'@param': val})
-        self.assertEqual(cur.fetchall(), [(val,)])
-        self.assertEqual(val + 1, cur.get_proc_return_status())
+        #params = {'@param': val, '@outparam': output(None), '@add': 1}
+        values = cur.callproc('testproc', (val, default, output(None, 1)))
+        #self.assertEqual(cur.fetchall(), [(val,)])
+        self.assertEqual(val + 2, values[2])
+        self.assertEqual(val + 2, cur.get_proc_return_status())
+
 
 class CursorCloseTestCase(TestCase):
     def runTest(self):
@@ -225,6 +231,7 @@ class CursorCloseTestCase(TestCase):
         with self.conn.cursor() as cur2:
             cur2.execute('select 20')
             cur2.fetchone()
+
 
 class MultipleRecordsetsTestCase(TestCase):
     def runTest(self):
