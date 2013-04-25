@@ -2896,9 +2896,16 @@ class _TdsSession(object):
             self._submit_rpc(rpc_name, params, flags)
             self.query_flush_packet()
 
-    def submit_query(self, query, params=(), flags=0):
-        logger.info('submit_query(%s, %s)', query, params)
-        if not query:
+    def execute(self, query, params=()):
+        self.messages = []
+        self.send_cancel()
+        self.process_cancel()
+        self.submit_query(query, params)
+        self.find_result_or_done()
+
+    def submit_query(self, operation, params=(), flags=0):
+        logger.info('submit_query(%s, %s)', operation, params)
+        if not operation:
             raise ProgrammingError('Empty query is not allowed')
 
         with self.state_context(TDS_QUERYING):
@@ -2907,14 +2914,28 @@ class _TdsSession(object):
             if not IS_TDS7_PLUS(self) or not params:
                 w.begin_packet(TDS_QUERY)
                 self._START_QUERY()
-                w.write_ucs2(query)
+                w.write_ucs2(operation)
             else:
+                if isinstance(params, (list, tuple)):
+                    names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                    if len(names) == 1:
+                        operation = operation % names[0]
+                    else:
+                        operation = operation % names
+                    params = dict(zip(names, params))
+                elif isinstance(params, dict):
+                    # prepend names with @
+                    rename = dict((name, '@{0}'.format(name)) for name in params.keys())
+                    params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                    operation = operation % rename
+                #logger.debug('converted query: {0}'.format(operation))
+                #logger.debug('params: {0}'.format(params))
                 params = self._convert_params(params)
                 param_definition = ','.join(
                     '{0} {1}'.format(p.column_name, p.type.get_declaration())
                     for p in params)
                 self._submit_rpc(SP_EXECUTESQL,
-                                 [query, param_definition] + params, 0)
+                                 [operation, param_definition] + params, 0)
                 self.internal_sp_called = TDS_SP_EXECUTESQL
             self.query_flush_packet()
 

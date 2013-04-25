@@ -178,7 +178,11 @@ class _Connection(object):
         results from the database.
         """
         self._assert_open()
-        return _Cursor(self)
+        if self.mars_enabled:
+            session = self._conn.create_session()
+            return _MarsCursor(self, session)
+        else:
+            return _Cursor(self, self._conn.main_session)
 
     def rollback(self):
         try:
@@ -368,17 +372,17 @@ class _Cursor(six.Iterator):
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
     """
-    def __init__(self, conn):
+    def __init__(self, conn, session):
         self._conn = conn
         self._batchsize = 1
         self.arraysize = 1
-        self._open()
+        self._session = session
 
-    def _open(self):
-        if self._conn._conn.mars_enabled:
-            self._session = self._conn._conn.create_session()
-        else:
-            self._session = self._conn._conn.main_session
+    def _assert_open(self):
+        if not self._conn:
+            raise Error('Cursor is closed')
+        self._conn._assert_open()
+        self._session = self._conn._conn._main_session
 
     def __del__(self):
         self.close()
@@ -435,22 +439,9 @@ class _Cursor(six.Iterator):
 
     def execute(self, operation, params=()):
         # Execute the query
-        if params:
-            if isinstance(params, (list, tuple)):
-                names = tuple('@P{0}'.format(n) for n in range(len(params)))
-                if len(names) == 1:
-                    operation = operation % names[0]
-                else:
-                    operation = operation % names
-                params = dict(zip(names, params))
-            elif isinstance(params, dict):
-                # prepend names with @
-                rename = dict((name, '@{0}'.format(name)) for name in params.keys())
-                params = dict(('@{0}'.format(name), value) for name, value in params.items())
-                operation = operation % rename
-            #logger.debug('converted query: {0}'.format(operation))
-            #logger.debug('params: {0}'.format(params))
-        self._conn._execute(self, operation, params)
+        self._assert_open()
+        self._conn._try_activate_cursor(self)
+        self._session.execute(operation, params)
 
     def executemany(self, operation, params_seq):
         counts = []
@@ -538,6 +529,25 @@ class _Cursor(six.Iterator):
         This method does nothing, as permitted by DB-API specification.
         """
         pass
+
+
+class _MarsCursor(_Cursor):
+    def __init__(self, conn, session):
+        self._conn = conn
+        self._barchsize = 1
+        self.arraysize = 1
+        self._session = session
+
+    def _assert_open(self):
+        if not self._conn:
+            raise Error('Cursor is closed')
+        self._conn._assert_open()
+        if not self._session.is_connected():
+            self._session = self._conn._conn.create_session()
+
+    def execute(self, operation, params=()):
+        self._assert_open()
+        self._session.execute(operation, params)
 
 
 def connect(server='.', database='', user='', password='', timeout=0,
