@@ -252,70 +252,6 @@ class _Connection(object):
         finally:
             cur.close()
 
-    def _fetchone(self, cursor):
-        """
-        Helper method used by fetchone and fetchmany to fetch and handle
-        """
-        session = cursor._session
-        if session is None:
-            raise Error('This cursor is not active')
-        if session.res_info is None:
-            raise Error("Previous statement didn't produce any results")
-
-        if not session.next_row():
-            return None
-
-        cols = session.res_info.columns
-        row = tuple(col.value for col in cols)
-        if self.as_dict:
-            row = dict((col.column_name, col.value) for col in cols if col.column_name)
-        return row
-
-    def _nextset(self, session):
-        if session is None:
-            raise Error('This cursor is not active')
-
-        while session.more_rows:
-            session.next_row()
-        if session.state == TDS_IDLE:
-            return False
-        if session.find_result_or_done():
-            return True
-
-    def _rowcount(self, cursor):
-        session = cursor._session
-        if session is None:
-            return -1
-        return session.rows_affected
-
-    def _get_proc_return_status(self, cursor):
-        session = cursor._session
-        if session is None:
-            return None
-        if not session.has_status:
-            session.find_return_status()
-        return session.ret_status if session.has_status else None
-
-    def _description(self, cursor):
-        session = cursor._session
-        if session is None:
-            return None
-        res = session.res_info
-        if res:
-            return res.description
-        else:
-            return None
-
-    def _native_description(self, cursor):
-        session = cursor._session
-        if session is None:
-            return None
-        res = session.res_info
-        if res:
-            return res.native_descr
-        else:
-            return None
-
     def _close_cursor(self, cursor):
         if self._conn is not None and cursor._session is not None:
             if self._conn.mars_enabled:
@@ -327,41 +263,13 @@ class _Connection(object):
         cursor._conn = None
 
     def _try_activate_cursor(self, cursor):
-        conn = self._conn
-        if cursor is not None and not cursor._session.is_connected():
-            cursor._open()
-        if not conn.mars_enabled:
-            if not (cursor is self._active_cursor or self._active_cursor is None):
-                session = conn.main_session
-                if session.state == TDS_PENDING:
-                    raise InterfaceError('Results are still pending on connection')
-                if cursor is not None:
-                    cursor._session = session
-            self._active_cursor = cursor
-
-    def _execute(self, cursor, operation, params):
-        self._assert_open()
-        self._try_activate_cursor(cursor)
-        session = cursor._session
-        session.messages = []
-        self._cancel(session)
-        session.submit_query(operation, params)
-        session.find_result_or_done()
-
-    def _callproc(self, cursor, procname, parameters):
-        #logger.debug('callproc begin')
-        self._assert_open()
-        self._try_activate_cursor(cursor)
-        session = cursor._session
-        session.messages = []
-        self._cancel(session)
-        session.submit_rpc(procname, parameters)
-        session.output_params = {}
-        session.process_rpc()
-        results = list(parameters)
-        for key, param in session.output_params.items():
-            results[key] = param.value
-        return results
+        if not (cursor is self._active_cursor or self._active_cursor is None):
+            session = self._conn.main_session
+            if session.state == TDS_PENDING:
+                raise InterfaceError('Results are still pending on connection')
+            if cursor is not None:
+                cursor._session = session
+        self._active_cursor = cursor
 
 
 ##################
@@ -410,7 +318,9 @@ class _Cursor(six.Iterator):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        return self._conn._callproc(self, procname, parameters)
+        self._assert_open()
+        self._conn._try_activate_cursor(self)
+        return self._session.callproc(procname, parameters)
 
     @property
     def return_value(self):
@@ -425,7 +335,11 @@ class _Cursor(six.Iterator):
         return self._session._spid
 
     def get_proc_return_status(self):
-        return self._conn._get_proc_return_status(self)
+        if self._session is None:
+            return None
+        if not self._session.has_status:
+            self._session.find_return_status()
+        return self._session.ret_status if self._session.has_status else None
 
     def cancel(self):
         self._conn._cancel(self._session)
@@ -480,22 +394,36 @@ class _Cursor(six.Iterator):
         return row[0]
 
     def nextset(self):
-        return self._conn._nextset(self._session)
+        return self._session.next_set()
 
     @property
     def rowcount(self):
-        return self._conn._rowcount(self)
+        if self._session is None:
+            return -1
+        return self._session.rows_affected
 
     @property
     def description(self):
-        return self._conn._description(self)
+        if self._session is None:
+            return None
+        res = self._session.res_info
+        if res:
+            return res.description
+        else:
+            return None
 
     @property
     def native_description(self):
-        return self._conn._native_description(self)
+        if self._session is None:
+            return None
+        res = self._session.res_info
+        if res:
+            return res.native_descr
+        else:
+            return None
 
     def fetchone(self):
-        return self._conn._fetchone(self)
+        return self._session.fetchone(self._conn.as_dict)
 
     def fetchmany(self, size=None):
         if size is None:
@@ -548,6 +476,18 @@ class _MarsCursor(_Cursor):
     def execute(self, operation, params=()):
         self._assert_open()
         self._session.execute(operation, params)
+
+    def callproc(self, procname, parameters=()):
+        """
+        Call a stored procedure with the given name.
+
+        :param procname: The name of the procedure to call
+        :type procname: str
+        :keyword parameters: The optional parameters for the procedure
+        :type parameters: sequence
+        """
+        self._assert_open()
+        return self._session.callproc(procname, parameters)
 
 
 def connect(server='.', database='', user='', password='', timeout=0,

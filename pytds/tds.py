@@ -2850,6 +2850,18 @@ class _TdsSession(object):
         #    # emulate it for TDS4.x, send RPC for mssql
         #    return tds_send_emulated_rpc(self, rpc_name, params)
 
+    def callproc(self, rpc_name, params=(), flags=0):
+        self.messages = []
+        self.send_cancel()
+        self.process_cancel()
+        self.submit_rpc(rpc_name, params, flags)
+        self.output_params = {}
+        self.process_rpc()
+        results = list(params)
+        for key, param in self.output_params.items():
+            results[key] = param.value
+        return results
+
     def submit_rpc(self, rpc_name, params=(), flags=0):
         with self.state_context(TDS_QUERYING):
             self._submit_rpc(rpc_name, params, flags)
@@ -3319,6 +3331,27 @@ class _TdsSession(object):
                 return
             else:
                 self.process_token(marker)
+
+    def next_set(self):
+        while self.more_rows:
+            self.next_row()
+        if self.state == TDS_IDLE:
+            return False
+        if self.find_result_or_done():
+            return True
+
+    def fetchone(self, as_dict):
+        if self.res_info is None:
+            raise Error("Previous statement didn't produce any results")
+
+        if not self.next_row():
+            return None
+
+        cols = self.res_info.columns
+        row = tuple(col.value for col in cols)
+        if as_dict:
+            row = dict((col.column_name, col.value) for col in cols if col.column_name)
+        return row
 
     def next_row(self):
         if not self.more_rows:
