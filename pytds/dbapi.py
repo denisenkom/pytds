@@ -64,21 +64,9 @@ class _Connection(object):
     def autocommit(self, value):
         if self._autocommit != value:
             if value:
-                if IS_TDS72_PLUS(self):
-                    if self._conn.tds72_transaction:
-                        self._try_activate_cursor(None)
-                        self._cancel(self._conn.main_session)
-                        self._conn.main_session.submit_commit(False)
-                        self._conn.main_session.process_simple_request()
-                else:
-                    self._try_activate_cursor(None)
-                    self._cancel(self._conn.main_session)
-                    self._conn.main_session.submit_commit(False)
-                    self._conn.main_session.process_simple_request()
+                self._main_cursor._commit(cont=False)
             else:
-                self._cancel(self._conn.main_session)
-                self._conn.main_session.submit_begin_tran(isolation_level=self._isolation_level)
-                self._conn.main_session.process_simple_request()
+                self._main_cursor._begin_tran(isolation_level=self._isolation_level)
             self._autocommit = value
 
     @property
@@ -134,12 +122,11 @@ class _Connection(object):
         return self._conn.mars_enabled
 
     def _open(self):
-        self._active_cursor = None
         self._conn = None
         self._conn = _TdsSocket(self._login)
+        self._active_cursor = self._main_cursor = self.cursor()
         if not self._autocommit:
-            self._conn.main_session.submit_begin_tran(isolation_level=self._isolation_level)
-            self._conn.main_session.process_simple_request()
+            self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
     def __init__(self, login, as_dict, autocommit=False):
         self._autocommit = autocommit
@@ -161,16 +148,7 @@ class _Connection(object):
         self._assert_open()
         if self._autocommit:
             return
-
-        conn = self._conn
-        if IS_TDS72_PLUS(self) and not conn.tds72_transaction:
-            return
-
-        self._try_activate_cursor(None)
-        conn.main_session.messages = []
-        self._cancel(conn.main_session)
-        conn.main_session.submit_commit(True, isolation_level=self._isolation_level)
-        conn.main_session.process_simple_request()
+        self._main_cursor._commit(cont=True, isolation_level=self._isolation_level)
 
     def cursor(self):
         """
@@ -195,15 +173,8 @@ class _Connection(object):
             if not self._conn or not self._conn.is_connected():
                 return
 
-            if IS_TDS72_PLUS(self) and not self._conn.tds72_transaction:
-                return
-
-            session = self._conn.main_session
-            session.messages = []
-            self._cancel(session)
-            self._active_cursor = None
-            session.submit_rollback(True, isolation_level=self._isolation_level)
-            self._conn.main_session.process_simple_request()
+            self._main_cursor._rollback(cont=True,
+                                        isolation_level=self._isolation_level)
         except:
             logger.exception('unexpected error in rollback')
 
@@ -245,12 +216,8 @@ class _Connection(object):
         failure.
         """
         #logger.debug("MSSQLConnection.select_db()")
-        self._assert_open()
-        cur = self.cursor()
-        try:
-            cur.execute('use {0}'.format(tds_quote_id(self._conn, dbname)))
-        finally:
-            cur.close()
+        sql = 'use {0}'.format(tds_quote_id(self._conn, dbname))
+        self._main_cursor.execute(sql)
 
     def _close_cursor(self, cursor):
         if self._conn is not None and cursor._session is not None:
@@ -263,13 +230,13 @@ class _Connection(object):
         cursor._conn = None
 
     def _try_activate_cursor(self, cursor):
-        if not (cursor is self._active_cursor or self._active_cursor is None):
-            session = self._conn.main_session
+        if not (cursor is self._active_cursor):
+            session = self._active_cursor._session
             if session.state == TDS_PENDING:
                 raise InterfaceError('Results are still pending on connection')
-            if cursor is not None:
-                cursor._session = session
-        self._active_cursor = cursor
+            self._active_cursor._session = None
+            cursor._session = session
+            self._active_cursor = cursor
 
 
 ##################
@@ -356,6 +323,21 @@ class _Cursor(six.Iterator):
         self._assert_open()
         self._conn._try_activate_cursor(self)
         self._session.execute(operation, params)
+
+    def _begin_tran(self, isolation_level):
+        self._assert_open()
+        self._conn._try_activate_cursor(self)
+        self._session.begin_tran(isolation_level=isolation_level)
+
+    def _commit(self, cont, isolation_level=0):
+        self._assert_open()
+        self._conn._try_activate_cursor(self)
+        self._session.commit(cont=cont, isolation_level=isolation_level)
+
+    def _rollback(self, cont, isolation_level=0):
+        self._assert_open()
+        self._conn._try_activate_cursor(self)
+        self._session.rollback(cont=cont, isolation_level=isolation_level)
 
     def executemany(self, operation, params_seq):
         counts = []
@@ -488,6 +470,18 @@ class _MarsCursor(_Cursor):
         """
         self._assert_open()
         return self._session.callproc(procname, parameters)
+
+    def _begin_tran(self, isolation_level):
+        self._assert_open()
+        self._session.begin_tran(isolation_level=isolation_level)
+
+    def _commit(self, cont, isolation_level=0):
+        self._assert_open()
+        self._session.commit(cont=cont, isolation_level=isolation_level)
+
+    def _rollback(self, cont, isolation_level=0):
+        self._assert_open()
+        self._session.rollback(cont=cont, isolation_level=isolation_level)
 
 
 def connect(server='.', database='', user='', password='', timeout=0,
