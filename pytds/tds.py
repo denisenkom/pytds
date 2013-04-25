@@ -567,7 +567,7 @@ def readall_fast(stm, size):
 
 
 class _TdsReader(object):
-    def __init__(self, session, emul_little_endian):
+    def __init__(self, session):
         self._buf = ''
         self._pos = 0  # position in the buffer
         self._have = 0  # number of bytes read from packet
@@ -576,7 +576,6 @@ class _TdsReader(object):
         self._transport = session._transport
         self._type = None
         self._status = None
-        self._emul_little_endian = emul_little_endian
 
     @property
     def session(self):
@@ -605,50 +604,29 @@ class _TdsReader(object):
     def get_byte(self):
         return self.unpack(_byte)[0]
 
-    def _le(self):
-        return self._emul_little_endian
-
     def get_tinyint(self):
         return self.unpack(_tinyint)[0]
 
     def get_smallint(self):
-        if self._le():
-            return self.unpack(_smallint_le)[0]
-        else:
-            return self.unpack(_smallint_be)[0]
+        return self.unpack(_smallint_le)[0]
 
     def get_usmallint(self):
-        if self._le():
-            return self.unpack(_usmallint_le)[0]
-        else:
-            return self.unpack(_usmallint_be)[0]
+        return self.unpack(_usmallint_le)[0]
 
     def get_int(self):
-        if self._le():
-            return self.unpack(_int_le)[0]
-        else:
-            return self.unpack(_int_be)[0]
+        return self.unpack(_int_le)[0]
 
     def get_uint(self):
-        if self._le():
-            return self.unpack(_uint_le)[0]
-        else:
-            return self.unpack(_uint_be)[0]
+        return self.unpack(_uint_le)[0]
 
     def get_uint_be(self):
         return self.unpack(_uint_be)[0]
 
     def get_uint8(self):
-        if self._le():
-            return self.unpack(_uint8_le)[0]
-        else:
-            return self.unpack(_uint8_be)[0]
+        return self.unpack(_uint8_le)[0]
 
     def get_int8(self):
-        if self._le():
-            return self.unpack(_int8_le)[0]
-        else:
-            return self.unpack(_int8_be)[0]
+        return self.unpack(_int8_le)[0]
 
     def read_ucs2(self, num_chars):
         buf = readall(self, num_chars * 2)
@@ -700,13 +678,12 @@ class _TdsReader(object):
 
 
 class _TdsWriter(object):
-    def __init__(self, session, bufsize, little_endian):
+    def __init__(self, session, bufsize):
         self._session = session
         self._tds = session
         self._transport = session
         self._pos = 0
         self._buf = bytearray(bufsize)
-        self._little_endian = little_endian
         self._packet_no = 0
 
     @property
@@ -737,20 +714,11 @@ class _TdsWriter(object):
     def put_byte(self, value):
         self.pack(_byte, value)
 
-    def _le(self):
-        return self._little_endian
-
     def put_smallint(self, value):
-        if self._le():
-            self.pack(_smallint_le, value)
-        else:
-            self.pack(_smallint_be, value)
+        self.pack(_smallint_le, value)
 
     def put_usmallint(self, value):
-        if self._le():
-            self.pack(_usmallint_le, value)
-        else:
-            self.pack(_usmallint_be, value)
+        self.pack(_usmallint_le, value)
 
     def put_smallint_be(self, value):
         self.pack(_smallint_be, value)
@@ -759,16 +727,10 @@ class _TdsWriter(object):
         self.pack(_usmallint_be, value)
 
     def put_int(self, value):
-        if self._le():
-            self.pack(_int_le, value)
-        else:
-            self.pack(_int_be, value)
+        self.pack(_int_le, value)
 
     def put_uint(self, value):
-        if self._le:
-            self.pack(_uint_le, value)
-        else:
-            self.pack(_uint_be, value)
+        self.pack(_uint_le, value)
 
     def put_int_be(self, value):
         self.pack(_int_be, value)
@@ -777,10 +739,7 @@ class _TdsWriter(object):
         self.pack(_uint_be, value)
 
     def put_int8(self, value):
-        if self._le():
-            self.pack(_int8_le, value)
-        else:
-            self.pack(_int8_be, value)
+        self.pack(_int8_le, value)
 
     def put_collation(self, collation):
         self.write(collation.pack())
@@ -2322,9 +2281,9 @@ class _TdsSession(object):
         self.cur_cursor = None
         self.has_status = False
         self._transport = transport
-        self._reader = _TdsReader(self, tds.emul_little_endian)
+        self._reader = _TdsReader(self)
         self._reader._transport = transport
-        self._writer = _TdsWriter(self, tds._bufsize, tds.emul_little_endian)
+        self._writer = _TdsWriter(self, tds._bufsize)
         self._writer._transport = transport
         self.in_buf_max = 0
         self.state = TDS_IDLE
@@ -3465,7 +3424,6 @@ class _TdsSocket(object):
         self.authentication = None
         self._mars_enabled = False
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
-        self.emul_little_endian = True
         self.chunk_handler = MemoryChunkedHandler()
         self._login = login
         self._main_session = _TdsSession(self, self)
@@ -3477,10 +3435,6 @@ class _TdsSocket(object):
             tds_conn(self).s_signal, tds_conn(self).s_signaled = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
         try:
             self.tds_version = login.tds_version
-            self.emul_little_endian = login.emul_little_endian
-            if IS_TDS7_PLUS(self):
-                # TDS 7/8 only supports little endian
-                self.emul_little_endian = True
             if IS_TDS7_PLUS(self) and login.instance_name and not login.port:
                 instances = tds7_get_instances(login.server_name)
                 if login.instance_name not in instances:

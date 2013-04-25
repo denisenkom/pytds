@@ -614,7 +614,6 @@ def connect(server='.', database='', user='', password='', timeout=0,
     login.attach_db_file = ''
     login.tds_version = tds_version
     login.database = database
-    login.emul_little_endian = False
     login.bulk_copy = False
     login.text_size = 0
     login.client_lcid = lcid.LANGID_ENGLISH_US
