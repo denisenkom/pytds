@@ -195,23 +195,11 @@ class _Connection(object):
             self._conn.close()
             self._conn = None
 
-    def _close_cursor(self, cursor):
-        if self._conn is not None and cursor._session is not None:
-            if self._conn.mars_enabled:
-                cursor._session.close()
-            else:
-                if cursor is self._active_cursor:
-                    self._active_cursor = None
-                    self._session = None
-        cursor._conn = None
-
     def _try_activate_cursor(self, cursor):
-        if not (cursor is self._active_cursor):
+        if cursor is not self._active_cursor:
             session = self._active_cursor._session
             if session.state == TDS_PENDING:
                 raise InterfaceError('Results are still pending on connection')
-            self._active_cursor._session = None
-            cursor._session = session
             self._active_cursor = cursor
 
 
@@ -289,7 +277,10 @@ class _Cursor(six.Iterator):
         Closes the cursor. The cursor is unusable from this point.
         """
         if self._conn is not None:
-            self._conn._close_cursor(self)
+            if self is self._conn._active_cursor:
+                self._conn._active_cursor = self._conn._main_cursor
+                self._session = None
+            self._conn = None
 
     def execute(self, operation, params=()):
         # Execute the query
@@ -427,6 +418,14 @@ class _MarsCursor(_Cursor):
         self._conn._assert_open()
         if not self._session.is_connected():
             self._session = self._conn._conn.create_session()
+
+    def close(self):
+        """
+        Closes the cursor. The cursor is unusable from this point.
+        """
+        if self._conn is not None:
+            self._session.close()
+            self._conn = None
 
     def execute(self, operation, params=()):
         self._assert_open()
