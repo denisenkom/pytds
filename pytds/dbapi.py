@@ -213,7 +213,6 @@ class _Cursor(six.Iterator):
     """
     def __init__(self, conn, session):
         self._conn = conn
-        self._batchsize = 1
         self.arraysize = 1
         self._session = session
 
@@ -406,12 +405,6 @@ class _Cursor(six.Iterator):
 
 
 class _MarsCursor(_Cursor):
-    def __init__(self, conn, session):
-        self._conn = conn
-        self._barchsize = 1
-        self.arraysize = 1
-        self._session = session
-
     def _assert_open(self):
         if not self._conn:
             raise Error('Cursor is closed')
@@ -552,8 +545,8 @@ def DateFromTicks(ticks):
     return date.fromtimestamp(ticks)
 
 
-def Time(hour, minute, second, microsecond=0):
-    return time(hour, minute, second, microsecond)
+def Time(hour, minute, second, microsecond=0, tzinfo=None):
+    return time(hour, minute, second, microsecond, tzinfo)
 
 
 def TimeFromTicks(ticks):
