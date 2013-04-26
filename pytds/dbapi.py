@@ -195,17 +195,6 @@ class _Connection(object):
             self._conn.close()
             self._conn = None
 
-    def select_db(self, dbname):
-        """
-        select_db(dbname) -- Select the current database.
-
-        This function selects the given database. An exception is raised on
-        failure.
-        """
-        #logger.debug("MSSQLConnection.select_db()")
-        sql = 'use {0}'.format(tds_quote_id(self._conn, dbname))
-        self._main_cursor.execute(sql)
-
     def _close_cursor(self, cursor):
         if self._conn is not None and cursor._session is not None:
             if self._conn.mars_enabled:
