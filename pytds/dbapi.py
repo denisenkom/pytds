@@ -182,19 +182,6 @@ class _Connection(object):
         if self._conn is not None:
             self._conn.close()
 
-    def _cancel(self, session):
-        """
-        cancel() -- cancel all pending results.
-
-        This function cancels all pending results from the last SQL operation.
-        It can be called more than once in a row. No exception is raised in
-        this case.
-        """
-        #logger.debug("MSSQLConnection._cancel()")
-        session.messages = []
-        session.send_cancel()
-        session.process_cancel()
-
     def close(self):
         """
         close() -- close connection to an MS SQL Server.
@@ -204,9 +191,9 @@ class _Connection(object):
         this case.
         """
         #logger.debug("MSSQLConnection.close()")
-        self._assert_open()
-        self._conn.close()
-        self._conn = None
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
     def select_db(self, dbname):
         """
@@ -307,9 +294,6 @@ class _Cursor(six.Iterator):
         if not self._session.has_status:
             self._session.find_return_status()
         return self._session.ret_status if self._session.has_status else None
-
-    def cancel(self):
-        self._conn._cancel(self._session)
 
     def close(self):
         """
