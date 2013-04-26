@@ -163,10 +163,10 @@ class _Connection(object):
             return _Cursor(self, self._conn.main_session)
 
     def rollback(self):
+        """
+        Roll back transaction which is currently in progress.
+        """
         try:
-            """
-            Roll back transaction which is currently in progress.
-            """
             if self._autocommit:
                 return
 
