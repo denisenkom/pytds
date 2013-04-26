@@ -2360,6 +2360,7 @@ class _TdsSession(object):
         self.current_results = None
         self.rows_affected = TDS_NO_COUNT
         self.more_rows = True
+        self.row = [None] * num_cols
 
         self.current_results = info = _Results()
         if self.cur_cursor:
@@ -2496,9 +2497,9 @@ class _TdsSession(object):
         #assert len(info.columns) > 0
 
         info.row_count += 1
-        for curcol in info.columns:
+        for i, curcol in enumerate(info.columns):
             #logger.debug("process_row(): reading column %d" % i)
-            curcol.value = curcol.type.read(r)
+            self.row[i] = curcol.type.read(r)
 
     # NBC=null bitmap compression row
     # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
@@ -2515,9 +2516,10 @@ class _TdsSession(object):
         nbc = readall(r, (len(info.columns) + 7) // 8)
         for i, curcol in enumerate(info.columns):
             if _ord(nbc[i // 8]) & (1 << (i % 8)):
-                curcol.value = None
+                value = None
             else:
-                curcol.value = curcol.type.read(r)
+                value = curcol.type.read(r)
+            self.row[i] = value
 
     def process_orderby(self):
         r = self._reader
@@ -3366,7 +3368,7 @@ class _TdsSession(object):
             return None
 
         cols = self.res_info.columns
-        row = tuple(col.value for col in cols)
+        row = tuple(self.row)
         if as_dict:
             row = dict((col.column_name, col.value) for col in cols if col.column_name)
         return row

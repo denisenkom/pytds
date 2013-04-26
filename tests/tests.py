@@ -44,8 +44,7 @@ class DbTestCase(unittest.TestCase):
             self.conn.autocommit = True
             try:
                 cur.execute('drop database test_pytds')
-            except Exception as e:
-                print e
+            except:
                 pass
             cur.execute('create database test_pytds')
             cur.execute('use test_pytds')
