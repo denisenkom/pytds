@@ -1,5 +1,6 @@
 import struct
 import logging
+import bitarray
 from .tds import Error, readall, skipall
 
 logger = logging.getLogger(__name__)
@@ -50,14 +51,18 @@ class SmpManager(object):
 
     def __init__(self, transport):
         self._transport = transport
-        self._next_session_id = 0
         self._sessions = {}
+        self._used_ids_ba = bitarray.bitarray(2 ** 16)
+        self._used_ids_ba.setall(False)
 
     def create_session(self):
-        session_id = self._next_session_id
+        try:
+            session_id = self._used_ids_ba.index(False)
+        except ValueError:
+            raise Error("Can't create more MARS sessions, close some sessions and try again")
         session = _SmpSession(self, session_id)
         self._sessions[session_id] = session
-        self._next_session_id += 1
+        self._used_ids_ba[session_id] = True
         hdr = self._smp_header.pack(
             self._smid,
             self._SYN,
@@ -83,8 +88,9 @@ class SmpManager(object):
                     session._seq_num_for_send,
                     session._high_water_for_recv,
                     )
-                self._state = 'FIN SENT'
+                session._state = 'FIN SENT'
                 self._transport.send(hdr, True)
+                self._recv_packet(session)
             else:
                 session._state = 'CLOSED'
 
@@ -121,6 +127,8 @@ class SmpManager(object):
             return b''
         while not session._recv_queue:
             self._read_smp_message()
+            if session._state in ('CLOSED', 'FIN RECEIVED'):
+                return b''
         session._high_water_for_recv = self._add_one_wrap(session._high_water_for_recv)
         if session._high_water_for_recv - session._last_high_water_for_recv >= 2:
             hdr = self._smp_header.pack(
@@ -196,6 +204,7 @@ class SmpManager(object):
             elif session._state == 'FIN SENT':
                 session._state = 'CLOSED'
                 del self._sessions[session._session_id]
+                self._used_ids_ba[session._session_id] = False
             elif session._state == 'FIN RECEIVED':
                 self.close()
                 raise Error('Unexpected SMP FIN packet from server')

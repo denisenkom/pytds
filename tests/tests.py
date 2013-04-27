@@ -121,6 +121,21 @@ class TestCase2(TestCase):
         cur = self.conn.cursor()
         self.assertIsInstance(cur.execute_scalar("select 'test'"), text_type)
 
+    #def test_mars_sessions_recycle_ids(self):
+    #    if not self.conn.mars_enabled:
+    #        self.skipTest('Only relevant to mars')
+    #    for _ in xrange(2 ** 16 + 1):
+    #        cur = self.conn.cursor()
+    #        cur.close()
+
+    def test_smp(self):
+        if not self.conn.mars_enabled:
+            self.skipTest('Only relevant to mars')
+        sess = self.conn._conn._smp_manager.create_session()
+        self.assertEqual(sess._state, 'SESSION ESTABLISHED')
+        sess.close()
+        self.assertEqual(sess._state, 'CLOSED')
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):

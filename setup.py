@@ -14,5 +14,5 @@ setup(name='python-tds',
           'Programming Language :: Python :: 3.3',
       ],
       zip_safe=True,
-      install_requires=['python-dateutil', 'six'],
+      install_requires=['python-dateutil', 'six', 'bitarray'],
       )
