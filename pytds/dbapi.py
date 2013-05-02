@@ -100,7 +100,40 @@ class _Connection(object):
         self._active_cursor = None
         from tds import _TdsSocket
         self._conn = None
-        self._conn = _TdsSocket(self._login)
+        login = self._login
+        if IS_TDS7_PLUS(login) and login.instance_name and not login.port:
+            instances = tds7_get_instances(login.server_name)
+            if login.instance_name not in instances:
+                raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
+            instdict = instances[login.instance_name]
+            if 'tcp' not in instdict:
+                raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
+            login.port = int(instdict['tcp'])
+        if not login.port:
+            login.port = 1433
+        connect_timeout = login.connect_timeout
+        login.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
+        for host in login.load_balancer.choose():
+            try:
+                sock = socket.create_connection(
+                    (host, login.port),
+                    connect_timeout or 90000)
+                sock.settimeout(login.query_timeout)
+                sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+            except socket.error as e:
+                err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                continue
+            try:
+                self._conn = _TdsSocket(self._login, sock)
+                break
+            except Exception as e:
+                sock.close()
+                err = e
+                #raise
+                continue
+        else:
+            raise err
+        self._active_cursor = self._main_cursor = self.cursor()
         if not self._autocommit:
             tds_submit_begin_tran(self._conn.main_session)
         self._sqlok(self._conn.main_session)

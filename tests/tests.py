@@ -700,3 +700,79 @@ class TimezoneTests(unittest.TestCase):
             # Aware time should be converted to use_tz if not using datetimeoffset type
             dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 60))
             self.check_val(conn, 'cast(%s as datetime2)', dt, dt.astimezone(use_tz))
+
+
+class _FakeSock(object):
+    def __init__(self, messages):
+        self._stream = b''.join(messages)
+
+    def recv(self, size):
+        if not self._stream:
+            return b''
+        res = self._stream[:size]
+        self._stream = self._stream[size:]
+        return res
+
+    def send(self, buf, flags):
+        self._sent = buf
+        return len(buf)
+
+    def setsockopt(self, *args):
+        pass
+
+    def close(self):
+        self._stream = b''
+
+
+class TestMessages(unittest.TestCase):
+    def _make_login(self):
+        from pytds.dbapi import _TdsLogin
+        from pytds.tds import TDS74
+        login = _TdsLogin()
+        login.blocksize = 4096
+        login.use_tz = None
+        login.query_timeout = login.connect_timeout = 60
+        login.tds_version = TDS74
+        login.instance_name = None
+        login.encryption_level = None
+        login.use_mars = False
+        login.option_flag2 = 0
+        login.user_name = 'testname'
+        login.password = 'password'
+        login.app_name = 'appname'
+        login.server_name = 'servername'
+        login.library = 'library'
+        login.language = 'EN'
+        login.database = 'SubmissionPortal'
+        login.auth = None
+        login.bulk_copy = False
+        login.readonly = False
+        login.client_lcid = 100
+        login.attach_db_file = ''
+        login.text_size = 0
+        login.emul_little_endian = True
+        return login
+
+    def test_login(self):
+        from pytds.tds import _TdsSocket
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
+            b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            b'\x04\x01\x00#\x00Z\x01\x00\xe3\x0b\x00\x08\x08\x01\x00\x00\x00Z\x00\x00\x00\x00\xfd\x00\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00',
+            ])
+        _TdsSocket(self._make_login(), sock)
+
+        # test connection close on first message
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00',
+            ])
+        with self.assertRaises(Error):
+            _TdsSocket(self._make_login(), sock)
+
+        # test connection close on second message
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
+            b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S",
+            ])
+        with self.assertRaises(Error):
+            _TdsSocket(self._make_login(), sock)
