@@ -2619,8 +2619,8 @@ class _TdsSession(object):
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
         else:
+            logger.warning("unknown env type: {}, skipping".format(type))
             # discard byte values, not still supported
-            # TODO support them
             r.skip(size - 1)
 
     def process_auth(self):
@@ -3270,7 +3270,7 @@ class _TdsSession(object):
                 ack = r.get_byte()
                 version = r.get_uint_be()
                 ver['reported'] = version
-                self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING[version]
+                self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(version, version)
                 if self.conn.tds_version == TDS71rev1:
                     self.tds71rev1 = True
                 if ver['reported'] == TDS70:
@@ -3299,8 +3299,7 @@ class _TdsSession(object):
                     product_version = 0x80000000
                     self.conn.product_name = r.read_ucs2(size // 2)
                 else:
-                    raise NotImplementedError()
-                    #self.product_name = tds_get_string(self, size)
+                    self.bad_stream('Only TDS 7.0 and higher are supported')
                 product_version = r.get_uint_be()
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
