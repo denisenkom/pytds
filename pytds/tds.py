@@ -291,10 +291,6 @@ USE_CORK = hasattr(socket, 'TCP_CORK')
 
 TDS_NO_COUNT = -1
 
-TDS_DEF_BLKSZ = 512
-TDS_DEF_CHARSET = "iso_1"
-TDS_DEF_LANG = "us_english"
-
 _utc = tzutc()
 
 _header = struct.Struct('>BBHHBx')
