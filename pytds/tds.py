@@ -3102,7 +3102,7 @@ class _TdsSession(object):
         p = self._reader.read_whole_packet()
         size = len(p)
         if size <= 0 or self._reader.packet_type != 4:
-            raise Error('TDS_FAIL')
+            self.bad_stream('Invalid packet type: {}, expected PRELOGIN(4)'.format(self._reader.packet_type))
         # default 2, no certificate, no encryptption
         crypt_flag = 2
         i = 0
