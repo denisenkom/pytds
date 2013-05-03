@@ -636,12 +636,6 @@ class _TdsReader(object):
         self.unget_byte()
         return res
 
-    def skip(self, size):
-        left = size
-        while left:
-            buf = self.read(left)
-            left -= len(buf)
-
     def read(self, size):
         buf, offset = self.read_fast(size)
         return buf[offset:offset + size]
@@ -2510,11 +2504,11 @@ class _TdsSession(object):
 
     def process_orderby(self):
         r = self._reader
-        r.skip(r.get_smallint())
+        skipall(r, r.get_smallint())
 
     def process_orderby2(self):
         r = self._reader
-        r.skip(r.get_int())
+        skipall(r, r.get_int())
 
     def process_end(self, marker):
         self.more_rows = False
@@ -2558,20 +2552,20 @@ class _TdsSession(object):
             #logger.debug("process_env_chg(): {0} bytes of collation data received".format(size))
             #logger.debug("self.collation was {0}".format(self.conn.collation))
             self.conn.collation = r.get_collation()
-            r.skip(size - 5)
+            skipall(r, size - 5)
             #tds7_srv_charset_changed(tds, tds.conn.collation)
             #logger.debug("self.collation now {0}".format(self.conn.collation))
             # discard old one
-            r.skip(r.get_byte())
+            skipall(r, r.get_byte())
         elif type == TDS_ENV_BEGINTRANS:
             size = r.get_byte()
             # TODO: parse transaction
             self.conn.tds72_transaction = r.get_uint8()
-            r.skip(r.get_byte())
+            skipall(r, r.get_byte())
         elif type == TDS_ENV_COMMITTRANS or type == TDS_ENV_ROLLBACKTRANS:
             self.conn.tds72_transaction = 0
-            r.skip(r.get_byte())
-            r.skip(r.get_byte())
+            skipall(r, r.get_byte())
+            skipall(r, r.get_byte())
         elif type == TDS_ENV_PACKSIZE:
             newval = r.read_ucs2(r.get_byte())
             r.read_ucs2(r.get_byte())
@@ -2608,7 +2602,7 @@ class _TdsSession(object):
         else:
             logger.warning("unknown env type: {}, skipping".format(type))
             # discard byte values, not still supported
-            r.skip(size - 1)
+            skipall(r, size - 1)
 
     def process_auth(self):
         r = self._reader
