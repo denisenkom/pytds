@@ -33,10 +33,6 @@ TDS73 = TDS73A
 TDS73B = 0x730B0003
 TDS74 = 0x74000004
 
-IS_TDS70 = lambda x: x.tds_version == TDS70
-IS_TDS71 = lambda x: x.tds_version in (TDS71, TDS71rev1)
-IS_TDS72 = lambda x: x.tds_version == TDS72
-IS_TDS73 = lambda x: x.tds_version in (TDS73A, TDS73B)
 IS_TDS7_PLUS = lambda x: x.tds_version >= TDS70
 IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
 IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
@@ -2879,7 +2875,7 @@ class _TdsSession(object):
         with self.state_context(TDS_QUERYING):
             self.res_info = None
             w = self._writer
-            if not IS_TDS7_PLUS(self) or not params:
+            if not params:
                 w.begin_packet(TDS_QUERY)
                 self._START_QUERY()
                 w.write_ucs2(operation)

@@ -137,6 +137,11 @@ class TestCase2(TestCase):
         sess.close()
         self.assertEqual(sess._state, 'CLOSED')
 
+    def test_cursor_env(self):
+        with self.conn.cursor() as cur:
+            cur.execute('use master')
+            self.assertEqual(cur.execute_scalar('select DB_NAME()'), 'master')
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):
