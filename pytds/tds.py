@@ -2634,9 +2634,6 @@ class _TdsSession(object):
             w.write(packet)
             w.flush()
 
-    def is_dead(self):
-        return self.state == TDS_DEAD
-
     def is_connected(self):
         return self._transport.is_connected()
 
