@@ -3469,7 +3469,6 @@ class _TdsSocket(object):
         self.tds72_transaction = 0
         self.authentication = None
         self._mars_enabled = False
-        tds_conn(self).s_signal = tds_conn(self).s_signaled = None
         self.chunk_handler = MemoryChunkedHandler()
         self._sock = None
         self._bufsize = 4096
@@ -3570,11 +3569,6 @@ class _TdsSocket(object):
         if self.authentication:
             self.authentication.close()
             self.authentication = None
-        #tds_ssl_deinit(self)
-        if self.s_signal is not None:
-            self.s_signal.close()
-        if self.s_signaled is not None:
-            self.s_signaled.close()
 
 
 class _Column(object):
