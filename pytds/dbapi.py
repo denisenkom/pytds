@@ -10,8 +10,8 @@ from . import lcid
 from datetime import date, datetime, time
 import socket
 from .tds import (
-    Error, LoginError,
-    InterfaceError,
+    Error, LoginError, DatabaseError,
+    InterfaceError, TimeoutError,
     TDS_PENDING, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
@@ -124,6 +124,7 @@ class _Connection(object):
 
     def _open(self):
         self._conn = None
+        self._dirty = False
         login = self._login
         if IS_TDS7_PLUS(login) and login.instance_name and not login.port:
             instances = tds7_get_instances(login.server_name)
@@ -236,6 +237,7 @@ class _Connection(object):
         self._login = login
         self._as_dict = as_dict
         self._isolation_level = 0
+        self._dirty = False
         self._open()
 
     def __enter__(self):
@@ -278,6 +280,7 @@ class _Connection(object):
 
             self._main_cursor._rollback(cont=True,
                                         isolation_level=self._isolation_level)
+            self._dirty = False
         except:
             logger.exception('unexpected error in rollback')
 
@@ -353,7 +356,7 @@ class _Cursor(six.Iterator):
         """
         self._assert_open()
         self._conn._try_activate_cursor(self)
-        return self._session.callproc(procname, parameters)
+        return self._exec_with_retry(lambda: self._session.callproc(procname, parameters))
 
     @property
     def return_value(self):
@@ -384,11 +387,27 @@ class _Cursor(six.Iterator):
                 self._session = None
             self._conn = None
 
+    def _exec_with_retry(self, fun):
+        self._assert_open()
+        in_tran = self._conn._conn.tds72_transaction
+        if in_tran and self._conn._dirty:
+            self._conn._dirty = True
+            return fun()
+        else:
+            try:
+                self._conn._dirty = True
+                return fun()
+            except (DatabaseError, TimeoutError):
+                raise
+            except:
+                self._assert_open()
+                return fun()
+
     def execute(self, operation, params=()):
         # Execute the query
         self._assert_open()
         self._conn._try_activate_cursor(self)
-        self._session.execute(operation, params)
+        self._exec_with_retry(lambda: self._session.execute(operation, params))
 
     def _begin_tran(self, isolation_level):
         self._assert_open()
@@ -399,11 +418,13 @@ class _Cursor(six.Iterator):
         self._assert_open()
         self._conn._try_activate_cursor(self)
         self._session.commit(cont=cont, isolation_level=isolation_level)
+        self._conn._dirty = False
 
     def _rollback(self, cont, isolation_level=0):
         self._assert_open()
         self._conn._try_activate_cursor(self)
         self._session.rollback(cont=cont, isolation_level=isolation_level)
+        self._conn._dirty = False
 
     def executemany(self, operation, params_seq):
         counts = []
@@ -524,8 +545,7 @@ class _MarsCursor(_Cursor):
             self._conn = None
 
     def execute(self, operation, params=()):
-        self._assert_open()
-        self._session.execute(operation, params)
+        self._exec_with_retry(lambda: self._session.execute(operation, params))
 
     def callproc(self, procname, parameters=()):
         """
@@ -536,8 +556,7 @@ class _MarsCursor(_Cursor):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        self._assert_open()
-        return self._session.callproc(procname, parameters)
+        return self._exec_with_retry(lambda: self._session.callproc(procname, parameters))
 
     def _begin_tran(self, isolation_level):
         self._assert_open()
