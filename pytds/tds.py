@@ -2293,6 +2293,8 @@ class _TdsSession(object):
         self._spid = 0
 
     def raise_db_exception(self):
+        if not self.messages:
+            raise Error("Request failed, server didn't send error message")
         while True:
             msg = self.messages[-1]
             if msg['msgno'] == 3621:  # the statement has been terminated
