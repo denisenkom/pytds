@@ -3499,8 +3499,10 @@ class _TdsSocket(object):
         else:
             self._type_map = _type_map
         text_size = login.text_size
-        if self.mars_enabled:
-            self._setup_smp()
+        if self._mars_enabled:
+            from .smp import SmpManager
+            self._smp_manager = SmpManager(self)
+            self._main_session = _TdsSession(self, self._smp_manager.create_session())
         self._is_connected = True
         q = []
         if text_size:
@@ -3510,11 +3512,6 @@ class _TdsSocket(object):
         if q:
             self._main_session.submit_query(''.join(q))
             self._main_session.process_simple_request()
-
-    def _setup_smp(self):
-        from .smp import SmpManager
-        self._smp_manager = SmpManager(self)
-        self._main_session = _TdsSession(self, self._smp_manager.create_session())
 
     @property
     def mars_enabled(self):
@@ -3534,9 +3531,6 @@ class _TdsSocket(object):
             raise Error('Server closed connection')
         return buf
 
-    def send(self, data, final):
-        return self._write(data, final)
-
     def _write(self, data, final):
         try:
             pos = 0
@@ -3555,6 +3549,8 @@ class _TdsSocket(object):
         except:
             self.close()
             raise
+
+    send = _write
 
     def is_connected(self):
         return self._is_connected
