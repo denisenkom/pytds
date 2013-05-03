@@ -13,7 +13,7 @@ from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBala
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
     IS_TDS73_PLUS, IS_TDS71_PLUS,
     output, default, InterfaceError)
-from pytds.tds import _TdsSocket
+from pytds.tds import _TdsSocket, _TdsSession
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -851,14 +851,14 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
             b'\x04\x01\x00#\x00Z\x01\x00\xe3\x0b\x00\x08\x08\x01\x00\x00\x00Z\x00\x00\x00\x00\xfd\x00\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00',
             ])
-        _TdsSocket(self._make_login(), sock)
+        _TdsSocket().login(self._make_login(), sock)
 
         # test connection close on first message
         sock = _FakeSock([
             b'\x04\x01\x00+\x00',
             ])
         with self.assertRaises(Error):
-            _TdsSocket(self._make_login(), sock)
+            _TdsSocket().login(self._make_login(), sock)
 
         # test connection close on second message
         sock = _FakeSock([
@@ -866,7 +866,7 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S",
             ])
         with self.assertRaises(Error):
-            _TdsSocket(self._make_login(), sock)
+            _TdsSocket().login(self._make_login(), sock)
 
         # test connection close on third message
         sock = _FakeSock([
@@ -875,12 +875,35 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00#\x00Z\x01\x00\xe3\x0b\x00\x08\x08\x01\x00\x00\x00Z\x00\x00\x00\x00\xfd\x00\x00\xfd\x00\x00',
             ])
         with self.assertRaises(Error):
-            _TdsSocket(self._make_login(), sock)
+            _TdsSocket().login(self._make_login(), sock)
 
     def test_prelogin_resp(self):
-        # test bad response
+        # test bad packet type
         sock = _FakeSock([
             b'\x03\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
             ])
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
         with self.assertRaises(InterfaceError):
-            _TdsSocket(self._make_login(), sock)
+            tds._main_session.tds71_do_login(self._make_login())
+
+        # test bad offset 1
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\n\x00\x15\x88\x00\x00\x02\x00\x00',
+            ])
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        with self.assertRaises(InterfaceError):
+            tds._main_session.tds71_do_login(self._make_login())
+
+        # test bad offset 2
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00',
+            ])
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        with self.assertRaises(InterfaceError):
+            tds._main_session.tds71_do_login(self._make_login())

@@ -2289,7 +2289,7 @@ class _TdsSession(object):
         self.messages = []
         self.chunk_handler = tds.chunk_handler
         self.rows_affected = -1
-        self.use_tz = tds._login.use_tz
+        self.use_tz = tds.use_tz
         self._spid = 0
 
     def raise_db_exception(self):
@@ -3111,15 +3111,15 @@ class _TdsSession(object):
         prod_version_struct = struct.Struct('>LH')
         while True:
             if i >= size:
-                raise Error('TDS_FAIL')
+                self.bad_stream('Invalid size of PRELOGIN structure')
             type, = byte_struct.unpack_from(p, i)
             if type == 0xff:
                 break
             if i + 4 > size:
-                raise Error('TDS_FAIL')
+                self.bad_stream('Invalid size of PRELOGIN structure')
             off, l = off_len_struct.unpack_from(p, i + 1)
             if off > size or off + l > size:
-                raise Error('TDS_FAIL')
+                self.bad_stream('Invalid offset in PRELOGIN structure')
             if type == self.VERSION:
                 self.conn.product_version = prod_version_struct.unpack_from(p, off)
             elif type == self.ENCRYPTION and l >= 1:
@@ -3133,9 +3133,8 @@ class _TdsSession(object):
         if crypt_flag == 2:
             if encryption_level >= TDS_ENCRYPTION_REQUIRE:
                 raise Error('Server required encryption but it is not supported')
-            return self.tds7_send_login(login)
+            return
         self._sock = ssl.wrap_socket(self._sock, ssl_version=ssl.PROTOCOL_SSLv3)
-        return self.tds7_send_login(login)
 
     def tds7_send_login(self, login):
         option_flag2 = login.option_flag2
@@ -3465,10 +3464,8 @@ class _StateContext(object):
 
 
 class _TdsSocket(object):
-    def __init__(self, login, sock):
+    def __init__(self, use_tz=None):
         self._is_connected = False
-        self._bufsize = login.blocksize
-        self.login = None
         self.int_handler = None
         self.msg_handler = None
         self.env = _TdsEnv()
@@ -3478,22 +3475,25 @@ class _TdsSocket(object):
         self._mars_enabled = False
         tds_conn(self).s_signal = tds_conn(self).s_signaled = None
         self.chunk_handler = MemoryChunkedHandler()
-        self._login = login
+        self._sock = None
+        self._bufsize = 4096
+        self.tds_version = TDS74
+        self.use_tz = use_tz
+
+    def login(self, login, sock):
+        self.login = None
+        self._bufsize = login.blocksize
         self.query_timeout = login.query_timeout
         self._main_session = _TdsSession(self, self)
-
-        # Jeff's hack, init to no timeout
         self._sock = sock
         self.tds_version = login.tds_version
         err = None
         if IS_TDS71_PLUS(self):
             self._main_session.tds71_do_login(login)
-        elif IS_TDS7_PLUS(self):
+        if IS_TDS7_PLUS(self):
             self._main_session.tds7_send_login(login)
         else:
-            raise NotImplementedError('This TDS version is not supported')
-            self._main_session._writer.begin_packet(TDS_LOGIN)
-            self._main_session.tds_send_login(login)
+            raise ValueError('This TDS version is not supported')
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
             #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))

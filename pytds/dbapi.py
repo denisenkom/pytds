@@ -148,7 +148,8 @@ class _Connection(object):
                 err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
                 continue
             try:
-                self._conn = _TdsSocket(self._login, sock)
+                self._conn = _TdsSocket(self._login.use_tz)
+                self._conn.login(self._login, sock)
                 break
             except Exception as e:
                 sock.close()
