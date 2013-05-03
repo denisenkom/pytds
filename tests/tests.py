@@ -12,7 +12,7 @@ from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
     IS_TDS73_PLUS, IS_TDS71_PLUS,
-    output, default, InterfaceError)
+    output, default, InterfaceError, TDS_ENCRYPTION_OFF)
 from pytds.tds import _TdsSocket, _TdsSession
 import pytds.tds
 
@@ -833,7 +833,7 @@ class TestMessages(unittest.TestCase):
         login.query_timeout = login.connect_timeout = 60
         login.tds_version = TDS74
         login.instance_name = None
-        login.encryption_level = None
+        login.encryption_level = TDS_ENCRYPTION_OFF
         login.use_mars = False
         login.option_flag2 = 0
         login.user_name = 'testname'
