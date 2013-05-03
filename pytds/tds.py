@@ -50,7 +50,6 @@ TDS_NORMAL = 15
 TDS7_LOGIN = 16
 TDS7_AUTH = 17
 TDS71_PRELOGIN = 18
-TDS71_SMP = 0x53
 
 # mssql login options flags
 # option_flag1_values
@@ -2787,61 +2786,40 @@ class _TdsSession(object):
     def _submit_rpc(self, rpc_name, params, flags):
         self.cur_dyn = None
         w = self._writer
-        if IS_TDS7_PLUS(self):
-            w.begin_packet(TDS_RPC)
-            self._START_QUERY()
-            if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
-                w.put_smallint(-1)
-                w.put_smallint(rpc_name.proc_id)
-            else:
-                if isinstance(rpc_name, InternalProc):
-                    rpc_name = rpc_name.name
-                w.put_smallint(len(rpc_name))
-                w.write_ucs2(rpc_name)
-            #
-            # TODO support flags
-            # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
-            # bit 1 (2 as flag) in TDS7+ is "no metadata" bit this will prevent sending of column infos
-            #
-            w.put_usmallint(flags)
-            params = self._convert_params(params)
-            self._out_params_indexes = []
-            for i, param in enumerate(params):
-                if param.flags & fByRefValue:
-                    self._out_params_indexes.append(i)
-                w.put_byte(len(param.column_name))
-                w.write_ucs2(param.column_name)
-                #
-                # TODO support other flags (use defaul null/no metadata)
-                # bit 1 (2 as flag) in TDS7+ is "default value" bit
-                # (what's the meaning of "default value" ?)
-                #
-                w.put_byte(param.flags)
-                # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
-                w.put_byte(param.type.type)
-                param.type.write_info(w)
-                param.type.write(w, param.value)
-            #self.query_flush_packet()
+        w.begin_packet(TDS_RPC)
+        self._START_QUERY()
+        if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
+            w.put_smallint(-1)
+            w.put_smallint(rpc_name.proc_id)
         else:
-            raise NotImplementedError
-        #elif IS_TDS5_PLUS(self):
-        #    w.begin_packet(TDS_NORMAL)
-        #    w.put_byte(TDS_DBRPC_TOKEN)
-        #    # TODO ICONV convert rpc name
-        #    w.put_smallint(len(rpc_name) + 3)
-        #    w.put_byte(len(rpc_name))
-        #    w.write(rpc_name)
-        #    # TODO flags
-        #    w.put_smallint(2 if params else 0)
-
-        #    if params:
-        #        self.put_params(params, TDS_PUT_DATA_USE_NAME)
-
-        #    # send it
-        #    #self.query_flush_packet()
-        #else:
-        #    # emulate it for TDS4.x, send RPC for mssql
-        #    return tds_send_emulated_rpc(self, rpc_name, params)
+            if isinstance(rpc_name, InternalProc):
+                rpc_name = rpc_name.name
+            w.put_smallint(len(rpc_name))
+            w.write_ucs2(rpc_name)
+        #
+        # TODO support flags
+        # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
+        # bit 1 (2 as flag) in TDS7+ is "no metadata" bit this will prevent sending of column infos
+        #
+        w.put_usmallint(flags)
+        params = self._convert_params(params)
+        self._out_params_indexes = []
+        for i, param in enumerate(params):
+            if param.flags & fByRefValue:
+                self._out_params_indexes.append(i)
+            w.put_byte(len(param.column_name))
+            w.write_ucs2(param.column_name)
+            #
+            # TODO support other flags (use defaul null/no metadata)
+            # bit 1 (2 as flag) in TDS7+ is "default value" bit
+            # (what's the meaning of "default value" ?)
+            #
+            w.put_byte(param.flags)
+            # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
+            w.put_byte(param.type.type)
+            param.type.write_info(w)
+            param.type.write(w, param.value)
+        #self.query_flush_packet()
 
     def callproc(self, rpc_name, params=(), flags=0):
         self.messages = []
