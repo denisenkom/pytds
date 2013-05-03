@@ -158,7 +158,7 @@ TDS_ENV_RESET_COMPLETION_ACK = 18
 TDS_ENV_INSTANCE_INFO = 19
 TDS_ENV_ROUTING = 20
 
-# Microsoft internal stored procedure id's */
+# Microsoft internal stored procedure id's
 TDS_SP_CURSOR = 1
 TDS_SP_CURSOROPEN = 2
 TDS_SP_CURSORPREPARE = 3
@@ -290,8 +290,6 @@ TDS_ENCRYPTION_REQUIRE = 2
 USE_CORK = hasattr(socket, 'TCP_CORK')
 
 TDS_NO_COUNT = -1
-
-tds_conn = lambda tds: tds
 
 TDS_DEF_BLKSZ = 512
 TDS_DEF_CHARSET = "iso_1"
@@ -3549,15 +3547,6 @@ class _Results(object):
     def __init__(self):
         self.columns = []
         self.row_count = 0
-
-
-#def tds_ssl_deinit(tds):
-#    if tds_conn(tds).tls_session:
-#        gnutls_deinit(tds_conn(tds).tls_session)
-#        #tds_conn(tds).tls_session = None
-#    if tds_conn(tds).tls_credentials:
-#        gnutls_certificate_free_credentials(tds_conn(tds).tls_credentials)
-#        #tds_conn(tds).tls_credentials = None
 
 
 #
