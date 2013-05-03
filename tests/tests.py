@@ -887,7 +887,7 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         with self.assertRaises(InterfaceError):
-            tds._main_session.tds71_do_login(self._make_login())
+            tds._main_session.tds71_do_prelogin(self._make_login())
 
         # test bad offset 1
         sock = _FakeSock([
@@ -897,7 +897,7 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         with self.assertRaises(InterfaceError):
-            tds._main_session.tds71_do_login(self._make_login())
+            tds._main_session.tds71_do_prelogin(self._make_login())
 
         # test bad offset 2
         sock = _FakeSock([
@@ -907,7 +907,7 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         with self.assertRaises(InterfaceError):
-            tds._main_session.tds71_do_login(self._make_login())
+            tds._main_session.tds71_do_prelogin(self._make_login())
 
     def test_process_login(self):
         sock = _FakeSock([

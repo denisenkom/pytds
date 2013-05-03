@@ -2473,8 +2473,6 @@ class _TdsSession(object):
                     break
             r.unget_byte()
 
-        # call msg_handler
-
         # special case
         if marker == TDS_EED_TOKEN and self.cur_dyn and self.is_mssql() and msg['msgno'] == 2782:
             self.cur_dyn.emulated = 1
@@ -3039,7 +3037,7 @@ class _TdsSession(object):
     TRACEID = 5
     TERMINATOR = 0xff
 
-    def tds71_do_login(self, login):
+    def tds71_do_prelogin(self, login):
         instance_name = login.instance_name or 'MSSQLServer'
         encryption_level = login.encryption_level
         if IS_TDS72_PLUS(self):
@@ -3462,8 +3460,6 @@ class _StateContext(object):
 class _TdsSocket(object):
     def __init__(self, use_tz=None):
         self._is_connected = False
-        self.int_handler = None
-        self.msg_handler = None
         self.env = _TdsEnv()
         self.collation = None
         self.tds72_transaction = 0
@@ -3482,16 +3478,14 @@ class _TdsSocket(object):
         self._main_session = _TdsSession(self, self)
         self._sock = sock
         self.tds_version = login.tds_version
-        err = None
         if IS_TDS71_PLUS(self):
-            self._main_session.tds71_do_login(login)
+            self._main_session.tds71_do_prelogin(login)
         if IS_TDS7_PLUS(self):
             self._main_session.tds7_send_login(login)
         else:
             raise ValueError('This TDS version is not supported')
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
-            #raise LoginError("Cannot connect to server '{0}' as user '{1}'".format(login.server_name, login.user_name))
         if IS_TDS72_PLUS(self):
             self._type_map = _type_map72
         elif IS_TDS71_PLUS(self):
