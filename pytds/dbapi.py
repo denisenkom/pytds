@@ -377,6 +377,12 @@ class _Cursor(six.Iterator):
             self._session.find_return_status()
         return self._session.ret_status if self._session.has_status else None
 
+    def cancel(self):
+        self._assert_open()
+        self._conn._try_activate_cursor(self)
+        self._session.send_cancel()
+        self._session.process_cancel()
+
     def close(self):
         """
         Closes the cursor. The cursor is unusable from this point.
@@ -535,6 +541,11 @@ class _MarsCursor(_Cursor):
         self._conn._assert_open()
         if not self._session.is_connected():
             self._session = self._conn._conn.create_session()
+
+    def cancel(self):
+        self._assert_open()
+        self._session.send_cancel()
+        self._session.process_cancel()
 
     def close(self):
         """
