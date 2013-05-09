@@ -195,7 +195,9 @@ class MultipleRecordsetsTestCase(TestCase):
 
 class TransactionsTestCase(unittest.TestCase):
     def setUp(self):
-        self.conn = connect(autocommit=False, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['autocommit'] = False
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def _create_table(self):
         with self.conn.cursor() as cur:
