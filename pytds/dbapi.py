@@ -9,6 +9,7 @@ from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
 import socket
+import errno
 from .tds import (
     Error, LoginError, DatabaseError,
     InterfaceError, TimeoutError,
@@ -281,6 +282,9 @@ class _Connection(object):
             self._main_cursor._rollback(cont=True,
                                         isolation_level=self._isolation_level)
             self._dirty = False
+        except socket.error as e:
+            if e.errno == errno.ENETRESET:
+                return
         except:
             logger.exception('unexpected error in rollback')
 
