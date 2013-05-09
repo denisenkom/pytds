@@ -281,7 +281,6 @@ class _Connection(object):
 
             self._main_cursor._rollback(cont=True,
                                         isolation_level=self._isolation_level)
-            self._dirty = False
         except socket.error as e:
             if e.errno in (errno.ENETRESET, errno.ECONNRESET):
                 return
@@ -404,14 +403,15 @@ class _Cursor(six.Iterator):
             self._conn._dirty = True
             return fun()
         else:
+            self._conn._dirty = True
             try:
-                self._conn._dirty = True
                 return fun()
-            except (DatabaseError, TimeoutError):
-                raise
-            except:
-                self._assert_open()
-                return fun()
+            except socket.error as e:
+                if e.errno != errno.ECONNRESET:
+                    raise
+            # in case of connection reset try again
+            self._assert_open()
+            return fun()
 
     def execute(self, operation, params=()):
         # Execute the query
@@ -580,10 +580,12 @@ class _MarsCursor(_Cursor):
     def _commit(self, cont, isolation_level=0):
         self._assert_open()
         self._session.commit(cont=cont, isolation_level=isolation_level)
+        self._conn._dirty = False
 
     def _rollback(self, cont, isolation_level=0):
         self._assert_open()
         self._session.rollback(cont=cont, isolation_level=isolation_level)
+        self._conn._dirty = False
 
 
 connect = _Connection
