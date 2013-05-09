@@ -4,6 +4,7 @@ __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = '1.3.4'
 
 import logging
+import errno
 from . import lcid
 from .tds import *
 from .login import *
@@ -100,6 +101,7 @@ class _Connection(object):
         self._active_cursor = None
         from tds import _TdsSocket
         self._conn = None
+        self._dirty = False
         login = self._login
         if IS_TDS7_PLUS(login) and login.instance_name and not login.port:
             instances = tds7_get_instances(login.server_name)
@@ -168,6 +170,7 @@ class _Connection(object):
         self._sqlok(conn.main_session)
         while self._nextset(conn.main_session):
             pass
+        self._dirty = False
 
     def cursor(self):
         """
@@ -195,6 +198,7 @@ class _Connection(object):
             self._sqlok(session)
             while self._nextset(session):
                 pass
+            self._dirty = False
         except:
             logger.exception('unexpected error in rollback')
 
@@ -446,6 +450,24 @@ class _Connection(object):
             else:
                 logger.error('logic error: tds_process_tokens result_type %d', result_type)
 
+    def _exec_with_retry(self, fun):
+        self._assert_open()
+        in_tran = self._conn.tds72_transaction
+        if in_tran and self._dirty:
+            self._dirty = True
+            return fun()
+        else:
+            # first attemp
+            try:
+                self._dirty = True
+                return fun()
+            except socket.error as e:
+                if e.errno != errno.ECONNRESET:
+                    raise
+            # try again if connection was reset
+            self._assert_open()
+            return fun()
+
     def _callproc(self, cursor, procname, parameters):
         logger.debug('callproc begin')
         self._assert_open()
@@ -539,7 +561,7 @@ class _Cursor(object):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        return self._conn._callproc(self, procname, parameters)
+        return self._conn._exec_with_retry(lambda: self._conn._callproc(self, procname, parameters))
 
     @property
     def return_value(self):
@@ -562,7 +584,7 @@ class _Cursor(object):
         if self._conn is not None:
             self._conn._close_cursor(self)
 
-    def execute(self, operation, params=()):
+    def _execute(self, operation, params):
         # Execute the query
         if params:
             if isinstance(params, (list, tuple)):
@@ -580,6 +602,9 @@ class _Cursor(object):
             logger.debug('converted query: {0}'.format(operation))
             logger.debug('params: {0}'.format(params))
         self._conn._execute(self, operation, params)
+
+    def execute(self, operation, params=()):
+        self._conn._exec_with_retry(lambda: self._execute(operation, params))
 
     def executemany(self, operation, params_seq):
         counts = []
