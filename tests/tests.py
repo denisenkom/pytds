@@ -193,7 +193,10 @@ class MultipleRecordsetsTestCase(TestCase):
         self.assertEqual((12,), cur.fetchone())
         self.assertFalse(cur.nextset())
 
-class TransactionsTestCase(TestCase):
+class TransactionsTestCase(unittest.TestCase):
+    def setUp(self):
+        self.conn = connect(autocommit=False, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
+
     def _create_table(self):
         with self.conn.cursor() as cur:
             cur.execute('''
@@ -228,7 +231,7 @@ class TransactionsTestCase(TestCase):
                 drop table testtable
             ''')
         self.conn.commit()
-        super(TransactionsTestCase, self).tearDown()
+        self.conn.rollback()
 
 class MultiPacketRequest(TestCase):
     def runTest(self):
