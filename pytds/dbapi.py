@@ -283,7 +283,7 @@ class _Connection(object):
                                         isolation_level=self._isolation_level)
             self._dirty = False
         except socket.error as e:
-            if e.errno == errno.ENETRESET:
+            if e.errno in (errno.ENETRESET, errno.ECONNRESET):
                 return
         except:
             logger.exception('unexpected error in rollback')
