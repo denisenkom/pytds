@@ -202,7 +202,8 @@ class _Connection(object):
         except socket.error as e:
             if e.errno == errno.ECONNRESET:
                 return
-            logger.exception('unexpected error in rollback')
+        except ClosedConnectionError:
+            pass
         except:
             logger.exception('unexpected error in rollback')
 
@@ -535,7 +536,20 @@ class _Cursor(object):
 
     def _open(self):
         if self._conn._conn.mars_enabled:
-            self._session = self._conn._conn.create_session()
+            in_tran = self._conn._conn.tds72_transaction
+            if in_tran and self._conn._dirty:
+                self._session = self._conn._conn.create_session()
+            else:
+                try:
+                    self._session = self._conn._conn.create_session()
+                    return
+                except socket.error as e:
+                    if e.errno != errno.ECONNRESET:
+                        raise
+                except ClosedConnectionError:
+                    pass
+                self._conn._assert_open()
+                self._session = self._conn._conn.create_session()
         else:
             self._session = self._conn._conn.main_session
 
@@ -574,6 +588,14 @@ class _Cursor(object):
     @property
     def connection(self):
         return self._conn
+
+    @property
+    def spid(self):
+        # not thread safe for connection
+        dirty = self._conn._dirty
+        spid = self.execute_scalar('select @@SPID')
+        self._conn._dirty = dirty
+        return spid
 
     def get_proc_return_status(self):
         return self._conn._get_proc_return_status(self)
@@ -727,7 +749,6 @@ def connect(server='.', database='', user='', password='', timeout=0,
     :keyword port: the TCP port to use to connect to the server
     :type appname: string
     """
-
     # set the login timeout
     try:
         login_timeout = int(login_timeout)
