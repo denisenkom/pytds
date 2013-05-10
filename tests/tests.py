@@ -441,8 +441,17 @@ class ConnectionClosing(unittest.TestCase):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
 
     def test_connection_closed_by_server(self):
-        with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, autocommit=True) as master_conn:
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, autocommit=False) as conn:
+        with connect(server=settings.HOST,
+                     database=settings.DATABASE,
+                     user=settings.USER,
+                     password=settings.PASSWORD,
+                     autocommit=True) as master_conn:
+            with connect(server=settings.HOST,
+                         database=settings.DATABASE,
+                         user=settings.USER,
+                         password=settings.PASSWORD,
+                         autocommit=False,
+                         use_mars=settings.USE_MARS) as conn:
                 # test overall recovery
                 with conn.cursor() as cur:
                     cur.execute('select 1')
@@ -450,6 +459,9 @@ class ConnectionClosing(unittest.TestCase):
                     kill(master_conn, get_spid(conn))
                     cur.execute('select 1')
                     cur.fetchall()
+                kill(master_conn, get_spid(conn))
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
 
                 # test recovery on transaction
                 with conn.cursor() as cur:

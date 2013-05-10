@@ -16,7 +16,7 @@ from .tds import (
     TDS_PENDING, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
-    _TdsSocket, tds7_get_instances
+    _TdsSocket, tds7_get_instances, ClosedConnectionError,
     )
 
 logger = logging.getLogger(__name__)
@@ -263,7 +263,19 @@ class _Connection(object):
         """
         self._assert_open()
         if self.mars_enabled:
-            session = self._conn.create_session()
+            in_tran = self._conn.tds72_transaction
+            if in_tran and self._dirty:
+                session = self._conn.create_session()
+            else:
+                try:
+                    session = self._conn.create_session()
+                except socket.error as e:
+                    if e.errno != errno.ECONNRESET:
+                        raise
+                except ClosedConnectionError:
+                    pass
+                self._assert_open()
+                session = self._conn.create_session()
             return _MarsCursor(self, session)
         else:
             return _Cursor(self, self._conn.main_session)
@@ -284,6 +296,8 @@ class _Connection(object):
         except socket.error as e:
             if e.errno in (errno.ENETRESET, errno.ECONNRESET):
                 return
+        except ClosedConnectionError:
+            pass
         except:
             logger.exception('unexpected error in rollback')
 
@@ -409,6 +423,8 @@ class _Cursor(six.Iterator):
             except socket.error as e:
                 if e.errno != errno.ECONNRESET:
                     raise
+            except ClosedConnectionError:
+                pass
             # in case of connection reset try again
             self._assert_open()
             return fun()
@@ -545,6 +561,14 @@ class _MarsCursor(_Cursor):
         self._conn._assert_open()
         if not self._session.is_connected():
             self._session = self._conn._conn.create_session()
+
+    @property
+    def spid(self):
+        # not thread safe for connection
+        dirty = self._conn._dirty
+        spid = self.execute_scalar('select @@SPID')
+        self._conn._dirty = dirty
+        return spid
 
     def cancel(self):
         self._assert_open()

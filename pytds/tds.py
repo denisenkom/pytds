@@ -407,6 +407,11 @@ class DatabaseError(Error):
                 self.state, self.line, self.text)
 
 
+class ClosedConnectionError(InterfaceError):
+    def __init__(self):
+        super(ClosedConnectionError, self).__init__('Server closed connection')
+
+
 class DataError(Error):
     pass
 
@@ -517,12 +522,12 @@ def skipall(stm, size):
     if len(res) == size:
         return
     elif len(res) == 0:
-        raise Error('Server closed connection')
+        raise ClosedConnectionError()
     left = size - len(res)
     while left:
         buf = stm.read(left)
         if len(buf) == 0:
-            raise Error('Server closed connection')
+            raise ClosedConnectionError()
         left -= len(buf)
 
 
@@ -531,13 +536,13 @@ def readall(stm, size):
     if len(res) == size:
         return res
     elif len(res) == 0:
-        raise Error('Server closed connection')
+        raise ClosedConnectionError()
     chunks = [res]
     left = size - len(res)
     while left:
         buf = stm.read(left)
         if len(buf) == 0:
-            raise Error('Server closed connection')
+            raise ClosedConnectionError()
         chunks.append(buf)
         left -= len(buf)
     return b''.join(chunks)
@@ -3273,7 +3278,6 @@ class _TdsSession(object):
                 self.process_token(marker)
             if marker == TDS_DONE_TOKEN:
                 break
-        self.spid = self.rows_affected
         return succeed
 
     def process_returnstatus(self):
@@ -3292,6 +3296,9 @@ class _TdsSession(object):
             marker = self._reader.get_byte()
         except TimeoutError:
             self.set_state(TDS_PENDING)
+            raise
+        except:
+            self._tds.close()
             raise
         return marker
 
@@ -3484,7 +3491,7 @@ class _TdsSocket(object):
         buf = self._sock.recv(size)
         if len(buf) == 0:
             self.close()
-            raise Error('Server closed connection')
+            raise ClosedConnectionError()
         return buf
 
     def _write(self, data, final):
