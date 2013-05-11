@@ -9,9 +9,10 @@ import uuid
 from dateutil.tz import tzoffset, tzutc
 from six import text_type
 from six.moves import xrange
+import binascii
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
-    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73,
+    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
 from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, TDS_ENCRYPTION_OFF
 from pytds.dbapi import _TdsLogin
@@ -1090,6 +1091,13 @@ class TestMessages(unittest.TestCase):
             b'd\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00' +
             b'f\x00i\x00l\x00e\x00p\x00a\x00t\x00h\x00')
 
+        login.tds_version = TDS71
+        tds._main_session.tds7_send_login(login)
+        self.assertEqual(
+            binascii.hexlify(sock._sent),
+            '100100de00000100' +
+            'c6000000' +
+            '0000007100100000000005016400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c0065007000610074006800')
         sock._sent = b''
         login.user_name = 'x' * 129
         with self.assertRaisesRegexp(ValueError, 'User name should be no longer that 128 characters'):
