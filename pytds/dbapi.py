@@ -5,11 +5,14 @@ __version__ = '1.5.0'
 
 import logging
 import six
+import os
 from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
+from dateutil.tz import tzlocal
 import socket
 import errno
+import uuid
 from .tds import (
     Error, LoginError, DatabaseError,
     InterfaceError, TimeoutError,
@@ -203,6 +206,7 @@ class _Connection(object):
             server = "localhost"
 
         login = _TdsLogin()
+        login.client_host_name = socket.gethostname()[:128]
         login.library = "Python TDS Library"
         login.encryption_level = encryption_level
         login.user_name = user or ''
@@ -217,6 +221,13 @@ class _Connection(object):
         login.text_size = 0
         login.client_lcid = lcid.LANGID_ENGLISH_US
         login.use_mars = use_mars
+        login.pid = os.getpid()
+        login.change_password = ''
+        login.client_id = uuid.getnode()  # client mac address
+        if use_tz:
+            login.client_tz = use_tz
+        else:
+            login.client_tz = tzlocal()
 
         # that will set:
         # ANSI_DEFAULTS to ON,

@@ -11,9 +11,10 @@ from six import text_type
 from six.moves import xrange
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
-    IS_TDS73_PLUS, IS_TDS71_PLUS,
+    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
-from pytds.tds import _TdsSocket, _TdsSession
+from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, TDS_ENCRYPTION_OFF
+from pytds.dbapi import _TdsLogin
 import pytds.tds
 
 # set decimal precision to match mssql maximum precision
@@ -413,6 +414,11 @@ class BadConnection(unittest.TestCase):
                     cur.execute('select 1')
         with self.assertRaises(Error):
             with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=None) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+        # bad instance name
+        with self.assertRaisesRegexp(LoginError, 'Invalid instance name'):
+            with connect(server=settings.HOST + '\\badinstancename', database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, port=1433) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
@@ -874,6 +880,11 @@ class TestMessages(unittest.TestCase):
         login.client_lcid = 100
         login.attach_db_file = ''
         login.text_size = 0
+        login.client_host_name = 'clienthost'
+        login.pid = 100
+        login.change_password = ''
+        login.client_tz = tzoffset('', 5 * 60)
+        login.client_id = 0xabcd
         return login
 
     def test_login(self):
@@ -908,7 +919,20 @@ class TestMessages(unittest.TestCase):
         with self.assertRaises(Error):
             _TdsSocket().login(self._make_login(), sock)
 
-    def test_prelogin_resp(self):
+    def test_prelogin_parsing(self):
+        # test good packet
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
+            ])
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        login = _TdsLogin()
+        login.encryption_level = TDS_ENCRYPTION_OFF
+        tds._main_session._process_prelogin(login)
+        self.assertFalse(tds._mars_enabled)
+        self.assertTupleEqual(tds.server_library_version, (0xa001588, 0))
+
         # test bad packet type
         sock = _FakeSock([
             b'\x03\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
@@ -917,7 +941,8 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         with self.assertRaises(InterfaceError):
-            tds._main_session.tds71_do_prelogin(self._make_login())
+            login = self._make_login()
+            tds._main_session._process_prelogin(login)
 
         # test bad offset 1
         sock = _FakeSock([
@@ -927,7 +952,8 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         with self.assertRaises(InterfaceError):
-            tds._main_session.tds71_do_prelogin(self._make_login())
+            login = self._make_login()
+            tds._main_session._process_prelogin(login)
 
         # test bad offset 2
         sock = _FakeSock([
@@ -937,9 +963,54 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         with self.assertRaises(InterfaceError):
-            tds._main_session.tds71_do_prelogin(self._make_login())
+            login = self._make_login()
+            tds._main_session._process_prelogin(login)
 
-    def test_process_login(self):
+        # test bad instance name
+        sock = _FakeSock([
+            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x01\x00',
+            ])
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        with self.assertRaisesRegexp(LoginError, 'Invalid instance name'):
+            login = self._make_login()
+            tds._main_session._process_prelogin(login)
+
+    def test_prelogin_generation(self):
+        sock = _FakeSock('')
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        login = _TdsLogin()
+        login.instance_name = 'MSSQLServer'
+        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.use_mars = False
+        tds._main_session._send_prelogin(login)
+        template = (b'\x12\x01\x00:\x00\x00\x00\x00\x00\x00' +
+                   '\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x0c\x03' +
+                   '\x00-\x00\x04\x04\x001\x00\x01\xff\x01\x05\x00\x00' +
+                   '\x00\x00\x02MSSQLServer\x00\x00\x00\x00\x00\x00')
+        self.assertEqual(sock._sent, template)
+
+        login.instance_name = 'x' * 65499
+        sock._sent = b''
+        with self.assertRaisesRegexp(ValueError, 'Instance name is too long'):
+            tds._main_session._send_prelogin(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.instance_name = 'тест'
+        with self.assertRaises(UnicodeDecodeError):
+            tds._main_session._send_prelogin(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.instance_name = 'x'
+        login.encryption_level = TDS_ENCRYPTION_REQUIRE
+        with self.assertRaisesRegexp(NotSupportedError, 'Client requested encryption but it is not supported'):
+            tds._main_session._send_prelogin(login)
+        self.assertEqual(sock._sent, b'')
+
+    def test_login_parsing(self):
         sock = _FakeSock([
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
             ])
@@ -966,3 +1037,109 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds)
         tds._sock = sock
         tds._main_session.process_login_tokens()
+
+    def test_login_generation(self):
+        sock = _FakeSock(b'')
+        tds = _TdsSocket()
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        login = _TdsLogin()
+        login.option_flag2 = 0
+        login.user_name = 'test'
+        login.password = 'testpwd'
+        login.app_name = 'appname'
+        login.server_name = 'servername'
+        login.library = 'library'
+        login.language = 'en'
+        login.database = 'database'
+        login.auth = None
+        login.tds_version = TDS73
+        login.bulk_copy = True
+        login.client_lcid = 0x204
+        login.attach_db_file = 'filepath'
+        login.readonly = False
+        login.client_host_name = 'subdev1'
+        login.pid = 100
+        login.change_password = ''
+        login.client_tz = tzoffset('', -4 * 60 * 60)
+        login.client_id = 0x1234567890ab
+        tds._main_session.tds7_send_login(login)
+        self.assertEqual(
+            sock._sent,
+            b'\x10\x01\x00\xde\x00\x00\x00\x00' +  # header
+            b'\xc6\x00\x00\x00' +  # size
+            b'\x03\x00\ns' +  # tds version
+            b'\x00\x10\x00\x00' +  # buf size
+            b'\x00\x00\x05\x01' +  # client library ver
+            b'd\x00\x00\x00' +  # pid
+            b'\x00\x00\x00\x00' +  # connection id of primary server (whatever that means)
+            b'\xe0\x00\x00\x08' +  # flags
+            b'\x10\xff\xff\xff' +  # client tz
+            b'\x04\x02\x00\x00' +  # client lcid
+            b'^\x00\x07\x00l\x00\x04\x00t\x00\x07\x00\x82\x00\x07\x00\x90\x00\n\x00\x00\x00\x00\x00\xa4\x00\x07\x00\xb2\x00\x02\x00\xb6\x00\x08\x00' +
+            b'\x12\x34\x56\x78\x90\xab' +
+            b'\xc6\x00\x00' +
+            b'\x00\xc6\x00\x08\x00\xd6\x00\x00\x00\x00\x00\x00\x00' +
+            b's\x00u\x00b\x00d\x00e\x00v\x001\x00' +
+            b't\x00e\x00s\x00t\x00' +
+            b'\xe2\xa5\xf3\xa5\x92\xa5\xe2\xa5\xa2\xa5\xd2\xa5\xe3\xa5' +
+            b'a\x00p\x00p\x00n\x00a\x00m\x00e\x00' +
+            b's\x00e\x00r\x00v\x00e\x00r\x00n\x00a\x00m\x00e\x00' +
+            b'l\x00i\x00b\x00r\x00a\x00r\x00y\x00' +
+            b'e\x00n\x00' +
+            b'd\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00' +
+            b'f\x00i\x00l\x00e\x00p\x00a\x00t\x00h\x00')
+
+        sock._sent = b''
+        login.user_name = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'User name should be no longer that 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.user_name = 'username'
+        login.password = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'Password should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.password = 'password'
+        login.client_host_name = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'Host name should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.client_host_name = 'clienthost'
+        login.app_name = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'App name should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.app_name = 'appname'
+        login.server_name = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'Server name should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.server_name = 'servername'
+        login.database = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'Database name should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.database = 'database'
+        login.language = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'Language should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.language = 'en'
+        login.change_password = 'x' * 129
+        with self.assertRaisesRegexp(ValueError, 'Password should be not longer than 128 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')
+
+        login.change_password = ''
+        login.attach_db_file = 'x' * 261
+        with self.assertRaisesRegexp(ValueError, 'File path should be not longer than 260 characters'):
+            tds._main_session.tds7_send_login(login)
+        self.assertEqual(sock._sent, b'')

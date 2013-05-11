@@ -2,11 +2,10 @@ import struct
 import codecs
 import logging
 import socket
-import os
 import sys
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
-from dateutil.tz import tzoffset, tzutc, tzlocal
+from dateutil.tz import tzoffset, tzutc
 import uuid
 import six
 from six.moves import reduce
@@ -3004,9 +3003,14 @@ class _TdsSession(object):
     TRACEID = 5
     TERMINATOR = 0xff
 
-    def tds71_do_prelogin(self, login):
+    def _send_prelogin(self, login):
         instance_name = login.instance_name or 'MSSQLServer'
+        instance_name = instance_name.encode('ascii')
         encryption_level = login.encryption_level
+        if len(instance_name) > 65490:
+            raise ValueError('Instance name is too long')
+        if encryption_level >= TDS_ENCRYPTION_REQUIRE:
+            raise NotSupportedError('Client requested encryption but it is not supported')
         if IS_TDS72_PLUS(self):
             START_POS = 26
             buf = struct.pack(
@@ -3045,22 +3049,22 @@ class _TdsSession(object):
         w.write(buf)
         from pytds import intversion
         w.put_uint_be(intversion)
-        w.put_usmallint_be(0)
+        w.put_usmallint_be(0)  # build number
         # encryption
         if ENCRYPTION_ENABLED and encryption_supported:
             w.put_byte(1 if encryption_level >= TDS_ENCRYPTION_REQUIRE else 0)
         else:
-            if encryption_level >= TDS_ENCRYPTION_REQUIRE:
-                raise Error('Client requested encryption but it is not supported')
             # not supported
             w.put_byte(2)
-        w.write(instance_name.encode('ascii'))
+        w.write(instance_name)
         w.put_byte(0)  # zero terminate instance_name
-        w.put_int(os.getpid())  # TODO: change this to thread id
+        w.put_int(0)  # TODO: change this to thread id
         if IS_TDS72_PLUS(self):
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
         w.flush()
+
+    def _process_prelogin(self, login):
         p = self._reader.read_whole_packet()
         size = len(p)
         if size <= 0 or self._reader.packet_type != 4:
@@ -3083,17 +3087,19 @@ class _TdsSession(object):
             if off > size or off + l > size:
                 self.bad_stream('Invalid offset in PRELOGIN structure')
             if type == self.VERSION:
-                self.conn.product_version = prod_version_struct.unpack_from(p, off)
+                self.conn.server_library_version = prod_version_struct.unpack_from(p, off)
             elif type == self.ENCRYPTION and l >= 1:
                 crypt_flag, = byte_struct.unpack_from(p, off)
             elif type == self.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
+            elif type == self.INSTOPT:
+                instopt = byte_struct.unpack_from(p, off)[0]
+                if instopt == 1:
+                    raise LoginError('Invalid instance name')
             i += 5
-        # we readed all packet
-        logger.debug('detected flag %d', crypt_flag)
         # if server do not has certificate do normal login
         if crypt_flag == 2:
-            if encryption_level >= TDS_ENCRYPTION_REQUIRE:
+            if login.encryption_level >= TDS_ENCRYPTION_REQUIRE:
                 raise Error('Server required encryption but it is not supported')
             return
         self._sock = ssl.wrap_socket(self._sock, ssl_version=ssl.PROTOCOL_SSLv3)
@@ -3101,13 +3107,29 @@ class _TdsSession(object):
     def tds7_send_login(self, login):
         option_flag2 = login.option_flag2
         user_name = login.user_name
+        if len(user_name) > 128:
+            raise ValueError('User name should be no longer that 128 characters')
+        if len(login.password) > 128:
+            raise ValueError('Password should be not longer than 128 characters')
+        if len(login.change_password) > 128:
+            raise ValueError('Password should be not longer than 128 characters')
+        if len(login.client_host_name) > 128:
+            raise ValueError('Host name should be not longer than 128 characters')
+        if len(login.app_name) > 128:
+            raise ValueError('App name should be not longer than 128 characters')
+        if len(login.server_name) > 128:
+            raise ValueError('Server name should be not longer than 128 characters')
+        if len(login.database) > 128:
+            raise ValueError('Database name should be not longer than 128 characters')
+        if len(login.language) > 128:
+            raise ValueError('Language should be not longer than 128 characters')
+        if len(login.attach_db_file) > 260:
+            raise ValueError('File path should be not longer than 260 characters')
         w = self._writer
         w.begin_packet(TDS7_LOGIN)
         self.authentication = None
-        if len(login.password) > 128:
-            raise Error('Password should be not more than 128 characters')
         current_pos = 86 + 8 if IS_TDS72_PLUS(self) else 86
-        client_host_name = socket.gethostname()
+        client_host_name = login.client_host_name
         login.client_host_name = client_host_name
         packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database)) * 2
         if login.auth:
@@ -3122,7 +3144,7 @@ class _TdsSession(object):
         w.put_int(w.bufsize)
         from pytds import intversion
         w.put_uint(intversion)
-        w.put_int(os.getpid())
+        w.put_int(login.pid)
         w.put_uint(0)  # connection id
         option_flag1 = TDS_SET_LANG_ON | TDS_USE_DB_NOTIFY | TDS_INIT_DB_FATAL
         if not login.bulk_copy:
@@ -3137,7 +3159,7 @@ class _TdsSession(object):
         w.put_byte(type_flags)
         option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if IS_TDS73_PLUS(self) else 0)
-        mins_fix = int(tzlocal().utcoffset(datetime.now()).total_seconds()) // 60
+        mins_fix = int(login.client_tz.utcoffset(datetime.now()).total_seconds()) // 60
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)
@@ -3178,8 +3200,8 @@ class _TdsSession(object):
         w.put_smallint(len(login.database))
         current_pos += len(login.database) * 2
         # ClientID
-        mac_address = struct.pack('>Q', uuid.getnode())[:6]
-        w.write(mac_address)
+        client_id = struct.pack('>Q', login.client_id)[2:]
+        w.write(client_id)
         # authentication
         w.put_smallint(current_pos)
         w.put_smallint(len(auth_packet))
@@ -3191,7 +3213,7 @@ class _TdsSession(object):
         if IS_TDS72_PLUS(self):
             # new password
             w.put_smallint(current_pos)
-            w.put_smallint(0)
+            w.put_smallint(len(login.change_password))
             # sspi long
             w.put_int(0)
         w.write_ucs2(client_host_name)
@@ -3206,6 +3228,7 @@ class _TdsSession(object):
         if self.authentication:
             w.write(auth_packet)
         w.write_ucs2(login.attach_db_file)
+        w.write_ucs2(login.change_password)
         w.flush()
 
     _SERVER_TO_CLIENT_MAPPING = {
@@ -3448,7 +3471,8 @@ class _TdsSocket(object):
         self._sock = sock
         self.tds_version = login.tds_version
         if IS_TDS71_PLUS(self):
-            self._main_session.tds71_do_prelogin(login)
+            self._main_session._send_prelogin(login)
+            self._main_session._process_prelogin(login)
         if IS_TDS7_PLUS(self):
             self._main_session.tds7_send_login(login)
         else:
