@@ -3496,16 +3496,13 @@ class _TdsSocket(object):
 
     def _write(self, data, final):
         try:
-            pos = 0
-            while pos < len(data):
-                flags = 0
-                if hasattr(socket, 'MSG_NOSIGNAL'):
-                    flags |= socket.MSG_NOSIGNAL
-                if not final:
-                    if hasattr(socket, 'MSG_MORE'):
-                        flags |= socket.MSG_MORE
-                nput = self._sock.send(data[pos:], flags)
-                pos += nput
+            flags = 0
+            if hasattr(socket, 'MSG_NOSIGNAL'):
+                flags |= socket.MSG_NOSIGNAL
+            if not final:
+                if hasattr(socket, 'MSG_MORE'):
+                    flags |= socket.MSG_MORE
+            self._sock.sendall(data, flags)
             if final and USE_CORK:
                 self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
                 self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)

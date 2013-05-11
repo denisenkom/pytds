@@ -838,6 +838,9 @@ class _FakeSock(object):
         self._sent = buf
         return len(buf)
 
+    def sendall(self, buf, flags):
+        self._sent = buf
+
     def setsockopt(self, *args):
         pass
 
