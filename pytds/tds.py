@@ -3257,10 +3257,8 @@ class _TdsSession(object):
                 # get server product name
                 # ignore product name length, some servers seem to set it incorrectly
                 r.get_byte()
-                product_version = 0
                 size -= 10
                 if IS_TDS7_PLUS(self):
-                    product_version = 0x80000000
                     self.conn.product_name = r.read_ucs2(size // 2)
                 else:
                     self.bad_stream('Only TDS 7.0 and higher are supported')
