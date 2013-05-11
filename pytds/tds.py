@@ -3245,35 +3245,14 @@ class _TdsSession(object):
         r = self._reader
         succeed = False
         #logger.debug('process_login_tokens()')
-        ver = {}
         while True:
             marker = r.get_byte()
             #logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
             if marker == TDS_LOGINACK_TOKEN:
-                self.tds71rev1 = 0
                 size = r.get_smallint()
                 ack = r.get_byte()
                 version = r.get_uint_be()
-                ver['reported'] = version
                 self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(version, version)
-                if self.conn.tds_version == TDS71rev1:
-                    self.tds71rev1 = True
-                if ver['reported'] == TDS70:
-                    ver['name'] = '7.0'
-                elif ver['reported'] == TDS71:
-                    ver['name'] = '2000'
-                elif ver['reported'] == TDS71rev1:
-                    ver['name'] = '2000 SP1'
-                elif ver['reported'] == TDS72:
-                    ver['name'] = '2005'
-                elif ver['reported'] == TDS73A:
-                    ver['name'] = '2008 (no NBCROW of fSparseColumnSet)'
-                elif ver['reported'] == TDS73B:
-                    ver['name'] = '2008'
-                elif version == TDS74:
-                    ver['name'] = '2012'
-                else:
-                    ver['name'] = 'unknown'
                 logger.debug('server reports TDS version {0:x}'.format(version))
                 # get server product name
                 # ignore product name length, some servers seem to set it incorrectly
