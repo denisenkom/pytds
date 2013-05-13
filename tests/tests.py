@@ -4,6 +4,7 @@ import unittest
 import sys
 from decimal import Decimal, getcontext
 import logging
+from time import sleep
 from datetime import datetime, date, time
 import uuid
 from dateutil.tz import tzoffset, tzutc
@@ -480,9 +481,11 @@ class ConnectionClosing(unittest.TestCase):
                     cur.execute('select 1')
                     conn.commit()
                     kill(master_conn, get_spid(conn))
+                    sleep(0.2)
                     cur.execute('select 1')
                     cur.fetchall()
                 kill(master_conn, get_spid(conn))
+                sleep(0.2)
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
@@ -490,6 +493,7 @@ class ConnectionClosing(unittest.TestCase):
                 with conn.cursor() as cur:
                     cur.execute('create table ##testtable3 (fld int)')
                     kill(master_conn, get_spid(conn))
+                    sleep(0.2)
                     with self.assertRaises(Exception):
                         cur.execute('select * from ##testtable2')
                         cur.fetchall()
