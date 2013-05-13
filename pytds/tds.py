@@ -2305,7 +2305,6 @@ class _TdsSession(object):
         ex.severity = msg['severity']
         ex.state = msg['state']
         ex.line = msg['line_number']
-        #self.cancel()
         self.messages = []
         raise ex
 
@@ -2775,10 +2774,15 @@ class _TdsSession(object):
                     params.append(self.make_param('', parameter))
             return params
 
-    def callproc(self, rpc_name, params=(), flags=0):
-        self.messages = []
-        self.send_cancel()
+    def cancel_if_pending(self):
+        if self.state == TDS_IDLE:
+            return
+        if not self.in_cancel:
+            self.res_info = None
+            self._put_cancel()
         self.process_cancel()
+
+    def callproc(self, rpc_name, params=(), flags=0):
         self.submit_rpc(rpc_name, params, flags)
         self.output_params = {}
         self.process_rpc()
@@ -2788,6 +2792,8 @@ class _TdsSession(object):
         return results
 
     def submit_rpc(self, rpc_name, params=(), flags=0):
+        self.messages = []
+        self.cancel_if_pending()
         with self.state_context(TDS_QUERYING):
             self.cur_dyn = None
             w = self._writer
@@ -2826,27 +2832,9 @@ class _TdsSession(object):
                 param.type.write(w, param.value)
             self.query_flush_packet()
 
-    def execute(self, query, params=()):
-        self.messages = []
-        self.send_cancel()
-        self.process_cancel()
-        self.submit_query(query, params)
-        self.find_result_or_done()
-
-    def submit_plain_query(self, operation):
-        self.res_info = None
-        w = self._writer
-        with self.state_context(TDS_QUERYING):
-            w.begin_packet(TDS_QUERY)
-            self._START_QUERY()
-            w.write_ucs2(operation)
-            self.query_flush_packet()
-
-    def submit_query(self, operation, params=(), flags=0):
-        logger.info('submit_query(%s, %s)', operation, params)
+    def execute(self, operation, params=()):
         if not operation:
             raise ProgrammingError('Empty query is not allowed')
-
         if params:
             if isinstance(params, (list, tuple)):
                 names = tuple('@P{0}'.format(n) for n in range(len(params)))
@@ -2871,34 +2859,36 @@ class _TdsSession(object):
             self.internal_sp_called = TDS_SP_EXECUTESQL
         else:
             self.submit_plain_query(operation)
+        self.find_result_or_done()
+
+    def submit_plain_query(self, operation):
+        logger.debug('submit_plain_query(%s)', operation)
+        self.messages = []
+        self.cancel_if_pending()
+        self.res_info = None
+        w = self._writer
+        with self.state_context(TDS_QUERYING):
+            w.begin_packet(TDS_QUERY)
+            self._START_QUERY()
+            w.write_ucs2(operation)
+            self.query_flush_packet()
 
     def _put_cancel(self):
         self._writer.begin_packet(TDS_CANCEL)
         self._writer.flush()
         self.in_cancel = 1
 
-    def send_cancel(self):
-        #logger.debug("send_cancel: %sin_cancel and %sidle".format(
-        #            ('' if self.in_cancel else "not "), ('' if self.state == TDS_IDLE else "not ")))
-
-        # one cancel is sufficient
-        if self.in_cancel or self.state == TDS_IDLE:
-            return
-
-        self.res_info = None
-        self._put_cancel()
-
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
     def begin_tran(self, isolation_level=0):
-        self.send_cancel()
-        self.process_cancel()
         self.submit_begin_tran(isolation_level=isolation_level)
         self.process_simple_request()
 
     def submit_begin_tran(self, isolation_level=0):
         logger.debug('submit_begin_tran()')
         if IS_TDS72_PLUS(self):
+            self.messages = []
+            self.cancel_if_pending()
             self.set_state(TDS_QUERYING)
 
             w = self._writer
@@ -2917,14 +2907,14 @@ class _TdsSession(object):
     _continue_tran_struct72 = struct.Struct('<BB')
 
     def rollback(self, cont, isolation_level=0):
-        self.send_cancel()
-        self.process_cancel()
         self.submit_rollback(cont, isolation_level=isolation_level)
         self.process_simple_request()
 
     def submit_rollback(self, cont, isolation_level=0):
         logger.debug('submit_rollback(%s, %s)', id(self), cont)
         if IS_TDS72_PLUS(self):
+            self.messages = []
+            self.cancel_if_pending()
             self.set_state(TDS_QUERYING)
 
             w = self._writer
@@ -2948,14 +2938,14 @@ class _TdsSession(object):
             self.submit_plain_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
 
     def commit(self, cont, isolation_level=0):
-        self.send_cancel()
-        self.process_cancel()
         self.submit_commit(cont, isolation_level=isolation_level)
         self.process_simple_request()
 
     def submit_commit(self, cont, isolation_level=0):
         logger.debug('submit_commit(%s)', cont)
         if IS_TDS72_PLUS(self):
+            self.messages = []
+            self.cancel_if_pending()
             self.set_state(TDS_QUERYING)
 
             w = self._writer
