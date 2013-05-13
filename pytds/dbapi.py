@@ -374,9 +374,10 @@ class _Cursor(six.Iterator):
         return self
 
     def _callproc(self, procname, parameters):
+        results = list(parameters)
+        parameters = self._session._convert_params(parameters)
         self._exec_with_retry(lambda: self._session.submit_rpc(procname, parameters, 0))
         self._session.process_rpc()
-        results = list(parameters)
         for key, param in self._session.output_params.items():
             results[key] = param.value
         return results
@@ -468,7 +469,7 @@ class _Cursor(six.Iterator):
                 for p in params)
             self._exec_with_retry(lambda: self._session.submit_rpc(
                 SP_EXECUTESQL,
-                [operation, param_definition] + params,
+                [self._session.make_param('', operation), self._session.make_param('', param_definition)] + params,
                 0))
         else:
             self._exec_with_retry(lambda: self._session.submit_plain_query(operation))

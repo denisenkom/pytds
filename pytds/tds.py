@@ -2782,7 +2782,7 @@ class _TdsSession(object):
             self._put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name, params=(), flags=0):
+    def submit_rpc(self, rpc_name, params, flags):
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()
@@ -2805,7 +2805,6 @@ class _TdsSession(object):
             # bit 1 (2 as flag) in TDS7+ is "no metadata" bit this will prevent sending of column infos
             #
             w.put_usmallint(flags)
-            params = self._convert_params(params)
             self._out_params_indexes = []
             for i, param in enumerate(params):
                 if param.flags & fByRefValue:
