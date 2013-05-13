@@ -146,6 +146,11 @@ class TestCase2(TestCase):
             cur.execute('use master')
             self.assertEqual(cur.execute_scalar('select DB_NAME()'), 'master')
 
+    def test_empty_query(self):
+        with self.conn.cursor() as cur:
+            cur.execute('')
+            self.assertIs(None, cur.description)
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):
