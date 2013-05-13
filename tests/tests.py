@@ -12,7 +12,7 @@ from six.moves import xrange
 import binascii
 from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
-    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71,
+    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
 from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, TDS_ENCRYPTION_OFF
 from pytds.dbapi import _TdsLogin
@@ -1151,3 +1151,27 @@ class TestMessages(unittest.TestCase):
         with self.assertRaisesRegexp(ValueError, 'File path should be not longer than 260 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
+
+    def test_submit_plain_query(self):
+        tds = _TdsSocket()
+        tds.tds_version = TDS72
+        tds._main_session = _TdsSession(tds, tds)
+        sock = _FakeSock(b'')
+        tds._sock = sock
+        tds._main_session.submit_plain_query('select 5*6')
+        self.assertEqual(
+            sock._sent,
+            b'\x01\x01\x002\x00\x00\x00\x00' +
+            b'\x16\x00\x00\x00\x12\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00' +
+            b's\x00e\x00l\x00e\x00c\x00t\x00 \x005\x00*\x006\x00')
+
+        # test pre TDS7.2 query
+        tds = _TdsSocket()
+        tds.tds_version = TDS71
+        tds._main_session = _TdsSession(tds, tds)
+        tds._sock = sock
+        tds._main_session.submit_plain_query('select 5*6')
+        self.assertEqual(
+            sock._sent,
+            b'\x01\x01\x00\x1c\x00\x00\x00\x00' +
+            b's\x00e\x00l\x00e\x00c\x00t\x00 \x005\x00*\x006\x00')
