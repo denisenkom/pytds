@@ -2775,44 +2775,6 @@ class _TdsSession(object):
                     params.append(self.make_param('', parameter))
             return params
 
-    def _submit_rpc(self, rpc_name, params, flags):
-        self.cur_dyn = None
-        w = self._writer
-        w.begin_packet(TDS_RPC)
-        self._START_QUERY()
-        if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
-            w.put_smallint(-1)
-            w.put_smallint(rpc_name.proc_id)
-        else:
-            if isinstance(rpc_name, InternalProc):
-                rpc_name = rpc_name.name
-            w.put_smallint(len(rpc_name))
-            w.write_ucs2(rpc_name)
-        #
-        # TODO support flags
-        # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
-        # bit 1 (2 as flag) in TDS7+ is "no metadata" bit this will prevent sending of column infos
-        #
-        w.put_usmallint(flags)
-        params = self._convert_params(params)
-        self._out_params_indexes = []
-        for i, param in enumerate(params):
-            if param.flags & fByRefValue:
-                self._out_params_indexes.append(i)
-            w.put_byte(len(param.column_name))
-            w.write_ucs2(param.column_name)
-            #
-            # TODO support other flags (use defaul null/no metadata)
-            # bit 1 (2 as flag) in TDS7+ is "default value" bit
-            # (what's the meaning of "default value" ?)
-            #
-            w.put_byte(param.flags)
-            # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
-            w.put_byte(param.type.type)
-            param.type.write_info(w)
-            param.type.write(w, param.value)
-        #self.query_flush_packet()
-
     def callproc(self, rpc_name, params=(), flags=0):
         self.messages = []
         self.send_cancel()
@@ -2827,7 +2789,41 @@ class _TdsSession(object):
 
     def submit_rpc(self, rpc_name, params=(), flags=0):
         with self.state_context(TDS_QUERYING):
-            self._submit_rpc(rpc_name, params, flags)
+            self.cur_dyn = None
+            w = self._writer
+            w.begin_packet(TDS_RPC)
+            self._START_QUERY()
+            if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
+                w.put_smallint(-1)
+                w.put_smallint(rpc_name.proc_id)
+            else:
+                if isinstance(rpc_name, InternalProc):
+                    rpc_name = rpc_name.name
+                w.put_smallint(len(rpc_name))
+                w.write_ucs2(rpc_name)
+            #
+            # TODO support flags
+            # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
+            # bit 1 (2 as flag) in TDS7+ is "no metadata" bit this will prevent sending of column infos
+            #
+            w.put_usmallint(flags)
+            params = self._convert_params(params)
+            self._out_params_indexes = []
+            for i, param in enumerate(params):
+                if param.flags & fByRefValue:
+                    self._out_params_indexes.append(i)
+                w.put_byte(len(param.column_name))
+                w.write_ucs2(param.column_name)
+                #
+                # TODO support other flags (use defaul null/no metadata)
+                # bit 1 (2 as flag) in TDS7+ is "default value" bit
+                # (what's the meaning of "default value" ?)
+                #
+                w.put_byte(param.flags)
+                # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
+                w.put_byte(param.type.type)
+                param.type.write_info(w)
+                param.type.write(w, param.value)
             self.query_flush_packet()
 
     def execute(self, query, params=()):
@@ -2837,41 +2833,44 @@ class _TdsSession(object):
         self.submit_query(query, params)
         self.find_result_or_done()
 
+    def submit_plain_query(self, operation):
+        self.res_info = None
+        w = self._writer
+        with self.state_context(TDS_QUERYING):
+            w.begin_packet(TDS_QUERY)
+            self._START_QUERY()
+            w.write_ucs2(operation)
+            self.query_flush_packet()
+
     def submit_query(self, operation, params=(), flags=0):
         logger.info('submit_query(%s, %s)', operation, params)
         if not operation:
             raise ProgrammingError('Empty query is not allowed')
 
-        with self.state_context(TDS_QUERYING):
-            self.res_info = None
-            w = self._writer
-            if not params:
-                w.begin_packet(TDS_QUERY)
-                self._START_QUERY()
-                w.write_ucs2(operation)
-            else:
-                if isinstance(params, (list, tuple)):
-                    names = tuple('@P{0}'.format(n) for n in range(len(params)))
-                    if len(names) == 1:
-                        operation = operation % names[0]
-                    else:
-                        operation = operation % names
-                    params = dict(zip(names, params))
-                elif isinstance(params, dict):
-                    # prepend names with @
-                    rename = dict((name, '@{0}'.format(name)) for name in params.keys())
-                    params = dict(('@{0}'.format(name), value) for name, value in params.items())
-                    operation = operation % rename
-                #logger.debug('converted query: {0}'.format(operation))
-                #logger.debug('params: {0}'.format(params))
-                params = self._convert_params(params)
-                param_definition = ','.join(
-                    '{0} {1}'.format(p.column_name, p.type.get_declaration())
-                    for p in params)
-                self._submit_rpc(SP_EXECUTESQL,
-                                 [operation, param_definition] + params, 0)
-                self.internal_sp_called = TDS_SP_EXECUTESQL
-            self.query_flush_packet()
+        if params:
+            if isinstance(params, (list, tuple)):
+                names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                if len(names) == 1:
+                    operation = operation % names[0]
+                else:
+                    operation = operation % names
+                params = dict(zip(names, params))
+            elif isinstance(params, dict):
+                # prepend names with @
+                rename = dict((name, '@{0}'.format(name)) for name in params.keys())
+                params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                operation = operation % rename
+            #logger.debug('converted query: {0}'.format(operation))
+            #logger.debug('params: {0}'.format(params))
+            params = self._convert_params(params)
+            param_definition = ','.join(
+                '{0} {1}'.format(p.column_name, p.type.get_declaration())
+                for p in params)
+            self.submit_rpc(SP_EXECUTESQL,
+                            [operation, param_definition] + params, 0)
+            self.internal_sp_called = TDS_SP_EXECUTESQL
+        else:
+            self.submit_plain_query(operation)
 
     def _put_cancel(self):
         self._writer.begin_packet(TDS_CANCEL)
@@ -2912,7 +2911,7 @@ class _TdsSession(object):
                    )
             self.query_flush_packet()
         else:
-            self.submit_query("BEGIN TRANSACTION")
+            self.submit_plain_query("BEGIN TRANSACTION")
 
     _commit_rollback_tran_struct72_hdr = struct.Struct('<HBB')
     _continue_tran_struct72 = struct.Struct('<BB')
@@ -2946,7 +2945,7 @@ class _TdsSession(object):
                        )
             self.query_flush_packet()
         else:
-            self.submit_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
+            self.submit_plain_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
 
     def commit(self, cont, isolation_level=0):
         self.send_cancel()
@@ -2977,7 +2976,7 @@ class _TdsSession(object):
                        )
             self.query_flush_packet()
         else:
-            self.submit_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
+            self.submit_plain_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
 
     def _START_QUERY(self):
         if IS_TDS72_PLUS(self):
@@ -3249,35 +3248,31 @@ class _TdsSession(object):
             marker = r.get_byte()
             #logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
             if marker == TDS_LOGINACK_TOKEN:
+                succeed = True
                 size = r.get_smallint()
-                ack = r.get_byte()
+                r.get_byte()  # interface
                 version = r.get_uint_be()
                 self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(version, version)
                 logger.debug('server reports TDS version {0:x}'.format(version))
+                if not IS_TDS7_PLUS(self):
+                    self.bad_stream('Only TDS 7.0 and higher are supported')
                 # get server product name
                 # ignore product name length, some servers seem to set it incorrectly
                 r.get_byte()
                 size -= 10
-                if IS_TDS7_PLUS(self):
-                    self.conn.product_name = r.read_ucs2(size // 2)
-                else:
-                    self.bad_stream('Only TDS 7.0 and higher are supported')
+                self.conn.product_name = r.read_ucs2(size // 2)
                 product_version = r.get_uint_be()
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
                 logger.debug('Product version {0:x}'.format(product_version))
-                # TDS 5.0 reports 5 on success 6 on failure
-                # TDS 4.2 reports 1 on success and is not present of failure
-                if ack == 5 or ack == 1:
-                    succeed = True
                 if self.conn.authentication:
                     self.conn.authentication.close()
                     self.conn.authentication = None
             else:
                 self.process_token(marker)
-            if marker == TDS_DONE_TOKEN:
-                break
+                if marker == TDS_DONE_TOKEN:
+                    break
         return succeed
 
     def process_returnstatus(self):
@@ -3474,7 +3469,7 @@ class _TdsSocket(object):
         if login.database and self.env.database != login.database:
             q.append('use ' + tds_quote_id(self, login.database))
         if q:
-            self._main_session.submit_query(''.join(q))
+            self._main_session.submit_plain_query(''.join(q))
             self._main_session.process_simple_request()
 
     @property
