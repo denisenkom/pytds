@@ -10,13 +10,13 @@ from dateutil.tz import tzoffset, tzutc
 from six import text_type
 from six.moves import xrange
 import binascii
-from pytds import (connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
+from pytds import (
+    connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
     IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
-from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, TDS_ENCRYPTION_OFF
+from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE
 from pytds.dbapi import _TdsLogin
-import pytds.tds
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -31,9 +31,11 @@ except:
 #logging.basicConfig(level='INFO')
 logging.basicConfig()
 
+
 class TestCase(unittest.TestCase):
     def setUp(self):
         self.conn = connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
+
     def tearDown(self):
         self.conn.close()
 
@@ -171,6 +173,7 @@ class ParametrizedQueriesTestCase(TestCase):
         cur = self.conn.cursor()
         cur.execute('select %s', (val,))
         self.assertEqual(cur.fetchall(), [(val,)])
+
     def runTest(self):
         self._test_val(u'hello')
         self._test_val(123)
@@ -185,9 +188,10 @@ class ParametrizedQueriesTestCase(TestCase):
         self._test_val('')
         self._test_val('x' * 5000)
         self._test_val(Binary(b'x' * 5000))
-        self._test_val(2**63 - 1)
+        self._test_val(2 ** 63 - 1)
         self._test_val(False)
         self._test_val(True)
+
 
 class TableTestCase(DbTestCase):
     def runTest(self):
@@ -312,12 +316,14 @@ class TransactionsTestCase(DbTestCase):
         self.conn.commit()
         super(TransactionsTestCase, self).tearDown()
 
+
 class MultiPacketRequest(TestCase):
     def runTest(self):
         cur = self.conn.cursor()
-        param = 'x' * (self.conn._conn.main_session._writer.bufsize*3)
+        param = 'x' * (self.conn._conn.main_session._writer.bufsize * 3)
         cur.execute('select %s', (param,))
         self.assertEqual([(param, )], cur.fetchall())
+
 
 class BigRequest(TestCase):
     def runTest(self):
@@ -327,12 +333,14 @@ class BigRequest(TestCase):
             cur.execute('select %s, %s, %s, %s', params)
             self.assertEqual([params], cur.fetchall())
 
+
 class ReadAllBug(TestCase):
     def runTest(self):
         cur = self.conn.cursor()
         params = ('x' * 5000,)
         cur.execute('select cast(%s as varchar(5000))', params)
         self.assertEqual([params], cur.fetchall())
+
 
 class Rowcount(DbTestCase):
     def runTest(self):
@@ -347,6 +355,7 @@ class Rowcount(DbTestCase):
         cur.execute('select * from testtable')
         cur.fetchall()
         #self.assertEqual(cur.rowcount, 2)
+
 
 class NoRows(DbTestCase):
     def runTest(self):
@@ -371,7 +380,7 @@ class TestVariant(TestCase):
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003000' as datetime2)")
         self._t(time(10, 11, 12, 3000), "cast('10:11:12.003000' as time)")
         self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
-        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3*60*60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3 * 60 * 60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
 
     def test_regular(self):
         if not IS_TDS71_PLUS(self.conn):
@@ -399,18 +408,19 @@ class TestVariant(TestCase):
         self._t(Decimal('922337203685477.5807'), "cast('922,337,203,685,477.5807' as money)")
         self._t(Decimal('-214748.3648'), "cast('- 214,748.3648' as smallmoney)")
 
+
 class BadConnection(unittest.TestCase):
     def runTest(self):
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad') as conn:
+            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST+'bad', database=settings.DATABASE, user=settings.USER+'bad', password=settings.PASSWORD) as conn:
+            with connect(server=settings.HOST + 'bad', database=settings.DATABASE, user=settings.USER + 'bad', password=settings.PASSWORD) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database=settings.DATABASE+'x', user=settings.USER, password=settings.PASSWORD) as conn:
+            with connect(server=settings.HOST, database=settings.DATABASE + 'x', user=settings.USER, password=settings.PASSWORD) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
@@ -422,6 +432,7 @@ class BadConnection(unittest.TestCase):
             with connect(server=settings.HOST + '\\badinstancename', database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, port=1433) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
+
 
 class NullXml(TestCase):
     def runTest(self):
@@ -500,16 +511,18 @@ class Description(TestCase):
             self.assertEqual(cur.description[0][4], 4)
             self.assertEqual(cur.description[0][5], 2)
 
+
 class Bug1(TestCase):
     def runTest(self):
         try:
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD+'bad') as conn:
+            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
                     cur.fetchall()
                 conn.rollback()
         except:
             pass
+
 
 class BinaryTest(TestCase):
     def runTest(self):
@@ -550,10 +563,12 @@ class Bug2(DbTestCase):
             self.assertEqual(cur.fetchall(), [(val,)])
             self.assertEqual(val + 1, cur.get_proc_return_status())
 
+
 class Bug3(TestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
             cur.close()
+
 
 class DateAndTimeParams(TestCase):
     def test_date(self):
@@ -578,6 +593,7 @@ class DateAndTimeParams(TestCase):
             cur.execute('select %s', (time, ))
             self.assertEqual(cur.fetchall(), [(time,)])
 
+
 class Bug4(TestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
@@ -586,6 +602,7 @@ class Bug4(TestCase):
             select 1
             ''')
             self.assertEqual(cur.fetchall(), [(1,)])
+
 
 class FixedSizeChar(DbTestCase):
     def runTest(self):
@@ -597,42 +614,46 @@ class FixedSizeChar(DbTestCase):
             cur.execute('select * from testtable')
             self.assertEqual(cur.fetchall(), [('1    ', '2    ', b'3\x00\x00\x00\x00')])
 
+
 class EdgeCases(TestCase):
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select %s', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
+
     def runTest(self):
-        with self.conn.cursor() as cur:
-            self._testval(10**20)
-            self._testval(10**38-1)
-            self._testval(-10**38+1)
-            with self.assertRaises(DataError):
-                self._testval(-10**38)
-            ##cur.execute('select %s', '\x00'*(2**31))
-            self._testval(Decimal('9'*38))
-            self._testval(Decimal('0.'+'9'*38))
-            self._testval(-Decimal('9'*38))
-            self._testval(Decimal('1E10'))
-            self._testval(Decimal('1E-10'))
-            self._testval(Decimal('0.{0}1'.format('0'*37)))
-            with self.assertRaises(DataError):
-                self._testval(Decimal('1' + '0'*38))
-            with self.assertRaises(DataError):
-                self._testval(Decimal('-1' + '0'*38))
-            with self.assertRaises(DataError):
-                self._testval(Decimal('1E38'))
+        self._testval(10 ** 20)
+        self._testval(10 ** 38 - 1)
+        self._testval(-10 ** 38 + 1)
+        with self.assertRaises(DataError):
+            self._testval(-10 ** 38)
+        ##cur.execute('select %s', '\x00'*(2**31))
+        self._testval(Decimal('9' * 38))
+        self._testval(Decimal('0.' + '9' * 38))
+        self._testval(-Decimal('9' * 38))
+        self._testval(Decimal('1E10'))
+        self._testval(Decimal('1E-10'))
+        self._testval(Decimal('0.{0}1'.format('0' * 37)))
+        with self.assertRaises(DataError):
+            self._testval(Decimal('1' + '0' * 38))
+        with self.assertRaises(DataError):
+            self._testval(Decimal('-1' + '0' * 38))
+        with self.assertRaises(DataError):
+            self._testval(Decimal('1E38'))
+
 
 class Extensions(TestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
             self.assertEqual(cur.connection, self.conn)
 
+
 class SmallDateTimeTest(TestCase):
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as smalldatetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
+
     def runTest(self):
         self._testval(Timestamp(2010, 2, 1, 10, 12, 0))
         self._testval(Timestamp(1900, 1, 1, 0, 0, 0))
@@ -642,13 +663,16 @@ class SmallDateTimeTest(TestCase):
         with self.assertRaises(Error):
             self._testval(Timestamp(2080, 1, 1, 0, 0, 0))
 
+
 class DateTimeTest(DbTestCase):
     def _testencdec(self, val):
         self.assertEqual(val, DateTime.decode(*DateTime._struct.unpack(DateTime.encode(val))))
+
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as datetime)', (val,))
             self.assertEqual(cur.fetchall(), [(val,)])
+
     def runTest(self):
         self.assertEqual(DateTime.decode(*DateTime._struct.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
         self.assertEqual(DateTime.decode(*DateTime._struct.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTime._max_date)
@@ -684,29 +708,33 @@ class NewDateTimeTest(TestCase):
     def test_datetimeoffset(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
+
         def _testval(val):
             with self.conn.cursor() as cur:
                 cur.execute('select cast(%s as datetimeoffset)', (val,))
                 self.assertEqual(cur.fetchall(), [(val,)])
+
         with self.conn.cursor() as cur:
             cur.execute("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset)")
-            self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5*60*60)), cur.fetchone()[0])
+            self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5 * 60 * 60)), cur.fetchone()[0])
         _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 5*60*60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 5 * 60 * 60)))
         _testval(Timestamp(1, 1, 1, 0, 0, 0, 0, tzutc()))
         _testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 14*60)))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14*60)))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15*60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 14 * 60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14 * 60)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15 * 60)))
 
     def test_time(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
+
         def testval(val):
             with self.conn.cursor() as cur:
                 cur.execute('select cast(%s as time)', (val,))
                 self.assertEqual(cur.fetchall(), [(val,)])
-        testval(Time(14,16,18,123456))
+
+        testval(Time(14, 16, 18, 123456))
         testval(Time(0, 0, 0, 0))
         testval(Time(0, 0, 0, 0))
         testval(Time(0, 0, 0, 0))
@@ -718,10 +746,12 @@ class NewDateTimeTest(TestCase):
     def test_datetime2(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
+
         def testval(val):
             with self.conn.cursor() as cur:
                 cur.execute('select cast(%s as datetime2)', (val,))
                 self.assertEqual(cur.fetchall(), [(val,)])
+
         testval(Timestamp(2010, 1, 2, 20, 21, 22, 345678))
         testval(Timestamp(2010, 1, 2, 0, 0, 0))
         testval(Timestamp(1, 1, 1, 0, 0, 0))
@@ -730,10 +760,12 @@ class NewDateTimeTest(TestCase):
     def test_date(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
+
         def testval(val):
             with self.conn.cursor() as cur:
                 cur.execute('select cast(%s as date)', (val,))
                 self.assertEqual(cur.fetchall(), [(val,)])
+
         testval(Date(2010, 1, 2))
         testval(Date(2010, 1, 2))
         testval(Date(1, 1, 1))
@@ -857,7 +889,6 @@ class _FakeSock(object):
 
 class TestMessages(unittest.TestCase):
     def _make_login(self):
-        from pytds.dbapi import _TdsLogin
         from pytds.tds import TDS74
         login = _TdsLogin()
         login.blocksize = 4096
@@ -989,9 +1020,9 @@ class TestMessages(unittest.TestCase):
         login.use_mars = False
         tds._main_session._send_prelogin(login)
         template = (b'\x12\x01\x00:\x00\x00\x00\x00\x00\x00' +
-                   b'\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x0c\x03' +
-                   b'\x00-\x00\x04\x04\x001\x00\x01\xff\x01\x05\x00\x00' +
-                   b'\x00\x00\x02MSSQLServer\x00\x00\x00\x00\x00\x00')
+                    b'\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x0c\x03' +
+                    b'\x00-\x00\x04\x04\x001\x00\x01\xff\x01\x05\x00\x00' +
+                    b'\x00\x00\x02MSSQLServer\x00\x00\x00\x00\x00\x00')
         self.assertEqual(sock._sent, template)
 
         login.instance_name = 'x' * 65499
