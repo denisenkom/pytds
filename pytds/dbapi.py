@@ -20,6 +20,7 @@ from .tds import (
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
     _TdsSocket, tds7_get_instances, ClosedConnectionError,
+    SP_EXECUTESQL,
     )
 
 logger = logging.getLogger(__name__)
@@ -276,18 +277,17 @@ class _Connection(object):
         if self.mars_enabled:
             in_tran = self._conn.tds72_transaction
             if in_tran and self._dirty:
-                session = self._conn.create_session()
+                return _MarsCursor(self, self._conn.create_session())
             else:
                 try:
-                    session = self._conn.create_session()
+                    return _MarsCursor(self, self._conn.create_session())
                 except socket.error as e:
                     if e.errno != errno.ECONNRESET:
                         raise
                 except ClosedConnectionError:
                     pass
                 self._assert_open()
-                session = self._conn.create_session()
-            return _MarsCursor(self, session)
+                return _MarsCursor(self, self._conn.create_session())
         else:
             return _Cursor(self, self._conn.main_session)
 
@@ -373,6 +373,14 @@ class _Cursor(six.Iterator):
         """
         return self
 
+    def _callproc(self, procname, parameters):
+        self._exec_with_retry(lambda: self._session.submit_rpc(procname, parameters, 0))
+        self._session.process_rpc()
+        results = list(parameters)
+        for key, param in self._session.output_params.items():
+            results[key] = param.value
+        return results
+
     def callproc(self, procname, parameters=()):
         """
         Call a stored procedure with the given name.
@@ -384,7 +392,7 @@ class _Cursor(six.Iterator):
         """
         self._assert_open()
         self._conn._try_activate_cursor(self)
-        return self._exec_with_retry(lambda: self._session.callproc(procname, parameters))
+        return self._callproc(procname, parameters)
 
     @property
     def return_value(self):
@@ -440,11 +448,37 @@ class _Cursor(six.Iterator):
             self._assert_open()
             return fun()
 
+    def _execute(self, operation, params):
+        if params:
+            if isinstance(params, (list, tuple)):
+                names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                if len(names) == 1:
+                    operation = operation % names[0]
+                else:
+                    operation = operation % names
+                params = dict(zip(names, params))
+            elif isinstance(params, dict):
+                # prepend names with @
+                rename = dict((name, '@{0}'.format(name)) for name in params.keys())
+                params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                operation = operation % rename
+            params = self._session._convert_params(params)
+            param_definition = ','.join(
+                '{0} {1}'.format(p.column_name, p.type.get_declaration())
+                for p in params)
+            self._exec_with_retry(lambda: self._session.submit_rpc(
+                SP_EXECUTESQL,
+                [operation, param_definition] + params,
+                0))
+        else:
+            self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
+        self._session.find_result_or_done()
+
     def execute(self, operation, params=()):
         # Execute the query
         self._assert_open()
         self._conn._try_activate_cursor(self)
-        self._exec_with_retry(lambda: self._session.execute(operation, params))
+        self._execute(operation, params)
 
     def _begin_tran(self, isolation_level):
         self._assert_open()
@@ -595,7 +629,8 @@ class _MarsCursor(_Cursor):
             self._conn = None
 
     def execute(self, operation, params=()):
-        self._exec_with_retry(lambda: self._session.execute(operation, params))
+        self._assert_open()
+        self._execute(operation, params)
 
     def callproc(self, procname, parameters=()):
         """
@@ -606,7 +641,8 @@ class _MarsCursor(_Cursor):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        return self._exec_with_retry(lambda: self._session.callproc(procname, parameters))
+        self._assert_open()
+        return self._callproc(procname, parameters)
 
     def _begin_tran(self, isolation_level):
         self._assert_open()

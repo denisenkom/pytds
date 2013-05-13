@@ -2782,17 +2782,9 @@ class _TdsSession(object):
             self._put_cancel()
         self.process_cancel()
 
-    def callproc(self, rpc_name, params=(), flags=0):
-        self.submit_rpc(rpc_name, params, flags)
-        self.output_params = {}
-        self.process_rpc()
-        results = list(params)
-        for key, param in self.output_params.items():
-            results[key] = param.value
-        return results
-
     def submit_rpc(self, rpc_name, params=(), flags=0):
         self.messages = []
+        self.output_params = {}
         self.cancel_if_pending()
         with self.state_context(TDS_QUERYING):
             self.cur_dyn = None
@@ -2831,35 +2823,6 @@ class _TdsSession(object):
                 param.type.write_info(w)
                 param.type.write(w, param.value)
             self.query_flush_packet()
-
-    def execute(self, operation, params=()):
-        if not operation:
-            raise ProgrammingError('Empty query is not allowed')
-        if params:
-            if isinstance(params, (list, tuple)):
-                names = tuple('@P{0}'.format(n) for n in range(len(params)))
-                if len(names) == 1:
-                    operation = operation % names[0]
-                else:
-                    operation = operation % names
-                params = dict(zip(names, params))
-            elif isinstance(params, dict):
-                # prepend names with @
-                rename = dict((name, '@{0}'.format(name)) for name in params.keys())
-                params = dict(('@{0}'.format(name), value) for name, value in params.items())
-                operation = operation % rename
-            #logger.debug('converted query: {0}'.format(operation))
-            #logger.debug('params: {0}'.format(params))
-            params = self._convert_params(params)
-            param_definition = ','.join(
-                '{0} {1}'.format(p.column_name, p.type.get_declaration())
-                for p in params)
-            self.submit_rpc(SP_EXECUTESQL,
-                            [operation, param_definition] + params, 0)
-            self.internal_sp_called = TDS_SP_EXECUTESQL
-        else:
-            self.submit_plain_query(operation)
-        self.find_result_or_done()
 
     def submit_plain_query(self, operation):
         logger.debug('submit_plain_query(%s)', operation)
