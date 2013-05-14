@@ -54,10 +54,10 @@ class DbTestCase(unittest.TestCase):
         with connect(**kwargs) as conn:
             with conn.cursor() as cur:
                 try:
-                    cur.execute('drop database ' + settings.DATABASE)
+                    cur.execute('drop database [{}]'.format(settings.DATABASE))
                 except:
                     pass
-                cur.execute('create database ' + settings.DATABASE)
+                cur.execute('create database [{}]'.format(settings.DATABASE))
 
     @classmethod
     def tearDownClass(cls):
@@ -66,7 +66,7 @@ class DbTestCase(unittest.TestCase):
         kwargs['autocommit'] = True
         with connect(**kwargs) as conn:
             with conn.cursor() as cur:
-                cur.execute('drop database ' + settings.DATABASE)
+                cur.execute('drop database [{}]'.format(settings.DATABASE))
 
     def setUp(self):
         self.conn = pytds.connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
