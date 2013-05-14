@@ -18,6 +18,8 @@ from pytds import (
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
 from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE
 from pytds.dbapi import _TdsLogin
+from . import dbapi20
+import pytds
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -35,32 +37,41 @@ logging.basicConfig()
 
 class TestCase(unittest.TestCase):
     def setUp(self):
-        self.conn = connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def tearDown(self):
         self.conn.close()
 
 
 class DbTestCase(unittest.TestCase):
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         kwargs = settings.CONNECT_KWARGS.copy()
-        del kwargs['database']
-        self.conn = connect(**kwargs)
-        with self.conn.cursor() as cur:
-            self.conn.autocommit = True
-            try:
-                cur.execute('drop database test_pytds')
-            except:
-                pass
-            cur.execute('create database test_pytds')
-            cur.execute('use test_pytds')
-            self.conn.autocommit = False
+        kwargs['database'] = 'master'
+        kwargs['autocommit'] = True
+        with connect(**kwargs) as conn:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute('drop database ' + settings.DATABASE)
+                except:
+                    pass
+                cur.execute('create database ' + settings.DATABASE)
+
+    @classmethod
+    def tearDownClass(cls):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['autocommit'] = True
+        with connect(**kwargs) as conn:
+            with conn.cursor() as cur:
+                cur.execute('drop database ' + settings.DATABASE)
+
+    def setUp(self):
+        self.conn = pytds.connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
 
     def tearDown(self):
-        #with self.conn.cursor() as cur:
-        #    self.conn.rollback()
-        #    self.conn.autocommit = True
-        #    cur.execute('drop database test_pytds')
         self.conn.close()
 
 
@@ -117,7 +128,10 @@ class TestCase2(TestCase):
         assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
 
     def test_timeout(self):
-        with connect(login_timeout=1, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['login_timeout'] = 1
+        with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
             cur = conn.cursor()
             with self.assertRaises(TimeoutError):
                 cur.execute("waitfor delay '00:00:05'")
@@ -418,24 +432,24 @@ class TestVariant(TestCase):
 class BadConnection(unittest.TestCase):
     def runTest(self):
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
+            with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST + 'bad', database=settings.DATABASE, user=settings.USER + 'bad', password=settings.PASSWORD) as conn:
+            with connect(server=settings.HOST + 'bad', database='master', user=settings.USER + 'bad', password=settings.PASSWORD) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database=settings.DATABASE + 'x', user=settings.USER, password=settings.PASSWORD) as conn:
+            with connect(server=settings.HOST, database='doesnotexist', user=settings.USER, password=settings.PASSWORD) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=None) as conn:
+            with connect(server=settings.HOST, database='master', user=settings.USER, password=None) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         # bad instance name
         with self.assertRaisesRegexp(LoginError, 'Invalid instance name'):
-            with connect(server=settings.HOST + '\\badinstancename', database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, port=1433) as conn:
+            with connect(server=settings.HOST + '\\badinstancename', database='master', user=settings.USER, password=settings.PASSWORD, port=1433) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
@@ -462,16 +476,16 @@ def kill(conn, spid):
 class ConnectionClosing(unittest.TestCase):
     def test_open_close(self):
         for x in xrange(3):
-            connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
+            connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD).close()
 
     def test_connection_closed_by_server(self):
         with connect(server=settings.HOST,
-                     database=settings.DATABASE,
+                     database='master',
                      user=settings.USER,
                      password=settings.PASSWORD,
                      autocommit=True) as master_conn:
             with connect(server=settings.HOST,
-                         database=settings.DATABASE,
+                         database='master',
                          user=settings.USER,
                          password=settings.PASSWORD,
                          autocommit=False,
@@ -499,7 +513,7 @@ class ConnectionClosing(unittest.TestCase):
                         cur.fetchall()
                     conn.rollback()
                     cur.execute('select 1')
-            #with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD) as conn:
+            #with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD) as conn:
             #    spid = get_spid(conn)
             #    with conn.cursor() as cur:
             #        # test recovery of specific lowlevel methods
@@ -524,7 +538,7 @@ class Description(TestCase):
 class Bug1(TestCase):
     def runTest(self):
         try:
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
+            with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
                     cur.fetchall()
@@ -551,7 +565,7 @@ class GuidTest(TestCase):
 
 #class EncryptionTest(unittest.TestCase):
 #    def runTest(self):
-#        conn = connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, encryption_level=TDS_ENCRYPTION_REQUIRE)
+#        conn = connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD, encryption_level=TDS_ENCRYPTION_REQUIRE)
 #        cur = conn.cursor()
 #        cur.execute('select 1')
 
@@ -820,7 +834,7 @@ class RegressionSuite(TestCase):
         self.conn.commit()
 
 
-class TestLoadBalancer(TestCase):
+class TestLoadBalancer(DbTestCase):
     def test_second(self):
         lb = SimpleLoadBalancer(['badserver', settings.CONNECT_KWARGS['server']])
         with connect(load_balancer=lb, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
@@ -857,6 +871,7 @@ class TimezoneTests(unittest.TestCase):
         kwargs = settings.CONNECT_KWARGS.copy()
         use_tz = tzutc()
         kwargs['use_tz'] = use_tz
+        kwargs['database'] = 'master'
         with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
             # Naive time should be interpreted as use_tz
             self.check_val(conn, '%s',
@@ -1215,3 +1230,117 @@ class TestMessages(unittest.TestCase):
             sock._sent,
             b'\x01\x01\x00\x1c\x00\x00\x00\x00' +
             b's\x00e\x00l\x00e\x00c\x00t\x00 \x005\x00*\x006\x00')
+
+
+class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
+    driver = pytds
+    connect_args = settings.CONNECT_ARGS
+    connect_kw_args = settings.CONNECT_KWARGS
+    
+#    def _connect(self):
+#        return connection
+    
+    def _try_run(self, *args):
+        with self._connect() as con:
+            with con.cursor() as cur:
+                for arg in args:
+                    cur.execute(arg)
+
+    def _try_run2(self, cur, *args):
+        for arg in args:
+            cur.execute(arg)
+    
+    # This should create the "lower" sproc.
+    def _callproc_setup(self, cur):
+        self._try_run2(cur,
+            """IF OBJECT_ID(N'[dbo].[to_lower]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[to_lower]""",
+            """
+CREATE PROCEDURE to_lower
+    @input nvarchar(max)
+AS
+BEGIN
+    select LOWER(@input)
+END
+""",
+            )
+    
+    # This should create a sproc with a return value.
+    def _retval_setup(self, cur):
+        self._try_run2(cur,
+            """IF OBJECT_ID(N'[dbo].[add_one]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[add_one]""",
+            """
+CREATE PROCEDURE add_one (@input int)
+AS
+BEGIN
+    return @input+1
+END
+""",
+            )
+
+    def test_retval(self):
+        with self._connect() as con:
+            cur = con.cursor()
+            self._retval_setup(cur)
+            values = cur.callproc('add_one',(1,))
+            self.assertEqual(values[0], 1, 'input parameter should be left unchanged: %s' % (values[0],))
+            
+            self.assertEqual(cur.description, None,"No resultset was expected.")
+            self.assertEqual(cur.return_value, 2, "Invalid return value: %s" % (cur.return_value,))
+
+    # This should create a sproc with an output parameter.
+    def _outparam_setup(self, cur):
+        self._try_run2(cur,
+            """IF OBJECT_ID(N'[dbo].[add_one_out]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[add_one_out]""",
+            """
+CREATE PROCEDURE add_one_out (@input int, @output int OUTPUT)
+AS
+BEGIN
+    SET @output = @input+1
+END
+""",
+            )
+
+    def test_outparam(self):
+        with self._connect() as con:
+            cur = con.cursor()
+            self._outparam_setup(cur)
+            values = cur.callproc('add_one_out',(1, pytds.output(None, 1)))
+            self.assertEqual(len(values), 2, 'expected 2 parameters')
+            self.assertEqual(values[0], 1, 'input parameter should be unchanged')
+            self.assertEqual(values[1], 2, 'output parameter should get new values')
+    
+    # Don't need setoutputsize tests.
+    def test_setoutputsize(self): 
+        pass
+        
+    def help_nextset_setUp(self,cur):
+        self._try_run2(cur,
+            """IF OBJECT_ID(N'[dbo].[deleteme]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[deleteme]""",
+            """
+create procedure deleteme
+as
+begin
+    select count(*) from %sbooze
+    select name from %sbooze
+end
+""" % (self.table_prefix, self.table_prefix),
+            )
+
+    def help_nextset_tearDown(self, cur):
+        cur.execute("drop procedure deleteme")
+        
+    def test_ExceptionsAsConnectionAttributes(self):
+        pass
+        
+    def test_select_decimal_zero(self):
+        with self._connect() as con:
+            expected = (
+                Decimal('0.00'),
+                Decimal('0.0'),
+                Decimal('-0.00'))
+            
+            cur = con.cursor()
+            cur.execute("SELECT %s as A, %s as B, %s as C", expected)
+                
+            result = cur.fetchall()
+            self.assertEqual(result[0], expected)

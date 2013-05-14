@@ -226,16 +226,19 @@ class DatabaseAPI20Test(unittest.TestCase):
         # driver author who is using this test suite, so it is enabled
         # by default.
         con = self._connect()
-        drv = self.driver
-        self.assertTrue(con.Warning is drv.Warning)
-        self.assertTrue(con.Error is drv.Error)
-        self.assertTrue(con.InterfaceError is drv.InterfaceError)
-        self.assertTrue(con.DatabaseError is drv.DatabaseError)
-        self.assertTrue(con.OperationalError is drv.OperationalError)
-        self.assertTrue(con.IntegrityError is drv.IntegrityError)
-        self.assertTrue(con.InternalError is drv.InternalError)
-        self.assertTrue(con.ProgrammingError is drv.ProgrammingError)
-        self.assertTrue(con.NotSupportedError is drv.NotSupportedError)
+        try:
+            drv = self.driver
+            self.assertTrue(con.Warning is drv.Warning)
+            self.assertTrue(con.Error is drv.Error)
+            self.assertTrue(con.InterfaceError is drv.InterfaceError)
+            self.assertTrue(con.DatabaseError is drv.DatabaseError)
+            self.assertTrue(con.OperationalError is drv.OperationalError)
+            self.assertTrue(con.IntegrityError is drv.IntegrityError)
+            self.assertTrue(con.InternalError is drv.InternalError)
+            self.assertTrue(con.ProgrammingError is drv.ProgrammingError)
+            self.assertTrue(con.NotSupportedError is drv.NotSupportedError)
+        finally:
+            con.close()
 
 
     def test_commit(self):
@@ -248,13 +251,16 @@ class DatabaseAPI20Test(unittest.TestCase):
 
     def test_rollback(self):
         con = self._connect()
-        # If rollback is defined, it should either work or throw
-        # the documented exception
-        if hasattr(con,'rollback'):
-            try:
-                con.rollback()
-            except self.driver.NotSupportedError:
-                pass
+        try:
+            # If rollback is defined, it should either work or throw
+            # the documented exception
+            if hasattr(con,'rollback'):
+                try:
+                    con.rollback()
+                except self.driver.NotSupportedError:
+                    pass
+        finally:
+            con.close()
     
     def test_cursor(self):
         con = self._connect()
