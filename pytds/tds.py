@@ -2261,9 +2261,7 @@ class _TdsSession(object):
         self.res_info = None
         self.in_cancel = False
         self.wire_mtx = None
-        self.current_results = None
         self.param_info = None
-        self.cur_cursor = None
         self.has_status = False
         self._transport = transport
         self._reader = _TdsReader(self)
@@ -2339,22 +2337,13 @@ class _TdsSession(object):
             #logger.debug("no meta data")
             return
 
-        self.res_info = None
         self.param_info = None
         self.has_status = False
         self.ret_status = False
-        self.current_results = None
         self.rows_affected = TDS_NO_COUNT
         self.more_rows = True
         self.row = [None] * num_cols
-
-        self.current_results = info = _Results()
-        if self.cur_cursor:
-            self.cur_cursor.res_info = info
-            #logger.debug("set current_results to cursor->res_info")
-        else:
-            self.res_info = info
-            #logger.debug("set current_results ({0} column{1}) to tds->res_info".format(num_cols, ('' if num_cols == 1 else "s")))
+        self.res_info = info = _Results()
 
         #
         # loop through the columns populating COLINFO struct from
@@ -2460,36 +2449,20 @@ class _TdsSession(object):
             r.unget_byte()
 
         # special case
-        if marker == TDS_EED_TOKEN and self.cur_dyn and self.is_mssql() and msg['msgno'] == 2782:
-            self.cur_dyn.emulated = 1
-        elif marker == TDS_INFO_TOKEN and msg['msgno'] == 16954 and \
-                self.is_mssql() and self.internal_sp_called == TDS_SP_CURSOROPEN and\
-                self.cur_cursor:
-                    # here mssql say "Executing SQL directly; no cursor." opening cursor
-                        pass
-        else:
-            # EED can be followed to PARAMFMT/PARAMS, do not store it in dynamic
-            self.cur_dyn = None
         self.messages.append(msg)
 
     def process_row(self):
         r = self._reader
-        info = self.current_results
-        #if not info:
-        #    raise Exception('TDS_FAIL')
-
-        #assert len(info.columns) > 0
-
+        info = self.res_info
         info.row_count += 1
         for i, curcol in enumerate(info.columns):
-            #logger.debug("process_row(): reading column %d" % i)
             self.row[i] = curcol.type.read(r)
 
     # NBC=null bitmap compression row
     # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
     def process_nbcrow(self):
         r = self._reader
-        info = self.current_results
+        info = self.res_info
         if not info:
             self.bad_stream('got row without info')
         assert len(info.columns) > 0
@@ -2529,8 +2502,6 @@ class _TdsSession(object):
         #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
         if self.res_info:
             self.res_info.more_results = more_results
-            if not self.current_results:
-                self.current_results = self.res_info
         rows_affected = r.get_int8() if IS_TDS72_PLUS(self) else r.get_int()
         #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
         if was_cancelled or (not more_results and not self.in_cancel):
@@ -2778,7 +2749,6 @@ class _TdsSession(object):
         if self.state == TDS_IDLE:
             return
         if not self.in_cancel:
-            self.res_info = None
             self._put_cancel()
         self.process_cancel()
 
@@ -2786,9 +2756,9 @@ class _TdsSession(object):
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()
+        self.res_info = None
+        w = self._writer
         with self.state_context(TDS_QUERYING):
-            self.cur_dyn = None
-            w = self._writer
             w.begin_packet(TDS_RPC)
             self._START_QUERY()
             if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
@@ -2851,17 +2821,16 @@ class _TdsSession(object):
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
-            self.set_state(TDS_QUERYING)
-
             w = self._writer
-            w.begin_packet(TDS7_TRANS)
-            self._start_query()
-            w.pack(self._begin_tran_struct_72,
-                   5,  # TM_BEGIN_XACT
-                   isolation_level,
-                   0,  # new transaction name
-                   )
-            self.query_flush_packet()
+            with self.state_context(TDS_QUERYING):
+                w.begin_packet(TDS7_TRANS)
+                self._start_query()
+                w.pack(self._begin_tran_struct_72,
+                    5,  # TM_BEGIN_XACT
+                    isolation_level,
+                    0,  # new transaction name
+                    )
+                self.query_flush_packet()
         else:
             self.submit_plain_query("BEGIN TRANSACTION")
 
@@ -2877,25 +2846,24 @@ class _TdsSession(object):
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
-            self.set_state(TDS_QUERYING)
-
             w = self._writer
-            w.begin_packet(TDS7_TRANS)
-            self._start_query()
-            flags = 0
-            if cont:
-                flags |= 1
-            w.pack(self._commit_rollback_tran_struct72_hdr,
-                   8,  # TM_ROLLBACK_XACT
-                   0,  # transaction name
-                   flags,
-                   )
-            if cont:
-                w.pack(self._continue_tran_struct72,
-                       isolation_level,
-                       0,  # new transaction name
-                       )
-            self.query_flush_packet()
+            with self.state_context(TDS_QUERYING):
+                w.begin_packet(TDS7_TRANS)
+                self._start_query()
+                flags = 0
+                if cont:
+                    flags |= 1
+                w.pack(self._commit_rollback_tran_struct72_hdr,
+                    8,  # TM_ROLLBACK_XACT
+                    0,  # transaction name
+                    flags,
+                    )
+                if cont:
+                    w.pack(self._continue_tran_struct72,
+                        isolation_level,
+                        0,  # new transaction name
+                        )
+                self.query_flush_packet()
         else:
             self.submit_plain_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
 
@@ -2908,25 +2876,24 @@ class _TdsSession(object):
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
-            self.set_state(TDS_QUERYING)
-
             w = self._writer
-            w.begin_packet(TDS7_TRANS)
-            self._start_query()
-            flags = 0
-            if cont:
-                flags |= 1
-            w.pack(self._commit_rollback_tran_struct72_hdr,
-                   7,  # TM_COMMIT_XACT
-                   0,  # transaction name
-                   flags,
-                   )
-            if cont:
-                w.pack(self._continue_tran_struct72,
-                       isolation_level,
-                       0,  # new transaction name
-                       )
-            self.query_flush_packet()
+            with self.state_context(TDS_QUERYING):
+                w.begin_packet(TDS7_TRANS)
+                self._start_query()
+                flags = 0
+                if cont:
+                    flags |= 1
+                w.pack(self._commit_rollback_tran_struct72_hdr,
+                    7,  # TM_COMMIT_XACT
+                    0,  # transaction name
+                    flags,
+                    )
+                if cont:
+                    w.pack(self._continue_tran_struct72,
+                        isolation_level,
+                        0,  # new transaction name
+                        )
+                self.query_flush_packet()
         else:
             self.submit_plain_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
 
