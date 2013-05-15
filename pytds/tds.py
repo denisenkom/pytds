@@ -16,7 +16,7 @@ except:
     encryption_supported = False
 else:
     encryption_supported = True
-from .collate import ucs2_codec, Collation, lcid2charset
+from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 
 logger = logging.getLogger()
 
@@ -175,6 +175,7 @@ TDS_SP_PREPEXECRPC = 14
 TDS_SP_UNPREPARE = 15
 
 # Flags returned in TDS_DONE token
+TDS_DONE_FINAL = 0
 TDS_DONE_MORE_RESULTS = 0x01  # more results follow
 TDS_DONE_ERROR = 0x02  # error occurred
 TDS_DONE_INXACT = 0x04  # transaction in progress
@@ -294,7 +295,6 @@ _utc = tzutc()
 
 _header = struct.Struct('>BBHHBx')
 _byte = struct.Struct('B')
-_tinyint = struct.Struct('b')
 _smallint_le = struct.Struct('<h')
 _smallint_be = struct.Struct('>h')
 _usmallint_le = struct.Struct('<H')
@@ -595,9 +595,6 @@ class _TdsReader(object):
     def get_byte(self):
         return self.unpack(_byte)[0]
 
-    def get_tinyint(self):
-        return self.unpack(_tinyint)[0]
-
     def get_smallint(self):
         return self.unpack(_smallint_le)[0]
 
@@ -726,6 +723,9 @@ class _TdsWriter(object):
     def put_int8(self, value):
         self.pack(_int8_le, value)
 
+    def put_uint8(self, value):
+        self.pack(_uint8_le, value)
+
     def put_collation(self, collation):
         self.write(collation.pack())
 
@@ -804,7 +804,7 @@ class Bit(BaseType):
         return cls.instance
 
     def write_info(self, w):
-        w.put_byte(1)
+        pass
 
     def write(self, w, value):
         w.put_byte(1 if value else 0)
@@ -941,7 +941,7 @@ class IntN(BaseType):
         }
 
     _struct = {
-        1: struct.Struct('b'),
+        1: struct.Struct('B'),
         2: struct.Struct('<h'),
         4: struct.Struct('<l'),
         8: struct.Struct('<q'),
@@ -1058,10 +1058,10 @@ class FloatN(BaseType):
 
     def write(self, w, val):
         if val is None:
-            w.put_byte(-1)
+            w.put_byte(0)
         else:
-            w.put_byte(8)
-            w.pack(_flt8_struct, val)
+            w.put_byte(self._size)
+            self._subtype[self._size].write(w, val)
 
     def read(self, r):
         size = r.get_byte()
@@ -1202,41 +1202,41 @@ class NVarChar70(BaseType):
 
     @classmethod
     def from_stream(cls, r):
-        size = r.get_smallint()
+        size = r.get_usmallint()
         return cls(size)
 
     def get_declaration(self):
         return 'NVARCHAR({})'.format(self._size)
 
     def write_info(self, w):
-        w.put_smallint(self._size * 2)
+        w.put_usmallint(self._size * 2)
         #w.put_smallint(self._size)
 
     def write(self, w, val):
         if val is None:
-            w.put_smallint(-1)
+            w.put_usmallint(0xffff)
         else:
             if isinstance(val, bytes):
                 val = val.decode('utf8')
-            w.put_smallint(len(val) * 2)
+            w.put_usmallint(len(val) * 2)
             #w.put_smallint(len(val))
             w.write_ucs2(val)
 
     def read(self, r):
-        size = r.get_smallint()
-        if size < 0:
+        size = r.get_usmallint()
+        if size == 0xffff:
             return None
         return r.read_str(size, ucs2_codec)
 
 
 class NVarChar71(NVarChar70):
-    def __init__(self, size, collation):
+    def __init__(self, size, collation=raw_collation):
         super(NVarChar71, self).__init__(size)
         self._collation = collation
 
     @classmethod
     def from_stream(cls, r):
-        size = r.get_smallint()
+        size = r.get_usmallint()
         collation = r.get_collation()
         return cls(size, collation)
 
@@ -1246,51 +1246,52 @@ class NVarChar71(NVarChar70):
 
 
 class NVarChar72(NVarChar71):
-    def __init__(self, size, collation):
+    def __init__(self, size, collation=raw_collation):
         super(NVarChar72, self).__init__(size, collation)
-        if size == -1:
+        if size == 0xffff:
             self.read = self._read_max
             self.write = self._write_max
             self.write_info = self._write_info_max
 
     @classmethod
     def from_stream(cls, r):
-        size = r.get_smallint()
+        size = r.get_usmallint()
         collation = r.get_collation()
         return cls(size, collation)
 
     def get_declaration(self):
-        if self._size == -1:
+        if self._size == 0xffff:
             return 'NVARCHAR(MAX)'
         else:
             return super(NVarChar72, self).get_declaration()
 
     def _write_info_max(self, w):
-        w.put_smallint(-1)
+        w.put_usmallint(0xffff)
         w.put_collation(self._collation)
 
     def _write_max(self, w, val):
         if val is None:
-            w.put_int8(-1)
+            w.put_uint8(0xffffffffffffffff)
         else:
             if isinstance(val, bytes):
                 val = val.decode('utf8')
-            w.put_int8(len(val) * 2)
-            w.put_int(len(val) * 2)
+            w.put_uint8(len(val) * 2)
+            w.put_uint(len(val) * 2)
             w.write_ucs2(val)
-            w.put_int(0)
+            w.put_uint(0)
 
     def _read_max(self, r):
-        size = r.get_int8()
-        if size == -1:
+        size = r.get_uint8()
+        if size == 0xffffffffffffffff:
             return None
         chunks = []
         decoder = ucs2_codec.incrementaldecoder()
         while True:
-            chunk_len = r.get_int()
+            chunk_len = r.get_uint()
             if chunk_len <= 0:
                 chunks.append(decoder.decode(b'', True))
-                return ''.join(chunks)
+                res = ''.join(chunks)
+                return res
             left = chunk_len
             while left:
                 buf = r.read(left)
@@ -1303,7 +1304,7 @@ class Xml(NVarChar72):
     type = SYBMSXML
 
     def __init__(self, schema):
-        super(Xml, self).__init__(-1, None)
+        super(Xml, self).__init__(0xffff, None)
         self._schema = schema
 
     @classmethod
@@ -1478,25 +1479,25 @@ class VarBinary(BaseType):
 
     @classmethod
     def from_stream(cls, r):
-        size = r.get_smallint()
+        size = r.get_usmallint()
         return cls(size)
 
     def get_declaration(self):
         return 'VARBINARY({})'.format(self._size)
 
     def write_info(self, w):
-        w.put_smallint(self._size)
+        w.put_usmallint(self._size)
 
     def write(self, w, val):
         if val is None:
-            w.put_smallint(-1)
+            w.put_usmallint(0xffff)
         else:
-            w.put_smallint(len(val))
+            w.put_usmallint(len(val))
             w.write(val)
 
     def read(self, r):
-        size = r.get_smallint()
-        if size == -1:
+        size = r.get_usmallint()
+        if size == 0xffff:
             return None
         return readall(r, size)
 
@@ -1504,7 +1505,7 @@ class VarBinary(BaseType):
 class VarBinary72(VarBinary):
     def __init__(self, size):
         self._size = size
-        if size == -1:
+        if size == 0xffff:
             self.read = self._read_max
             self.write = self._write_max
             self.write_info = self._write_info_max
@@ -1514,25 +1515,26 @@ class VarBinary72(VarBinary):
         return 'VARBINARY(MAX)'
 
     def _write_info_max(self, w):
-        w.put_smallint(-1)
+        w.put_usmallint(0xffff)
 
     def _write_max(self, w, val):
         if val is None:
-            w.put_int8(-1)
+            w.put_uint8(0xffffffffffffffff)
         else:
-            w.put_int8(len(val))
-            w.put_int(len(val))
-            w.write(val)
-            w.put_int(0)
+            w.put_uint8(len(val))
+            if val:
+                w.put_uint(len(val))
+                w.write(val)
+            w.put_uint(0)
 
     def _read_max(self, r):
-        size = r.get_int8()
-        if size == -1:
+        size = r.get_uint8()
+        if size == 0xffffffffffffffff:
             return None
         chunks = []
         while True:
-            chunk_len = r.get_int()
-            if chunk_len <= 0:
+            chunk_len = r.get_uint()
+            if chunk_len == 0:
                 return b''.join(chunks)
             left = chunk_len
             while left:
@@ -1567,6 +1569,11 @@ class Image(BaseType):
         else:
             return None
 
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(0)
+            return
+
 
 class Image72(Image):
     def __init__(self, size, parts):
@@ -1579,8 +1586,15 @@ class Image72(Image):
         num_parts = r.get_byte()
         parts = []
         for _ in range(num_parts):
-            parts.append(r.read_ucs2(r.get_smallint()))
+            parts.append(r.read_ucs2(r.get_usmallint()))
         return Image72(size, parts)
+
+    def write_info(self, w):
+        w.put_int(self._size)
+        w.put_byte(len(self._parts))
+        for part in self._parts:
+            w.put_usmallint(len(part))
+            w.write_ucs2(part)
 
 
 class BaseDateTime(BaseType):
@@ -1593,21 +1607,27 @@ class SmallDateTime(BaseDateTime):
     type = SYBDATETIME4
 
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
-    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+    _max_date = datetime(2079, 6, 6, 23, 59, 0)
     _struct = struct.Struct('<HH')
 
     @classmethod
     def from_stream(cls, r):
-        return cls()
+        return cls.instance
 
     def get_declaration(self):
         return 'SMALLDATETIME'
 
     def write_info(self, w):
-        w.put_byte(4)
+        pass
 
     def write(self, w, val):
-        raise NotImplementedError
+        if val.tzinfo:
+            if not w.session.use_tz:
+                raise DataError('Timezone-aware datetime is used without specifying use_tz')
+            val = val.astimezone(w.session.use_tz).replace(tzinfo=None)
+        days = (val - self._base_date).days
+        minutes = val.hour * 60 + val.minute
+        w.pack(self._struct, days, minutes)
 
     def read(self, r):
         days, minutes = r.unpack(self._struct)
@@ -1626,13 +1646,13 @@ class DateTime(BaseDateTime):
 
     @classmethod
     def from_stream(cls, r):
-        return cls()
+        return cls.instance
 
     def get_declaration(self):
         return 'DATETIME'
 
     def write_info(self, w):
-        w.put_byte(8)
+        pass
 
     def write(self, w, val):
         if val.tzinfo:
@@ -1678,6 +1698,7 @@ class DateTimeN(BaseType):
     def __init__(self, size):
         assert size in (4, 8)
         self._size = size
+        self._subtype = {4: SmallDateTime.instance, 8: DateTime.instance}[size]
 
     @classmethod
     def from_stream(self, r):
@@ -1687,10 +1708,7 @@ class DateTimeN(BaseType):
         return DateTimeN(size)
 
     def get_declaration(self):
-        if self._size == 8:
-            return 'DATETIME'
-        elif self._size == 4:
-            return 'SMALLDATETIME'
+        return self._subtype.get_declaration()
 
     def write_info(self, w):
         w.put_byte(self._size)
@@ -1699,22 +1717,16 @@ class DateTimeN(BaseType):
         if val is None:
             w.put_byte(0)
         else:
-            w.put_byte(8)
-            DateTime.instance.write(w, val)
-            #w.write(DateTime.encode(val))
+            w.put_byte(self._size)
+            self._subtype.write(w, val)
 
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
-        if size == 4:
-            days, minutes = r.unpack(SmallDateTime._struct)
-            return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
-        elif size == 8:
-            days, time = r.unpack(DateTime._struct)
-            return _applytz(DateTime.decode(days, time), r.session.use_tz)
-        else:
-            raise InterfaceError('Invalid datetimn size')
+        if size != self._size:
+            r.bad_stream('Received an invalid column length from server')
+        return self._subtype.read(r)
 
 
 class BaseDateTime73(BaseType):
@@ -1763,6 +1775,9 @@ class BaseDateTime73(BaseType):
 
 class MsDate(BaseDateTime73):
     type = SYBMSDATE
+
+    MIN = date(1, 1, 1)
+    MAX = date(9999, 12, 31)
 
     @classmethod
     def from_stream(cls, r):
@@ -1976,6 +1991,9 @@ class MsDecimal(BaseType):
         w.pack(self._info_struct, self._size, self._prec, self._scale)
 
     def write(self, w, value):
+        if value is None:
+            w.put_byte(0)
+            return
         if not isinstance(value, Decimal):
             value = Decimal(value)
         value = value.normalize()
@@ -2025,8 +2043,19 @@ class Money4(BaseType):
     def from_stream(cls, r):
         return cls.instance
 
+    def write_info(self, w):
+        pass
+
+    def get_declaration(self):
+        return 'SMALLMONEY'
+
     def read(self, r):
         return Decimal(r.get_int()) / 10000
+
+    def write(self, w, val):
+        val = int(val * 10000)
+        w.put_int(val)
+
 Money4.instance = Money4()
 
 
@@ -2038,6 +2067,12 @@ class Money8(BaseType):
     def from_stream(cls, r):
         return cls.instance
 
+    def write_info(self, w):
+        pass
+
+    def get_declaration(self):
+        return 'MONEY'
+
     def get_typeid(self):
         return self.type
 
@@ -2045,37 +2080,59 @@ class Money8(BaseType):
         hi, lo = r.unpack(self._struct)
         val = hi * (2 ** 32) + lo
         return Decimal(val) / 10000
+
+    def write(self, w, val):
+        val = val * 10000
+        hi = int(val // (2 ** 32))
+        lo = int(val % (2 ** 32))
+        w.pack(self._struct, hi, lo)
+
 Money8.instance = Money8()
 
 
 class MoneyN(BaseType):
     type = SYBMONEYN
     _subtypes = {
-        4: Money4(),
-        8: Money8(),
+        4: Money4.instance,
+        8: Money8.instance,
         }
 
     def __init__(self, size):
+        assert size in self._subtypes.keys()
         self._size = size
         self._typeid = self._subtypes[size].type
+        self._subtype = self._subtypes[size]
 
     def get_typeid(self):
         return self._typeid
 
+    def get_declaration(self):
+        return self._subtype.get_declaration()
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_byte()
-        if size not in (4, 8):
+        if size not in cls._subtypes.keys():
             raise InterfaceError('Invalid SYBMONEYN size', size)
         return cls(size)
+
+    def write_info(self, w):
+        w.put_byte(self._size)
 
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
-        if size not in (4, 8):
-            raise InterfaceError('Invalid SYBMONEYN size', size)
-        return self._subtypes[size].read(r)
+        if size != self._size:
+            raise r.session.bad_stream('Invalid SYBMONEYN size', size)
+        return self._subtype.read(r)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(0)
+            return
+        w.put_byte(self._size)
+        self._subtype.write(w, val)
 
 
 class MsUnique(BaseType):
@@ -2096,7 +2153,7 @@ class MsUnique(BaseType):
 
     def write(self, w, value):
         if value is None:
-            w.put_byte(-1)
+            w.put_byte(0)
         else:
             w.put_byte(16)
             w.write(value.bytes_le)
@@ -2176,10 +2233,16 @@ class Variant(BaseType):
     def __init__(self, size):
         self._size = size
 
+    def get_declaration(self):
+        return 'SQL_VARIANT'
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
         return Variant(size)
+
+    def write_info(self, w):
+        w.put_int(self._size)
 
     def read(self, r):
         size = r.get_int()
@@ -2192,6 +2255,11 @@ class Variant(BaseType):
         if not type_factory:
             r.session.bad_stream('Variant type invalid', type_id)
         return type_factory(r, size - prop_bytes - 2)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int(0)
+            return
 
 
 _type_map = {
@@ -2317,9 +2385,9 @@ class _TdsSession(object):
         # User defined data type of the column
         curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(self) else r.get_usmallint()
         curcol.column_flags = r.get_usmallint()  # Flags
-        curcol.column_nullable = curcol.column_flags & 0x01
-        curcol.column_writeable = (curcol.column_flags & 0x08) > 0
-        curcol.column_identity = (curcol.column_flags & 0x10) > 0
+        curcol.column_nullable = curcol.column_flags & Column.fNullable
+        curcol.column_writeable = (curcol.column_flags & Column.fReadWrite) > 0
+        curcol.column_identity = (curcol.column_flags & Column.fIdentity) > 0
         type_id = r.get_byte()
         curcol.type = self.get_type_factory(type_id).from_stream(r)
 
@@ -2352,7 +2420,7 @@ class _TdsSession(object):
         #logger.debug("setting up {0} columns".format(num_cols))
         header_tuple = []
         for col in range(num_cols):
-            curcol = _Column()
+            curcol = Column()
             info.columns.append(curcol)
             self.get_type_info(curcol)
 
@@ -2376,7 +2444,7 @@ class _TdsSession(object):
             ordinal = self._out_params_indexes[self.return_value_index]
         name = r.read_ucs2(r.get_byte())
         r.get_byte()  # 1 - OUTPUT of sp, 2 - result of udf
-        param = _Column()
+        param = Column()
         param.column_name = name
         self.get_type_info(param)
         param.value = param.type.read(r)
@@ -2655,7 +2723,7 @@ class _TdsSession(object):
         self._writer.flush()
 
     def make_param(self, name, value):
-        column = _Column()
+        column = Column()
         column.column_name = name
         column.flags = 0
         if isinstance(value, output):
@@ -2687,7 +2755,7 @@ class _TdsSession(object):
             size = len(value)
             if size > 8000:
                 if IS_TDS72_PLUS(self):
-                    column.type = VarBinary72(-1)
+                    column.type = VarBinary72(0xffff)
                 else:
                     column.type = Image()
             else:
@@ -2698,7 +2766,7 @@ class _TdsSession(object):
                 size = 1
             if size > 4000:
                 if IS_TDS72_PLUS(self):
-                    column.type = NVarChar72(-1, self.conn.collation)
+                    column.type = NVarChar72(0xffff, self.conn.collation)
                 elif IS_TDS71_PLUS(self):
                     column.type = NText71(-1, '', self.conn.collation)
                 else:
@@ -2739,7 +2807,7 @@ class _TdsSession(object):
         else:
             params = []
             for parameter in parameters:
-                if isinstance(parameter, _Column):
+                if isinstance(parameter, Column):
                     params.append(parameter)
                 else:
                     params.append(self.make_param('', parameter))
@@ -2804,6 +2872,38 @@ class _TdsSession(object):
             self._START_QUERY()
             w.write_ucs2(operation)
             self.query_flush_packet()
+
+    def submit_bulk(self, metadata, rows):
+        num_cols = len(metadata)
+        w = self._writer
+        with self.state_context(TDS_QUERYING):
+            w.begin_packet(TDS_BULK)
+            w.put_byte(TDS7_RESULT_TOKEN)
+            w.put_usmallint(num_cols)
+            for col in metadata:
+                if IS_TDS72_PLUS(self):
+                    w.put_uint(col.column_usertype)
+                else:
+                    w.put_usmallint(col.column_usertype)
+                w.put_usmallint(col.column_flags)
+                w.put_byte(col.type.type)
+                col.type.write_info(w)
+                w.put_byte(len(col.column_name))
+                w.write_ucs2(col.column_name)
+            for row in rows:
+                w.put_byte(TDS_ROW_TOKEN)
+                for i, col in enumerate(metadata):
+                    col.type.write(w, row[i])
+
+            w.put_byte(TDS_DONE_TOKEN)
+            w.put_usmallint(TDS_DONE_FINAL)
+            w.put_usmallint(0)  # curcmd
+            if IS_TDS72_PLUS(self):
+                w.put_int8(0)
+            else:
+                w.put_int(0)
+            self.query_flush_packet()
+
 
     def _put_cancel(self):
         self._writer.begin_packet(TDS_CANCEL)
@@ -3441,15 +3541,72 @@ class _TdsSocket(object):
             self.authentication.close()
             self.authentication = None
 
+    def NVarChar(self, size, collation=raw_collation):
+        if IS_TDS72_PLUS(self):
+            return NVarChar72(size, collation)
+        elif IS_TDS71_PLUS(self):
+            return NVarChar71(size, collation)
+        else:
+            return NVarChar70(size)
 
-class _Column(object):
-    def __init__(self):
+    def VarBinary(self, size):
+        if IS_TDS72_PLUS(self):
+            return VarBinary72(size)
+        else:
+            return VarBinary(size)
+
+    def Image(self, size, parts):
+        if IS_TDS72_PLUS(self):
+            return Image72(size, parts)
+        else:
+            return Image(size, parts[0])
+
+    SmallDateTime = SmallDateTime.instance
+    DateTime = DateTime.instance
+    DateTimeN = DateTimeN
+    Date = MsDate.instance
+    Time = MsTime
+    DateTime2 = DateTime2
+    DateTimeOffset = DateTimeOffset
+    Decimal = MsDecimal
+    SmallMoney = Money4.instance
+    Money = Money8.instance
+    MoneyN = MoneyN
+    UniqueIdentifier = MsUnique.instance
+    SqlVariant = Variant
+
+    def long_binary_type(self):
+        if IS_TDS72_PLUS(self):
+            return VarBinary72(0xffff)
+        else:
+            return Image()
+
+    def long_string_type(self, collation=raw_collation):
+        if IS_TDS72_PLUS(self):
+            return NVarChar72(0xffff, collation)
+        elif IS_TDS71_PLUS(self):
+            return NText71(-1, '', collation)
+        else:
+            return NText()
+
+
+class Column(object):
+    fNullable = 1
+    fCaseSen = 2
+    fReadWrite = 8
+    fIdentity = 0x10
+    fComputed = 0x20
+
+    def __init__(self, name='', type=None, flags=0):
         self.char_codec = None
-        self.column_name = ''
+        self.column_name = name
         self.value = None
+        self.column_usertype = 0
+        self.column_flags = flags
+        self.type = type
 
     def __repr__(self):
-        return '<_Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
+        return '<Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
 
 
 class _Results(object):

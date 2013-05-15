@@ -1,5 +1,6 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
+from six import StringIO
 import unittest
 import sys
 from decimal import Decimal, getcontext
@@ -16,7 +17,10 @@ from pytds import (
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
     IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
-from pytds.tds import _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE
+from pytds.tds import (
+    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, Bit, Int, SmallInt,
+    NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation,
+    )
 from pytds.dbapi import _TdsLogin
 from . import dbapi20
 import pytds
@@ -186,6 +190,101 @@ class DbTests(DbTestCase):
             self.conn.autocommit = True
             cur.execute('insert into test_autocommit(field) values(1)')
             self.assertEqual(self.conn._trancount(), 0)
+
+    def _test_bulk_type(self, typ, value):
+        with self.conn.cursor() as cur:
+            cur.execute('create table bulk_insert_table_ll(c1 {})'.format(typ.get_declaration()))
+            cur._session.submit_plain_query('insert bulk bulk_insert_table_ll (c1 {})'.format(typ.get_declaration()))
+            cur._session.process_simple_request()
+            col1 = Column('c1', typ, flags=Column.fNullable)
+            metadata = [col1]
+            cur._session.submit_bulk(metadata, [(value,)])
+            cur._session.process_simple_request()
+        with self.conn.cursor() as cur:
+            cur.execute('select c1 from bulk_insert_table_ll')
+            self.assertTupleEqual(cur.fetchone(), (value,))
+            self.assertIs(cur.fetchone(), None)
+            cur.execute('drop table bulk_insert_table_ll')
+
+    def test_bulk_insert_low_level(self):
+        self._test_bulk_type(Bit.instance, True)
+        self._test_bulk_type(Bit.instance, False)
+        self._test_bulk_type(Int.instance, 2 ** 31 - 1)
+        self._test_bulk_type(Int.instance, -2 ** 31)
+        self._test_bulk_type(SmallInt.instance, -2 ** 15)
+        self._test_bulk_type(SmallInt.instance, 2 ** 15 - 1)
+        self._test_bulk_type(TinyInt.instance, 255)
+        self._test_bulk_type(TinyInt.instance, 0)
+        self._test_bulk_type(BigInt.instance, 2 ** 63 - 1)
+        self._test_bulk_type(BigInt.instance, -2 ** 63)
+        self._test_bulk_type(IntN(1), 255)
+        self._test_bulk_type(IntN(2), 2 ** 15 - 1)
+        self._test_bulk_type(IntN(4), 2 ** 31 - 1)
+        self._test_bulk_type(IntN(8), 2 ** 63 - 1)
+        self._test_bulk_type(IntN(4), None)
+        self._test_bulk_type(Real.instance, 0.25)
+        self._test_bulk_type(Float.instance, 0.25)
+        self._test_bulk_type(FloatN(4), 0.25)
+        self._test_bulk_type(FloatN(8), 0.25)
+        self._test_bulk_type(FloatN(4), None)
+        self._test_bulk_type(self.conn._conn.NVarChar(10), u'')
+        self._test_bulk_type(self.conn._conn.NVarChar(10), u'testtest12')
+        self._test_bulk_type(self.conn._conn.NVarChar(10), None)
+        self._test_bulk_type(self.conn._conn.NVarChar(4000), u'x' * 4000)
+        self._test_bulk_type(self.conn._conn.VarBinary(10), b'')
+        self._test_bulk_type(self.conn._conn.VarBinary(10), b'testtest12')
+        self._test_bulk_type(self.conn._conn.VarBinary(10), None)
+        self._test_bulk_type(self.conn._conn.VarBinary(8000), b'x' * 8000)
+        self._test_bulk_type(self.conn._conn.SmallDateTime, datetime(1900, 1, 1, 0, 0, 0))
+        self._test_bulk_type(self.conn._conn.SmallDateTime, datetime(2079, 6, 6, 23, 59, 0))
+        self._test_bulk_type(self.conn._conn.DateTime, datetime(1753, 1, 1, 0, 0, 0))
+        self._test_bulk_type(self.conn._conn.DateTime, datetime(9999, 12, 31, 23, 59, 59, 990000))
+        self._test_bulk_type(self.conn._conn.DateTimeN(4), datetime(1900, 1, 1, 0, 0, 0))
+        self._test_bulk_type(self.conn._conn.DateTimeN(8), datetime(9999, 12, 31, 23, 59, 59, 990000))
+        self._test_bulk_type(self.conn._conn.DateTimeN(8), None)
+        self._test_bulk_type(self.conn._conn.Date, date(1, 1, 1))
+        self._test_bulk_type(self.conn._conn.Date, date(9999, 12, 31))
+        self._test_bulk_type(self.conn._conn.Date, None)
+        self._test_bulk_type(self.conn._conn.Time(0), time(0, 0, 0))
+        self._test_bulk_type(self.conn._conn.Time(6), time(23, 59, 59, 999999))
+        self._test_bulk_type(self.conn._conn.Time(0), None)
+        self._test_bulk_type(self.conn._conn.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
+        self._test_bulk_type(self.conn._conn.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
+        self._test_bulk_type(self.conn._conn.DateTime2(0), None)
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset('', 14 * 60)))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset('', -14 * 60)))
+        #self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset('', 14 * 60)))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), None)
+        self._test_bulk_type(self.conn._conn.Decimal(6, 38), Decimal('123.456789'))
+        self._test_bulk_type(self.conn._conn.Decimal(6, 38), None)
+        self._test_bulk_type(self.conn._conn.SmallMoney, Decimal('214748.3647'))
+        self._test_bulk_type(self.conn._conn.SmallMoney, Decimal('-214748.3648'))
+        self._test_bulk_type(self.conn._conn.Money, Decimal('922337203685477.5807'))
+        self._test_bulk_type(self.conn._conn.Money, Decimal('-922337203685477.5808'))
+        self._test_bulk_type(self.conn._conn.MoneyN(4), Decimal('214748.3647'))
+        self._test_bulk_type(self.conn._conn.MoneyN(8), Decimal('922337203685477.5807'))
+        self._test_bulk_type(self.conn._conn.MoneyN(8), None)
+        self._test_bulk_type(self.conn._conn.UniqueIdentifier, None)
+        self._test_bulk_type(self.conn._conn.UniqueIdentifier, uuid.uuid4())
+        self._test_bulk_type(self.conn._conn.SqlVariant(10), None)
+        #self._test_bulk_type(self.conn._conn.SqlVariant(10), 100)
+        self._test_bulk_type(self.conn._conn.long_binary_type(), None)
+        #self._test_bulk_type(self.conn._conn.long_binary_type(), b'')
+        #self._test_bulk_type(self.conn._conn.long_binary_type(), b'testtest12')
+        self._test_bulk_type(self.conn._conn.long_string_type(), None)
+        #self._test_bulk_type(self.conn._conn.long_string_type(), 'test')
+        #self._test_bulk_type(self.conn._conn.Image(10, []), None)
+        #self._test_bulk_type(self.conn._conn.Image(10, ['']), None)
+        #self._test_bulk_type(self.conn._conn.Image(10, ['']), b'test')
+
+    #def test_bulk_insert(self):
+    #    with self.conn.cursor() as cur:
+    #        cur.execute('create table bulk_insert_table(num int, data varchar(100))')
+    #        f = StringIO("42\tfoo\n74\tbar\n")
+    #        cur.copy_to(f, 'bulk_insert_table', columns=('num', 'data'))
+    #        cur.execute('select num, data from bulk_insert_table')
+    #        self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
 
 
 class ParametrizedQueriesTestCase(TestCase):
@@ -420,6 +519,7 @@ class TestVariant(TestCase):
         self._t(val, "cast('{}' as uniqueidentifier)".format(val))
         self._t(True, "cast(1 as bit)")
         self._t(128, "cast(128 as tinyint)")
+        self._t(255, "cast(255 as tinyint)")
         self._t(-32000, "cast(-32000 as smallint)")
         self._t(2000000000, "cast(2000000000 as int)")
         self._t(2000000000000, "cast(2000000000000 as bigint)")
@@ -1230,6 +1330,39 @@ class TestMessages(unittest.TestCase):
             sock._sent,
             b'\x01\x01\x00\x1c\x00\x00\x00\x00' +
             b's\x00e\x00l\x00e\x00c\x00t\x00 \x005\x00*\x006\x00')
+
+    def test_bulk_insert(self):
+        tds = _TdsSocket()
+        tds.tds_version = TDS72
+        tds._main_session = _TdsSession(tds, tds)
+        sock = _FakeSock(b'')
+        tds._sock = sock
+        col1 = Column()
+        col1.column_name = 'c1'
+        col1.type = Bit()
+        col1.column_flags = Column.fNullable | Column.fReadWrite
+        metadata = [col1]
+        tds._main_session.submit_bulk(metadata, [(False,)])
+        self.assertEqual(
+            binascii.hexlify(sock._sent),
+            binascii.hexlify(b'\x07\x01\x00\x26\x00\x00\x00\x00\x81\x01\x00\x00\x00\x00\x00\x09\x002\x02c\x001\x00\xd1\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'),
+            )
+
+    def test_types(self):
+        tds = _TdsSocket()
+        tds.tds_version = TDS72
+        tds._main_session = _TdsSession(tds, tds)
+        sock = _FakeSock(b'')
+        tds._sock = sock
+        w = tds._main_session._writer
+
+        t = NVarChar72(0xffff, Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False, ignore_kana=False, binary=True, binary2=False, version=0))
+        t.write_info(w)
+        self.assertEqual(w._buf[:w._pos], b'\xff\xff\t\x04\x00\x01\x00')
+
+        w._pos = 0
+        t.write(w, 'test')
+        self.assertEqual(w._buf[:w._pos], b'\x08\x00\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
 
 
 class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):

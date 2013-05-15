@@ -267,3 +267,6 @@ class Collation(object):
         return codecs.lookup(self.get_charset())
 
     #TODO: define __repr__ and __unicode__
+
+
+raw_collation = Collation(0, 0, 0, 0, 0, 0, 0, 0, 0)

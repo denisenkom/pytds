@@ -20,7 +20,7 @@ from .tds import (
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
     _TdsSocket, tds7_get_instances, ClosedConnectionError,
-    SP_EXECUTESQL,
+    SP_EXECUTESQL, Column,
     )
 
 logger = logging.getLogger(__name__)
@@ -598,6 +598,40 @@ class _Cursor(six.Iterator):
         This method does nothing, as permitted by DB-API specification.
         """
         pass
+
+    def copy_to(self, file, table_or_view, sep='\t', columns=None,
+            check_constraints=False, fire_triggers=False, keep_nulls=False,
+            kb_per_batch=None, rows_per_batch=None, order=None, tablock=False):
+        import csv
+        reader = csv.reader(file, delimiter=sep)
+        if not columns:
+            self.execute('select top 1 * from [{}] where 1<>1'.format(table_or_view))
+            columns = [col[0] for col in self.description]
+        metadata = [Column(name=col, type=self._session.long_string_type(), flags=Column.fNullable) for col in columns]
+        col_defs = ','.join('{} {}'.format(col.column_name, col.type.get_declaration())
+                            for col in metadata)
+        with_opts = []
+        if check_constraints:
+            with_opts.append('CHECK_CONSTRAINTS')
+        if fire_triggers:
+            with_opts.append('FIRE_TRIGGERS')
+        if keep_nulls:
+            with_opts.append('KEEP_NULLS')
+        if kb_per_batch:
+            with_opts.append('KILOBYTES_PER_BATCH = {}'.format(kb_per_batch))
+        if rows_per_batch:
+            with_opts.append('ROWS_PER_BATCH = {}'.format(rows_per_batch))
+        if order:
+            with_opts.append('ORDER({})'.format(','.join(order)))
+        if tablock:
+            with_opts.append('TABLOCK')
+        with_part = ''
+        if with_opts:
+            with_part = 'WITH ({})'.format(','.join(with_opts))
+        operation = 'INSERT BULK [{}]({}) {}'.format(table_or_view, col_defs, with_part)
+        self.execute(operation)
+        self._session.submit_bulk(metadata, reader)
+        self._session.process_simple_request()
 
 
 class _MarsCursor(_Cursor):
