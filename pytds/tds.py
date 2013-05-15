@@ -811,6 +811,7 @@ class Bit(BaseType):
 
     def read(self, r):
         return bool(r.get_byte())
+
 Bit.instance = Bit()
 
 
@@ -844,6 +845,8 @@ class BitN(BaseType):
         if size != 1:
             raise InterfaceError('Invalid BIT field size', size)
         return bool(r.get_byte())
+
+BitN.instance = BitN()
 
 
 class TinyInt(BaseType):
@@ -2384,10 +2387,10 @@ class _TdsSession(object):
         r = self._reader
         # User defined data type of the column
         curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(self) else r.get_usmallint()
-        curcol.column_flags = r.get_usmallint()  # Flags
-        curcol.column_nullable = curcol.column_flags & Column.fNullable
-        curcol.column_writeable = (curcol.column_flags & Column.fReadWrite) > 0
-        curcol.column_identity = (curcol.column_flags & Column.fIdentity) > 0
+        curcol.flags = r.get_usmallint()  # Flags
+        curcol.column_nullable = curcol.flags & Column.fNullable
+        curcol.column_writeable = (curcol.flags & Column.fReadWrite) > 0
+        curcol.column_identity = (curcol.flags & Column.fIdentity) > 0
         type_id = r.get_byte()
         curcol.type = self.get_type_factory(type_id).from_stream(r)
 
@@ -2723,6 +2726,9 @@ class _TdsSession(object):
         self._writer.flush()
 
     def make_param(self, name, value):
+        if isinstance(value, Column):
+            value.column_name = name
+            return value
         column = Column()
         column.column_name = name
         column.flags = 0
@@ -2807,10 +2813,7 @@ class _TdsSession(object):
         else:
             params = []
             for parameter in parameters:
-                if isinstance(parameter, Column):
-                    params.append(parameter)
-                else:
-                    params.append(self.make_param('', parameter))
+                params.append(self.make_param('', parameter))
             return params
 
     def cancel_if_pending(self):
@@ -2885,7 +2888,7 @@ class _TdsSession(object):
                     w.put_uint(col.column_usertype)
                 else:
                     w.put_usmallint(col.column_usertype)
-                w.put_usmallint(col.column_flags)
+                w.put_usmallint(col.flags)
                 w.put_byte(col.type.type)
                 col.type.write_info(w)
                 w.put_byte(len(col.column_name))
@@ -3561,6 +3564,16 @@ class _TdsSocket(object):
         else:
             return Image(size, parts[0])
 
+    Bit = Bit.instance
+    BitN = BitN.instance
+    TinyInt = TinyInt.instance
+    SmallInt = SmallInt.instance
+    Int = Int.instance
+    BigInt = BigInt.instance
+    IntN = IntN
+    Real = Real.instance
+    Float = Float.instance
+    FloatN = FloatN
     SmallDateTime = SmallDateTime.instance
     DateTime = DateTime.instance
     DateTimeN = DateTimeN
@@ -3597,16 +3610,16 @@ class Column(object):
     fIdentity = 0x10
     fComputed = 0x20
 
-    def __init__(self, name='', type=None, flags=0):
+    def __init__(self, name='', type=None, flags=0, value=None):
         self.char_codec = None
         self.column_name = name
-        self.value = None
         self.column_usertype = 0
-        self.column_flags = flags
+        self.flags = flags
         self.type = type
+        self.value = value
 
     def __repr__(self):
-        return '<Column(name={0}), value={1}>'.format(self.column_name, repr(self.value))
+        return '<Column(name={}, value={}, type={})>'.format(repr(self.column_name), repr(self.value), repr(self.type))
 
 
 class _Results(object):
