@@ -170,6 +170,13 @@ class TestCase2(TestCase):
             cur.execute('')
             self.assertIs(None, cur.description)
 
+    def test_parameters_ll(self):
+        def test_val(typ, val):
+            cur = self.conn.cursor()
+            cur.execute('select %s', (Column(type=val),))
+            self.assertTupleEqual(cur.fetchone(), (val,))
+            self.assertIs(cur.fetchone(), None)
+
     def test_parameters(self):
         def test_val(val):
             cur = self.conn.cursor()
