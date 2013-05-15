@@ -170,6 +170,29 @@ class TestCase2(TestCase):
             cur.execute('')
             self.assertIs(None, cur.description)
 
+    def test_parameters(self):
+        def test_val(val):
+            cur = self.conn.cursor()
+            cur.execute('select %s', (val,))
+            self.assertEqual(cur.fetchall(), [(val,)])
+
+        test_val(u'hello')
+        test_val(123)
+        test_val(-123)
+        test_val(123.12)
+        test_val(-123.12)
+        test_val(datetime(2011, 2, 3, 10, 11, 12, 3000))
+        test_val(Decimal('1234.567'))
+        test_val(Decimal('1234000'))
+        test_val(None)
+        test_val('hello')
+        test_val('')
+        test_val('x' * 5000)
+        test_val(Binary(b'x' * 5000))
+        test_val(2 ** 63 - 1)
+        test_val(False)
+        test_val(True)
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):
@@ -285,31 +308,6 @@ class DbTests(DbTestCase):
     #        cur.copy_to(f, 'bulk_insert_table', columns=('num', 'data'))
     #        cur.execute('select num, data from bulk_insert_table')
     #        self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
-
-
-class ParametrizedQueriesTestCase(TestCase):
-    def _test_val(self, val):
-        cur = self.conn.cursor()
-        cur.execute('select %s', (val,))
-        self.assertEqual(cur.fetchall(), [(val,)])
-
-    def runTest(self):
-        self._test_val(u'hello')
-        self._test_val(123)
-        self._test_val(-123)
-        self._test_val(123.12)
-        self._test_val(-123.12)
-        self._test_val(datetime(2011, 2, 3, 10, 11, 12, 3000))
-        self._test_val(Decimal('1234.567'))
-        self._test_val(Decimal('1234000'))
-        self._test_val(None)
-        self._test_val('hello')
-        self._test_val('')
-        self._test_val('x' * 5000)
-        self._test_val(Binary(b'x' * 5000))
-        self._test_val(2 ** 63 - 1)
-        self._test_val(False)
-        self._test_val(True)
 
 
 class TableTestCase(DbTestCase):
@@ -1369,10 +1367,10 @@ class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
     driver = pytds
     connect_args = settings.CONNECT_ARGS
     connect_kw_args = settings.CONNECT_KWARGS
-    
+
 #    def _connect(self):
 #        return connection
-    
+
     def _try_run(self, *args):
         with self._connect() as con:
             with con.cursor() as cur:
@@ -1382,24 +1380,26 @@ class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
     def _try_run2(self, cur, *args):
         for arg in args:
             cur.execute(arg)
-    
+
     # This should create the "lower" sproc.
     def _callproc_setup(self, cur):
-        self._try_run2(cur,
+        self._try_run2(
+            cur,
             """IF OBJECT_ID(N'[dbo].[to_lower]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[to_lower]""",
             """
-CREATE PROCEDURE to_lower
-    @input nvarchar(max)
-AS
-BEGIN
-    select LOWER(@input)
-END
-""",
+            CREATE PROCEDURE to_lower
+                @input nvarchar(max)
+            AS
+            BEGIN
+                select LOWER(@input)
+            END
+            """,
             )
-    
+
     # This should create a sproc with a return value.
     def _retval_setup(self, cur):
-        self._try_run2(cur,
+        self._try_run2(
+            cur,
             """IF OBJECT_ID(N'[dbo].[add_one]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[add_one]""",
             """
 CREATE PROCEDURE add_one (@input int)
@@ -1414,15 +1414,16 @@ END
         with self._connect() as con:
             cur = con.cursor()
             self._retval_setup(cur)
-            values = cur.callproc('add_one',(1,))
+            values = cur.callproc('add_one', (1,))
             self.assertEqual(values[0], 1, 'input parameter should be left unchanged: %s' % (values[0],))
-            
-            self.assertEqual(cur.description, None,"No resultset was expected.")
+
+            self.assertEqual(cur.description, None, "No resultset was expected.")
             self.assertEqual(cur.return_value, 2, "Invalid return value: %s" % (cur.return_value,))
 
     # This should create a sproc with an output parameter.
     def _outparam_setup(self, cur):
-        self._try_run2(cur,
+        self._try_run2(
+            cur,
             """IF OBJECT_ID(N'[dbo].[add_one_out]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[add_one_out]""",
             """
 CREATE PROCEDURE add_one_out (@input int, @output int OUTPUT)
@@ -1437,17 +1438,18 @@ END
         with self._connect() as con:
             cur = con.cursor()
             self._outparam_setup(cur)
-            values = cur.callproc('add_one_out',(1, pytds.output(None, 1)))
+            values = cur.callproc('add_one_out', (1, pytds.output(None, 1)))
             self.assertEqual(len(values), 2, 'expected 2 parameters')
             self.assertEqual(values[0], 1, 'input parameter should be unchanged')
             self.assertEqual(values[1], 2, 'output parameter should get new values')
-    
+
     # Don't need setoutputsize tests.
-    def test_setoutputsize(self): 
+    def test_setoutputsize(self):
         pass
-        
-    def help_nextset_setUp(self,cur):
-        self._try_run2(cur,
+
+    def help_nextset_setUp(self, cur):
+        self._try_run2(
+            cur,
             """IF OBJECT_ID(N'[dbo].[deleteme]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[deleteme]""",
             """
 create procedure deleteme
@@ -1461,19 +1463,19 @@ end
 
     def help_nextset_tearDown(self, cur):
         cur.execute("drop procedure deleteme")
-        
+
     def test_ExceptionsAsConnectionAttributes(self):
         pass
-        
+
     def test_select_decimal_zero(self):
         with self._connect() as con:
             expected = (
                 Decimal('0.00'),
                 Decimal('0.0'),
                 Decimal('-0.00'))
-            
+
             cur = con.cursor()
             cur.execute("SELECT %s as A, %s as B, %s as C", expected)
-                
+
             result = cur.fetchall()
             self.assertEqual(result[0], expected)
