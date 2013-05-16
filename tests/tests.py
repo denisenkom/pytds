@@ -12,7 +12,8 @@ from six import text_type
 from six.moves import xrange
 from pytds import connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,\
     Error, IntegrityError, Timestamp, DataError, DECIMAL, TDS72, Date, Binary, Datetime, SspiAuth,\
-    tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS, TDS_DATETIME
+    tds_submit_query, tds_process_tokens, TDS_TOKEN_RESULTS, TDS_DATETIME,\
+    TDS_ENCRYPTION_OFF
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
@@ -758,7 +759,7 @@ class TestMessages(unittest.TestCase):
         login.query_timeout = login.connect_timeout = 60
         login.tds_version = TDS74
         login.instance_name = None
-        login.encryption_level = None
+        login.encryption_level = TDS_ENCRYPTION_OFF
         login.use_mars = False
         login.option_flag2 = 0
         login.user_name = 'testname'
