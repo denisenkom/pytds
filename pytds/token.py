@@ -380,11 +380,11 @@ _SERVER_TO_CLIENT_MAPPING = {
 def tds_process_login_tokens(tds):
     r = tds._reader
     succeed = False
-    logger.debug('tds_process_login_tokens()')
+    #logger.debug('tds_process_login_tokens()')
     ver = {}
     while True:
         marker = r.get_byte()
-        logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
+        #logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
         if marker == TDS_LOGINACK_TOKEN:
             tds.tds71rev1 = 0
             size = r.get_smallint()
@@ -410,7 +410,7 @@ def tds_process_login_tokens(tds):
                 ver['name'] = '2012'
             else:
                 ver['name'] = 'unknown'
-            logger.debug('server reports TDS version {0:x}'.format(version))
+            #logger.debug('server reports TDS version {0:x}'.format(version))
             # get server product name
             # ignore product name length, some servers seem to set it incorrectly
             r.get_byte()
@@ -429,7 +429,7 @@ def tds_process_login_tokens(tds):
             # MSSQL 6.5 and 7.0 seem to return strange values for this
             # using TDS 4.2, something like 5F 06 32 FF for 6.50
             tds.conn.product_version = product_version
-            logger.debug('Product version {0:x}'.format(product_version))
+            #logger.debug('Product version {0:x}'.format(product_version))
             # TDS 5.0 reports 5 on success 6 on failure
             # TDS 4.2 reports 1 on success and is not present of failure
             if ack == 5 or ack == 1:

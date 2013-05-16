@@ -5,6 +5,7 @@ __version__ = '1.5.0'
 
 import logging
 import six
+import errno
 from . import lcid
 from .tds import *
 from .login import *
@@ -125,7 +126,41 @@ class _Connection(object):
         self._active_cursor = None
         from .tds import _TdsSocket
         self._conn = None
-        self._conn = _TdsSocket(self._login)
+        self._dirty = False
+        login = self._login
+        if IS_TDS7_PLUS(login) and login.instance_name and not login.port:
+            instances = tds7_get_instances(login.server_name)
+            if login.instance_name not in instances:
+                raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
+            instdict = instances[login.instance_name]
+            if 'tcp' not in instdict:
+                raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
+            login.port = int(instdict['tcp'])
+        if not login.port:
+            login.port = 1433
+        connect_timeout = login.connect_timeout
+        login.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
+        for host in login.load_balancer.choose():
+            try:
+                sock = socket.create_connection(
+                    (host, login.port),
+                    connect_timeout or 90000)
+                sock.settimeout(login.query_timeout)
+                sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+            except socket.error as e:
+                err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                continue
+            try:
+                self._conn = _TdsSocket(self._login, sock)
+                break
+            except Exception as e:
+                sock.close()
+                err = e
+                #raise
+                continue
+        else:
+            raise err
+        self._active_cursor = self._main_cursor = self.cursor()
         if not self._autocommit:
             tds_submit_begin_tran(self._conn.main_session)
             self._sqlok(self._conn.main_session)
@@ -161,6 +196,7 @@ class _Connection(object):
         self._sqlok(conn.main_session)
         while self._nextset(conn.main_session):
             pass
+        self._dirty = False
 
     def cursor(self):
         """
@@ -192,6 +228,11 @@ class _Connection(object):
             self._sqlok(session)
             while self._nextset(session):
                 pass
+            self._dirty = False
+        except socket.error as e:
+            if e.errno == errno.ECONNRESET:
+                return
+            logger.exception('unexpected error in rollback')
         except:
             logger.exception('unexpected error in rollback')
 
@@ -443,6 +484,24 @@ class _Connection(object):
             else:
                 logger.error('logic error: tds_process_tokens result_type %d', result_type)
 
+    def _exec_with_retry(self, fun):
+        self._assert_open()
+        in_tran = self._conn.tds72_transaction
+        if in_tran and self._dirty:
+            self._dirty = True
+            return fun()
+        else:
+            # first attemp
+            try:
+                self._dirty = True
+                return fun()
+            except socket.error as e:
+                if e.errno != errno.ECONNRESET:
+                    raise
+            # try again if connection was reset
+            self._assert_open()
+            return fun()
+
     def _callproc(self, cursor, procname, parameters):
         #logger.debug('callproc begin')
         self._assert_open()
@@ -537,7 +596,7 @@ class _Cursor(six.Iterator):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        return self._conn._callproc(self, procname, parameters)
+        return self._conn._exec_with_retry(lambda: self._conn._callproc(self, procname, parameters))
 
     @property
     def return_value(self):
@@ -560,7 +619,7 @@ class _Cursor(six.Iterator):
         if self._conn is not None:
             self._conn._close_cursor(self)
 
-    def execute(self, operation, params=()):
+    def _execute(self, operation, params):
         # Execute the query
         if params:
             if isinstance(params, (list, tuple)):
@@ -578,6 +637,9 @@ class _Cursor(six.Iterator):
             #logger.debug('converted query: {0}'.format(operation))
             #logger.debug('params: {0}'.format(params))
         self._conn._execute(self, operation, params)
+
+    def execute(self, operation, params=()):
+        self._conn._exec_with_retry(lambda: self._execute(operation, params))
 
     def executemany(self, operation, params_seq):
         counts = []
