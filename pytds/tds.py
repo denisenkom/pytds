@@ -1306,8 +1306,8 @@ class NVarChar72(NVarChar71):
 class Xml(NVarChar72):
     type = SYBMSXML
 
-    def __init__(self, schema):
-        super(Xml, self).__init__(0xffff, None)
+    def __init__(self, schema={}):
+        super(Xml, self).__init__(0xffff)
         self._schema = schema
 
     @classmethod
@@ -1319,6 +1319,18 @@ class Xml(NVarChar72):
             schema['owner'] = r.read_ucs2(r.get_byte())
             schema['collection'] = r.read_ucs2(r.get_smallint())
         return cls(schema)
+
+    def write_info(self, w):
+        if self._schema:
+            w.put_byte(1)
+            w.put_byte(len(self._schema['dbname']))
+            w.write_ucs2(self._schema['dbname'])
+            w.put_byte(len(self._schema['owner']))
+            w.write_ucs2(self._schema['owner'])
+            w.put_usmallint(len(self._schema['collection']))
+            w.write_ucs2(self._schema['collection'])
+        else:
+            w.put_byte(0)
 
 
 class Text(BaseType):
@@ -3587,6 +3599,7 @@ class _TdsSocket(object):
     MoneyN = MoneyN
     UniqueIdentifier = MsUnique.instance
     SqlVariant = Variant
+    Xml = Xml
 
     def long_binary_type(self):
         if IS_TDS72_PLUS(self):
