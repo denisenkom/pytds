@@ -365,6 +365,11 @@ class NullXml(TestCase):
         self.assertEqual([(None,)], cur.fetchall())
 
 
+def get_spid(conn):
+    with conn.cursor() as cur:
+        return cur.spid
+
+
 def kill(conn, spid):
     with conn.cursor() as cur:
         cur.execute('kill {}'.format(spid))
@@ -376,15 +381,37 @@ class ConnectionClosing(unittest.TestCase):
             connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD).close()
 
     def test_connection_closed_by_server(self):
-        with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD, autocommit=True) as master_conn:
-            with connect(server=settings.HOST, database=settings.DATABASE, user=settings.USER, password=settings.PASSWORD) as conn:
+        with connect(server=settings.HOST,
+                     database=settings.DATABASE,
+                     user=settings.USER,
+                     password=settings.PASSWORD,
+                     autocommit=True) as master_conn:
+            with connect(server=settings.HOST,
+                         database=settings.DATABASE,
+                         user=settings.USER,
+                         password=settings.PASSWORD,
+                         autocommit=False,
+                         use_mars=settings.USE_MARS) as conn:
                 # test overall recovery
                 with conn.cursor() as cur:
                     cur.execute('select 1')
                     cur.fetchall()
                     conn.commit()
-                    kill(master_conn, conn._conn._main_session._reader._spid)
+                    kill(master_conn, get_spid(conn))
                     cur.execute('select 1')
+                    cur.fetchall()
+                kill(master_conn, get_spid(conn))
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+
+                # test recovery on transaction
+                with conn.cursor() as cur:
+                    cur.execute('create table ##testtable3 (fld int)')
+                    kill(master_conn, get_spid(conn))
+                    with self.assertRaises(Exception):
+                        cur.execute('select * from ##testtable2')
+                        cur.fetchall()
+                    conn.rollback()
                     cur.execute('select 1')
                     cur.fetchall()
 
