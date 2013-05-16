@@ -199,6 +199,10 @@ class _Connection(object):
             while self._nextset(session):
                 pass
             self._dirty = False
+        except socket.error as e:
+            if e.errno == errno.ECONNRESET:
+                return
+            logger.exception('unexpected error in rollback')
         except:
             logger.exception('unexpected error in rollback')
 
