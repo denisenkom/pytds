@@ -349,10 +349,7 @@ class _Connection(object):
             elif result_type == TDS_STATUS_RESULT:
                 continue
             else:
-                try:
-                    raise Exception('dummy exception')
-                except:
-                    logger.exception('Invalid result type: ' + str(result_type))
+                raise Exception('Invalid result type: ' + str(result_type))
 
 
     def _fetchone(self, cursor):
