@@ -120,6 +120,14 @@ class TestCase2(TestCase):
         cur = self.conn.cursor()
         self.assertIsInstance(cur.execute_scalar("select 'test'"), text_type)
 
+    def test_bad_collation(self):
+        with self.conn.cursor() as cur:
+            try:
+                cur.execute_scalar('select cast(0x90 as varchar)')
+            except:
+                pass
+            self.assertEqual(1, cur.execute_scalar('select 1'))
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):
