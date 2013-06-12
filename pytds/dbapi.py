@@ -365,7 +365,11 @@ class _Connection(object):
         if self._state == DB_RES_NO_MORE_RESULTS:
             return None
 
-        self._nextrow(session)
+        try:
+            self._nextrow(session)
+        except:
+            session.close()
+            raise
 
         if self._state != DB_RES_RESULTSET_ROWS:
             return None
