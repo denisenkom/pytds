@@ -293,7 +293,11 @@ class _Connection(object):
             return
 
         # Get the row from the TDS stream.
-        rc, res_type, done_flags = tds_process_tokens(session, self._nextrow_mask)
+        try:
+            rc, res_type, done_flags = tds_process_tokens(session, self._nextrow_mask)
+        except:
+            session.close()
+            raise
         if done_flags & TDS_DONE_ERROR:
             raise_db_exception(session)
             assert False
@@ -365,11 +369,7 @@ class _Connection(object):
         if self._state == DB_RES_NO_MORE_RESULTS:
             return None
 
-        try:
-            self._nextrow(session)
-        except:
-            session.close()
-            raise
+        self._nextrow(session)
 
         if self._state != DB_RES_RESULTSET_ROWS:
             return None
