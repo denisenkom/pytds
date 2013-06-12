@@ -83,7 +83,7 @@ class SmpManager(object):
                     session._seq_num_for_send,
                     session._high_water_for_recv,
                     )
-                self._state = 'FIN SENT'
+                session._state = 'FIN SENT'
                 self._transport.send(hdr, True)
             else:
                 session._state = 'CLOSED'
