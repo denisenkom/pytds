@@ -867,6 +867,13 @@ def _decode_short_str(rdr, codec):
     return rdr.read_str(size, codec)
 
 
+def read_binary(r):
+    size = r.get_usmallint()
+    if size == 0xffff:
+        return None
+    return readall(r, size)
+
+
 def tds_get_type_info(tds, curcol):
     r = tds._reader
     # User defined data type of the column
@@ -1011,7 +1018,7 @@ def tds_get_type_info(tds, curcol):
 
     elif type == XSYBBINARY:
         curcol.column_size = r.get_smallint()
-        return lambda: readall(r, r.get_smallint())
+        return lambda: read_binary(r)
 
     elif type == SYBIMAGE:
         curcol.column_size = r.get_int()
@@ -1028,7 +1035,7 @@ def tds_get_type_info(tds, curcol):
         if curcol.column_size < 0 and IS_TDS72_PLUS(tds):
             return lambda: DefaultHandler._tds72_get_varmax(tds, curcol, None)
         else:
-            return lambda: readall(r, r.get_smallint())
+            return lambda: read_binary(r)
 
     elif type in (SYBNUMERIC, SYBDECIMAL):
         curcol.column_size, curcol.column_prec, curcol.column_scale = r.unpack(_numeric_info_struct)

@@ -128,6 +128,13 @@ class TestCase2(TestCase):
                 pass
             self.assertEqual(1, cur.execute_scalar('select 1'))
 
+    def test_binary_bug(self):
+        with self.conn.cursor() as cur:
+            cur.execute("select cast(NULL as varbinary(4)) as fieldname, 1,1,1,1,1,1,1,1,1")
+            self.assertEqual(None, cur.fetchone()[0])
+            cur.execute("select cast(NULL as binary(4)) as fieldname, 1,1,1,1,1,1,1,1,1")
+            self.assertEqual(None, cur.fetchone()[0])
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):
