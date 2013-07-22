@@ -381,7 +381,8 @@ class DatabaseAPI20Test(unittest.TestCase):
         self.assertRaises(self.driver.Error,con.commit)
 
         # connection.close should raise an Error if called more than once
-        self.assertRaises(self.driver.Error,con.close)
+        # disabled, there is no such requirement in DBAPI PEP-0249
+        #self.assertRaises(self.driver.Error,con.close)
 
     def test_execute(self):
         con = self._connect()
