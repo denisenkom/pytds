@@ -660,7 +660,11 @@ class _MarsCursor(_Cursor):
         Closes the cursor. The cursor is unusable from this point.
         """
         if self._conn is not None:
-            self._session.close()
+            try:
+                self._session.close()
+            except socket.error as e:
+                if e.errno != errno.ECONNRESET:
+                    raise
             self._conn = None
 
     def execute(self, operation, params=()):
