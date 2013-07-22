@@ -426,7 +426,11 @@ class _Connection(object):
     def _close_cursor(self, cursor):
         if self._conn is not None and cursor._session is not None:
             if self._conn.mars_enabled:
-                cursor._session.close()
+                try:
+                    cursor._session.close()
+                except socket.error as e:
+                    if e.errno != errno.ECONNRESET:
+                        raise
             else:
                 if cursor is self._active_cursor:
                     self._active_cursor = None
