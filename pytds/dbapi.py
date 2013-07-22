@@ -263,9 +263,9 @@ class _Connection(object):
         this case.
         """
         #logger.debug("MSSQLConnection.close()")
-        self._assert_open()
-        self._conn.close()
-        self._conn = None
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
     def select_db(self, dbname):
         """

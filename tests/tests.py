@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, date, time
 import uuid
 import socket
+from time import sleep
 from dateutil.tz import tzoffset, tzutc
 from six import text_type
 from six.moves import xrange
@@ -412,6 +413,7 @@ class ConnectionClosing(unittest.TestCase):
                          use_mars=settings.USE_MARS) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
+                    cur.fetchall()
                     conn.commit()
                     kill(master_conn, get_spid(conn))
                     sleep(0.2)
