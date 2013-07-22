@@ -679,6 +679,28 @@ class ConnectionClosing(unittest.TestCase):
         for x in xrange(3):
             connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD).close()
 
+    def test_closing_after_closed_by_server(self):
+        '''
+        You should be able to call close on connection closed by server
+        '''
+        with connect(server=settings.HOST,
+                     database='master',
+                     user=settings.USER,
+                     password=settings.PASSWORD,
+                     autocommit=True) as master_conn:
+            with connect(server=settings.HOST,
+                         database='master',
+                         user=settings.USER,
+                         password=settings.PASSWORD,
+                         autocommit=False,
+                         use_mars=settings.USE_MARS) as conn:
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+                    conn.commit()
+                    kill(master_conn, get_spid(conn))
+                    sleep(0.2)
+                conn.close()
+
     def test_connection_closed_by_server(self):
         with connect(server=settings.HOST,
                      database='master',
