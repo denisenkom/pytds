@@ -645,7 +645,7 @@ class TestVariant(TestCase):
 
 
 class BadConnection(unittest.TestCase):
-    def runTest(self):
+    def test_invalid_parameters(self):
         with self.assertRaises(Error):
             with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
                 with conn.cursor() as cur:
@@ -662,9 +662,15 @@ class BadConnection(unittest.TestCase):
             with connect(server=settings.HOST, database='master', user=settings.USER, password=None) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
-        # bad instance name
+
+    def test_bad_instance_name(self):
+        if not hasattr(settings, 'INSTANCE_PORT'):
+            return self.skipTest('INSTANCE_PORT must be set to run this test')
         with self.assertRaisesRegexp(LoginError, 'Invalid instance name'):
-            with connect(server=settings.HOST + '\\badinstancename', database='master', user=settings.USER, password=settings.PASSWORD, port=1433) as conn:
+            host = settings.HOST
+            if '\\' in host:
+                host, _ = host.split('\\')
+            with connect(server=host + '\\badinstancename', database='master', user=settings.USER, password=settings.PASSWORD, port=settings.INSTANCE_PORT) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
