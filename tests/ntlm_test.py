@@ -1,3 +1,4 @@
+import binascii
 from unittest import TestCase
 from pytds.ntlm import *
 
@@ -15,18 +16,13 @@ class Test(TestCase):
             Convert a string hex byte values into a byte string. The Hex Byte values may
             or may not be space separated.
             """
-            bytes = []
-
             hexStr = ''.join( hexStr.split(" ") )
 
-            for i in range(0, len(hexStr), 2):
-                bytes.append( chr( int (hexStr[i:i+2], 16 ) ) )
-
-            return ''.join( bytes )
+            return binascii.unhexlify(hexStr)
             
         ServerChallenge = HexToByte("01 23 45 67 89 ab cd ef")
-        ClientChallenge = '\xaa'*8
-        Time = '\x00'*8
+        ClientChallenge = b'\xaa'*8
+        Time = b'\x00'*8
         Workstation = "COMPUTER".encode('utf-16-le')
         ServerName = "Server".encode('utf-16-le')
         User = "User"
