@@ -1,4 +1,7 @@
+import os
 from distutils.core import setup
+
+requirements = list(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), 'r').readlines())
 
 setup(name='python-tds',
       version='1.6.1',
@@ -14,5 +17,5 @@ setup(name='python-tds',
           'Programming Language :: Python :: 3.3',
       ],
       zip_safe=True,
-      install_requires=['python-dateutil', 'six', 'bitarray'],
+      install_requires=requirements,
       )
