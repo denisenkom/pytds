@@ -6,3 +6,6 @@ build
 dist
 MANIFEST
 python_tds.egg-info
+env2/
+env3/
+prof/
