@@ -362,8 +362,8 @@ def calc_resp(password_hash, server_challenge):
             24-byte buffer to contain the LM response upon return
     """
     # padding with zeros to make the hash 21 bytes long
-    password_hash = password_hash + '\0' * (21 - len(password_hash))
-    res = ''
+    password_hash = password_hash + b'\0' * (21 - len(password_hash))
+    res = b''
     dobj = pyDes.des(key56_to_key64(password_hash[0:7]))
     res = res + dobj.encrypt(server_challenge[0:8])
 
@@ -375,12 +375,12 @@ def calc_resp(password_hash, server_challenge):
     return res
 
 
-def ComputeResponse(ResponseKeyNT, ResponseKeyLM, ServerChallenge, ServerName, ClientChallenge='\xaa' * 8, Time='\0' * 8):
+def ComputeResponse(ResponseKeyNT, ResponseKeyLM, ServerChallenge, ServerName, ClientChallenge=b'\xaa' * 8, Time=b'\0' * 8):
     LmChallengeResponse = hmac.new(ResponseKeyLM, ServerChallenge + ClientChallenge).digest() + ClientChallenge
 
-    Responserversion = '\x01'
-    HiResponserversion = '\x01'
-    temp = Responserversion + HiResponserversion + '\0' * 6 + Time + ClientChallenge + '\0' * 4 + ServerChallenge + '\0' * 4
+    Responserversion = b'\x01'
+    HiResponserversion = b'\x01'
+    temp = Responserversion + HiResponserversion + b'\0' * 6 + Time + ClientChallenge + b'\0' * 4 + ServerChallenge + b'\0' * 4
     NTProofStr = hmac.new(ResponseKeyNT, ServerChallenge + temp).digest()
     NtChallengeResponse = NTProofStr + temp
 
@@ -388,8 +388,8 @@ def ComputeResponse(ResponseKeyNT, ResponseKeyLM, ServerChallenge, ServerName, C
     return (NtChallengeResponse, LmChallengeResponse)
 
 
-def ntlm2sr_calc_resp(ResponseKeyNT, ServerChallenge, ClientChallenge='\xaa' * 8):
-    LmChallengeResponse = ClientChallenge + '\0' * 16
+def ntlm2sr_calc_resp(ResponseKeyNT, ServerChallenge, ClientChallenge=b'\xaa' * 8):
+    LmChallengeResponse = ClientChallenge + b'\0' * 16
     sess = hashlib.md5(ServerChallenge + ClientChallenge).digest()
     NtChallengeResponse = calc_resp(ResponseKeyNT, sess[0:8])
     return (NtChallengeResponse, LmChallengeResponse)
@@ -403,14 +403,14 @@ def create_LM_hashed_password_v1(passwd):
         return binascii.unhexlify(passwd.split(':')[0])
 
     # fix the password length to 14 bytes
-    passwd = string.upper(passwd)
-    lm_pw = passwd + '\0' * (14 - len(passwd))
+    passwd = passwd.upper().encode('ascii')
+    lm_pw = passwd + b'\0' * (14 - len(passwd))
     lm_pw = lm_pw[0:14]
 
     # do hash
-    magic_str = "KGS!@#$%"  # page 57 in [MS-NLMP]
+    magic_str = b"KGS!@#$%"  # page 57 in [MS-NLMP]
 
-    res = ''
+    res = b''
     dobj = pyDes.des(key56_to_key64(lm_pw[0:7]))
     res = res + dobj.encrypt(magic_str)
 
