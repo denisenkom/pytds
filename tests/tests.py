@@ -690,23 +690,20 @@ def kill(conn, spid):
 class ConnectionClosing(unittest.TestCase):
     def test_open_close(self):
         for x in xrange(3):
-            connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD).close()
+            kwargs = settings.CONNECT_KWARGS.copy()
+            kwargs['database'] = 'master'
+            connect(**kwargs).close()
 
     def test_closing_after_closed_by_server(self):
         '''
         You should be able to call close on connection closed by server
         '''
-        with connect(server=settings.HOST,
-                     database='master',
-                     user=settings.USER,
-                     password=settings.PASSWORD,
-                     autocommit=True) as master_conn:
-            with connect(server=settings.HOST,
-                         database='master',
-                         user=settings.USER,
-                         password=settings.PASSWORD,
-                         autocommit=False,
-                         use_mars=settings.USE_MARS) as conn:
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['autocommit'] = True
+        with connect(**kwargs) as master_conn:
+            kwargs['autocommit'] = False
+            with connect(**kwargs) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
                     conn.commit()
@@ -715,17 +712,12 @@ class ConnectionClosing(unittest.TestCase):
                 conn.close()
 
     def test_connection_closed_by_server(self):
-        with connect(server=settings.HOST,
-                     database='master',
-                     user=settings.USER,
-                     password=settings.PASSWORD,
-                     autocommit=True) as master_conn:
-            with connect(server=settings.HOST,
-                         database='master',
-                         user=settings.USER,
-                         password=settings.PASSWORD,
-                         autocommit=False,
-                         use_mars=settings.USE_MARS) as conn:
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['autocommit'] = True
+        with connect(**kwargs) as master_conn:
+            kwargs['autocommit'] = False
+            with connect(**kwargs) as conn:
                 # test overall recovery
                 with conn.cursor() as cur:
                     cur.execute('select 1')
@@ -1000,7 +992,10 @@ class RegressionSuite(TestCase):
 
 class TestLoadBalancer(DbTestCase):
     def test_second(self):
-        lb = SimpleLoadBalancer(['badserver', settings.CONNECT_KWARGS['server']])
+        server = settings.CONNECT_KWARGS['server']
+        if '\\' in server:
+            server, _ = server.split('\\')
+        lb = SimpleLoadBalancer(['badserver', server])
         with connect(load_balancer=lb, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
             with conn.cursor() as cur:
                 cur.execute('select 1')
