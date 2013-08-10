@@ -1,4 +1,5 @@
 import unittest
+from ctypes import create_string_buffer
 from pytds.sspi import *
 import settings
 import pytds
@@ -32,7 +33,10 @@ class SspiTest(unittest.TestCase):
 
         token_buf = create_string_buffer(10000)
         bufs = [(SECBUFFER_TOKEN, token_buf)]
-        host, _, _ = socket.gethostbyname_ex(settings.HOST)
+        server = settings.HOST
+        if '\\' in server:
+            server, _ = server.split('\\')
+        host, _, _ = socket.gethostbyname_ex(server)
         target_name = 'MSSQLSvc/{0}:1433'.format(host)
         ctx, status, bufs = cred.create_context(
             flags=ISC_REQ_CONFIDENTIALITY|ISC_REQ_REPLAY_DETECT|ISC_REQ_CONNECTION,
