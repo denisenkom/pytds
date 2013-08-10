@@ -53,6 +53,7 @@ class DbTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['server'] = settings.HOST
         kwargs['database'] = 'master'
         kwargs['autocommit'] = True
         with connect(**kwargs) as conn:
@@ -66,6 +67,7 @@ class DbTestCase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['server'] = settings.HOST
         kwargs['database'] = 'master'
         kwargs['autocommit'] = True
         with connect(**kwargs) as conn:
