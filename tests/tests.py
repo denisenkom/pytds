@@ -348,6 +348,11 @@ class TestCase2(TestCase):
                 pass
             self.assertEqual(1, cur.execute_scalar('select 1'))
 
+    def test_get_instances(self):
+        if not hasattr(settings, 'BROWSER_ADDRESS'):
+            return unittest.skip('BROWSER_ADDRESS setting is not defined')
+        pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
+
 
 class DbTests(DbTestCase):
     def test_autocommit(self):
@@ -1438,6 +1443,18 @@ class TestMessages(unittest.TestCase):
         w._pos = 0
         t.write(w, 'test')
         self.assertEqual(w._buf[:w._pos], b'\x08\x00\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
+
+    def test_get_instances(self):
+        data = b'\x05[\x00ServerName;MISHA-PC;InstanceName;SQLEXPRESS;IsClustered;No;Version;10.0.1600.22;tcp;49849;;'
+        ref = {'SQLEXPRESS': {'ServerName': 'MISHA-PC',
+                              'InstanceName': 'SQLEXPRESS',
+                              'IsClustered': 'No',
+                              'Version': '10.0.1600.22',
+                              'tcp': '49849',
+                              },
+                              }
+        instances = pytds.tds._parse_instances(data)
+        self.assertDictEqual(ref, instances)
 
 
 class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
