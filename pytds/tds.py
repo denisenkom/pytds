@@ -3641,6 +3641,29 @@ class _Results(object):
         self.row_count = 0
 
 
+def _parse_instances(msg):
+    name = None
+    if len(msg) > 3 and _ord(msg[0]) == 5:
+        tokens = msg[3:].decode('ascii').split(';')
+        results = {}
+        instdict = {}
+        got_name = False
+        for token in tokens:
+            if got_name:
+                instdict[name] = token
+                got_name = False
+            else:
+                name = token
+                if not name:
+                    if not instdict:
+                        break
+                    results[instdict['InstanceName']] = instdict
+                    instdict = {}
+                    continue
+                got_name = True
+        return results
+
+
 #
 # Get port of all instances
 # @return default port number or 0 if error
@@ -3648,7 +3671,7 @@ class _Results(object):
 #
 def tds7_get_instances(ip_addr):
     s = socket.socket(type=socket.SOCK_DGRAM)
-    name = None
+    s.settimeout(5)
     try:
         #
         # Request the instance's port from the server.
@@ -3657,29 +3680,10 @@ def tds7_get_instances(ip_addr):
         #
         for num_try in range(16):
             # send the request
-            s.sendto('\x03', (ip_addr, 1434))
+            s.sendto(b'\x03', (ip_addr, 1434))
             msg = s.recv(16 * 1024 - 1)
             # got data, read and parse
-            if len(msg) > 3 and msg[0] == '\x05':
-                tokens = msg[3:].split(';')
-                results = {}
-                instdict = {}
-                got_name = False
-                for token in tokens:
-                    if got_name:
-                        instdict[name] = token
-                        got_name = False
-                    else:
-                        name = token
-                        if not name:
-                            if not instdict:
-                                break
-                            results[instdict['InstanceName']] = instdict
-                            instdict = {}
-                            continue
-                        got_name = True
-                return results
-
+            return _parse_instances(msg)
     finally:
         s.close()
 
