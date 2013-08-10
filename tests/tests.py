@@ -971,6 +971,7 @@ class Auth(unittest.TestCase):
                 cursor.execute('select 1')
                 cursor.fetchall()
 
+    @unittest.skipIf(getattr(settings, 'SKIP_SQL_AUTH', False), 'SKIP_SQL_AUTH is set')
     def test_sqlauth(self):
         with connect(settings.HOST, user=settings.USER, password=settings.PASSWORD) as conn:
             with conn.cursor() as cursor:
