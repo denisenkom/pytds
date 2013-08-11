@@ -252,14 +252,18 @@ class TestCase2(TestCase):
         #test_val(self.conn._conn.Image(10, ['']), None)
         #test_val(self.conn._conn.Image(10, ['']), b'test')
 
+    def _test_val(self, val):
+        with self.conn.cursor() as cur:
+            cur.execute('select %s', (val,))
+            self.assertTupleEqual(cur.fetchone(), (val,))
+            self.assertIs(cur.fetchone(), None)
+
     def test_parameters(self):
         def test_val(val):
-            with self.conn.cursor() as cur:
-                cur.execute('select %s', (val,))
-                self.assertTupleEqual(cur.fetchone(), (val,))
-                self.assertIs(cur.fetchone(), None)
+            self._test_val(val)
 
         test_val(u'hello')
+        test_val(u'x' * 5000)
         test_val(123)
         test_val(-123)
         test_val(123.12)
@@ -279,13 +283,15 @@ class TestCase2(TestCase):
         test_val(None)
         test_val('hello')
         test_val('')
-        test_val('x' * 5000)
         test_val(Binary(b'\x00\x01\x02'))
-        test_val(Binary(b'x' * 5000))
+        test_val(Binary(b'x' * 9000))
         test_val(2 ** 63 - 1)
         test_val(False)
         test_val(True)
         test_val(uuid.uuid4())
+
+    def test_varcharmax(self):
+        self._test_val('x' * 9000)
 
     def test_overlimit(self):
         def test_val(val):

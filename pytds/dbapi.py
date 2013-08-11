@@ -173,7 +173,7 @@ class _Connection(object):
                  appname=None, port=None, tds_version=TDS74,
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
                  blocksize=4096, use_mars=False, auth=None, readonly=False,
-                 load_balancer=None, use_tz=None):
+                 load_balancer=None, use_tz=None, bytes_to_unicode=True):
         """
         Constructor for creating a connection to the database. Returns a
         Connection object.
@@ -245,6 +245,7 @@ class _Connection(object):
         login.auth = auth
         login.readonly = readonly
         login.load_balancer = load_balancer or SimpleLoadBalancer([server])
+        login.bytes_to_unicode = bytes_to_unicode
         self._use_tz = use_tz
         self._autocommit = autocommit
         self._login = login
@@ -450,6 +451,7 @@ class _Cursor(six.Iterator):
             return fun()
 
     def _execute(self, operation, params):
+        operation = six.text_type(operation)
         if params:
             if isinstance(params, (list, tuple)):
                 names = tuple('@P{0}'.format(n) for n in range(len(params)))
@@ -464,8 +466,8 @@ class _Cursor(six.Iterator):
                 params = dict(('@{0}'.format(name), value) for name, value in params.items())
                 operation = operation % rename
             params = self._session._convert_params(params)
-            param_definition = ','.join(
-                '{0} {1}'.format(p.column_name, p.type.get_declaration())
+            param_definition = u','.join(
+                u'{0} {1}'.format(p.column_name, p.type.get_declaration())
                 for p in params)
             self._exec_with_retry(lambda: self._session.submit_rpc(
                 SP_EXECUTESQL,

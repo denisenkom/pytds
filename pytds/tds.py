@@ -1083,8 +1083,8 @@ class VarChar70(BaseType):
     type = XSYBVARCHAR
 
     def __init__(self, size):
-        if size <= 0 or size > 8000:
-            raise DataError('Invalid size for VARCHAR field')
+        #if size <= 0 or size > 8000:
+        #    raise DataError('Invalid size for VARCHAR field')
         self._size = size
 
     @classmethod
@@ -1103,12 +1103,10 @@ class VarChar70(BaseType):
         if val is None:
             w.put_smallint(-1)
         else:
-            #if isinstance(val, bytes):
-            #    val = val.decode('utf8')
-            #w.put_smallint(len(val) * 2)
+            val, _ = self._codec.encode(val.decode('utf8'))
+            w.put_smallint(len(val))
             #w.put_smallint(len(val))
-            #w.write_ucs2(val)
-            raise NotImplementedError
+            w.write(val)
 
     def read(self, r):
         size = r.get_smallint()
@@ -1146,34 +1144,36 @@ class VarChar72(VarChar71):
     type = XSYBVARCHAR
 
     def __init__(self, size, collation):
-        self._collation = collation
-        self._codec = collation.get_codec()
-        self._size = size
-        if size == -1:
+        super(VarChar72, self).__init__(size, collation)
+        if size == 0xffff:
             self.read = self._read_max
             self.write = self._write_max
+            self.write_info = self._write_info_max
 
     @classmethod
     def from_stream(cls, r):
-        size = r.get_smallint()
+        size = r.get_usmallint()
         collation = r.get_collation()
         return cls(size, collation)
 
     def get_declaration(self):
-        if self._size == -1:
+        if self._size == 0xffff:
             return 'VARCHAR(MAX)'
         else:
             super(VarChar72, self).get_declaration()
+
+    def _write_info_max(self, w):
+        w.put_usmallint(0xffff)
+        w.put_collation(self._collation)
 
     def _write_max(self, w, val):
         if val is None:
             w.put_int8(-1)
         else:
-            if isinstance(val, bytes):
-                val = val.decode('utf8')
-            w.put_int8(len(val) * 2)
-            w.put_int(len(val) * 2)
-            w.write_ucs2(val)
+            val, _ = self._codec.encode(val.decode('utf8'))
+            w.put_int8(len(val))
+            w.put_int(len(val))
+            w.write(val)
             w.put_int(0)
 
     def _read_max(self, r):
@@ -2737,6 +2737,40 @@ class _TdsSession(object):
         self.set_state(TDS_PENDING)
         self._writer.flush()
 
+    def make_varchar(self, column, value):
+        size = len(value)
+        if size == 0:
+            size = 1
+        if size > 8000:
+            if IS_TDS72_PLUS(self):
+                column.type = VarChar72(0xffff, self.conn.collation)
+            elif IS_TDS71_PLUS(self):
+                column.type = Text71(-1, '', self.conn.collation)
+            else:
+                column.type = Text()
+        else:
+            if IS_TDS71_PLUS(self):
+                column.type = VarChar71(size, self.conn.collation)
+            else:
+                column.type = VarChar70(size)
+
+    def make_nvarchar(self, column, value):
+        size = len(value)
+        if size == 0:
+            size = 1
+        if size > 4000:
+            if IS_TDS72_PLUS(self):
+                column.type = NVarChar72(0xffff, self.conn.collation)
+            elif IS_TDS71_PLUS(self):
+                column.type = NText71(-1, '', self.conn.collation)
+            else:
+                column.type = NText()
+        else:
+            if IS_TDS71_PLUS(self):
+                column.type = NVarChar71(size, self.conn.collation)
+            else:
+                column.type = NVarChar70(size)
+
     def make_param(self, name, value):
         if isinstance(value, Column):
             value.column_name = name
@@ -2778,22 +2812,13 @@ class _TdsSession(object):
                     column.type = Image()
             else:
                 column.type = VarBinary(size)
-        elif isinstance(value, six.string_types + (six.binary_type,)):
-            size = len(value)
-            if size == 0:
-                size = 1
-            if size > 4000:
-                if IS_TDS72_PLUS(self):
-                    column.type = NVarChar72(0xffff, self.conn.collation)
-                elif IS_TDS71_PLUS(self):
-                    column.type = NText71(-1, '', self.conn.collation)
-                else:
-                    column.type = NText()
+        elif isinstance(value, six.binary_type):
+            if self._tds.login.bytes_to_unicode:
+                self.make_nvarchar(column, value)
             else:
-                if IS_TDS71_PLUS(self):
-                    column.type = NVarChar71(size, self.conn.collation)
-                else:
-                    column.type = NVarChar70(size)
+                self.make_varchar(column, value)
+        elif isinstance(value, six.string_types):
+            self.make_nvarchar(column, value)
         elif isinstance(value, datetime):
             if IS_TDS73_PLUS(self):
                 if value.tzinfo and not self.use_tz:
@@ -3470,7 +3495,7 @@ class _TdsSocket(object):
         self.use_tz = use_tz
 
     def login(self, login, sock):
-        self.login = None
+        self.login = login
         self._bufsize = login.blocksize
         self.query_timeout = login.query_timeout
         self._main_session = _TdsSession(self, self)
