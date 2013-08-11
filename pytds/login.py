@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class SspiAuth(object):
     def __init__(self, user_name='', password='', server_name='', port=None, spn=None):
-        import sspi
+        from . import sspi
         # parse username/password informations
         if '\\' in user_name:
             domain, user_name = user_name.split('\\')
@@ -36,7 +36,7 @@ class SspiAuth(object):
         self._flags = sspi.ISC_REQ_CONFIDENTIALITY | sspi.ISC_REQ_REPLAY_DETECT | sspi.ISC_REQ_CONNECTION
 
     def create_packet(self):
-        import sspi
+        from . import sspi
         import ctypes
         buf = ctypes.create_string_buffer(4096)
         self._ctx, status, bufs = self._cred.create_context(
@@ -49,7 +49,7 @@ class SspiAuth(object):
         return bufs[0][1]
 
     def handle_next(self, packet):
-        import sspi
+        from . import sspi
         import ctypes
         buf = ctypes.create_string_buffer(4096)
         status, buffers = self._ctx.next(

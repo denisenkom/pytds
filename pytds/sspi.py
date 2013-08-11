@@ -1,3 +1,4 @@
+import six
 from ctypes import c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER,\
     Structure, c_wchar_p, WINFUNCTYPE, windll, byref, cast
 
@@ -342,7 +343,7 @@ class SspiCredentials(object):
                 byref(self._handle),
                 SECPKG_CRED_ATTR_NAMES,
                 byref(names))
-            user_name = unicode(names.UserName)
+            user_name = six.text_type(names.UserName)
         finally:
             p = c_wchar_p.from_buffer(names, SecPkgCredentials_Names.UserName.offset)
             sec_fn.FreeContextBuffer(p)
@@ -441,6 +442,6 @@ def enum_security_packages():
                  'max_token': infos[i].cbMaxToken,
                  'name': infos[i].Name,
                  'comment': infos[i].Comment,
-                 } for i in xrange(num.value)]
+                 } for i in range(num.value)]
     finally:
         sec_fn.FreeContextBuffer(infos)
