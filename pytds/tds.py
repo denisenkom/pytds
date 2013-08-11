@@ -2547,7 +2547,7 @@ class _TdsSession(object):
         info = self.res_info
         info.row_count += 1
         for i, curcol in enumerate(info.columns):
-            self.row[i] = curcol.type.read(r)
+            curcol.value = self.row[i] = curcol.type.read(r)
 
     # NBC=null bitmap compression row
     # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx

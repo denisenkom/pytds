@@ -1536,3 +1536,14 @@ end
 
             result = cur.fetchall()
             self.assertEqual(result[0], expected)
+
+
+class TestBug4(unittest.TestCase):
+    def test_as_dict(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
+            conn.as_dict = True
+            with conn.cursor() as cur:
+                cur.execute('select 1 as a, 2 as b')
+                self.assertDictEqual({'a': 1, 'b': 2}, cur.fetchone())
