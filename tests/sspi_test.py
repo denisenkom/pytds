@@ -1,19 +1,23 @@
 import unittest
-from pytds.sspi import *
 import settings
 import pytds
 import socket
+import sys
 
+@unittest.skipUnless(sys.platform.startswith("win"), "requires Windows")
 class SspiTest(unittest.TestCase):
     def test_enum_security_packages(self):
+        from pytds.sspi import *
         enum_security_packages()
 
     def test_credentials(self):
+        from pytds.sspi import *
         cred = SspiCredentials('Negotiate', SECPKG_CRED_OUTBOUND)
         cred.query_user_name()
         cred.close()
 
     def test_make_buffers(self):
+        from pytds.sspi import *
         buf = create_string_buffer(1000)
         bufs = [(SECBUFFER_TOKEN, buf)]
         from pytds.sspi import _make_buffers_desc
@@ -25,7 +29,7 @@ class SspiTest(unittest.TestCase):
         self.assertEqual(desc.pBuffers[0].pvBuffer, cast(bufs[0][1], PVOID).value)
 
     def test_sec_context(self):
-        from pytds.sspi import _make_buffers_desc
+        from pytds.sspi import *
         cred = SspiCredentials(
             'Negotiate',
             SECPKG_CRED_OUTBOUND)
