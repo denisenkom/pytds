@@ -2,5 +2,7 @@ language: python
 python:
   - "2.7"
   - "3.3"
-install: "pip install -r requirements.txt --use-mirrors"
+install:
+  - "pip install -r requirements.txt --use-mirrors"
+  - "pip isntall -r test_requirements.txt --use-mirrors"
 script: nosetests
