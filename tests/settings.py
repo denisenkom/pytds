@@ -7,8 +7,8 @@ LIVE_TEST = 'HOST' in os.environ
 if LIVE_TEST:
     HOST = os.environ['HOST']
     DATABASE=os.environ['DATABASE']
-    USER=os.environ['USER']
-    PASSWORD=os.environ['PASSWORD']
+    USER=os.environ['SQLUSER']
+    PASSWORD=os.environ['SQLPASSWORD']
     USE_MARS = bool(os.environ.get('USE_MARS'))
 
     import pytds
