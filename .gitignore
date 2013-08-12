@@ -1,11 +1,13 @@
 *.pyc
 *.py~
 *.swp
-settings.py
 build
 dist
 MANIFEST
 python_tds.egg-info
+.coverage
+coverage.xml
+test.sh
 env2/
 env3/
 prof/

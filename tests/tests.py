@@ -24,21 +24,20 @@ from pytds.tds import (
 from pytds.dbapi import _TdsLogin
 from . import dbapi20
 import pytds
+from . import settings
+
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
 
-try:
-    from . import settings
-except:
-    print('Settings module is not found, please create settings module and specify HOST, DATATABSE, USER and PASSWORD there')
-    sys.exit(1)
 
 #logging.basicConfig(level='DEBUG')
 #logging.basicConfig(level='INFO')
 logging.basicConfig()
 
+LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestCase(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
@@ -52,8 +51,9 @@ class TestCase(unittest.TestCase):
 class DbTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if not LIVE_TEST:
+            return
         kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['server'] = settings.HOST
         kwargs['database'] = 'master'
         kwargs['autocommit'] = True
         with connect(**kwargs) as conn:
@@ -66,6 +66,8 @@ class DbTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        if not LIVE_TEST:
+            return
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['server'] = settings.HOST
         kwargs['database'] = 'master'
@@ -340,6 +342,7 @@ class TestCase2(TestCase):
         pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DbTests(DbTestCase):
     def test_autocommit(self):
         self.assertFalse(self.conn.autocommit)
@@ -652,6 +655,7 @@ class TestVariant(TestCase):
         self._t(Decimal('-214748.3648'), "cast('- 214,748.3648' as smallmoney)")
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):
     def test_invalid_parameters(self):
         with self.assertRaises(Error):
@@ -693,6 +697,7 @@ def kill(conn, spid):
         cur.execute('kill {}'.format(spid))
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class ConnectionClosing(unittest.TestCase):
     def test_open_close(self):
         for x in xrange(3):
@@ -778,6 +783,7 @@ class Bug1(TestCase):
 #        cur.execute('select 1')
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class Bug2(DbTestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
@@ -832,6 +838,7 @@ class Extensions(TestCase):
             self.assertEqual(cur.connection, self.conn)
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class SmallDateTimeTest(TestCase):
     def _testval(self, val):
         with self.conn.cursor() as cur:
@@ -848,6 +855,7 @@ class SmallDateTimeTest(TestCase):
             self._testval(Timestamp(2080, 1, 1, 0, 0, 0))
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DateTimeTest(DbTestCase):
     def _testencdec(self, val):
         self.assertEqual(val, DateTime.decode(*DateTime._struct.unpack(DateTime.encode(val))))
@@ -956,6 +964,7 @@ class NewDateTimeTest(TestCase):
         testval(Date(9999, 12, 31))
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class Auth(unittest.TestCase):
     #def test_ntlm(self):
     #    conn = connect(settings.HOST, auth=NtlmAuth(user_name=settings.NTLM_USER, password=settings.NTLM_PASSWORD))
@@ -996,6 +1005,7 @@ class RegressionSuite(TestCase):
         self.conn.commit()
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestLoadBalancer(DbTestCase):
     def test_second(self):
         server = settings.CONNECT_KWARGS['server']
@@ -1016,6 +1026,7 @@ class TestLoadBalancer(DbTestCase):
                     cur.fetchall()
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestIntegrityError(DbTestCase):
     def test_primary_key(self):
         cursor = self.conn.cursor()
@@ -1025,6 +1036,7 @@ class TestIntegrityError(DbTestCase):
             cursor.execute('insert into testtable values (1)')
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TimezoneTests(unittest.TestCase):
     def check_val(self, conn, sql, input, output):
         with conn.cursor() as cur:
@@ -1442,6 +1454,7 @@ class TestMessages(unittest.TestCase):
         self.assertDictEqual(ref, instances)
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
     driver = pytds
     connect_args = settings.CONNECT_ARGS
@@ -1560,6 +1573,7 @@ end
             self.assertEqual(result[0], expected)
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestBug4(unittest.TestCase):
     def test_as_dict(self):
         kwargs = settings.CONNECT_KWARGS.copy()
