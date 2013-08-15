@@ -70,7 +70,8 @@ class _Connection(object):
     def autocommit(self, value):
         if self._autocommit != value:
             if value:
-                self._main_cursor._commit(cont=False)
+                if self._conn.tds72_transaction:
+                    self._main_cursor._commit(cont=False)
             else:
                 self._main_cursor._begin_tran(isolation_level=self._isolation_level)
             self._autocommit = value
