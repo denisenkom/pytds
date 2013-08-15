@@ -5,7 +5,7 @@ HOST = os.environ['HOST']
 DATABASE = os.environ['DATABASE']
 USER = os.environ['SQLUSER']
 PASSWORD = os.environ['SQLPASSWORD']
-USE_MARS = os.environ['usemars']
+USE_MARS = bool(os.environ.get('USE_MARS'))
 
 CONNECT_ARGS = []
 CONNECT_KWARGS = {
@@ -13,8 +13,12 @@ CONNECT_KWARGS = {
     'database': DATABASE,
     'user': USER,
     'password': PASSWORD,
-    'autocommit': False,
-    'readonly': True,
     'use_mars': USE_MARS,
-    'tds_version': getattr(pytds, os.environ['tds_version']),
     }
+
+if 'tds_version' in os.environ:
+    CONNECT_KWARGS['tds_version'] = getattr(pytds, os.environ['tds_version'])
+
+if 'auth' in os.environ:
+    import pytds.login
+    CONNECT_KWARGS['auth'] = getattr(pytds.login, os.environ['auth'])()
