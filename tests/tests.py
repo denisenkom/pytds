@@ -62,10 +62,10 @@ class DbTestCase(unittest.TestCase):
         with connect(**kwargs) as conn:
             with conn.cursor() as cur:
                 try:
-                    cur.execute('drop database [{}]'.format(settings.DATABASE))
+                    cur.execute('drop database [{0}]'.format(settings.DATABASE))
                 except:
                     pass
-                cur.execute('create database [{}]'.format(settings.DATABASE))
+                cur.execute('create database [{0}]'.format(settings.DATABASE))
 
     @classmethod
     def tearDownClass(cls):
@@ -77,7 +77,7 @@ class DbTestCase(unittest.TestCase):
         kwargs['autocommit'] = True
         with connect(**kwargs) as conn:
             with conn.cursor() as cur:
-                cur.execute('drop database [{}]'.format(settings.DATABASE))
+                cur.execute('drop database [{0}]'.format(settings.DATABASE))
 
     def setUp(self):
         self.conn = pytds.connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
@@ -368,8 +368,8 @@ class DbTests(DbTestCase):
 
     def _test_bulk_type(self, typ, value):
         with self.conn.cursor() as cur:
-            cur.execute('create table bulk_insert_table_ll(c1 {})'.format(typ.get_declaration()))
-            cur._session.submit_plain_query('insert bulk bulk_insert_table_ll (c1 {})'.format(typ.get_declaration()))
+            cur.execute('create table bulk_insert_table_ll(c1 {0})'.format(typ.get_declaration()))
+            cur._session.submit_plain_query('insert bulk bulk_insert_table_ll (c1 {0})'.format(typ.get_declaration()))
             cur._session.process_simple_request()
             col1 = Column('c1', typ, flags=Column.fNullable)
             metadata = [col1]
@@ -618,7 +618,7 @@ class DbTests(DbTestCase):
 class TestVariant(TestCase):
     def _t(self, result, sql):
         with self.conn.cursor() as cur:
-            cur.execute("select cast({} as sql_variant)".format(sql))
+            cur.execute("select cast({0} as sql_variant)".format(sql))
             val, = cur.fetchone()
             self.assertEqual(result, val)
 
@@ -645,7 +645,7 @@ class TestVariant(TestCase):
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003' as datetime)")
         self._t(datetime(2011, 2, 3, 10, 11, 0), "cast('2011-02-03T10:11:00' as smalldatetime)")
         val = uuid.uuid4()
-        self._t(val, "cast('{}' as uniqueidentifier)".format(val))
+        self._t(val, "cast('{0}' as uniqueidentifier)".format(val))
         self._t(True, "cast(1 as bit)")
         self._t(128, "cast(128 as tinyint)")
         self._t(255, "cast(255 as tinyint)")
@@ -697,7 +697,7 @@ def get_spid(conn):
 
 def kill(conn, spid):
     with conn.cursor() as cur:
-        cur.execute('kill {}'.format(spid))
+        cur.execute('kill {0}'.format(spid))
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
@@ -1329,7 +1329,7 @@ class TestMessages(unittest.TestCase):
         login.tds_version = TDS71
         tds._main_session.tds7_send_login(login)
         self.assertEqual(
-            binascii.hexlify(sock._sent),
+            binascii.hexlify(bytes(sock._sent)),
             b'100100de00000100' +
             b'c6000000' +
             b'0000007100100000000106016400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c0065007000610074006800')
@@ -1424,7 +1424,7 @@ class TestMessages(unittest.TestCase):
         metadata = [col1]
         tds._main_session.submit_bulk(metadata, [(False,)])
         self.assertEqual(
-            binascii.hexlify(sock._sent),
+            binascii.hexlify(bytes(sock._sent)),
             binascii.hexlify(b'\x07\x01\x00\x26\x00\x00\x00\x00\x81\x01\x00\x00\x00\x00\x00\x09\x002\x02c\x001\x00\xd1\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'),
             )
 
