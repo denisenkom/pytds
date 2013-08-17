@@ -957,7 +957,7 @@ class IntN(BaseType):
         8: BigInt.instance,
         }
 
-    _valid_sizes = {1, 2, 4, 8}
+    _valid_sizes = set((1, 2, 4, 8))
 
     def __init__(self, size):
         assert size in self._valid_sizes
@@ -1093,7 +1093,7 @@ class VarChar70(BaseType):
         return cls(size)
 
     def get_declaration(self):
-        return 'VARCHAR({})'.format(self._size)
+        return 'VARCHAR({0})'.format(self._size)
 
     def write_info(self, w):
         w.put_smallint(self._size)
@@ -1209,7 +1209,7 @@ class NVarChar70(BaseType):
         return cls(size)
 
     def get_declaration(self):
-        return 'NVARCHAR({})'.format(self._size)
+        return 'NVARCHAR({0})'.format(self._size)
 
     def write_info(self, w):
         w.put_usmallint(self._size * 2)
@@ -1498,7 +1498,7 @@ class VarBinary(BaseType):
         return cls(size)
 
     def get_declaration(self):
-        return 'VARBINARY({})'.format(self._size)
+        return 'VARBINARY({0})'.format(self._size)
 
     def write_info(self, w):
         w.put_usmallint(self._size)
@@ -1835,7 +1835,7 @@ class MsTime(BaseDateTime73):
         return cls(prec)
 
     def get_declaration(self):
-        return 'TIME({})'.format(self._prec)
+        return 'TIME({0})'.format(self._prec)
 
     def write_info(self, w):
         w.put_byte(self._prec)
@@ -1874,7 +1874,7 @@ class DateTime2(BaseDateTime73):
         return cls(prec)
 
     def get_declaration(self):
-        return 'DATETIME2({})'.format(self._prec)
+        return 'DATETIME2({0})'.format(self._prec)
 
     def write_info(self, w):
         w.put_byte(self._prec)
@@ -1916,7 +1916,7 @@ class DateTimeOffset(BaseDateTime73):
         return cls(prec)
 
     def get_declaration(self):
-        return 'DATETIMEOFFSET({})'.format(self._prec)
+        return 'DATETIMEOFFSET({0})'.format(self._prec)
 
     def write_info(self, w):
         w.put_byte(self._prec)
@@ -2000,7 +2000,7 @@ class MsDecimal(BaseType):
         return cls(scale=scale, prec=prec)
 
     def get_declaration(self):
-        return 'DECIMAL({},{})'.format(self._prec, self._scale)
+        return 'DECIMAL({0},{1})'.format(self._prec, self._scale)
 
     def write_info(self, w):
         w.pack(self._info_struct, self._size, self._prec, self._scale)
@@ -2657,7 +2657,7 @@ class _TdsSession(object):
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
         else:
-            logger.warning("unknown env type: {}, skipping".format(type))
+            logger.warning("unknown env type: {0}, skipping".format(type))
             # discard byte values, not still supported
             skipall(r, size - 1)
 
@@ -3126,7 +3126,7 @@ class _TdsSession(object):
         p = self._reader.read_whole_packet()
         size = len(p)
         if size <= 0 or self._reader.packet_type != 4:
-            self.bad_stream('Invalid packet type: {}, expected PRELOGIN(4)'.format(self._reader.packet_type))
+            self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
         # default 2, no certificate, no encryptption
         crypt_flag = 2
         i = 0
@@ -3657,7 +3657,7 @@ class Column(object):
         self.value = value
 
     def __repr__(self):
-        return '<Column(name={}, value={}, type={})>'.format(repr(self.column_name), repr(self.value), repr(self.type))
+        return '<Column(name={0}, value={1}, type={2})>'.format(repr(self.column_name), repr(self.value), repr(self.type))
 
 
 class _Results(object):
