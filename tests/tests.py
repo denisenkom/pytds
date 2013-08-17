@@ -1,7 +1,10 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
 from six import StringIO
-import unittest
+try:
+    import unittest2 as unittest
+except:
+    import unittest
 import sys
 from decimal import Decimal, getcontext
 import logging
