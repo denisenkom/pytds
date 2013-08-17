@@ -1000,6 +1000,10 @@ class IntN(BaseType):
 class Real(BaseType):
     type = SYBREAL
 
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
+
     def get_declaration(self):
         return 'REAL'
 
@@ -1016,6 +1020,10 @@ Real.instance = Real()
 
 class Float(BaseType):
     type = SYBFLT8
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls()
 
     def get_declaration(self):
         return 'FLOAT'
