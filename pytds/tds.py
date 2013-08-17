@@ -340,6 +340,13 @@ def tds7_crypt_pass(password):
     return encoded
 
 
+def total_seconds(td):
+    if hasattr(td, 'total_seconds'):
+        return td.total_seconds()
+    else:
+        return td.days * 24 * 60 * 60 + td.seconds
+
+
 # store a tuple of programming error codes
 prog_errors = (
     102,    # syntax error
@@ -1931,7 +1938,7 @@ class DateTimeOffset(BaseDateTime73):
             w.put_byte(self._size)
             self._write_time(w, value, self._prec)
             self._write_date(w, value)
-            w.put_smallint(int(utcoffset.total_seconds()) // 60)
+            w.put_smallint(int(total_seconds(utcoffset)) // 60)
 
     def read_fixed(self, r, size):
         time = self._read_time(r, size - 5, self._prec, _utc)
@@ -3217,7 +3224,7 @@ class _TdsSession(object):
         w.put_byte(type_flags)
         option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if IS_TDS73_PLUS(self) else 0)
-        mins_fix = int(login.client_tz.utcoffset(datetime.now()).total_seconds()) // 60
+        mins_fix = int(total_seconds(login.client_tz.utcoffset(datetime.now()))) // 60
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)
