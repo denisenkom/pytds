@@ -1,4 +1,4 @@
-import unittest
+import unittest2 as unittest
 import ctypes
 from ctypes import create_string_buffer
 from . import settings
