@@ -268,6 +268,8 @@ class _Connection(object):
         self._assert_open()
         if self._autocommit:
             return
+        if not self._conn.tds72_transaction:
+            return
         self._main_cursor._commit(cont=True, isolation_level=self._isolation_level)
 
     def cursor(self):
@@ -302,6 +304,9 @@ class _Connection(object):
                 return
 
             if not self._conn or not self._conn.is_connected():
+                return
+
+            if not self._conn.tds72_transaction:
                 return
 
             self._main_cursor._rollback(cont=True,
