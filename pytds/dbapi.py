@@ -414,6 +414,14 @@ class _Cursor(six.Iterator):
     def spid(self):
         return self._session._spid
 
+    def _get_tzinfo_factory(self):
+        return self._session.tzinfo_factory
+
+    def _set_tzinfo_factory(self, tzinfo_factory):
+        self._session.tzinfo_factory = tzinfo_factory
+
+    property(_get_tzinfo_factory, _set_tzinfo_factory)
+
     def get_proc_return_status(self):
         if self._session is None:
             return None

@@ -619,16 +619,19 @@ class TestVariant(TestCase):
     def _t(self, result, sql):
         with self.conn.cursor() as cur:
             cur.execute("select cast({0} as sql_variant)".format(sql))
+            import pytds.tz
+            cur.tzinfo_factory = pytds.tz.FixedOffsetTimezone
             val, = cur.fetchone()
             self.assertEqual(result, val)
 
     def test_new_datetime(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
+        import pytds.tz
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003000' as datetime2)")
         self._t(time(10, 11, 12, 3000), "cast('10:11:12.003000' as time)")
         self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
-        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 3 * 60 * 60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, pytds.tz.FixedOffsetTimezone(3 * 60 * 60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
 
     def test_regular(self):
         if not IS_TDS71_PLUS(self.conn):
@@ -906,10 +909,14 @@ class NewDateTimeTest(TestCase):
 
         def _testval(val):
             with self.conn.cursor() as cur:
+                import pytds.tz
+                cur.tzinfo_factory = pytds.tz.FixedOffsetTimezone
                 cur.execute('select cast(%s as datetimeoffset)', (val,))
                 self.assertEqual(cur.fetchall(), [(val,)])
 
         with self.conn.cursor() as cur:
+            import pytds.tz
+            cur.tzinfo_factory = pytds.tz.FixedOffsetTimezone
             cur.execute("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset)")
             self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5 * 60 * 60)), cur.fetchone()[0])
         _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))

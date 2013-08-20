@@ -5,7 +5,7 @@ import socket
 import sys
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
-from dateutil.tz import tzoffset, tzutc
+from dateutil.tz import tzutc
 import uuid
 import six
 from six.moves import reduce
@@ -21,6 +21,7 @@ from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 logger = logging.getLogger()
 
 ENCRYPTION_ENABLED = False
+
 
 # tds protocol versions
 TDS70 = 0x70000000
@@ -1661,7 +1662,10 @@ class SmallDateTime(BaseDateTime):
 
     def read(self, r):
         days, minutes = r.unpack(self._struct)
-        return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=r.session.use_tz)
+        tzinfo = None
+        if r.session.tzinfo_factory is not None:
+            tzinfo = r.session.tzinfo_factory(0)
+        return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=tzinfo)
 SmallDateTime.instance = SmallDateTime()
 
 
@@ -1693,7 +1697,10 @@ class DateTime(BaseDateTime):
 
     def read(self, r):
         days, t = r.unpack(self._struct)
-        return _applytz(self.decode(days, t), r.session.use_tz)
+        tzinfo = None
+        if r.session.tzinfo_factory is not None:
+            tzinfo = r.session.tzinfo_factory(0)
+        return _applytz(self.decode(days, t), tzinfo)
 
     @classmethod
     def validate(cls, value):
@@ -1867,7 +1874,10 @@ class MsTime(BaseDateTime73):
             self._write_time(w, value, self._prec)
 
     def read_fixed(self, r, size):
-        return self._read_time(r, size, self._prec, r.session.use_tz)
+        tzinfo = None
+        if r.session.tzinfo_factory is not None:
+            tzinfo = r.session.tzinfo_factory(0)
+        return self._read_time(r, size, self._prec, tzinfo)
 
     def read(self, r):
         size = r.get_byte()
@@ -1907,7 +1917,10 @@ class DateTime2(BaseDateTime73):
             self._write_date(w, value)
 
     def read_fixed(self, r, size):
-        time = self._read_time(r, size - 3, self._prec, r.session.use_tz)
+        tzinfo = None
+        if r.session.tzinfo_factory is not None:
+            tzinfo = r.session.tzinfo_factory(0)
+        time = self._read_time(r, size - 3, self._prec, tzinfo)
         date = self._read_date(r)
         return datetime.combine(date, time)
 
@@ -1951,7 +1964,9 @@ class DateTimeOffset(BaseDateTime73):
     def read_fixed(self, r, size):
         time = self._read_time(r, size - 5, self._prec, _utc)
         date = self._read_date(r)
-        tz = tzoffset('', r.get_smallint() * 60)
+        r._session
+        offset = r.get_smallint() * 60
+        tz = r._session.tzinfo_factory(offset)
         return datetime.combine(date, time).astimezone(tz)
 
     def read(self, r):
@@ -2374,6 +2389,8 @@ class _TdsSession(object):
         self.rows_affected = -1
         self.use_tz = tds.use_tz
         self._spid = 0
+        from pytds.tz import FixedOffsetTimezone
+        self.tzinfo_factory = None if tds.use_tz is None else FixedOffsetTimezone
 
     def raise_db_exception(self):
         if not self.messages:
