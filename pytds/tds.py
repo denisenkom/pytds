@@ -2589,7 +2589,7 @@ class _TdsSession(object):
         r = self._reader
         status = r.get_usmallint()
         r.get_usmallint()  # cur_cmd
-        more_results = status & TDS_DONE_MORE_RESULTS != 0
+        self.more_results = status & TDS_DONE_MORE_RESULTS != 0
         was_cancelled = status & TDS_DONE_CANCELLED != 0
         #error = status & TDS_DONE_ERROR != 0
         done_count_valid = status & TDS_DONE_COUNT != 0
@@ -2598,11 +2598,9 @@ class _TdsSession(object):
         #    '\t\twas_cancelled = {1}\n'
         #    '\t\terror = {2}\n'
         #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
-        if self.res_info:
-            self.res_info.more_results = more_results
         rows_affected = r.get_int8() if IS_TDS72_PLUS(self) else r.get_int()
         #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
-        if was_cancelled or (not more_results and not self.in_cancel):
+        if was_cancelled or (not self.more_results and not self.in_cancel):
             #logger.debug('process_end() state set to TDS_IDLE')
             self.in_cancel = False
             self.set_state(TDS_IDLE)
@@ -3390,6 +3388,7 @@ class _TdsSession(object):
             return False
         if self.find_result_or_done():
             return True
+        return self.more_results
 
     def fetchone(self, as_dict):
         if self.res_info is None:
