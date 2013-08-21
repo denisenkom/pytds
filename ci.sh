@@ -5,4 +5,5 @@ $PYTHONHOME/bin/virtualenv env
 pip install pydes --use-mirrors
 pip install coverage --use-mirrors
 pip install nose --use-mirrors
+pip install -e .
 python -m unittest discover
