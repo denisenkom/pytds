@@ -1222,7 +1222,7 @@ class NVarChar70(BaseType):
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
-        return cls(size)
+        return cls(size / 2)
 
     def get_declaration(self):
         return 'NVARCHAR({0})'.format(self._size)
@@ -1257,7 +1257,7 @@ class NVarChar71(NVarChar70):
     def from_stream(cls, r):
         size = r.get_usmallint()
         collation = r.get_collation()
-        return cls(size, collation)
+        return cls(size / 2, collation)
 
     def write_info(self, w):
         super(NVarChar71, self).write_info(w)
@@ -1265,9 +1265,10 @@ class NVarChar71(NVarChar70):
 
 
 class NVarChar72(NVarChar71):
-    def __init__(self, size, collation=raw_collation):
+    def __init__(self, size, collation=raw_collation, is_max=False):
         super(NVarChar72, self).__init__(size, collation)
-        if size == 0xffff:
+        self._is_max = is_max
+        if is_max:
             self.read = self._read_max
             self.write = self._write_max
             self.write_info = self._write_info_max
@@ -1276,10 +1277,10 @@ class NVarChar72(NVarChar71):
     def from_stream(cls, r):
         size = r.get_usmallint()
         collation = r.get_collation()
-        return cls(size, collation)
+        return cls(size / 2, collation=collation, is_max=size == 0xffff)
 
     def get_declaration(self):
-        if self._size == 0xffff:
+        if self._is_max:
             return 'NVARCHAR(MAX)'
         else:
             return super(NVarChar72, self).get_declaration()
@@ -2481,7 +2482,8 @@ class _TdsSession(object):
             curcol.column_name = r.read_ucs2(r.get_byte())
             precision = curcol.type.precision if hasattr(curcol.type, 'precision') else None
             scale = curcol.type.scale if hasattr(curcol.type, 'scale') else None
-            header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, None, precision, scale, curcol.column_nullable))
+            size = curcol.type._size if hasattr(curcol.type, '_size') else None
+            header_tuple.append((curcol.column_name, curcol.type.get_typeid(), None, size, precision, scale, curcol.column_nullable))
         info.description = tuple(header_tuple)
         return info
 
@@ -2795,7 +2797,7 @@ class _TdsSession(object):
             size = 1
         if size > 4000:
             if IS_TDS72_PLUS(self):
-                column.type = NVarChar72(0xffff, self.conn.collation)
+                column.type = NVarChar72(0, self.conn.collation, is_max=True)
             elif IS_TDS71_PLUS(self):
                 column.type = NText71(-1, '', self.conn.collation)
             else:
@@ -3674,7 +3676,7 @@ class _TdsSocket(object):
 
     def long_string_type(self, collation=raw_collation):
         if IS_TDS72_PLUS(self):
-            return NVarChar72(0xffff, collation)
+            return NVarChar72(0, collation, is_max=True)
         elif IS_TDS71_PLUS(self):
             return NText71(-1, '', collation)
         else:

@@ -1441,7 +1441,10 @@ class TestMessages(unittest.TestCase):
         tds._sock = sock
         w = tds._main_session._writer
 
-        t = NVarChar72(0xffff, Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False, ignore_kana=False, binary=True, binary2=False, version=0))
+        t = NVarChar72(
+            0,
+            Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False, ignore_kana=False, binary=True, binary2=False, version=0),
+            is_max=True)
         t.write_info(w)
         self.assertEqual(w._buf[:w._pos], b'\xff\xff\t\x04\x00\x01\x00')
 
