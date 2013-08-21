@@ -1966,7 +1966,11 @@ class DateTimeOffset(BaseDateTime73):
         date = self._read_date(r)
         r._session
         offset = r.get_smallint() * 60
-        tz = r._session.tzinfo_factory(offset)
+        tzinfo_factory = r._session.tzinfo_factory
+        if tzinfo_factory is None:
+            from pytds.tz import FixedOffsetTimezone
+            tzinfo_factory = FixedOffsetTimezone
+        tz = tzinfo_factory(offset)
         return datetime.combine(date, time).astimezone(tz)
 
     def read(self, r):
