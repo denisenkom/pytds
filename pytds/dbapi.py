@@ -156,7 +156,7 @@ class _Connection(object):
                 continue
             try:
                 self._conn = _TdsSocket(self._use_tz)
-                self._conn.login(self._login, sock)
+                self._conn.login(self._login, sock, self._tzinfo_factory)
                 break
             except Exception as e:
                 sock.close()
@@ -253,6 +253,8 @@ class _Connection(object):
         self._as_dict = as_dict
         self._isolation_level = 0
         self._dirty = False
+        from pytds.tz import FixedOffsetTimezone
+        self._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
         self._open()
 
     def __enter__(self):
@@ -281,19 +283,27 @@ class _Connection(object):
         if self.mars_enabled:
             in_tran = self._conn.tds72_transaction
             if in_tran and self._dirty:
-                return _MarsCursor(self, self._conn.create_session())
+                return _MarsCursor(self,
+                                   self._conn.create_session(self._tzinfo_factory),
+                                   self._tzinfo_factory)
             else:
                 try:
-                    return _MarsCursor(self, self._conn.create_session())
+                    return _MarsCursor(self,
+                                       self._conn.create_session(self._tzinfo_factory),
+                                       self._tzinfo_factory)
                 except socket.error as e:
                     if e.errno != errno.ECONNRESET:
                         raise
                 except ClosedConnectionError:
                     pass
                 self._assert_open()
-                return _MarsCursor(self, self._conn.create_session())
+                return _MarsCursor(self,
+                                   self._conn.create_session(self._tzinfo_factory),
+                                   self._tzinfo_factory)
         else:
-            return _Cursor(self, self._conn.main_session)
+            return _Cursor(self,
+                           self._conn.main_session,
+                           self._tzinfo_factory)
 
     def rollback(self):
         """
@@ -352,10 +362,11 @@ class _Cursor(six.Iterator):
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
     """
-    def __init__(self, conn, session):
+    def __init__(self, conn, session, tzinfo_factory):
         self._conn = conn
         self.arraysize = 1
         self._session = session
+        self._tzinfo_factory = tzinfo_factory
 
     def _assert_open(self):
         if not self._conn:
@@ -415,12 +426,12 @@ class _Cursor(six.Iterator):
         return self._session._spid
 
     def _get_tzinfo_factory(self):
-        return self._session.tzinfo_factory
+        return self._tzinfo_factory
 
     def _set_tzinfo_factory(self, tzinfo_factory):
-        self._session.tzinfo_factory = tzinfo_factory
+        self._tzinfo_factory = self._session.tzinfo_factory = tzinfo_factory
 
-    property(_get_tzinfo_factory, _set_tzinfo_factory)
+    tzinfo_factory = property(_get_tzinfo_factory, _set_tzinfo_factory)
 
     def get_proc_return_status(self):
         if self._session is None:
@@ -656,7 +667,7 @@ class _MarsCursor(_Cursor):
             raise Error('Cursor is closed')
         self._conn._assert_open()
         if not self._session.is_connected():
-            self._session = self._conn._conn.create_session()
+            self._session = self._conn._conn.create_session(self._tzinfo_factory)
 
     @property
     def spid(self):

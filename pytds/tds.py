@@ -2373,7 +2373,7 @@ _type_map72.update({
 
 
 class _TdsSession(object):
-    def __init__(self, tds, transport):
+    def __init__(self, tds, transport, tzinfo_factory):
         self.out_pos = 8
         self.res_info = None
         self.in_cancel = False
@@ -2393,8 +2393,7 @@ class _TdsSession(object):
         self.rows_affected = -1
         self.use_tz = tds.use_tz
         self._spid = 0
-        from pytds.tz import FixedOffsetTimezone
-        self.tzinfo_factory = None if tds.use_tz is None else FixedOffsetTimezone
+        self.tzinfo_factory = tzinfo_factory
 
     def raise_db_exception(self):
         if not self.messages:
@@ -3530,11 +3529,11 @@ class _TdsSocket(object):
         self.tds_version = TDS74
         self.use_tz = use_tz
 
-    def login(self, login, sock):
+    def login(self, login, sock, tzinfo_factory):
         self.login = login
         self._bufsize = login.blocksize
         self.query_timeout = login.query_timeout
-        self._main_session = _TdsSession(self, self)
+        self._main_session = _TdsSession(self, self, tzinfo_factory)
         self._sock = sock
         self.tds_version = login.tds_version
         if IS_TDS71_PLUS(self):
@@ -3556,7 +3555,10 @@ class _TdsSocket(object):
         if self._mars_enabled:
             from .smp import SmpManager
             self._smp_manager = SmpManager(self)
-            self._main_session = _TdsSession(self, self._smp_manager.create_session())
+            self._main_session = _TdsSession(
+                self,
+                self._smp_manager.create_session(),
+                tzinfo_factory)
         self._is_connected = True
         q = []
         if text_size:
@@ -3575,8 +3577,10 @@ class _TdsSocket(object):
     def main_session(self):
         return self._main_session
 
-    def create_session(self):
-        return _TdsSession(self, self._smp_manager.create_session())
+    def create_session(self, tzinfo_factory):
+        return _TdsSession(
+            self, self._smp_manager.create_session(),
+            tzinfo_factory)
 
     def read(self, size):
         buf = self._sock.recv(size)
