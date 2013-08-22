@@ -1324,7 +1324,7 @@ class Xml(NVarChar72):
     type = SYBMSXML
 
     def __init__(self, schema={}):
-        super(Xml, self).__init__(0xffff)
+        super(Xml, self).__init__(0, is_max=True)
         self._schema = schema
 
     @classmethod
