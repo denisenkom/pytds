@@ -2842,6 +2842,8 @@ class _TdsSession(object):
             column.type = FloatN(8)
         elif isinstance(value, Binary):
             size = len(value)
+            if size == 0:
+                size = 1
             if size > 8000:
                 if IS_TDS72_PLUS(self):
                     column.type = VarBinary72(0xffff)
