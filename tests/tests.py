@@ -278,6 +278,7 @@ class TestCase2(TestCase):
         test_val('hello')
         test_val('')
         test_val('x' * 5000)
+        test_val(Binary(b''))
         test_val(Binary(b'\x00\x01\x02'))
         test_val(Binary(b'x' * 5000))
         test_val(2 ** 63 - 1)
