@@ -479,25 +479,44 @@ class _Cursor(six.Iterator):
         operation = six.text_type(operation)
         if params:
             if isinstance(params, (list, tuple)):
-                names = tuple('@P{0}'.format(n) for n in range(len(params)))
+                names = []
+                pid = 1
+                named_params = {}
+                for val in params:
+                    if val is None:
+                        names.append('NULL')
+                    else:
+                        name = '@P{0}'.format(pid)
+                        names.append(name)
+                        named_params[name] = val
+                        pid += 1
                 if len(names) == 1:
                     operation = operation % names[0]
                 else:
-                    operation = operation % names
-                params = dict(zip(names, params))
+                    operation = operation % tuple(names)
             elif isinstance(params, dict):
                 # prepend names with @
-                rename = dict((name, '@{0}'.format(name)) for name in params.keys())
-                params = dict(('@{0}'.format(name), value) for name, value in params.items())
+                rename = {}
+                named_params = {}
+                for name, value in params.items():
+                    if value is None:
+                        rename[name] = 'NULL'
+                    else:
+                        mssql_name = '@{0}'.format(name)
+                        rename[name] = mssql_name
+                        named_params[mssql_name] = value
                 operation = operation % rename
-            params = self._session._convert_params(params)
-            param_definition = u','.join(
-                u'{0} {1}'.format(p.column_name, p.type.get_declaration())
-                for p in params)
-            self._exec_with_retry(lambda: self._session.submit_rpc(
-                SP_EXECUTESQL,
-                [self._session.make_param('', operation), self._session.make_param('', param_definition)] + params,
-                0))
+            if named_params:
+                named_params = self._session._convert_params(named_params)
+                param_definition = u','.join(
+                    u'{0} {1}'.format(p.column_name, p.type.get_declaration())
+                    for p in named_params)
+                self._exec_with_retry(lambda: self._session.submit_rpc(
+                    SP_EXECUTESQL,
+                    [self._session.make_param('', operation), self._session.make_param('', param_definition)] + named_params,
+                    0))
+            else:
+                self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
         else:
             self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
         self._session.find_result_or_done()
