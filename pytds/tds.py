@@ -321,6 +321,16 @@ class SimpleLoadBalancer(object):
             yield host
 
 
+def force_unicode(s):
+    if isinstance(s, bytes):
+        try:
+            return s.decode('utf8')
+        except UnicodeDecodeError as e:
+            raise DatabaseError(e)
+    else:
+        return s
+
+
 #
 # Quote an id
 # \param tds    state information for the socket and the TDS protocol
@@ -1119,7 +1129,8 @@ class VarChar70(BaseType):
         if val is None:
             w.put_smallint(-1)
         else:
-            val, _ = self._codec.encode(val.decode('utf8'))
+            val = force_unicode(val)
+            val, _ = self._codec.encode(val)
             w.put_smallint(len(val))
             #w.put_smallint(len(val))
             w.write(val)
@@ -1186,7 +1197,8 @@ class VarChar72(VarChar71):
         if val is None:
             w.put_int8(-1)
         else:
-            val, _ = self._codec.encode(val.decode('utf8'))
+            val = force_unicode(val)
+            val, _ = self._codec.encode(val)
             w.put_int8(len(val))
             w.put_int(len(val))
             w.write(val)
@@ -1236,7 +1248,7 @@ class NVarChar70(BaseType):
             w.put_usmallint(0xffff)
         else:
             if isinstance(val, bytes):
-                val = val.decode('utf8')
+                val = force_unicode(val)
             w.put_usmallint(len(val) * 2)
             #w.put_smallint(len(val))
             w.write_ucs2(val)
@@ -1294,7 +1306,7 @@ class NVarChar72(NVarChar71):
             w.put_uint8(0xffffffffffffffff)
         else:
             if isinstance(val, bytes):
-                val = val.decode('utf8')
+                val = force_unicode(val)
             w.put_uint8(len(val) * 2)
             w.put_uint(len(val) * 2)
             w.write_ucs2(val)
