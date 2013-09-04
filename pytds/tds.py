@@ -1285,6 +1285,12 @@ class NVarChar72(NVarChar71):
             self.write = self._write_max
             self.write_info = self._write_info_max
 
+    def get_typeid(self):
+        if self._is_max:
+            return SYBNTEXT
+        else:
+            return self.type
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
