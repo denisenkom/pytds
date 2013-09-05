@@ -3036,7 +3036,12 @@ class _TdsSession(object):
 
     def rollback(self, cont, isolation_level=0):
         self.submit_rollback(cont, isolation_level=isolation_level)
-        self.process_simple_request()
+        prev_timeout = self._tds._sock.gettimeout()
+        self._tds._sock.settimeout(None)
+        try:
+            self.process_simple_request()
+        finally:
+            self._tds._sock.settimeout(prev_timeout)
 
     def submit_rollback(self, cont, isolation_level=0):
         logger.debug('submit_rollback(%s, %s)', id(self), cont)
@@ -3066,7 +3071,12 @@ class _TdsSession(object):
 
     def commit(self, cont, isolation_level=0):
         self.submit_commit(cont, isolation_level=isolation_level)
-        self.process_simple_request()
+        prev_timeout = self._tds._sock.gettimeout()
+        self._tds._sock.settimeout(None)
+        try:
+            self.process_simple_request()
+        finally:
+            self._tds._sock.settimeout(prev_timeout)
 
     def submit_commit(self, cont, isolation_level=0):
         logger.debug('submit_commit(%s)', cont)

@@ -1595,3 +1595,47 @@ class TestBug4(unittest.TestCase):
             with conn.cursor() as cur:
                 cur.execute('select 1 as a, 2 as b')
                 self.assertDictEqual({'a': 1, 'b': 2}, cur.fetchone())
+
+
+class TransactionsTests(DbTestCase):
+    def test_rollback_timeout_recovery(self):
+        self.conn.autocommit = False
+        with self.conn.cursor() as cur:
+            cur.execute('''
+            create table testtable_rollback (field int)
+            ''')
+            sql = 'insert into testtable_rollback values ' + ','.join(['(1)'] * 1000)
+            for i in xrange(10):
+                cur.execute(sql)
+
+        self.conn._conn._sock.settimeout(0.00001)
+        try:
+            self.conn.rollback()
+        except:
+            pass
+
+        self.conn._conn._sock.settimeout(10)
+        cur = self.conn.cursor()
+        cur.execute('select 1')
+        cur.fetchall()
+
+    def test_commit_timeout_recovery(self):
+        self.conn.autocommit = False
+        with self.conn.cursor() as cur:
+            cur.execute('''
+            create table testtable (field int)
+            ''')
+            sql = 'insert into testtable values ' + ','.join(['(1)'] * 1000)
+            for i in xrange(10):
+                cur.execute(sql)
+
+        self.conn._conn._sock.settimeout(0.00001)
+        try:
+            self.conn.commit()
+        except:
+            pass
+
+        self.conn._conn._sock.settimeout(10)
+        cur = self.conn.cursor()
+        cur.execute('select 1')
+        cur.fetchall()
