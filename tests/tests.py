@@ -1597,6 +1597,7 @@ class TestBug4(unittest.TestCase):
                 self.assertDictEqual({'a': 1, 'b': 2}, cur.fetchone())
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TransactionsTests(DbTestCase):
     def test_rollback_timeout_recovery(self):
         self.conn.autocommit = False
