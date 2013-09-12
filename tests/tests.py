@@ -1,5 +1,6 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
+import struct
 from six import StringIO
 import unittest
 import sys
@@ -1196,7 +1197,7 @@ class TestMessages(unittest.TestCase):
         tds._main_session._send_prelogin(login)
         template = (b'\x12\x01\x00:\x00\x00\x00\x00\x00\x00' +
                     b'\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x0c\x03' +
-                    b'\x00-\x00\x04\x04\x001\x00\x01\xff\x01\x06\x01\x00' +
+                    b'\x00-\x00\x04\x04\x001\x00\x01\xff' + struct.pack('>l', pytds.intversion) +
                     b'\x00\x00\x02MSSQLServer\x00\x00\x00\x00\x00\x00')
         self.assertEqual(sock._sent, template)
 
@@ -1277,7 +1278,7 @@ class TestMessages(unittest.TestCase):
             b'\xc6\x00\x00\x00' +  # size
             b'\x03\x00\ns' +  # tds version
             b'\x00\x10\x00\x00' +  # buf size
-            b'\x00\x01\x06\x01' +  # client library ver
+            struct.pack('<l', pytds.intversion) +
             b'd\x00\x00\x00' +  # pid
             b'\x00\x00\x00\x00' +  # connection id of primary server (whatever that means)
             b'\xe0\x00\x00\x08' +  # flags
@@ -1301,9 +1302,12 @@ class TestMessages(unittest.TestCase):
         tds._main_session.tds7_send_login(login)
         self.assertEqual(
             binascii.hexlify(sock._sent),
-            b'100100de00000100' +
-            b'c6000000' +
-            b'0000007100100000000106016400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c0065007000610074006800')
+            '100100de00000100' +
+            'c6000000' +
+            '00000071' +
+            '00100000' +
+            binascii.hexlify(struct.pack('<l', pytds.intversion)) +
+            '6400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c0065007000610074006800')
         sock._sent = b''
         login.user_name = 'x' * 129
         with self.assertRaisesRegexp(ValueError, 'User name should be no longer that 128 characters'):
