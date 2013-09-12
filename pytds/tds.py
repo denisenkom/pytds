@@ -2959,7 +2959,7 @@ class _TdsSession(object):
             self.query_flush_packet()
 
     def submit_plain_query(self, operation):
-        logger.debug('submit_plain_query(%s)', operation)
+        #logger.debug('submit_plain_query(%s)', operation)
         self.messages = []
         self.cancel_if_pending()
         self.res_info = None
@@ -3014,7 +3014,7 @@ class _TdsSession(object):
         self.process_simple_request()
 
     def submit_begin_tran(self, isolation_level=0):
-        logger.debug('submit_begin_tran()')
+        #logger.debug('submit_begin_tran()')
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -3044,7 +3044,7 @@ class _TdsSession(object):
             self._tds._sock.settimeout(prev_timeout)
 
     def submit_rollback(self, cont, isolation_level=0):
-        logger.debug('submit_rollback(%s, %s)', id(self), cont)
+        #logger.debug('submit_rollback(%s, %s)', id(self), cont)
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -3079,7 +3079,7 @@ class _TdsSession(object):
             self._tds._sock.settimeout(prev_timeout)
 
     def submit_commit(self, cont, isolation_level=0):
-        logger.debug('submit_commit(%s)', cont)
+        #logger.debug('submit_commit(%s)', cont)
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -3379,7 +3379,7 @@ class _TdsSession(object):
                 r.get_byte()  # interface
                 version = r.get_uint_be()
                 self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(version, version)
-                logger.debug('server reports TDS version {0:x}'.format(version))
+                #logger.debug('server reports TDS version {0:x}'.format(version))
                 if not IS_TDS7_PLUS(self):
                     self.bad_stream('Only TDS 7.0 and higher are supported')
                 # get server product name
@@ -3391,7 +3391,7 @@ class _TdsSession(object):
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
-                logger.debug('Product version {0:x}'.format(product_version))
+                #logger.debug('Product version {0:x}'.format(product_version))
                 if self.conn.authentication:
                     self.conn.authentication.close()
                     self.conn.authentication = None
