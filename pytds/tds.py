@@ -3754,7 +3754,7 @@ def _parse_instances(msg):
                 if not name:
                     if not instdict:
                         break
-                    results[instdict['InstanceName']] = instdict
+                    results[instdict['InstanceName'].upper()] = instdict
                     instdict = {}
                     continue
                 got_name = True

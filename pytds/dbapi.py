@@ -241,7 +241,7 @@ class _Connection(object):
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
         login.server_name = server
-        login.instance_name = instance
+        login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
         login.blocksize = blocksize
         login.auth = auth
         login.readonly = readonly
