@@ -1013,6 +1013,9 @@ class RegressionSuite(TestCase):
         cursor.fetchall()
         self.conn.commit()
 
+    def test_cancel(self):
+        self.conn.cursor().cancel()
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestLoadBalancer(DbTestCase):
