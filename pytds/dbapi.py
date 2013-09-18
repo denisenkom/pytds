@@ -392,6 +392,7 @@ class _Cursor(six.Iterator):
         return self
 
     def _callproc(self, procname, parameters):
+        self._ensure_transaction()
         results = list(parameters)
         parameters = self._session._convert_params(parameters)
         self._exec_with_retry(lambda: self._session.submit_rpc(procname, parameters, 0))
@@ -474,7 +475,12 @@ class _Cursor(six.Iterator):
             self._assert_open()
             return fun()
 
+    def _ensure_transaction(self):
+        if not self._conn._autocommit and not self._conn._conn.tds72_transaction:
+            self._conn._main_cursor._begin_tran(isolation_level=self._conn._isolation_level)
+
     def _execute(self, operation, params):
+        self._ensure_transaction()
         operation = six.text_type(operation)
         if params:
             if isinstance(params, (list, tuple)):

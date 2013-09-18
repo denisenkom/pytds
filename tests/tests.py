@@ -572,6 +572,27 @@ class DbTests(DbTestCase):
             ''')
         self.conn.commit()
 
+    def test_manual_commit(self):
+        self.conn.autocommit = False
+        cur = self.conn.cursor()
+        cur.execute("create table tbl(x int)")
+        self.assertTrue(self.conn._conn.tds72_transaction)
+        try:
+            cur.execute("create table tbl(x int)")
+        except:
+            pass
+        trancount = cur.execute_scalar("select @@trancount")
+        self.assertEqual(1, trancount, 'Should be in transaction even after errors')
+
+        cur.execute("create table tbl(x int)")
+        try:
+            cur.execute("create table tbl(x int)")
+        except:
+            pass
+        cur.callproc('sp_executesql', ('select @@trancount',))
+        trancount, = cur.fetchone()
+        self.assertEqual(1, trancount, 'Should be in transaction even after errors')
+
     def test_multi_packet(self):
         cur = self.conn.cursor()
         param = 'x' * (self.conn._conn.main_session._writer.bufsize * 3)
