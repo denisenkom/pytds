@@ -9,6 +9,7 @@ setup(name='python-tds',
       author='Mikhail Denisenko',
       author_email='denisenkom@gmail.com',
       url='https://github.com/denisenkom/pytds',
+      license="MIT",
       packages=['pytds'],
       classifiers=[
           'Development Status :: 4 - Beta',
