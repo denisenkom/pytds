@@ -703,8 +703,7 @@ class _MarsCursor(_Cursor):
 
     def cancel(self):
         self._assert_open()
-        self._session.send_cancel()
-        self._session.process_cancel()
+        self._session.cancel_if_pending()
 
     def close(self):
         """

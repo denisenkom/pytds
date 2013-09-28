@@ -15,6 +15,10 @@ To install run this command:
 
     pip install python-tds
 
+For a better performance install bitarray package too:
+
+    pip install bitarray
+
 To connect to database do
     
     import pytds
