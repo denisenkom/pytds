@@ -9,7 +9,7 @@ import os
 from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
-from dateutil.tz import tzlocal
+from . import tz
 import socket
 import errno
 import uuid
@@ -229,7 +229,7 @@ class _Connection(object):
         if use_tz:
             login.client_tz = use_tz
         else:
-            login.client_tz = tzlocal()
+            login.client_tz = tz.local
 
         # that will set:
         # ANSI_DEFAULTS to ON,
