@@ -11,7 +11,9 @@ import logging
 from time import sleep
 from datetime import datetime, date, time
 import uuid
-from dateutil.tz import tzoffset, tzutc
+import pytds.tz
+tzoffset = pytds.tz.FixedOffsetTimezone
+utc = pytds.tz.utc
 from six import text_type
 from six.moves import xrange
 import binascii
@@ -217,10 +219,10 @@ class TestCase2(TestCase):
         test_val(self.conn._conn.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
         test_val(self.conn._conn.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
         test_val(self.conn._conn.DateTime2(0), None)
-        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
-        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset('', 14 * 60)))
-        test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset('', -14 * 60)))
-        #test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset('', 14 * 60)))
+        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
+        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
+        test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))
+        #test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(14)))
         test_val(self.conn._conn.DateTimeOffset(6), None)
         test_val(self.conn._conn.Decimal(6, 38), Decimal('123.456789'))
         test_val(self.conn._conn.Decimal(6, 38), None)
@@ -427,10 +429,10 @@ class DbTests(DbTestCase):
         self._test_bulk_type(self.conn._conn.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
         self._test_bulk_type(self.conn._conn.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
         self._test_bulk_type(self.conn._conn.DateTime2(0), None)
-        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
-        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset('', 14 * 60)))
-        self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset('', -14 * 60)))
-        #self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset('', 14 * 60)))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))
+        #self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(14)))
         self._test_bulk_type(self.conn._conn.DateTimeOffset(6), None)
         self._test_bulk_type(self.conn._conn.Decimal(6, 38), Decimal('123.456789'))
         self._test_bulk_type(self.conn._conn.Decimal(6, 38), None)
@@ -651,7 +653,7 @@ class TestVariant(TestCase):
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003000' as datetime2)")
         self._t(time(10, 11, 12, 3000), "cast('10:11:12.003000' as time)")
         self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
-        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, pytds.tz.FixedOffsetTimezone(3 * 60 * 60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
+        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, pytds.tz.FixedOffsetTimezone(3 * 60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
 
     def test_regular(self):
         if not IS_TDS71_PLUS(self.conn):
@@ -938,14 +940,14 @@ class NewDateTimeTest(TestCase):
             import pytds.tz
             cur.tzinfo_factory = pytds.tz.FixedOffsetTimezone
             cur.execute("select cast('2010-01-02T20:21:22.1234567+05:00' as datetimeoffset)")
-            self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset('', 5 * 60 * 60)), cur.fetchone()[0])
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzutc()))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 5 * 60 * 60)))
-        _testval(Timestamp(1, 1, 1, 0, 0, 0, 0, tzutc()))
-        _testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999, tzutc()))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', 14 * 60)))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -14 * 60)))
-        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset('', -15 * 60)))
+            self.assertEqual(datetime(2010, 1, 2, 20, 21, 22, 123456, tzoffset(5 * 60)), cur.fetchone()[0])
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, utc))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset(5 * 60)))
+        _testval(Timestamp(1, 1, 1, 0, 0, 0, 0, utc))
+        _testval(Timestamp(9999, 12, 31, 23, 59, 59, 999999, utc))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset(14)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset(-14)))
+        _testval(Timestamp(2010, 1, 2, 0, 0, 0, 0, tzoffset(-15)))
 
     def test_time(self):
         if not IS_TDS73_PLUS(self.conn):
@@ -1079,19 +1081,19 @@ class TimezoneTests(unittest.TestCase):
 
     def runTest(self):
         kwargs = settings.CONNECT_KWARGS.copy()
-        use_tz = tzutc()
+        use_tz = utc
         kwargs['use_tz'] = use_tz
         kwargs['database'] = 'master'
         with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
             # Naive time should be interpreted as use_tz
             self.check_val(conn, '%s',
                            datetime(2011, 2, 3, 10, 11, 12, 3000),
-                           datetime(2011, 2, 3, 10, 11, 12, 3000, tzutc()))
+                           datetime(2011, 2, 3, 10, 11, 12, 3000, utc))
             # Aware time shoule be passed as-is
-            dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 60))
+            dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset(1))
             self.check_val(conn, '%s', dt, dt)
             # Aware time should be converted to use_tz if not using datetimeoffset type
-            dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset('', 60))
+            dt = datetime(2011, 2, 3, 10, 11, 12, 3000, tzoffset(1))
             if IS_TDS73_PLUS(conn):
                 self.check_val(conn, 'cast(%s as datetime2)', dt, dt.astimezone(use_tz))
 
@@ -1149,7 +1151,7 @@ class TestMessages(unittest.TestCase):
         login.client_host_name = 'clienthost'
         login.pid = 100
         login.change_password = ''
-        login.client_tz = tzoffset('', 5 * 60)
+        login.client_tz = tzoffset(5)
         login.client_id = 0xabcd
         return login
 
@@ -1327,7 +1329,7 @@ class TestMessages(unittest.TestCase):
         login.client_host_name = 'subdev1'
         login.pid = 100
         login.change_password = ''
-        login.client_tz = tzoffset('', -4 * 60 * 60)
+        login.client_tz = tzoffset(-4 * 60)
         login.client_id = 0x1234567890ab
         tds._main_session.tds7_send_login(login)
         self.assertEqual(
