@@ -659,7 +659,7 @@ class _Cursor(six.Iterator):
             self.execute('select top 1 * from [{}] where 1<>1'.format(table_or_view))
             columns = [col[0] for col in self.description]
         metadata = [Column(name=col, type=self._conn._conn.NVarChar(4000), flags=Column.fNullable) for col in columns]
-        col_defs = ','.join('{} {}'.format(col.column_name, col.type.get_declaration())
+        col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
                             for col in metadata)
         with_opts = []
         if check_constraints:
@@ -669,17 +669,17 @@ class _Cursor(six.Iterator):
         if keep_nulls:
             with_opts.append('KEEP_NULLS')
         if kb_per_batch:
-            with_opts.append('KILOBYTES_PER_BATCH = {}'.format(kb_per_batch))
+            with_opts.append('KILOBYTES_PER_BATCH = {0}'.format(kb_per_batch))
         if rows_per_batch:
-            with_opts.append('ROWS_PER_BATCH = {}'.format(rows_per_batch))
+            with_opts.append('ROWS_PER_BATCH = {0}'.format(rows_per_batch))
         if order:
-            with_opts.append('ORDER({})'.format(','.join(order)))
+            with_opts.append('ORDER({0})'.format(','.join(order)))
         if tablock:
             with_opts.append('TABLOCK')
         with_part = ''
         if with_opts:
-            with_part = 'WITH ({})'.format(','.join(with_opts))
-        operation = 'INSERT BULK [{}]({}) {}'.format(table_or_view, col_defs, with_part)
+            with_part = 'WITH ({0})'.format(','.join(with_opts))
+        operation = 'INSERT BULK [{0}]({1}) {2}'.format(table_or_view, col_defs, with_part)
         self.execute(operation)
         self._session.submit_bulk(metadata, reader)
         self._session.process_simple_request()
