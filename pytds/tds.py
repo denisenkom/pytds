@@ -1417,6 +1417,8 @@ class Text71(Text70):
         if val is None:
             w.put_int(-1)
         else:
+            val = force_unicode(val)
+            val, _ = self._codec.encode(val)
             w.put_int(len(val))
             w.write(val)
 
