@@ -1449,7 +1449,7 @@ class Text72(Text71):
 class NText70(BaseType):
     type = SYBNTEXT
 
-    def __init__(self, size=100, table_name=''):
+    def __init__(self, size=0, table_name=''):
         self._size = size
         self._table_name = table_name
 
@@ -1476,14 +1476,14 @@ class NText70(BaseType):
 
     def write(self, w, val):
         if val is None:
-            w.put_int(0)
+            w.put_int(-1)
         else:
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
 
 
 class NText71(NText70):
-    def __init__(self, size, table_name, collation):
+    def __init__(self, size=0, table_name='', collation=raw_collation):
         self._size = size
         self._collation = collation
         self._table_name = table_name
@@ -1496,7 +1496,7 @@ class NText71(NText70):
         return cls(size, table_name, collation)
 
     def write_info(self, w):
-        w.put_int(self._size * 2)
+        w.put_int(self._size)
         w.put_collation(self._collation)
 
     def read(self, r):
@@ -1510,7 +1510,7 @@ class NText71(NText70):
 
 
 class NText72(NText71):
-    def __init__(self, size, table_name_parts, collation):
+    def __init__(self, size=0, table_name_parts=[], collation=raw_collation):
         self._size = size
         self._collation = collation
         self._table_name_parts = table_name_parts
@@ -3680,6 +3680,14 @@ class _TdsSocket(object):
             return Text71(size, collation=collation)
         else:
             return Text70(size)
+
+    def NText(self, size=0, collation=raw_collation):
+        if IS_TDS72_PLUS(self):
+            return NText72(size, collation=collation)
+        elif IS_TDS71_PLUS(self):
+            return NText71(size, collation=collation)
+        else:
+            return NText70(size)
 
     def VarBinary(self, size):
         if IS_TDS72_PLUS(self):
