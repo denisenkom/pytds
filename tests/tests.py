@@ -470,13 +470,13 @@ class DbTests(DbTestCase):
         #self._test_bulk_type(self.conn._conn.Image(10, ['']), None)
         #self._test_bulk_type(self.conn._conn.Image(10, ['']), b'test')
 
-    #def test_bulk_insert(self):
-    #    with self.conn.cursor() as cur:
-    #        cur.execute('create table bulk_insert_table(num int, data varchar(100))')
-    #        f = StringIO("42\tfoo\n74\tbar\n")
-    #        cur.copy_to(f, 'bulk_insert_table', columns=('num', 'data'))
-    #        cur.execute('select num, data from bulk_insert_table')
-    #        self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
+    def test_bulk_insert(self):
+        with self.conn.cursor() as cur:
+            cur.execute('create table bulk_insert_table(num int, data varchar(100))')
+            f = StringIO("42\tfoo\n74\tbar\n")
+            cur.copy_to(f, 'bulk_insert_table', columns=('num', 'data'))
+            cur.execute('select num, data from bulk_insert_table')
+            self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
 
     def test_table_selects(self):
         cur = self.conn.cursor()

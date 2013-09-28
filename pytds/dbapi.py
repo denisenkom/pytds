@@ -658,7 +658,7 @@ class _Cursor(six.Iterator):
         if not columns:
             self.execute('select top 1 * from [{}] where 1<>1'.format(table_or_view))
             columns = [col[0] for col in self.description]
-        metadata = [Column(name=col, type=self._session.long_string_type(), flags=Column.fNullable) for col in columns]
+        metadata = [Column(name=col, type=self._conn._conn.NVarChar(4000), flags=Column.fNullable) for col in columns]
         col_defs = ','.join('{} {}'.format(col.column_name, col.type.get_declaration())
                             for col in metadata)
         with_opts = []
