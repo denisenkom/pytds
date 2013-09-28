@@ -2802,13 +2802,15 @@ class _TdsSession(object):
             size = 1
         if size > 8000:
             if IS_TDS72_PLUS(self):
-                column.type = VarChar72(0xffff, self.conn.collation)
+                column.type = VarChar72(0, self.conn.collation, is_max=True)
             elif IS_TDS71_PLUS(self):
                 column.type = Text71(-1, '', self.conn.collation)
             else:
                 column.type = Text70()
         else:
-            if IS_TDS71_PLUS(self):
+            if IS_TDS72_PLUS(self):
+                column.type = VarChar72(size, self.conn.collation, is_max=False)
+            elif IS_TDS71_PLUS(self):
                 column.type = VarChar71(size, self.conn.collation)
             else:
                 column.type = VarChar70(size)
@@ -2825,7 +2827,9 @@ class _TdsSession(object):
             else:
                 column.type = NText70()
         else:
-            if IS_TDS71_PLUS(self):
+            if IS_TDS72_PLUS(self):
+                column.type = NVarChar72(size, self.conn.collation, is_max=False)
+            elif IS_TDS71_PLUS(self):
                 column.type = NVarChar71(size, self.conn.collation)
             else:
                 column.type = NVarChar70(size)
