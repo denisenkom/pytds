@@ -266,9 +266,9 @@ class TestCase2(TestCase):
         test_val(self.conn._conn.NText(), '')
         test_val(self.conn._conn.NText(), 'hello')
         #test_val(self.conn._conn.Xml(), '<root></root>')
-        #test_val(self.conn._conn.Image(10, []), None)
-        #test_val(self.conn._conn.Image(10, ['']), None)
-        #test_val(self.conn._conn.Image(10, ['']), b'test')
+        test_val(self.conn._conn.Image(), None)
+        test_val(self.conn._conn.Image(), b'')
+        test_val(self.conn._conn.Image(), b'test')
 
     def _test_val(self, val):
         with self.conn.cursor() as cur:

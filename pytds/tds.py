@@ -1603,7 +1603,7 @@ class VarBinary72(VarBinary):
 class Image70(BaseType):
     type = SYBIMAGE
 
-    def __init__(self, size, table_name):
+    def __init__(self, size=0, table_name=''):
         self._table_name = table_name
         self._size = size
 
@@ -1628,12 +1628,14 @@ class Image70(BaseType):
 
     def write(self, w, val):
         if val is None:
-            w.put_byte(0)
+            w.put_int(-1)
             return
+        w.put_int(len(val))
+        w.write(val)
 
 
 class Image72(Image70):
-    def __init__(self, size, parts):
+    def __init__(self, size=0, parts=[]):
         self._parts = parts
         self._size = size
 
@@ -1648,10 +1650,6 @@ class Image72(Image70):
 
     def write_info(self, w):
         w.put_int(self._size)
-        w.put_byte(len(self._parts))
-        for part in self._parts:
-            w.put_usmallint(len(part))
-            w.write_ucs2(part)
 
 
 class BaseDateTime(BaseType):
@@ -3697,11 +3695,11 @@ class _TdsSocket(object):
         else:
             return VarBinary(size)
 
-    def Image(self, size, parts):
+    def Image(self, size=0):
         if IS_TDS72_PLUS(self):
-            return Image72(size, parts)
+            return Image72(size)
         else:
-            return Image70(size, parts[0])
+            return Image70(size)
 
     Bit = Bit.instance
     BitN = BitN.instance
