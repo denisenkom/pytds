@@ -2801,38 +2801,18 @@ class _TdsSession(object):
         if size == 0:
             size = 1
         if size > 8000:
-            if IS_TDS72_PLUS(self):
-                column.type = VarChar72(0, self.conn.collation, is_max=True)
-            elif IS_TDS71_PLUS(self):
-                column.type = Text71(-1, '', self.conn.collation)
-            else:
-                column.type = Text70()
+            column.type = self.conn.long_varchar_type(collation=self.conn.collation)
         else:
-            if IS_TDS72_PLUS(self):
-                column.type = VarChar72(size, self.conn.collation, is_max=False)
-            elif IS_TDS71_PLUS(self):
-                column.type = VarChar71(size, self.conn.collation)
-            else:
-                column.type = VarChar70(size)
+            column.type = self.conn.VarChar(size, collation=self.conn.collation)
 
     def make_nvarchar(self, column, value):
         size = len(value)
         if size == 0:
             size = 1
         if size > 4000:
-            if IS_TDS72_PLUS(self):
-                column.type = NVarChar72(0, self.conn.collation, is_max=True)
-            elif IS_TDS71_PLUS(self):
-                column.type = NText71(-1, '', self.conn.collation)
-            else:
-                column.type = NText70()
+            column.type = self.conn.long_string_type(collation=self.conn.collation)
         else:
-            if IS_TDS72_PLUS(self):
-                column.type = NVarChar72(size, self.conn.collation, is_max=False)
-            elif IS_TDS71_PLUS(self):
-                column.type = NVarChar71(size, self.conn.collation)
-            else:
-                column.type = NVarChar70(size)
+            column.type = self.conn.NVarChar(size, collation=self.conn.collation)
 
     def make_param(self, name, value):
         if isinstance(value, Column):
@@ -3735,6 +3715,14 @@ class _TdsSocket(object):
             return VarBinary72(0xffff)
         else:
             return Image70()
+
+    def long_varchar_type(self, collation=raw_collation):
+        if IS_TDS72_PLUS(self):
+            return VarChar72(0, collation, is_max=True)
+        elif IS_TDS71_PLUS(self):
+            return Text71(-1, '', collation)
+        else:
+            return Text70()
 
     def long_string_type(self, collation=raw_collation):
         if IS_TDS72_PLUS(self):
