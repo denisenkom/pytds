@@ -93,6 +93,7 @@ class TestCase2(TestCase):
         cur = self.conn.cursor()
         with self.assertRaises(ProgrammingError):
             cur.execute(u'select ')
+        self.assertEqual('abc', cur.execute_scalar("select cast('abc' as varchar(max)) as fieldname"))
         assert 'abc' == cur.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
         assert b'abc' == cur.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
         #assert 12 == cur.execute_scalar('select cast(12 as bigint) as fieldname')
@@ -247,6 +248,10 @@ class TestCase2(TestCase):
         test_val(self.conn._conn.long_binary_type(), b'')
         test_val(self.conn._conn.long_binary_type(), b'testtest12')
         test_val(self.conn._conn.long_binary_type(), b'x' * (10 ** 6))
+        test_val(self.conn._conn.VarChar(10), None)
+        test_val(self.conn._conn.VarChar(10), '')
+        test_val(self.conn._conn.VarChar(10), 'test')
+        test_val(self.conn._conn.VarChar(8000), 'x' * 8000)
         test_val(self.conn._conn.NVarChar(10), u'')
         test_val(self.conn._conn.NVarChar(10), u'testtest12')
         test_val(self.conn._conn.NVarChar(10), None)
