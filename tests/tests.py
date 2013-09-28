@@ -20,7 +20,7 @@ import binascii
 from pytds import (
     connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
-    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72,
+    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72, TDS70,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF)
 from pytds.tds import (
     _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, Bit, Int, SmallInt,
@@ -1501,6 +1501,70 @@ class TestMessages(unittest.TestCase):
                               }
         instances = pytds.tds._parse_instances(data)
         self.assertDictEqual(ref, instances)
+
+    def test_make_varchar(self):
+        tds = _TdsSocket()
+        tds.tds_version = TDS72
+        tds._main_session = _TdsSession(tds, tds, None)
+        column = pytds.tds.Column()
+        tds._main_session.conn.collation = pytds.tds.raw_collation
+
+        tds._main_session.make_varchar(column, '')
+        self.assertIsInstance(column.type, pytds.tds.VarChar72)
+        self.assertFalse(column.type._is_max)
+        self.assertEqual(1, column.type._size)
+
+        tds._main_session.make_varchar(column, 'x' * 8001)
+        self.assertIsInstance(column.type, pytds.tds.VarChar72)
+        self.assertTrue(column.type._is_max)
+
+        tds.tds_version = TDS71
+        tds._main_session.make_varchar(column, '')
+        self.assertIsInstance(column.type, pytds.tds.VarChar71)
+        self.assertEqual(1, column.type._size)
+
+        tds._main_session.make_varchar(column, 'x' * 8001)
+        self.assertIsInstance(column.type, pytds.tds.Text71)
+
+        tds.tds_version = TDS70
+        tds._main_session.make_varchar(column, '')
+        self.assertIsInstance(column.type, pytds.tds.VarChar70)
+        self.assertEqual(1, column.type._size)
+
+        tds._main_session.make_varchar(column, 'x' * 8001)
+        self.assertIsInstance(column.type, pytds.tds.Text70)
+
+    def test_make_nvarchar(self):
+        tds = _TdsSocket()
+        tds.tds_version = TDS72
+        tds._main_session = _TdsSession(tds, tds, None)
+        column = pytds.tds.Column()
+        tds._main_session.conn.collation = pytds.tds.raw_collation
+
+        tds._main_session.make_nvarchar(column, '')
+        self.assertIsInstance(column.type, pytds.tds.NVarChar72)
+        self.assertFalse(column.type._is_max)
+        self.assertEqual(1, column.type._size)
+
+        tds._main_session.make_nvarchar(column, 'x' * 4001)
+        self.assertIsInstance(column.type, pytds.tds.NVarChar72)
+        self.assertTrue(column.type._is_max)
+
+        tds.tds_version = TDS71
+        tds._main_session.make_nvarchar(column, '')
+        self.assertIsInstance(column.type, pytds.tds.NVarChar71)
+        self.assertEqual(1, column.type._size)
+
+        tds._main_session.make_nvarchar(column, 'x' * 4001)
+        self.assertIsInstance(column.type, pytds.tds.NText71)
+
+        tds.tds_version = TDS70
+        tds._main_session.make_nvarchar(column, '')
+        self.assertIsInstance(column.type, pytds.tds.NVarChar70)
+        self.assertEqual(1, column.type._size)
+
+        tds._main_session.make_nvarchar(column, 'x' * 4001)
+        self.assertIsInstance(column.type, pytds.tds.NText70)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
