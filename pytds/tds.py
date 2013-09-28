@@ -1369,10 +1369,10 @@ class Xml(NVarChar72):
             w.put_byte(0)
 
 
-class Text(BaseType):
+class Text70(BaseType):
     type = SYBTEXT
 
-    def __init__(self, size, table_name):
+    def __init__(self, size=0, table_name=''):
         self._size = size
         self._table_name = table_name
 
@@ -1381,6 +1381,9 @@ class Text(BaseType):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
+
+    def get_declaration(self):
+        return 'TEXT'
 
     def read(self, r):
         size = r.get_byte()
@@ -1392,8 +1395,8 @@ class Text(BaseType):
         return r.read_str(colsize, r.session.conn.server_codec)
 
 
-class Text71(Text):
-    def __init__(self, size, table_name, collation):
+class Text71(Text70):
+    def __init__(self, size=0, table_name='', collation=raw_collation):
         self._size = size
         self._collation = collation
         self._codec = collation.get_codec()
@@ -1407,14 +1410,15 @@ class Text71(Text):
         return cls(size, table_name, collation)
 
     def write_info(self, w):
-        w.put_int(self._size * 2)
+        w.put_int(self._size)
+        w.put_collation(self._collation)
 
     def write(self, w, val):
         if val is None:
             w.put_int(-1)
         else:
-            w.put_int(len(val) * 2)
-            w.write_ucs2(val)
+            w.put_int(len(val))
+            w.write(val)
 
     def read(self, r):
         size = r.get_byte()
@@ -1427,7 +1431,7 @@ class Text71(Text):
 
 
 class Text72(Text71):
-    def __init__(self, size, table_name_parts, collation):
+    def __init__(self, size=0, table_name_parts=[], collation=raw_collation):
         super(Text72, self).__init__(size, '.'.join(table_name_parts), collation)
         self._table_name_parts = table_name_parts
 
@@ -1442,7 +1446,7 @@ class Text72(Text71):
         return cls(size, parts, collation)
 
 
-class NText(BaseType):
+class NText70(BaseType):
     type = SYBNTEXT
 
     def __init__(self, size=100, table_name=''):
@@ -1478,7 +1482,7 @@ class NText(BaseType):
             w.write_ucs2(val)
 
 
-class NText71(NText):
+class NText71(NText70):
     def __init__(self, size, table_name, collation):
         self._size = size
         self._collation = collation
@@ -2348,8 +2352,8 @@ _type_map = {
     XSYBVARCHAR: VarChar70,
     XSYBNCHAR: NVarChar70,
     XSYBNVARCHAR: NVarChar70,
-    SYBTEXT: Text,
-    SYBNTEXT: NText,
+    SYBTEXT: Text70,
+    SYBNTEXT: NText70,
     SYBMSXML: Xml,
     XSYBBINARY: VarBinary,
     XSYBVARBINARY: VarBinary,
@@ -2802,7 +2806,7 @@ class _TdsSession(object):
             elif IS_TDS71_PLUS(self):
                 column.type = Text71(-1, '', self.conn.collation)
             else:
-                column.type = Text()
+                column.type = Text70()
         else:
             if IS_TDS71_PLUS(self):
                 column.type = VarChar71(size, self.conn.collation)
@@ -2819,7 +2823,7 @@ class _TdsSession(object):
             elif IS_TDS71_PLUS(self):
                 column.type = NText71(-1, '', self.conn.collation)
             else:
-                column.type = NText()
+                column.type = NText70()
         else:
             if IS_TDS71_PLUS(self):
                 column.type = NVarChar71(size, self.conn.collation)
@@ -3669,6 +3673,14 @@ class _TdsSocket(object):
         else:
             return VarChar70(size)
 
+    def Text(self, size=0, collation=raw_collation):
+        if IS_TDS72_PLUS(self):
+            return Text72(size, collation=collation)
+        elif IS_TDS71_PLUS(self):
+            return Text71(size, collation=collation)
+        else:
+            return Text70(size)
+
     def VarBinary(self, size):
         if IS_TDS72_PLUS(self):
             return VarBinary72(size)
@@ -3718,7 +3730,7 @@ class _TdsSocket(object):
         elif IS_TDS71_PLUS(self):
             return NText71(-1, '', collation)
         else:
-            return NText()
+            return NText70()
 
 
 class Column(object):
