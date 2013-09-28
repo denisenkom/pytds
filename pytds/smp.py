@@ -1,6 +1,18 @@
 import struct
 import logging
-import bitarray
+from six.moves import range
+try:
+    from bitarray1 import bitarray
+except ImportError:
+    class bitarray(list):
+        def __init__(self, len):
+            self[:] = [False] * len
+
+        def setall(self, val):
+            for i in range(len(self)):
+                self[i] = val
+
+
 from .tds import Error, readall, skipall
 
 logger = logging.getLogger(__name__)
@@ -52,7 +64,7 @@ class SmpManager(object):
     def __init__(self, transport):
         self._transport = transport
         self._sessions = {}
-        self._used_ids_ba = bitarray.bitarray(2 ** 16)
+        self._used_ids_ba = bitarray(2 ** 16)
         self._used_ids_ba.setall(False)
 
     def create_session(self):
