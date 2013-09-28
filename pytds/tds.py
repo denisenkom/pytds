@@ -5,7 +5,7 @@ import socket
 import sys
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
-from dateutil.tz import tzutc
+from . import tz
 import uuid
 import six
 from six.moves import reduce
@@ -292,7 +292,7 @@ USE_CORK = hasattr(socket, 'TCP_CORK')
 
 TDS_NO_COUNT = -1
 
-_utc = tzutc()
+_utc = tz.utc
 
 _header = struct.Struct('>BBHHBx')
 _byte = struct.Struct('B')
@@ -1983,8 +1983,7 @@ class DateTimeOffset(BaseDateTime73):
     def read_fixed(self, r, size):
         time = self._read_time(r, size - 5, self._prec, _utc)
         date = self._read_date(r)
-        r._session
-        offset = r.get_smallint() * 60
+        offset = r.get_smallint()
         tzinfo_factory = r._session.tzinfo_factory
         if tzinfo_factory is None:
             from pytds.tz import FixedOffsetTimezone
