@@ -1170,9 +1170,10 @@ class VarChar71(VarChar70):
 class VarChar72(VarChar71):
     type = XSYBVARCHAR
 
-    def __init__(self, size, collation):
+    def __init__(self, size, collation, is_max=False):
         super(VarChar72, self).__init__(size, collation)
-        if size == 0xffff:
+        self._is_max = is_max
+        if is_max:
             self.read = self._read_max
             self.write = self._write_max
             self.write_info = self._write_info_max
@@ -1181,13 +1182,13 @@ class VarChar72(VarChar71):
     def from_stream(cls, r):
         size = r.get_usmallint()
         collation = r.get_collation()
-        return cls(size, collation)
+        return cls(size, collation, is_max=size == 0xffff)
 
     def get_declaration(self):
-        if self._size == 0xffff:
+        if self._is_max:
             return 'VARCHAR(MAX)'
         else:
-            super(VarChar72, self).get_declaration()
+            return super(VarChar72, self).get_declaration()
 
     def _write_info_max(self, w):
         w.put_usmallint(0xffff)
@@ -1195,7 +1196,7 @@ class VarChar72(VarChar71):
 
     def _write_max(self, w, val):
         if val is None:
-            w.put_int8(-1)
+            w.put_uint8(0xffffffffffffffff)
         else:
             val = force_unicode(val)
             val, _ = self._codec.encode(val)
@@ -1205,8 +1206,8 @@ class VarChar72(VarChar71):
             w.put_int(0)
 
     def _read_max(self, r):
-        size = r.get_int8()
-        if size == -1:
+        size = r.get_uint8()
+        if size == 0xffffffffffffffff:
             return None
         chunks = []
         decoder = self._codec.incrementaldecoder()
@@ -1234,7 +1235,7 @@ class NVarChar70(BaseType):
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
-        return cls(size / 2)
+        return cls(size / 2, is_max=size == 0xffff)
 
     def get_declaration(self):
         return 'NVARCHAR({0})'.format(self._size)
@@ -3659,6 +3660,14 @@ class _TdsSocket(object):
             return NVarChar71(size, collation)
         else:
             return NVarChar70(size)
+
+    def VarChar(self, size, collation=raw_collation):
+        if IS_TDS72_PLUS(self):
+            return VarChar72(size, collation)
+        elif IS_TDS71_PLUS(self):
+            return VarChar71(size, collation)
+        else:
+            return VarChar70(size)
 
     def VarBinary(self, size):
         if IS_TDS72_PLUS(self):
