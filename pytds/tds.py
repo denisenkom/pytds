@@ -1600,7 +1600,7 @@ class VarBinary72(VarBinary):
                 chunks.append(chunk)
 
 
-class Image(BaseType):
+class Image70(BaseType):
     type = SYBIMAGE
 
     def __init__(self, size, table_name):
@@ -1632,7 +1632,7 @@ class Image(BaseType):
             return
 
 
-class Image72(Image):
+class Image72(Image70):
     def __init__(self, size, parts):
         self._parts = parts
         self._size = size
@@ -2359,7 +2359,7 @@ _type_map = {
     SYBMSXML: Xml,
     XSYBBINARY: VarBinary,
     XSYBVARBINARY: VarBinary,
-    SYBIMAGE: Image,
+    SYBIMAGE: Image70,
     SYBNUMERIC: MsDecimal,
     SYBDECIMAL: MsDecimal,
     SYBVARIANT: Variant,
@@ -2872,7 +2872,7 @@ class _TdsSession(object):
                 if IS_TDS72_PLUS(self):
                     column.type = VarBinary72(0xffff)
                 else:
-                    column.type = Image()
+                    column.type = Image70()
             else:
                 column.type = VarBinary(size)
         elif isinstance(value, six.binary_type):
@@ -3701,7 +3701,7 @@ class _TdsSocket(object):
         if IS_TDS72_PLUS(self):
             return Image72(size, parts)
         else:
-            return Image(size, parts[0])
+            return Image70(size, parts[0])
 
     Bit = Bit.instance
     BitN = BitN.instance
@@ -3732,7 +3732,7 @@ class _TdsSocket(object):
         if IS_TDS72_PLUS(self):
             return VarBinary72(0xffff)
         else:
-            return Image()
+            return Image70()
 
     def long_string_type(self, collation=raw_collation):
         if IS_TDS72_PLUS(self):
