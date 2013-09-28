@@ -446,7 +446,7 @@ class DbTests(DbTestCase):
         self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
         self._test_bulk_type(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
         self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))
-        #self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(14)))
+        self._test_bulk_type(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 14, 0, tzinfo=tzoffset(14)))
         self._test_bulk_type(self.conn._conn.DateTimeOffset(6), None)
         self._test_bulk_type(self.conn._conn.Decimal(6, 38), Decimal('123.456789'))
         self._test_bulk_type(self.conn._conn.Decimal(6, 38), None)
