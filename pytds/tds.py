@@ -2798,21 +2798,17 @@ class _TdsSession(object):
 
     def make_varchar(self, column, value):
         size = len(value)
-        if size == 0:
-            size = 1
         if size > 8000:
             column.type = self.conn.long_varchar_type(collation=self.conn.collation)
         else:
-            column.type = self.conn.VarChar(size, collation=self.conn.collation)
+            column.type = self.conn.VarChar(size or 1, collation=self.conn.collation)
 
     def make_nvarchar(self, column, value):
         size = len(value)
-        if size == 0:
-            size = 1
         if size > 4000:
             column.type = self.conn.long_string_type(collation=self.conn.collation)
         else:
-            column.type = self.conn.NVarChar(size, collation=self.conn.collation)
+            column.type = self.conn.NVarChar(size or 1, collation=self.conn.collation)
 
     def make_param(self, name, value):
         if isinstance(value, Column):
@@ -2829,10 +2825,7 @@ class _TdsSession(object):
             value = None
         column.value = value
         if value is None:
-            if IS_TDS71_PLUS(self):
-                column.type = NVarChar71(1, self.conn.collation)
-            else:
-                column.type = NVarChar70(1)
+            column.type = self.conn.NVarChar(1, collation=self.conn.collation)
         elif isinstance(value, bool):
             column.type = BitN()
         elif isinstance(value, six.integer_types):
@@ -2848,15 +2841,10 @@ class _TdsSession(object):
             column.type = FloatN(8)
         elif isinstance(value, Binary):
             size = len(value)
-            if size == 0:
-                size = 1
             if size > 8000:
-                if IS_TDS72_PLUS(self):
-                    column.type = VarBinary72(0xffff)
-                else:
-                    column.type = Image70()
+                column.type = self.conn.long_binary_type()
             else:
-                column.type = VarBinary(size)
+                column.type = self.conn.VarBinary(size or 1)
         elif isinstance(value, six.binary_type):
             if self._tds.login.bytes_to_unicode:
                 self.make_nvarchar(column, value)
