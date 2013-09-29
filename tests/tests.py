@@ -1,5 +1,6 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
+import codecs
 from six import StringIO
 try:
     import unittest2 as unittest
@@ -1444,6 +1445,7 @@ class TestMessages(unittest.TestCase):
         self.assertIsInstance(column.type, pytds.tds.Text71)
 
         tds.tds_version = TDS70
+        tds.server_codec = codecs.lookup('ascii')
         tds._main_session.make_varchar(column, '')
         self.assertIsInstance(column.type, pytds.tds.VarChar70)
         self.assertEqual(1, column.type._size)
@@ -1718,8 +1720,9 @@ def _params_tests(self):
     test_val(self.conn._conn.MoneyN(8), None)
     test_val(self.conn._conn.UniqueIdentifier, None)
     test_val(self.conn._conn.UniqueIdentifier, uuid.uuid4())
-    test_val(self.conn._conn.SqlVariant(10), None)
-    #test_val(self.conn._conn.SqlVariant(10), 100)
+    if pytds.tds.IS_TDS71_PLUS(self.conn._conn):
+        test_val(self.conn._conn.SqlVariant(10), None)
+        #test_val(self.conn._conn.SqlVariant(10), 100)
     test_val(self.conn._conn.VarBinary(10), b'')
     test_val(self.conn._conn.VarBinary(10), b'testtest12')
     test_val(self.conn._conn.VarBinary(10), None)
@@ -1752,6 +1755,18 @@ def _params_tests(self):
     test_val(self.conn._conn.Image(), None)
     test_val(self.conn._conn.Image(), b'')
     test_val(self.conn._conn.Image(), b'test')
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class TestTds70(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['tds_version'] = pytds.tds.TDS70
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def test_parsing(self):
+        _params_tests(self)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")

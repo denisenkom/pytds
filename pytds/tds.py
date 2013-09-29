@@ -1108,15 +1108,16 @@ class FloatN(BaseType):
 class VarChar70(BaseType):
     type = XSYBVARCHAR
 
-    def __init__(self, size):
+    def __init__(self, size, codec):
         #if size <= 0 or size > 8000:
         #    raise DataError('Invalid size for VARCHAR field')
         self._size = size
+        self._codec = codec
 
     @classmethod
     def from_stream(cls, r):
         size = r.get_smallint()
-        return cls(size)
+        return cls(size, codec=r._session.conn.server_codec)
 
     def get_declaration(self):
         return 'VARCHAR({0})'.format(self._size)
@@ -1139,16 +1140,15 @@ class VarChar70(BaseType):
         size = r.get_smallint()
         if size < 0:
             return None
-        return r.read_str(size, r.session.conn.server_codec)
+        return r.read_str(size, self._codec)
 
 
 class VarChar71(VarChar70):
     type = XSYBVARCHAR
 
     def __init__(self, size, collation):
-        super(VarChar71, self).__init__(size)
+        super(VarChar71, self).__init__(size, codec=collation.get_codec())
         self._collation = collation
-        self._codec = collation.get_codec()
 
     @classmethod
     def from_stream(cls, r):
@@ -1159,12 +1159,6 @@ class VarChar71(VarChar70):
     def write_info(self, w):
         super(VarChar71, self).write_info(w)
         w.put_collation(self._collation)
-
-    def read(self, r):
-        size = r.get_smallint()
-        if size < 0:
-            return None
-        return r.read_str(size, self._codec)
 
 
 class VarChar72(VarChar71):
@@ -1235,7 +1229,7 @@ class NVarChar70(BaseType):
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
-        return cls(size / 2, is_max=size == 0xffff)
+        return cls(size / 2)
 
     def get_declaration(self):
         return 'NVARCHAR({0})'.format(self._size)
@@ -1372,18 +1366,31 @@ class Xml(NVarChar72):
 class Text70(BaseType):
     type = SYBTEXT
 
-    def __init__(self, size=0, table_name=''):
+    def __init__(self, size=0, table_name='', codec=None):
         self._size = size
         self._table_name = table_name
+        self._codec = codec
 
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
-        return cls(size, table_name)
+        return cls(size, table_name, codec=r.session.conn.server_codec)
 
     def get_declaration(self):
         return 'TEXT'
+
+    def write_info(self, w):
+        w.put_int(self._size)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_int(-1)
+        else:
+            val = force_unicode(val)
+            val, _ = self._codec.encode(val)
+            w.put_int(len(val))
+            w.write(val)
 
     def read(self, r):
         size = r.get_byte()
@@ -1392,7 +1399,7 @@ class Text70(BaseType):
         readall(r, size)  # textptr
         readall(r, 8)  # timestamp
         colsize = r.get_int()
-        return r.read_str(colsize, r.session.conn.server_codec)
+        return r.read_str(colsize, self._codec)
 
 
 class Text71(Text70):
@@ -1412,24 +1419,6 @@ class Text71(Text70):
     def write_info(self, w):
         w.put_int(self._size)
         w.put_collation(self._collation)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_int(-1)
-        else:
-            val = force_unicode(val)
-            val, _ = self._codec.encode(val)
-            w.put_int(len(val))
-            w.write(val)
-
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
-        readall(r, size)  # textptr
-        readall(r, 8)  # timestamp
-        colsize = r.get_int()
-        return r.read_str(colsize, self._codec)
 
 
 class Text72(Text71):
@@ -2707,6 +2696,7 @@ class _TdsSession(object):
             r.read_ucs2(r.get_byte())
             #logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
             self.conn.env.charset = newval
+            self.conn.server_codec = codecs.lookup(newval)
             #tds_srv_charset_changed(self, newval)
         elif type == TDS_ENV_DB_MIRRORING_PARTNER:
             r.read_ucs2(r.get_byte())
@@ -3643,7 +3633,7 @@ class _TdsSocket(object):
         elif IS_TDS71_PLUS(self):
             return VarChar71(size, collation)
         else:
-            return VarChar70(size)
+            return VarChar70(size, codec=self.server_codec)
 
     def Text(self, size=0, collation=raw_collation):
         if IS_TDS72_PLUS(self):
@@ -3651,7 +3641,7 @@ class _TdsSocket(object):
         elif IS_TDS71_PLUS(self):
             return Text71(size, collation=collation)
         else:
-            return Text70(size)
+            return Text70(size, codec=self.server_codec)
 
     def NText(self, size=0, collation=raw_collation):
         if IS_TDS72_PLUS(self):
@@ -3710,7 +3700,7 @@ class _TdsSocket(object):
         elif IS_TDS71_PLUS(self):
             return Text71(-1, '', collation)
         else:
-            return Text70()
+            return Text70(codec=self.server_codec)
 
     def long_string_type(self, collation=raw_collation):
         if IS_TDS72_PLUS(self):
