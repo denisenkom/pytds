@@ -1788,7 +1788,10 @@ class TestTds71(unittest.TestCase):
             cur.execute('select name, description from fn_helpcollations()')
             collations = list(cur.fetchall())
             for collation, desc in collations:
-                self.assertEqual(cur.execute_scalar("select N'hello' collate %s" % collation), 'hello')
+                if cur.execute_scalar("select COLLATIONPROPERTY('%s', 'Charset')" % collation):
+                    self.assertEqual(cur.execute_scalar("select 'hello' collate %s" % collation), 'hello')
+                else:
+                    self.assertEqual(cur.execute_scalar("select N'hello' collate %s" % collation), 'hello')
 
     def test_collations(self):
         def test_val(typ, val):
