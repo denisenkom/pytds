@@ -2696,7 +2696,8 @@ class _TdsSession(object):
             r.read_ucs2(r.get_byte())
             #logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
             self.conn.env.charset = newval
-            self.conn.server_codec = codecs.lookup(newval)
+            remap = {'iso_1': 'iso8859-1'}
+            self.conn.server_codec = codecs.lookup(remap.get(newval, newval))
             #tds_srv_charset_changed(self, newval)
         elif type == TDS_ENV_DB_MIRRORING_PARTNER:
             r.read_ucs2(r.get_byte())
