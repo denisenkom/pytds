@@ -10,6 +10,94 @@ TDS_CHARSET_UNICODE = 5
 
 ucs2_codec = codecs.lookup('utf_16_le')
 
+SQL_Latin1_General_CP437_BIN = 30
+SQL_Latin1_General_CP437_CS_AS = 31
+SQL_Latin1_General_CP437_CI_AS = 32
+SQL_Latin1_General_Pref_CP437_CI_AS = 33
+SQL_Latin1_General_CP437_CI_AI = 34
+SQL_Latin1_General_CP850_BIN = 40
+SQL_Latin1_General_CP850_CS_AS = 41
+SQL_Latin1_General_CP850_CI_AS = 42
+SQL_Latin1_General_Pref_CP850_CI_AS = 43
+SQL_Latin1_General_CP850_CI_AI = 44
+SQL_1xCompat_CP850_CI_AS = 49
+SQL_Latin1_General_Cp1_CS_AS_KI_WI = 51
+SQL_Latin1_General_Cp1_CI_AS_KI_WI = 52
+SQL_Latin1_General_Pref_Cp1_CI_AS_KI_WI = 53
+SQL_Latin1_General_Cp1_CI_AI_KI_WI = 54
+SQL_AltDiction_CP850_CS_AS = 55
+SQL_AltDiction_Pref_CP850_CI_AS = 56
+SQL_AltDiction_CP850_CI_AI = 57
+SQL_Scandinavian_Pref_CP850_CI_AS = 58
+SQL_Scandinavian_CP850_CS_AS = 59
+SQL_Scandinavian_CP850_CI_AS = 60
+SQL_AltDiction_CP850_CI_AS = 61
+SQL_Latin1_General_1250_BIN              =  80
+SQL_Latin1_General_CP1250_CS_AS          =  81
+SQL_Latin1_General_Cp1250_CI_AS_KI_WI    =  82
+SQL_Czech_Cp1250_CS_AS_KI_WI             =  83
+SQL_Czech_Cp1250_CI_AS_KI_WI             =  84
+SQL_Hungarian_Cp1250_CS_AS_KI_WI         =  85
+SQL_Hungarian_Cp1250_CI_AS_KI_WI         =  86
+SQL_Polish_Cp1250_CS_AS_KI_WI            =  87
+SQL_Polish_Cp1250_CI_AS_KI_WI            =  88
+SQL_Romanian_Cp1250_CS_AS_KI_WI          =  89
+SQL_Romanian_Cp1250_CI_AS_KI_WI          =  90
+SQL_Croatian_Cp1250_CS_AS_KI_WI          =  91
+SQL_Croatian_Cp1250_CI_AS_KI_WI          =  92
+SQL_Slovak_Cp1250_CS_AS_KI_WI            =  93
+SQL_Slovak_Cp1250_CI_AS_KI_WI            =  94
+SQL_Slovenian_Cp1250_CS_AS_KI_WI         =  95
+SQL_Slovenian_Cp1250_CI_AS_KI_WI         =  96
+SQL_Latin1_General_1251_BIN              = 104
+SQL_Latin1_General_CP1251_CS_AS          = 105
+SQL_Latin1_General_CP1251_CI_AS          = 106
+SQL_Ukrainian_Cp1251_CS_AS_KI_WI         = 107
+SQL_Ukrainian_Cp1251_CI_AS_KI_WI         = 108
+SQL_Latin1_General_1253_BIN              = 112
+SQL_Latin1_General_CP1253_CS_AS          = 113
+SQL_Latin1_General_CP1253_CI_AS          = 114
+SQL_MixDiction_CP1253_CS_AS              = 120
+SQL_AltDiction_CP1253_CS_AS              = 121
+SQL_AltDiction2_CP1253_CS_AS             = 122
+SQL_Latin1_General_CP1253_CI_AI          = 124
+SQL_Latin1_General_1254_BIN              = 128
+SQL_Latin1_General_Cp1254_CS_AS_KI_WI    = 129
+SQL_Latin1_General_Cp1254_CI_AS_KI_WI    = 130
+SQL_Latin1_General_1255_BIN              = 136
+SQL_Latin1_General_CP1255_CS_AS          = 137
+SQL_Latin1_General_CP1255_CI_AS          = 138
+SQL_Latin1_General_1256_BIN              = 144
+SQL_Latin1_General_CP1256_CS_AS          = 145
+SQL_Latin1_General_CP1256_CI_AS          = 146
+SQL_Latin1_General_1257_BIN              = 152
+SQL_Latin1_General_CP1257_CS_AS          = 153
+SQL_Latin1_General_CP1257_CI_AS          = 154
+SQL_Estonian_Cp1257_CS_AS_KI_WI          = 155
+SQL_Estonian_Cp1257_CI_AS_KI_WI          = 156
+SQL_Latvian_Cp1257_CS_AS_KI_WI           = 157
+SQL_Latvian_Cp1257_CI_AS_KI_WI           = 158
+SQL_Lithuanian_Cp1257_CS_AS_KI_WI        = 159
+SQL_Lithuanian_Cp1257_CI_AS_KI_WI        = 160
+SQL_Danish_Pref_Cp1_CI_AS_KI_WI          = 183
+SQL_SwedishPhone_Pref_Cp1_CI_AS_KI_WI    = 184
+SQL_SwedishStd_Pref_Cp1_CI_AS_KI_WI      = 185
+SQL_Icelandic_Pref_Cp1_CI_AS_KI_WI       = 186
+
+# dictionary of tuples
+# 0 - coding
+# 1 - ignore case (True - CI)
+# 2 - ignore accent (True - AI)
+# 3 - dict sort (True - dict sort, False - bin sort)
+sortid_db = {
+    SQL_Latin1_General_CP437_BIN: ('CP437', False, False, False),
+    SQL_Latin1_General_CP437_CS_AS: ('CP437', False, False, True),
+    SQL_Latin1_General_CP437_CI_AS: ('CP437', True, False, True),
+    SQL_Latin1_General_Pref_CP437_CI_AS: ('CP437', True, False, True),
+    SQL_Latin1_General_CP437_CI_AI: ('CP437', True, True, True),
+    SQL_Latin1_General_1251_BIN: ('CP1251', False, False, False),
+}
+
 
 def sortid2charset(sort_id):
     sql_collate = sort_id
@@ -183,6 +271,14 @@ def lcid2charset(lcid):
         return 'CP950'
     else:
         return 'CP1252'
+
+
+def collation_from_sortid(sort_id):
+    charset, ignore_case, ignore_accent, dict_sort = sortid_db[sort_id]
+    return Collation(sort_id=sort_id, lcid=0, ignore_case=ignore_case,
+                     ignore_accent=ignore_accent, ignore_width=False,
+                     ignore_kana=False, binary=not dict_sort,
+                     binary2=False, version=1)
 
 
 class Collation(object):
