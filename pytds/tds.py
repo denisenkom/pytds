@@ -1272,37 +1272,33 @@ class NVarChar71(NVarChar70):
 
 
 class NVarChar72(NVarChar71):
-    def __init__(self, size, collation=raw_collation, is_max=False):
-        super(NVarChar72, self).__init__(size, collation)
-        self._is_max = is_max
-        if is_max:
-            self.read = self._read_max
-            self.write = self._write_max
-            self.write_info = self._write_info_max
-
     def get_typeid(self):
-        if self._is_max:
-            return SYBNTEXT
-        else:
-            return self.type
+        return self.type
 
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
         collation = r.get_collation()
-        return cls(size / 2, collation=collation, is_max=size == 0xffff)
+        if size == 0xffff:
+            return NVarCharMax(size, collation)
+        return cls(size / 2, collation=collation)
 
     def get_declaration(self):
-        if self._is_max:
-            return 'NVARCHAR(MAX)'
-        else:
-            return super(NVarChar72, self).get_declaration()
+        return super(NVarChar72, self).get_declaration()
 
-    def _write_info_max(self, w):
+
+class NVarCharMax(NVarChar72):
+    def get_typeid(self):
+        return SYBNTEXT
+
+    def get_declaration(self):
+        return 'NVARCHAR(MAX)'
+
+    def write_info(self, w):
         w.put_usmallint(0xffff)
         w.put_collation(self._collation)
 
-    def _write_max(self, w, val):
+    def write(self, w, val):
         if val is None:
             w.put_uint8(0xffffffffffffffff)
         else:
@@ -1313,7 +1309,7 @@ class NVarChar72(NVarChar71):
             w.write_ucs2(val)
             w.put_uint(0)
 
-    def _read_max(self, r):
+    def read(self, r):
         size = r.get_uint8()
         if size == 0xffffffffffffffff:
             return None
@@ -1333,12 +1329,15 @@ class NVarChar72(NVarChar71):
                 chunks.append(chunk)
 
 
-class Xml(NVarChar72):
+class Xml(NVarCharMax):
     type = SYBMSXML
 
     def __init__(self, schema={}):
-        super(Xml, self).__init__(0, is_max=True)
+        super(Xml, self).__init__(0)
         self._schema = schema
+
+    def get_declaration(self):
+        return 'XML'
 
     @classmethod
     def from_stream(cls, r):
@@ -3705,7 +3704,7 @@ class _TdsSocket(object):
 
     def long_string_type(self, collation=raw_collation):
         if IS_TDS72_PLUS(self):
-            return NVarChar72(0, collation, is_max=True)
+            return NVarCharMax(0, collation)
         elif IS_TDS71_PLUS(self):
             return NText71(-1, '', collation)
         else:

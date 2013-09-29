@@ -1400,10 +1400,10 @@ class TestMessages(unittest.TestCase):
         tds._sock = sock
         w = tds._main_session._writer
 
-        t = NVarChar72(
+        t = pytds.tds.NVarCharMax(
             0,
             Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False, ignore_kana=False, binary=True, binary2=False, version=0),
-            is_max=True)
+            )
         t.write_info(w)
         self.assertEqual(w._buf[:w._pos], b'\xff\xff\t\x04\x00\x01\x00')
 
@@ -1465,12 +1465,10 @@ class TestMessages(unittest.TestCase):
 
         tds._main_session.make_nvarchar(column, '')
         self.assertIsInstance(column.type, pytds.tds.NVarChar72)
-        self.assertFalse(column.type._is_max)
         self.assertEqual(1, column.type._size)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
-        self.assertIsInstance(column.type, pytds.tds.NVarChar72)
-        self.assertTrue(column.type._is_max)
+        self.assertIsInstance(column.type, pytds.tds.NVarCharMax)
 
         tds.tds_version = TDS71
         tds._main_session.make_nvarchar(column, '')
@@ -1754,10 +1752,11 @@ def _params_tests(self):
     test_val(self.conn._conn.NText(), None)
     test_val(self.conn._conn.NText(), '')
     test_val(self.conn._conn.NText(), 'hello')
-    #test_val(self.conn._conn.Xml(), '<root></root>')
     test_val(self.conn._conn.Image(), None)
     test_val(self.conn._conn.Image(), b'')
     test_val(self.conn._conn.Image(), b'test')
+    if pytds.tds.IS_TDS72_PLUS(self.conn._conn):
+        test_val(self.conn._conn.Xml(), '<root/>')
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
