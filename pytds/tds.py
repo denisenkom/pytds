@@ -1633,6 +1633,9 @@ class Image70(BaseType):
         w.put_int(len(val))
         w.write(val)
 
+    def write_info(self, w):
+        w.put_int(self._size)
+
 
 class Image72(Image70):
     def __init__(self, size=0, parts=[]):
@@ -1647,9 +1650,6 @@ class Image72(Image70):
         for _ in range(num_parts):
             parts.append(r.read_ucs2(r.get_usmallint()))
         return Image72(size, parts)
-
-    def write_info(self, w):
-        w.put_int(self._size)
 
 
 class BaseDateTime(BaseType):

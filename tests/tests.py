@@ -182,96 +182,7 @@ class TestCase2(TestCase):
             self.assertIs(None, cur.description)
 
     def test_parameters_ll(self):
-        def test_val(typ, val):
-            with self.conn.cursor() as cur:
-                param = Column(type=typ, value=val)
-                cur.execute('select %s', [param])
-                self.assertTupleEqual(cur.fetchone(), (val,))
-                self.assertIs(cur.fetchone(), None)
-
-        test_val(self.conn._conn.BitN, True)
-        test_val(self.conn._conn.BitN, False)
-        test_val(self.conn._conn.BitN, None)
-        test_val(self.conn._conn.IntN(1), 255)
-        test_val(self.conn._conn.IntN(2), 2 ** 15 - 1)
-        test_val(self.conn._conn.IntN(4), 2 ** 31 - 1)
-        test_val(self.conn._conn.IntN(8), 2 ** 63 - 1)
-        test_val(self.conn._conn.IntN(4), None)
-        #test_val(self.conn._conn.Real, 0.25)
-        #test_val(self.conn._conn.Float, 0.25)
-        test_val(self.conn._conn.FloatN(4), 0.25)
-        test_val(self.conn._conn.FloatN(8), 0.25)
-        test_val(self.conn._conn.FloatN(4), None)
-        #test_val(self.conn._conn.SmallDateTime, datetime(1900, 1, 1, 0, 0, 0))
-        #test_val(self.conn._conn.SmallDateTime, datetime(2079, 6, 6, 23, 59, 0))
-        #test_val(self.conn._conn.DateTime, datetime(1753, 1, 1, 0, 0, 0))
-        #test_val(self.conn._conn.DateTime, datetime(9999, 12, 31, 23, 59, 59, 990000))
-        test_val(self.conn._conn.DateTimeN(4), datetime(1900, 1, 1, 0, 0, 0))
-        test_val(self.conn._conn.DateTimeN(4), datetime(2079, 6, 6, 23, 59, 0))
-        test_val(self.conn._conn.DateTimeN(8), datetime(1753, 1, 1, 0, 0, 0))
-        test_val(self.conn._conn.DateTimeN(8), datetime(9999, 12, 31, 23, 59, 59, 990000))
-        test_val(self.conn._conn.DateTimeN(8), None)
-        test_val(self.conn._conn.Date, date(1, 1, 1))
-        test_val(self.conn._conn.Date, date(9999, 12, 31))
-        test_val(self.conn._conn.Date, None)
-        test_val(self.conn._conn.Time(0), time(0, 0, 0))
-        test_val(self.conn._conn.Time(6), time(23, 59, 59, 999999))
-        test_val(self.conn._conn.Time(0), None)
-        test_val(self.conn._conn.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
-        test_val(self.conn._conn.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
-        test_val(self.conn._conn.DateTime2(0), None)
-        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
-        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
-        test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))
-        #test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(14)))
-        test_val(self.conn._conn.DateTimeOffset(6), None)
-        test_val(self.conn._conn.Decimal(6, 38), Decimal('123.456789'))
-        test_val(self.conn._conn.Decimal(6, 38), None)
-        #test_val(self.conn._conn.SmallMoney, Decimal('214748.3647'))
-        #test_val(self.conn._conn.SmallMoney, Decimal('-214748.3648'))
-        #test_val(self.conn._conn.Money, Decimal('922337203685477.5807'))
-        #test_val(self.conn._conn.Money, Decimal('-922337203685477.5808'))
-        test_val(self.conn._conn.MoneyN(4), Decimal('-214748.3648'))
-        test_val(self.conn._conn.MoneyN(4), Decimal('214748.3647'))
-        test_val(self.conn._conn.MoneyN(8), Decimal('922337203685477.5807'))
-        test_val(self.conn._conn.MoneyN(8), Decimal('-922337203685477.5808'))
-        test_val(self.conn._conn.MoneyN(8), None)
-        test_val(self.conn._conn.UniqueIdentifier, None)
-        test_val(self.conn._conn.UniqueIdentifier, uuid.uuid4())
-        test_val(self.conn._conn.SqlVariant(10), None)
-        #test_val(self.conn._conn.SqlVariant(10), 100)
-        test_val(self.conn._conn.VarBinary(10), b'')
-        test_val(self.conn._conn.VarBinary(10), b'testtest12')
-        test_val(self.conn._conn.VarBinary(10), None)
-        test_val(self.conn._conn.VarBinary(8000), b'x' * 8000)
-        test_val(self.conn._conn.long_binary_type(), None)
-        test_val(self.conn._conn.long_binary_type(), b'')
-        test_val(self.conn._conn.long_binary_type(), b'testtest12')
-        test_val(self.conn._conn.long_binary_type(), b'x' * (10 ** 6))
-        test_val(self.conn._conn.VarChar(10), None)
-        test_val(self.conn._conn.VarChar(10), '')
-        test_val(self.conn._conn.VarChar(10), 'test')
-        test_val(self.conn._conn.VarChar(8000), 'x' * 8000)
-        test_val(self.conn._conn.NVarChar(10), u'')
-        test_val(self.conn._conn.NVarChar(10), u'testtest12')
-        test_val(self.conn._conn.NVarChar(10), None)
-        test_val(self.conn._conn.NVarChar(4000), u'x' * 4000)
-        test_val(self.conn._conn.long_string_type(), None)
-        test_val(self.conn._conn.long_string_type(), 'test')
-        test_val(self.conn._conn.long_string_type(), 'x' * (10 ** 6))
-        test_val(self.conn._conn.long_varchar_type(), None)
-        test_val(self.conn._conn.long_varchar_type(), 'test')
-        test_val(self.conn._conn.long_varchar_type(), 'x' * (10 ** 6))
-        test_val(self.conn._conn.Text(), None)
-        test_val(self.conn._conn.Text(), '')
-        test_val(self.conn._conn.Text(), 'hello')
-        test_val(self.conn._conn.NText(), None)
-        test_val(self.conn._conn.NText(), '')
-        test_val(self.conn._conn.NText(), 'hello')
-        #test_val(self.conn._conn.Xml(), '<root></root>')
-        test_val(self.conn._conn.Image(), None)
-        test_val(self.conn._conn.Image(), b'')
-        test_val(self.conn._conn.Image(), b'test')
+        _params_tests(self)
 
     def _test_val(self, val):
         with self.conn.cursor() as cur:
@@ -1747,3 +1658,145 @@ class TransactionsTests(DbTestCase):
         cur = self.conn.cursor()
         cur.execute('select 1')
         cur.fetchall()
+
+
+def _params_tests(self):
+    def test_val(typ, val):
+        with self.conn.cursor() as cur:
+            param = Column(type=typ, value=val)
+            cur.execute('select %s', [param])
+            self.assertTupleEqual(cur.fetchone(), (val,))
+            self.assertIs(cur.fetchone(), None)
+
+    test_val(self.conn._conn.BitN, True)
+    test_val(self.conn._conn.BitN, False)
+    test_val(self.conn._conn.BitN, None)
+    test_val(self.conn._conn.IntN(1), 255)
+    test_val(self.conn._conn.IntN(2), 2 ** 15 - 1)
+    test_val(self.conn._conn.IntN(4), 2 ** 31 - 1)
+    test_val(self.conn._conn.IntN(8), 2 ** 63 - 1)
+    test_val(self.conn._conn.IntN(4), None)
+    #test_val(self.conn._conn.Real, 0.25)
+    #test_val(self.conn._conn.Float, 0.25)
+    test_val(self.conn._conn.FloatN(4), 0.25)
+    test_val(self.conn._conn.FloatN(8), 0.25)
+    test_val(self.conn._conn.FloatN(4), None)
+    #test_val(self.conn._conn.SmallDateTime, datetime(1900, 1, 1, 0, 0, 0))
+    #test_val(self.conn._conn.SmallDateTime, datetime(2079, 6, 6, 23, 59, 0))
+    #test_val(self.conn._conn.DateTime, datetime(1753, 1, 1, 0, 0, 0))
+    #test_val(self.conn._conn.DateTime, datetime(9999, 12, 31, 23, 59, 59, 990000))
+    test_val(self.conn._conn.DateTimeN(4), datetime(1900, 1, 1, 0, 0, 0))
+    test_val(self.conn._conn.DateTimeN(4), datetime(2079, 6, 6, 23, 59, 0))
+    test_val(self.conn._conn.DateTimeN(8), datetime(1753, 1, 1, 0, 0, 0))
+    test_val(self.conn._conn.DateTimeN(8), datetime(9999, 12, 31, 23, 59, 59, 990000))
+    test_val(self.conn._conn.DateTimeN(8), None)
+    if pytds.tds.IS_TDS73_PLUS(self.conn._conn):
+        test_val(self.conn._conn.Date, date(1, 1, 1))
+        test_val(self.conn._conn.Date, date(9999, 12, 31))
+        test_val(self.conn._conn.Date, None)
+        test_val(self.conn._conn.Time(0), time(0, 0, 0))
+        test_val(self.conn._conn.Time(6), time(23, 59, 59, 999999))
+        test_val(self.conn._conn.Time(0), None)
+        test_val(self.conn._conn.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
+        test_val(self.conn._conn.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
+        test_val(self.conn._conn.DateTime2(0), None)
+        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
+        test_val(self.conn._conn.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
+        test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))
+        #test_val(self.conn._conn.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(14)))
+        test_val(self.conn._conn.DateTimeOffset(6), None)
+    test_val(self.conn._conn.Decimal(6, 38), Decimal('123.456789'))
+    test_val(self.conn._conn.Decimal(6, 38), None)
+    #test_val(self.conn._conn.SmallMoney, Decimal('214748.3647'))
+    #test_val(self.conn._conn.SmallMoney, Decimal('-214748.3648'))
+    #test_val(self.conn._conn.Money, Decimal('922337203685477.5807'))
+    #test_val(self.conn._conn.Money, Decimal('-922337203685477.5808'))
+    test_val(self.conn._conn.MoneyN(4), Decimal('-214748.3648'))
+    test_val(self.conn._conn.MoneyN(4), Decimal('214748.3647'))
+    test_val(self.conn._conn.MoneyN(8), Decimal('922337203685477.5807'))
+    test_val(self.conn._conn.MoneyN(8), Decimal('-922337203685477.5808'))
+    test_val(self.conn._conn.MoneyN(8), None)
+    test_val(self.conn._conn.UniqueIdentifier, None)
+    test_val(self.conn._conn.UniqueIdentifier, uuid.uuid4())
+    test_val(self.conn._conn.SqlVariant(10), None)
+    #test_val(self.conn._conn.SqlVariant(10), 100)
+    test_val(self.conn._conn.VarBinary(10), b'')
+    test_val(self.conn._conn.VarBinary(10), b'testtest12')
+    test_val(self.conn._conn.VarBinary(10), None)
+    test_val(self.conn._conn.VarBinary(8000), b'x' * 8000)
+    test_val(self.conn._conn.long_binary_type(), None)
+    test_val(self.conn._conn.long_binary_type(), b'')
+    test_val(self.conn._conn.long_binary_type(), b'testtest12')
+    test_val(self.conn._conn.long_binary_type(), b'x' * (10 ** 6))
+    test_val(self.conn._conn.VarChar(10), None)
+    test_val(self.conn._conn.VarChar(10), '')
+    test_val(self.conn._conn.VarChar(10), 'test')
+    test_val(self.conn._conn.VarChar(8000), 'x' * 8000)
+    test_val(self.conn._conn.NVarChar(10), u'')
+    test_val(self.conn._conn.NVarChar(10), u'testtest12')
+    test_val(self.conn._conn.NVarChar(10), None)
+    test_val(self.conn._conn.NVarChar(4000), u'x' * 4000)
+    test_val(self.conn._conn.long_string_type(), None)
+    test_val(self.conn._conn.long_string_type(), 'test')
+    test_val(self.conn._conn.long_string_type(), 'x' * (10 ** 6))
+    test_val(self.conn._conn.long_varchar_type(), None)
+    test_val(self.conn._conn.long_varchar_type(), 'test')
+    test_val(self.conn._conn.long_varchar_type(), 'x' * (10 ** 6))
+    test_val(self.conn._conn.Text(), None)
+    test_val(self.conn._conn.Text(), '')
+    test_val(self.conn._conn.Text(), 'hello')
+    test_val(self.conn._conn.NText(), None)
+    test_val(self.conn._conn.NText(), '')
+    test_val(self.conn._conn.NText(), 'hello')
+    #test_val(self.conn._conn.Xml(), '<root></root>')
+    test_val(self.conn._conn.Image(), None)
+    test_val(self.conn._conn.Image(), b'')
+    test_val(self.conn._conn.Image(), b'test')
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class TestTds71(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['tds_version'] = pytds.tds.TDS71
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def test_parsing(self):
+        _params_tests(self)
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class TestTds72(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['tds_version'] = pytds.tds.TDS72
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def test_parsing(self):
+        _params_tests(self)
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class TestTds73A(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['tds_version'] = pytds.tds.TDS73A
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def test_parsing(self):
+        _params_tests(self)
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class TestTds73B(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['tds_version'] = pytds.tds.TDS73B
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def test_parsing(self):
+        _params_tests(self)
