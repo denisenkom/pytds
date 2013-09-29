@@ -24,7 +24,7 @@ import random
 import re
 import binascii
 from socket import gethostname
-from six import print_
+from six import print_, int2byte
 
 NTLM_NegotiateUnicode                = 0x00000001
 NTLM_NegotiateOEM                    = 0x00000002
@@ -181,7 +181,7 @@ def dump_NegotiateFlags(NegotiateFlags):
 def create_NTLM_NEGOTIATE_MESSAGE_raw(workstation, domain, type1_flags=NTLM_TYPE1_FLAGS):
     BODY_LENGTH = 40
     Payload_start = BODY_LENGTH  # in bytes
-    protocol = 'NTLMSSP\0'    # name
+    protocol = b'NTLMSSP\0'    # name
 
     type = struct.pack('<I', 1)  # type 1
 
@@ -281,11 +281,11 @@ def create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, user, domain, password, Negotiat
 
     if is_NegotiateExtendedSecurity:
         pwhash = create_NT_hashed_password_v1(password, UserName, DomainName)
-        ClientChallenge = ""
+        ClientChallenge = b""
         for i in range(8):
-            ClientChallenge += chr(random.getrandbits(8))
+            ClientChallenge += int2byte(random.getrandbits(8))
         (NtChallengeResponse, LmChallengeResponse) = ntlm2sr_calc_resp(pwhash, nonce, ClientChallenge)
-    Signature = 'NTLMSSP\0'
+    Signature = b'NTLMSSP\0'
     MessageType = struct.pack('<I', 3)   # type 3
 
     DomainNameLen = struct.pack('<H', len(DomainName))

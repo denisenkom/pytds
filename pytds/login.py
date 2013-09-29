@@ -71,11 +71,11 @@ class NtlmAuth(object):
         self._password = password
 
     def create_packet(self):
-        import ntlm
+        from . import ntlm
         return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(socket.gethostname(), self._domain)
 
     def handle_next(self, packet):
-        import ntlm
+        from . import ntlm
         nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
         return ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._password, flags)
 

@@ -1,5 +1,6 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
+import os
 import codecs
 from six import StringIO
 try:
@@ -927,11 +928,12 @@ class NewDateTimeTest(TestCase):
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class Auth(unittest.TestCase):
-    #def test_ntlm(self):
-    #    conn = connect(settings.HOST, auth=NtlmAuth(user_name=settings.NTLM_USER, password=settings.NTLM_PASSWORD))
-    #    with conn.cursor() as cursor:
-    #        cursor.execute('select 1')
-    #        cursor.fetchall()
+    @unittest.skipUnless(os.getenv('NTLM_USER') and os.getenv('NTLM_PASSWORD'), "requires HOST variable to be set")
+    def test_ntlm(self):
+        conn = connect(settings.HOST, auth=pytds.login.NtlmAuth(user_name=os.getenv('NTLM_USER'), password=os.getenv('NTLM_PASSWORD')))
+        with conn.cursor() as cursor:
+            cursor.execute('select 1')
+            cursor.fetchall()
 
     @unittest.skipUnless(sys.platform.startswith("win"), "requires Windows")
     def test_sspi(self):
