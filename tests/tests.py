@@ -1432,12 +1432,10 @@ class TestMessages(unittest.TestCase):
 
         tds._main_session.make_varchar(column, '')
         self.assertIsInstance(column.type, pytds.tds.VarChar72)
-        self.assertFalse(column.type._is_max)
         self.assertEqual(1, column.type._size)
 
         tds._main_session.make_varchar(column, 'x' * 8001)
-        self.assertIsInstance(column.type, pytds.tds.VarChar72)
-        self.assertTrue(column.type._is_max)
+        self.assertIsInstance(column.type, pytds.tds.VarCharMax)
 
         tds.tds_version = TDS71
         tds._main_session.make_varchar(column, '')

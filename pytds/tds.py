@@ -1144,8 +1144,6 @@ class VarChar70(BaseType):
 
 
 class VarChar71(VarChar70):
-    type = XSYBVARCHAR
-
     def __init__(self, size, collation):
         super(VarChar71, self).__init__(size, codec=collation.get_codec())
         self._collation = collation
@@ -1162,33 +1160,27 @@ class VarChar71(VarChar70):
 
 
 class VarChar72(VarChar71):
-    type = XSYBVARCHAR
-
-    def __init__(self, size, collation, is_max=False):
-        super(VarChar72, self).__init__(size, collation)
-        self._is_max = is_max
-        if is_max:
-            self.read = self._read_max
-            self.write = self._write_max
-            self.write_info = self._write_info_max
-
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
         collation = r.get_collation()
-        return cls(size, collation, is_max=size == 0xffff)
+        if size == 0xffff:
+            return VarCharMax(collation)
+        return cls(size, collation)
+
+
+class VarCharMax(VarChar72):
+    def __init__(self, collation):
+        super(VarChar72, self).__init__(0, collation)
 
     def get_declaration(self):
-        if self._is_max:
-            return 'VARCHAR(MAX)'
-        else:
-            return super(VarChar72, self).get_declaration()
+        return 'VARCHAR(MAX)'
 
-    def _write_info_max(self, w):
+    def write_info(self, w):
         w.put_usmallint(0xffff)
         w.put_collation(self._collation)
 
-    def _write_max(self, w, val):
+    def write(self, w, val):
         if val is None:
             w.put_uint8(0xffffffffffffffff)
         else:
@@ -1199,7 +1191,7 @@ class VarChar72(VarChar71):
             w.write(val)
             w.put_int(0)
 
-    def _read_max(self, r):
+    def read(self, r):
         size = r.get_uint8()
         if size == 0xffffffffffffffff:
             return None
@@ -3696,7 +3688,7 @@ class _TdsSocket(object):
 
     def long_varchar_type(self, collation=raw_collation):
         if IS_TDS72_PLUS(self):
-            return VarChar72(0, collation, is_max=True)
+            return VarCharMax(collation)
         elif IS_TDS71_PLUS(self):
             return Text71(-1, '', collation)
         else:
