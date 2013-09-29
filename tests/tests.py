@@ -14,6 +14,7 @@ from time import sleep
 from datetime import datetime, date, time
 import uuid
 import pytds.tz
+import pytds.login
 tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
 from six import text_type
