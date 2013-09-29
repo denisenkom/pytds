@@ -1783,6 +1783,13 @@ class TestTds71(unittest.TestCase):
     def test_parsing(self):
         _params_tests(self)
 
+    def test_collations_parsing(self):
+        with self.conn.cursor() as cur:
+            cur.execute('select name, description from fn_helpcollations()')
+            collations = list(cur.fetchall())
+            for collation, desc in collations:
+                self.assertEqual(cur.execute_scalar("select N'hello' collate %s" % collation), 'hello')
+
     def test_collations(self):
         def test_val(typ, val):
             with self.conn.cursor() as cur:
@@ -1790,6 +1797,8 @@ class TestTds71(unittest.TestCase):
                 cur.execute('select %s', [param])
                 self.assertTupleEqual(cur.fetchone(), (val,))
 
+        test_val(self.conn._conn.VarChar(10, collation=pytds.collate.collation_from_sortid(pytds.collate.SQL_Latin1_General_CP437_BIN)), u'hello')
+        test_val(self.conn._conn.VarChar(10, collation=pytds.collate.collation_from_sortid(pytds.collate.SQL_Latin1_General_1251_BIN)), u'hello')
         test_val(self.conn._conn.VarChar(10, collation=pytds.collate.collation_from_sortid(pytds.collate.SQL_Latin1_General_1251_BIN)), u'привет')
 
 
