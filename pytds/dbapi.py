@@ -140,6 +140,7 @@ class _Connection(object):
             login.port = 1433
         connect_timeout = login.connect_timeout
         login.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
+        err = None
         for host in login.load_balancer.choose():
             try:
                 sock = socket.create_connection(
@@ -159,6 +160,8 @@ class _Connection(object):
                 #raise
                 continue
         else:
+            if not err:
+                err = LoginError("Cannot connect to server, load balancer returned empty list")
             raise err
         self._active_cursor = self._main_cursor = self.cursor()
         if not self._autocommit:
