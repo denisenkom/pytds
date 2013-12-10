@@ -25,7 +25,7 @@ from .tds import (
 
 logger = logging.getLogger(__name__)
 
-# comliant with DB SIG 2.0
+# compliant with DB SIG 2.0
 apilevel = '2.0'
 
 # module may be shared, but not connections
@@ -253,7 +253,7 @@ class _Connection(object):
         self._as_dict = as_dict
         self._isolation_level = 0
         self._dirty = False
-        from pytds.tz import FixedOffsetTimezone
+        from .tz import FixedOffsetTimezone
         self._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
         self._open()
 

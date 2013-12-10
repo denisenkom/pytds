@@ -1971,7 +1971,7 @@ class DateTimeOffset(BaseDateTime73):
         offset = r.get_smallint()
         tzinfo_factory = r._session.tzinfo_factory
         if tzinfo_factory is None:
-            from pytds.tz import FixedOffsetTimezone
+            from .tz import FixedOffsetTimezone
             tzinfo_factory = FixedOffsetTimezone
         tz = tzinfo_factory(offset)
         return datetime.combine(date, time).astimezone(tz)
@@ -3130,7 +3130,7 @@ class _TdsSession(object):
         w = self._writer
         w.begin_packet(TDS71_PRELOGIN)
         w.write(buf)
-        from pytds import intversion
+        from . import intversion
         w.put_uint_be(intversion)
         w.put_usmallint_be(0)  # build number
         # encryption
@@ -3225,7 +3225,7 @@ class _TdsSession(object):
         w.put_int(packet_size)
         w.put_uint(login.tds_version)
         w.put_int(w.bufsize)
-        from pytds import intversion
+        from . import intversion
         w.put_uint(intversion)
         w.put_int(login.pid)
         w.put_uint(0)  # connection id
