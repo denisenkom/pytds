@@ -1,7 +1,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.6.3'
+__version__ = '1.6.4'
 
 import logging
 import six
