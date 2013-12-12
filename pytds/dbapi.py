@@ -312,8 +312,6 @@ class _Connection(object):
                 return
         except ClosedConnectionError:
             pass
-        except:
-            logger.exception('unexpected error in rollback')
 
     def __del__(self):
         if self._conn is not None:
