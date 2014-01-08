@@ -143,7 +143,6 @@ class _Connection(object):
         if not login.port:
             login.port = 1433
         connect_timeout = login.connect_timeout
-        #login.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
         for host in login.load_balancer.choose():
             try:
                 sock = socket.create_connection(
