@@ -149,6 +149,7 @@ class TestCase2(TestCase):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
         kwargs['login_timeout'] = 1
+        kwargs['timeout'] = 1
         with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
             cur = conn.cursor()
             with self.assertRaises(TimeoutError):
