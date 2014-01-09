@@ -143,13 +143,11 @@ class _Connection(object):
         if not login.port:
             login.port = 1433
         connect_timeout = login.connect_timeout
-        login.query_timeout = login.connect_timeout if login.connect_timeout else login.query_timeout
         for host in login.load_balancer.choose():
             try:
                 sock = socket.create_connection(
                     (host, login.port),
                     connect_timeout or 90000)
-                sock.settimeout(login.query_timeout)
                 sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
             except socket.error as e:
                 err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
@@ -165,11 +163,12 @@ class _Connection(object):
                 continue
         else:
             raise err
+        sock.settimeout(login.query_timeout)
         self._active_cursor = self._main_cursor = self.cursor()
         if not self._autocommit:
             self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
-    def __init__(self, server='.', database='', user='', password='', timeout=0,
+    def __init__(self, server='.', database='', user='', password='', timeout=None,
                  login_timeout=60, as_dict=False,
                  appname=None, port=None, tds_version=TDS74,
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
