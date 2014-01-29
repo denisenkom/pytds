@@ -3,7 +3,6 @@ set -e
 
 $PYTHONHOME/bin/virtualenv env
 . env/bin/activate
-pip install pydes --use-mirrors
 pip install coverage --use-mirrors
 pip install -r requirements.txt --use-mirrors
 pip install -r test_requirements.txt --use-mirrors

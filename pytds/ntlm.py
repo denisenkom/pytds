@@ -14,10 +14,6 @@
 import struct
 import base64
 import string
-try:
-    import pyDes
-except:
-    raise Exception('To use ntlm authentication you should install pyDes module: pip install pydes')
 import hashlib
 import hmac
 import random
@@ -25,6 +21,7 @@ import re
 import binascii
 from socket import gethostname
 from six import print_, int2byte
+from . import pyDes
 
 NTLM_NegotiateUnicode                = 0x00000001
 NTLM_NegotiateOEM                    = 0x00000002
