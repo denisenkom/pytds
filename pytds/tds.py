@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from . import tz
+from . import token
 import uuid
 import six
 from six.moves import reduce
@@ -174,18 +175,6 @@ TDS_SP_EXECUTE = 12
 TDS_SP_PREPEXEC = 13
 TDS_SP_PREPEXECRPC = 14
 TDS_SP_UNPREPARE = 15
-
-# Flags returned in TDS_DONE token
-TDS_DONE_FINAL = 0
-TDS_DONE_MORE_RESULTS = 0x01  # more results follow
-TDS_DONE_ERROR = 0x02  # error occurred
-TDS_DONE_INXACT = 0x04  # transaction in progress
-TDS_DONE_PROC = 0x08  # results are from a stored procedure
-TDS_DONE_COUNT = 0x10  # count field in packet is valid
-TDS_DONE_CANCELLED = 0x20  # acknowledging an attention command (usually a cancel)
-TDS_DONE_EVENT = 0x40  # part of an event notification.
-TDS_DONE_SRVERROR = 0x100  # SQL server server error
-
 
 SYBVOID = 31  # 0x1F
 IMAGETYPE = SYBIMAGE = 34  # 0x22
@@ -2609,33 +2598,29 @@ class _TdsSession(object):
         skipall(r, r.get_int())
 
     def process_end(self, marker):
+        if IS_TDS72_PLUS(self):
+            tok = token.parse_done72(self._reader, marker)
+        else:
+            tok = token.parse_done(self._reader, marker)
+        self.process_end2(tok)
+
+    def process_end2(self, tok):
         self.more_rows = False
-        r = self._reader
-        status = r.get_usmallint()
-        r.get_usmallint()  # cur_cmd
-        more_results = status & TDS_DONE_MORE_RESULTS != 0
-        was_cancelled = status & TDS_DONE_CANCELLED != 0
-        #error = status & TDS_DONE_ERROR != 0
-        done_count_valid = status & TDS_DONE_COUNT != 0
-        #logger.debug(
-        #    'process_end: more_results = {0}\n'
-        #    '\t\twas_cancelled = {1}\n'
-        #    '\t\terror = {2}\n'
-        #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
+        status = tok.status
+        more_results = status & token.TDS_DONE_MORE_RESULTS != 0
+        was_cancelled = status & token.TDS_DONE_CANCELLED != 0
+        done_count_valid = status & token.TDS_DONE_COUNT != 0
         if self.res_info:
             self.res_info.more_results = more_results
-        rows_affected = r.get_int8() if IS_TDS72_PLUS(self) else r.get_int()
-        #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
         if was_cancelled or (not more_results and not self.in_cancel):
-            #logger.debug('process_end() state set to TDS_IDLE')
             self.in_cancel = False
             self.set_state(TDS_IDLE)
         if done_count_valid:
-            self.rows_affected = rows_affected
+            self.rows_affected = tok.rows_affected
         else:
             self.rows_affected = -1
         self.done_flags = status
-        if self.done_flags & TDS_DONE_ERROR and not was_cancelled and not self.in_cancel:
+        if self.done_flags & token.TDS_DONE_ERROR and not was_cancelled and not self.in_cancel:
             self.raise_db_exception()
 
     def process_env_chg(self):
@@ -3369,6 +3354,19 @@ class _TdsSession(object):
             self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(marker))
         return handler(self)
 
+    def get_tokens(self):
+        while True:
+            token_id = self.get_token_id()
+            parse = self._tds._token_parsers.get(token_id)
+            if not parse:
+                self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(token_id))
+            token = parse(token_id)
+            yield token
+            if token_id in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+                if not token.done_flags & token.TDS_DONE_MORE_RESULTS:
+                    return
+
+
     def get_token_id(self):
         self.set_state(TDS_READING)
         try:
@@ -3382,11 +3380,10 @@ class _TdsSession(object):
         return marker
 
     def process_simple_request(self):
-        while True:
-            marker = self.get_token_id()
-            if marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
+        for tok in self.get_tokens():
+            if isinstance(tok, token.TokDone):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_MORE_RESULTS:
+                if self.done_flags & token.TDS_DONE_MORE_RESULTS:
                     # skip results that don't event have rowcount
                     continue
                 return
@@ -3437,7 +3434,7 @@ class _TdsSession(object):
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
+                if self.done_flags & token.TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
                     # skip results that don't event have rowcount
                     continue
                 return False
@@ -3454,7 +3451,7 @@ class _TdsSession(object):
                 return True
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
+                if self.done_flags & token.TDS_DONE_MORE_RESULTS and not self.done_flags & TDS_DONE_COUNT:
                     # skip results that don't event have rowcount
                     continue
                 return False
@@ -3468,6 +3465,20 @@ class _TdsSession(object):
             if marker == TDS_RETURNSTATUS_TOKEN:
                 return
 
+_token_parsers = {
+    TDS_DONE_TOKEN: token.parse_done,
+    TDS_DONEPROC_TOKEN: token.parse_done,
+    TDS_DONEINPROC_TOKEN: token.parse_done,
+    }
+
+_token_parsers71 = _token_parsers.copy()
+
+_token_parsers72 = _token_parsers71.copy()
+_token_parsers72.update({
+    TDS_DONE_TOKEN: token.parse_done72,
+    TDS_DONEPROC_TOKEN: token.parse_done72,
+    TDS_DONEINPROC_TOKEN: token.parse_done72,
+    })
 
 _token_map = {
     TDS_AUTH_TOKEN: _TdsSession.process_auth,
@@ -3537,10 +3548,13 @@ class _TdsSocket(object):
             self._main_session.raise_db_exception()
         if IS_TDS72_PLUS(self):
             self._type_map = _type_map72
+            self._token_parsers = _token_parsers72
         elif IS_TDS71_PLUS(self):
             self._type_map = _type_map71
+            self._token_parsers = _token_parsers71
         else:
             self._type_map = _type_map
+            self._token_parsers = _token_parsers
         text_size = login.text_size
         if self._mars_enabled:
             from .smp import SmpManager
