@@ -15,7 +15,7 @@ import errno
 import uuid
 from .tds import (
     Error, LoginError, DatabaseError,
-    InterfaceError, TimeoutError,
+    InterfaceError, TimeoutError, OperationalError,
     TDS_PENDING, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
@@ -323,8 +323,14 @@ class _Connection(object):
         except socket.error as e:
             if e.errno in (errno.ENETRESET, errno.ECONNRESET):
                 return
+            raise
         except ClosedConnectionError:
             pass
+        except OperationalError as e:
+            # ignore ROLLBACK TRANSACTION without BEGIN TRANSACTION
+            if e.number == 3903:
+                return
+            raise
 
     def __del__(self):
         if self._conn is not None:
