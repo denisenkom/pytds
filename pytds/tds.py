@@ -2398,6 +2398,12 @@ class _TdsSession(object):
         self._spid = 0
         self.tzinfo_factory = tzinfo_factory
 
+    def __repr__(self):
+        fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={}>"
+        res = fmt.format(repr(self.state), repr(self._tds), repr(self.messages),
+                         repr(self.rows_affected), repr(self.use_tz), repr(self._spid))
+        return res
+
     def raise_db_exception(self):
         if not self.messages:
             raise Error("Request failed, server didn't send error message")
@@ -3518,6 +3524,11 @@ class _TdsSocket(object):
         self._bufsize = 4096
         self.tds_version = TDS74
         self.use_tz = use_tz
+
+    def __repr__(self):
+        fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
+        return fmt.format(self.tds7_transaction, self._mars_enabled,
+                          self.tds_version, self.use_tz)
 
     def login(self, login, sock, tzinfo_factory):
         self.login = login
