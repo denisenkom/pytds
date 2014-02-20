@@ -21,6 +21,10 @@ class _SmpSession(object):
         self._curr_buf_pos = 0
         self._curr_buf = b''
 
+    def __repr__(self):
+        fmt = "<_SmpSession sid={} state={}>"
+        return fmt.format(self._session_id, self._state)
+
     def close(self):
         self._tds._close_smp_session(self)
 
@@ -54,6 +58,9 @@ class SmpManager(object):
         self._sessions = {}
         self._used_ids_ba = bitarray.bitarray(2 ** 16)
         self._used_ids_ba.setall(False)
+
+    def __repr__(self):
+        return "<SmpManager sessions={}>".format(self._sessions)
 
     def create_session(self):
         try:
