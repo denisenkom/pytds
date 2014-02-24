@@ -22,8 +22,9 @@ class _SmpSession(object):
         self._curr_buf = b''
 
     def __repr__(self):
-        fmt = "<_SmpSession sid={} state={}>"
-        return fmt.format(self._session_id, self._state)
+        fmt = "<_SmpSession sid={} state={} recv_queue={} send_queue={} seq_num_for_send={}>"
+        return fmt.format(self._session_id, self._state, self._recv_queue, self._send_queue,
+                          self._seq_num_for_send)
 
     def close(self):
         self._mgr._close_smp_session(self)
