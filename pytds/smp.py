@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 class _SmpSession(object):
-    def __init__(self, tds, session_id):
+    def __init__(self, mgr, session_id):
         self._session_id = session_id
         self._seq_num_for_send = 0
         self._high_water_for_send = 4
         self._seq_num_for_recv = 0
         self._high_water_for_recv = 4
         self._last_high_water_for_recv = 4
-        self._tds = tds
+        self._mgr = mgr
         self._recv_queue = []
         self._send_queue = []
         self._state = 'new'
@@ -38,14 +38,14 @@ class _SmpSession(object):
         return fmt.format(self._session_id, self._state)
 
     def close(self):
-        self._tds._close_smp_session(self)
+        self._mgr._close_smp_session(self)
 
     def send(self, data, final):
-        self._tds._send_packet(self, data)
+        self._mgr._send_packet(self, data)
 
     def read(self, size):
         if not self._curr_buf[self._curr_buf_pos:]:
-            self._curr_buf = self._tds._recv_packet(self)
+            self._curr_buf = self._mgr._recv_packet(self)
             self._curr_buf_pos = 0
             if not self._curr_buf:
                 return b''
