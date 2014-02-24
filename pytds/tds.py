@@ -3527,7 +3527,7 @@ class _TdsSocket(object):
 
     def __repr__(self):
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
-        return fmt.format(self.tds7_transaction, self._mars_enabled,
+        return fmt.format(self.tds72_transaction, self._mars_enabled,
                           self.tds_version, self.use_tz)
 
     def login(self, login, sock, tzinfo_factory):
