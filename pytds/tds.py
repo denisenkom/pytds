@@ -957,7 +957,7 @@ class IntN(BaseType):
         8: BigInt.instance,
         }
 
-    _valid_sizes = {1, 2, 4, 8}
+    _valid_sizes = set((1, 2, 4, 8))
 
     def __init__(self, size):
         assert size in self._valid_sizes
