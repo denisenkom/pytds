@@ -2,7 +2,10 @@
 from __future__ import with_statement
 import struct
 from six import StringIO
-import unittest
+try:
+        import unittest2 as unittest
+except:
+        import unittest
 import sys
 from decimal import Decimal, getcontext
 import logging
