@@ -9,5 +9,6 @@ $PYTHONHOME/bin/virtualenv env
 pip install pydes --use-mirrors
 pip install coverage --use-mirrors
 pip install nose --use-mirrors
+pip install unittest2 --use-mirrors || true
 pip install -e .
 nosetests --with-coverage --cover-package=pytds --cover-xml --cover-xml-file=coverage.xml --with-xunit --xunit-file=xunit.xml
