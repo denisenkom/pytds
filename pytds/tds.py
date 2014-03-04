@@ -2399,9 +2399,10 @@ class _TdsSession(object):
         self.tzinfo_factory = tzinfo_factory
 
     def __repr__(self):
-        fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={}>"
+        fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={} in_cancel={}>"
         res = fmt.format(repr(self.state), repr(self._tds), repr(self.messages),
-                         repr(self.rows_affected), repr(self.use_tz), repr(self._spid))
+                         repr(self.rows_affected), repr(self.use_tz), repr(self._spid),
+                         self.in_cancel)
         return res
 
     def raise_db_exception(self):

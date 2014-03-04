@@ -156,6 +156,23 @@ class TestCase2(TestCase):
                 cur.execute("waitfor delay '00:00:05'")
             cur.execute('select 1')
 
+    def test_timeout_no_mars(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['login_timeout'] = 1
+        kwargs['use_mars'] = False
+        conn = connect(*settings.CONNECT_ARGS, **kwargs)
+        with conn.cursor() as cur:
+            try:
+                cur.execute("waitfor delay '00:00:05'")
+            except pytds.TimeoutError:
+                pass
+            else:
+                assert False
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.fetchall()
+
     def test_strs(self):
         cur = self.conn.cursor()
         self.assertIsInstance(cur.execute_scalar("select 'test'"), text_type)
