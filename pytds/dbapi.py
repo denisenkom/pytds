@@ -344,6 +344,9 @@ class _Connection(object):
     def _try_activate_cursor(self, cursor):
         if cursor is not self._active_cursor:
             session = self._active_cursor._session
+            if session.in_cancel:
+                session.process_cancel()
+
             if session.state == TDS_PENDING:
                 raise InterfaceError('Results are still pending on connection')
             self._active_cursor = cursor
