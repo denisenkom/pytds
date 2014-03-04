@@ -153,12 +153,8 @@ class TestCase2(TestCase):
         kwargs['use_mars'] = False
         conn = connect(*settings.CONNECT_ARGS, **kwargs)
         with conn.cursor() as cur:
-            try:
+            with self.assertRaises(TimeoutError):
                 cur.execute("waitfor delay '00:00:05'")
-            except pytds.TimeoutError:
-                pass
-            else:
-                assert False
         with conn.cursor() as cur:
             cur.execute("select 1")
             cur.fetchall()
