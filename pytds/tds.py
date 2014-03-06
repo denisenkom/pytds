@@ -3143,9 +3143,8 @@ class _TdsSession(object):
             elif type == self.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
             elif type == self.INSTOPT:
-                instopt = byte_struct.unpack_from(p, off)[0]
-                if instopt == 1:
-                    raise LoginError('Invalid instance name')
+                # ignore instance name mismatch
+                pass
             i += 5
         # if server do not has certificate do normal login
         if crypt_flag == 2:
