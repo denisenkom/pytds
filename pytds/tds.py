@@ -2965,6 +2965,7 @@ class _TdsSession(object):
                 self.query_flush_packet()
         else:
             self.submit_plain_query("BEGIN TRANSACTION")
+            self.conn.tds72_transaction = 1
 
     _commit_rollback_tran_struct72_hdr = struct.Struct('<HBB')
     _continue_tran_struct72 = struct.Struct('<BB')
@@ -2998,6 +2999,7 @@ class _TdsSession(object):
                 self.query_flush_packet()
         else:
             self.submit_plain_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
+            self.conn.tds72_transaction = 1 if cont else 0
 
     def commit(self, cont, isolation_level=0):
         self.submit_commit(cont, isolation_level=isolation_level)
@@ -3028,6 +3030,7 @@ class _TdsSession(object):
                 self.query_flush_packet()
         else:
             self.submit_plain_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
+            self.conn.tds72_transaction = 1 if cont else 0
 
     def _START_QUERY(self):
         if IS_TDS72_PLUS(self):
