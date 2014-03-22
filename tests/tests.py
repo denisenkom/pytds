@@ -19,6 +19,7 @@ tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
 from six import text_type
 from six.moves import xrange
+import struct
 import binascii
 from pytds import (
     connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
