@@ -4,7 +4,7 @@ from distutils.core import setup
 requirements = list(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), 'r').readlines())
 
 setup(name='python-tds',
-      version='1.6.12',
+      version='1.7.0',
       description='Python DBAPI driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation',
       author='Mikhail Denisenko',
       author_email='denisenkom@gmail.com',
