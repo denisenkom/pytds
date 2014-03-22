@@ -1182,17 +1182,6 @@ class TestMessages(unittest.TestCase):
             login = self._make_login()
             tds._main_session._process_prelogin(login)
 
-        # test bad instance name
-        sock = _FakeSock([
-            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x01\x00',
-            ])
-        tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
-        with self.assertRaisesRegexp(LoginError, 'Invalid instance name'):
-            login = self._make_login()
-            tds._main_session._process_prelogin(login)
-
     def test_prelogin_generation(self):
         sock = _FakeSock('')
         tds = _TdsSocket()
