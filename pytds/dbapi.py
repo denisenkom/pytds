@@ -1,7 +1,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.6.1'
+__version__ = '1.6.12'
 
 import logging
 import six
@@ -143,6 +143,7 @@ class _Connection(object):
         if not login.port:
             login.port = 1433
         connect_timeout = login.connect_timeout
+        err = None
         for host in login.load_balancer.choose():
             try:
                 sock = socket.create_connection(
@@ -162,6 +163,8 @@ class _Connection(object):
                 #raise
                 continue
         else:
+            if not err:
+                err = LoginError("Cannot connect to server, load balancer returned empty list")
             raise err
         sock.settimeout(login.query_timeout)
         self._active_cursor = self._main_cursor = self.cursor()
