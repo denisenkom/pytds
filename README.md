@@ -8,6 +8,11 @@ Python DBAPI driver for MSSQL using pure Python TDS (Tabular Data Stream) protoc
 
 It can be used with https://bitbucket.org/denisenkom/django-pytds as a django database backend.
 
+Features
+--------
+
+* Fully supports new MSSQL 2008 date types: datetime2, date, time, datetimeoffset
+
 Install
 -------
 
