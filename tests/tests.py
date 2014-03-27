@@ -129,6 +129,7 @@ class TestCase2(TestCase):
         assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
         self.assertEqual(u'Iñtërnâtiônàlizætiøn1', cur.execute_scalar('select %s', (u'Iñtërnâtiônàlizætiøn1'.encode('utf8'),)))
         assert 5 == cur.execute_scalar('select 5 as fieldname')
+        self.assertEqual(u'\U0001d6fc', cur.execute_scalar('select %s', (u'\U0001d6fc',)))
 
     def test_decimals(self):
         cur = self.conn.cursor()
@@ -1471,7 +1472,7 @@ class TestMessages(unittest.TestCase):
 
         tds._main_session.make_nvarchar(column, '')
         self.assertIsInstance(column.type, pytds.tds.NVarChar72)
-        self.assertEqual(1, column.type._size)
+        self.assertEqual(4000, column.type._size)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
         self.assertIsInstance(column.type, pytds.tds.NVarCharMax)
@@ -1479,7 +1480,7 @@ class TestMessages(unittest.TestCase):
         tds.tds_version = TDS71
         tds._main_session.make_nvarchar(column, '')
         self.assertIsInstance(column.type, pytds.tds.NVarChar71)
-        self.assertEqual(1, column.type._size)
+        self.assertEqual(4000, column.type._size)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
         self.assertIsInstance(column.type, pytds.tds.NText71)
@@ -1487,7 +1488,7 @@ class TestMessages(unittest.TestCase):
         tds.tds_version = TDS70
         tds._main_session.make_nvarchar(column, '')
         self.assertIsInstance(column.type, pytds.tds.NVarChar70)
-        self.assertEqual(1, column.type._size)
+        self.assertEqual(4000, column.type._size)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
         self.assertIsInstance(column.type, pytds.tds.NText70)

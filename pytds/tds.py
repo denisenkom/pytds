@@ -1236,9 +1236,10 @@ class NVarChar70(BaseType):
         else:
             if isinstance(val, bytes):
                 val = force_unicode(val)
-            w.put_usmallint(len(val) * 2)
-            #w.put_smallint(len(val))
-            w.write_ucs2(val)
+            buf, _ = ucs2_codec.encode(val)
+            l = len(buf)
+            w.put_usmallint(l)
+            w.write(buf)
 
     def read(self, r):
         size = r.get_usmallint()
@@ -2794,10 +2795,12 @@ class _TdsSession(object):
 
     def make_nvarchar(self, column, value):
         size = len(value)
-        if size > 4000:
+        # use lower limit because there could be surrogate characters consisting of
+        # two 16bit code points
+        if size > 2000:
             column.type = self.conn.long_string_type(collation=self.conn.collation)
         else:
-            column.type = self.conn.NVarChar(size or 1, collation=self.conn.collation)
+            column.type = self.conn.NVarChar(4000, collation=self.conn.collation)
 
     def make_param(self, name, value):
         if isinstance(value, Column):
