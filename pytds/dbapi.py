@@ -13,6 +13,7 @@ from . import tz
 import socket
 import errno
 import uuid
+import warnings
 from .tds import (
     Error, LoginError, DatabaseError,
     InterfaceError, TimeoutError, OperationalError,
@@ -656,6 +657,7 @@ class _Cursor(six.Iterator):
 
     @property
     def messages(self):
+        #warnings.warn('DB-API extension cursor.messages used')
         if self._session:
             result = []
             for msg in self._session.messages:
