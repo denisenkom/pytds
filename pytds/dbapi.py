@@ -13,6 +13,7 @@ from . import tz
 import socket
 import errno
 import uuid
+import warnings
 from .tds import (
     Error, LoginError, DatabaseError,
     InterfaceError, TimeoutError, OperationalError,
@@ -20,7 +21,7 @@ from .tds import (
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
     _TdsSocket, tds7_get_instances, ClosedConnectionError,
-    SP_EXECUTESQL, Column,
+    SP_EXECUTESQL, Column, _create_exception_by_message,
     )
 
 logger = logging.getLogger(__name__)
@@ -651,6 +652,18 @@ class _Cursor(six.Iterator):
         res = self._session.res_info
         if res:
             return res.description
+        else:
+            return None
+
+    @property
+    def messages(self):
+        #warnings.warn('DB-API extension cursor.messages used')
+        if self._session:
+            result = []
+            for msg in self._session.messages:
+                ex = _create_exception_by_message(msg)
+                result.append((type(ex), ex))
+            return result
         else:
             return None
 
