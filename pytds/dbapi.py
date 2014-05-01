@@ -45,20 +45,22 @@ def list_row_strategy(column_names):
     return list
 
 def dict_row_strategy(column_names):
-    def row_factory(row):
+    # replace empty column names with indices
+    column_names = [(name or idx) for idx, name in enumerate(column_names)]
+    def row_factory(*row):
         return dict(zip(column_names, row))
     return row_factory
 
 def namedtuple_row_strategy(column_names):
     import collections
     # replace empty column names with placeholders
-    column_names = [name if name else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
     return collections.namedtuple('Row', column_names)
 
 def recordtype_row_strategy(column_names):
     import recordtype # optional dependency
     # replace empty column names with placeholders
-    column_names = [name if name else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
     return recordtype.recordtype('Row', column_names)
 
 ######################
