@@ -47,7 +47,7 @@ def list_row_strategy(column_names):
 def dict_row_strategy(column_names):
     # replace empty column names with indices
     column_names = [(name or idx) for idx, name in enumerate(column_names)]
-    def row_factory(*row):
+    def row_factory(row):
         return dict(zip(column_names, row))
     return row_factory
 
@@ -55,13 +55,19 @@ def namedtuple_row_strategy(column_names):
     import collections
     # replace empty column names with placeholders
     column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
-    return collections.namedtuple('Row', column_names)
+    row_class = collections.namedtuple('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
 
 def recordtype_row_strategy(column_names):
     import recordtype # optional dependency
     # replace empty column names with placeholders
     column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
-    return recordtype.recordtype('Row', column_names)
+    row_class = recordtype.recordtype('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
 
 ######################
 ## Connection class ##
@@ -669,7 +675,7 @@ class _Cursor(six.Iterator):
     def fetchone(self):
         row = self._session.fetchone()
         if row:
-            return self._row_factory(*row)
+            return self._row_factory(row)
 
     def fetchmany(self, size=None):
         if size is None:
