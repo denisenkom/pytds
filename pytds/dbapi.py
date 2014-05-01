@@ -210,7 +210,7 @@ class _Connection(object):
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
                  blocksize=4096, use_mars=False, auth=None, readonly=False,
                  load_balancer=None, use_tz=None, bytes_to_unicode=True,
-                 row_strategy = None):
+                 row_strategy=None):
         """
         Constructor for creating a connection to the database. Returns a
         Connection object.
