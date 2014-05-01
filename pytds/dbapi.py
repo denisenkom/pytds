@@ -197,8 +197,8 @@ class _Connection(object):
         if not self._autocommit:
             self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
-    def __init__(self, server='.', database='', user='', password='', timeout=None,
-                 login_timeout=60, as_dict=None,
+    def __init__(self, server=None, database=None, user=None, password=None, timeout=None,
+                 login_timeout=60, as_dict=False,
                  appname=None, port=None, tds_version=TDS74,
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
                  blocksize=4096, use_mars=False, auth=None, readonly=False,
@@ -249,7 +249,7 @@ class _Connection(object):
         login.language = ''  # use database default
         login.attach_db_file = ''
         login.tds_version = tds_version
-        login.database = database
+        login.database = database or ''
         login.bulk_copy = False
         login.text_size = 0
         login.client_lcid = lcid.LANGID_ENGLISH_US
@@ -271,7 +271,7 @@ class _Connection(object):
 
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
-        login.server_name = server
+        login.server_name = server or '.'
         login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
         login.blocksize = blocksize
         login.auth = auth
