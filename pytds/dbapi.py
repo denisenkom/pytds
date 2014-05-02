@@ -39,6 +39,36 @@ paramstyle = 'pyformat'
 class _TdsLogin:
     pass
 
+def tuple_row_strategy(column_names):
+    return tuple
+
+def list_row_strategy(column_names):
+    return list
+
+def dict_row_strategy(column_names):
+    # replace empty column names with indices
+    column_names = [(name or idx) for idx, name in enumerate(column_names)]
+    def row_factory(row):
+        return dict(zip(column_names, row))
+    return row_factory
+
+def namedtuple_row_strategy(column_names):
+    import collections
+    # replace empty column names with placeholders
+    column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
+    row_class = collections.namedtuple('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
+
+def recordtype_row_strategy(column_names):
+    import recordtype # optional dependency
+    # replace empty column names with placeholders
+    column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
+    row_class = recordtype.recordtype('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
 
 ######################
 ## Connection class ##
@@ -50,11 +80,14 @@ class _Connection(object):
         Instructs all cursors this connection creates to return results
         as a dictionary rather than a tuple.
         """
-        return self._as_dict
+        return self._row_strategy == dict_row_strategy
 
     @as_dict.setter
     def as_dict(self, value):
-        self._as_dict = value
+        if value:
+            self._row_strategy = dict_row_strategy
+        else:
+            self._row_strategy = tuple_row_strategy
 
     @property
     def autocommit_state(self):
@@ -173,11 +206,12 @@ class _Connection(object):
             self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
     def __init__(self, server='.', database='', user='', password='', timeout=None,
-                 login_timeout=60, as_dict=False,
+                 login_timeout=60, as_dict=None,
                  appname=None, port=None, tds_version=TDS74,
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
                  blocksize=4096, use_mars=False, auth=None, readonly=False,
-                 load_balancer=None, use_tz=None, bytes_to_unicode=True):
+                 load_balancer=None, use_tz=None, bytes_to_unicode=True,
+                 row_strategy=None):
         """
         Constructor for creating a connection to the database. Returns a
         Connection object.
@@ -200,6 +234,8 @@ class _Connection(object):
         :type appname: string
         :keyword port: the TCP port to use to connect to the server
         :type appname: string
+        :keyword row_strategy: strategy used to create rows, determines type of returned rows, can be custom or one of: tuple_row_strategy, list_row_strategy, dict_row_strategy, namedtuple_row_strategy, recordtype_row_strategy
+        :type row_strategy: function of list of column names returning row factory
         """
 
         # support MS methods of connecting locally
@@ -253,7 +289,15 @@ class _Connection(object):
         self._use_tz = use_tz
         self._autocommit = autocommit
         self._login = login
-        self._as_dict = as_dict
+
+        assert row_strategy == None or as_dict == None, 'Both row_startegy and as_dict were specified, you should use either one or another'
+        if as_dict != None:
+            self.as_dict = as_dict
+        elif row_strategy != None:
+            self._row_strategy = row_strategy
+        else:
+            self._row_strategy = tuple_row_strategy # default row strategy
+            
         self._isolation_level = 0
         self._dirty = False
         from .tz import FixedOffsetTimezone
@@ -536,6 +580,11 @@ class _Cursor(six.Iterator):
             self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
         self._session.find_result_or_done()
 
+        self._row_factory = None
+        if self._session.res_info:
+            column_names = [col[0] for col in self._session.res_info.description]
+            self._row_factory = self._conn._row_strategy(column_names)
+
     def execute(self, operation, params=()):
         # Execute the query
         self._assert_open()
@@ -637,7 +686,9 @@ class _Cursor(six.Iterator):
             return None
 
     def fetchone(self):
-        return self._session.fetchone(self._conn.as_dict)
+        row = self._session.fetchone()
+        if row:
+            return self._row_factory(row)
 
     def fetchmany(self, size=None):
         if size is None:

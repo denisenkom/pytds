@@ -3422,18 +3422,14 @@ class _TdsSession(object):
         if self.find_result_or_done():
             return True
 
-    def fetchone(self, as_dict):
+    def fetchone(self):
         if self.res_info is None:
             raise Error("Previous statement didn't produce any results")
 
         if not self.next_row():
             return None
 
-        cols = self.res_info.columns
-        row = tuple(self.row)
-        if as_dict:
-            row = dict((col.column_name, col.value) for col in cols if col.column_name)
-        return row
+        return self.row
 
     def next_row(self):
         if not self.more_rows:
