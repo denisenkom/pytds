@@ -445,6 +445,12 @@ class _Cursor(six.Iterator):
         """
         return self
 
+    def _setup_row_factory(self):
+        self._row_factory = None
+        if self._session.res_info:
+            column_names = [col[0] for col in self._session.res_info.description]
+            self._row_factory = self._conn._row_strategy(column_names)
+
     def _callproc(self, procname, parameters):
         self._ensure_transaction()
         results = list(parameters)
@@ -453,6 +459,7 @@ class _Cursor(six.Iterator):
         self._session.process_rpc()
         for key, param in self._session.output_params.items():
             results[key] = param.value
+        self._setup_row_factory()
         return results
 
     def callproc(self, procname, parameters=()):
@@ -579,11 +586,7 @@ class _Cursor(six.Iterator):
         else:
             self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
         self._session.find_result_or_done()
-
-        self._row_factory = None
-        if self._session.res_info:
-            column_names = [col[0] for col in self._session.res_info.description]
-            self._row_factory = self._conn._row_strategy(column_names)
+        self._setup_row_factory()
 
     def execute(self, operation, params=()):
         # Execute the query
@@ -645,7 +648,9 @@ class _Cursor(six.Iterator):
         return row[0]
 
     def nextset(self):
-        return self._session.next_set()
+        res = self._session.next_set()
+        self._setup_row_factory()
+        return res
 
     @property
     def rowcount(self):
