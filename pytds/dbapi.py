@@ -6,6 +6,8 @@ __version__ = '1.7.0'
 import logging
 import six
 import os
+import re
+import keyword
 from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
@@ -50,16 +52,19 @@ def dict_row_strategy(column_names):
         return dict(zip(column_names, row))
     return row_factory
 
+def is_valid_identifier(name):
+    return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
+
 def namedtuple_row_strategy(column_names):
     import collections
     # replace empty column names with placeholders
-    column_names = [name if name else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
     return collections.namedtuple('Row', column_names)
 
 def recordtype_row_strategy(column_names):
     import recordtype # optional dependency
     # replace empty column names with placeholders
-    column_names = [name if name else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
     return recordtype.recordtype('Row', column_names)
 
 ######################
