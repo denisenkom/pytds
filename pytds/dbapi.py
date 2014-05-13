@@ -48,6 +48,8 @@ def list_row_strategy(column_names):
     return list
 
 def dict_row_strategy(column_names):
+    # replace empty column names with indices
+    column_names = [(name or idx) for idx, name in enumerate(column_names)]
     def row_factory(row):
         return dict(zip(column_names, row))
     return row_factory
@@ -59,13 +61,19 @@ def namedtuple_row_strategy(column_names):
     import collections
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
-    return collections.namedtuple('Row', column_names)
+    row_class = collections.namedtuple('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
 
 def recordtype_row_strategy(column_names):
     import recordtype # optional dependency
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
-    return recordtype.recordtype('Row', column_names)
+    row_class = recordtype.recordtype('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
 
 ######################
 ## Connection class ##
@@ -442,6 +450,12 @@ class _Cursor(six.Iterator):
         """
         return self
 
+    def _setup_row_factory(self):
+        self._row_factory = None
+        if self._session.res_info:
+            column_names = [col[0] for col in self._session.res_info.description]
+            self._row_factory = self._conn._row_strategy(column_names)
+
     def _callproc(self, procname, parameters):
         self._ensure_transaction()
         results = list(parameters)
@@ -450,6 +464,7 @@ class _Cursor(six.Iterator):
         self._session.process_rpc()
         for key, param in self._session.output_params.items():
             results[key] = param.value
+        self._setup_row_factory()
         return results
 
     def callproc(self, procname, parameters=()):
@@ -576,11 +591,7 @@ class _Cursor(six.Iterator):
         else:
             self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
         self._session.find_result_or_done()
-
-        self._row_factory = None
-        if self._session.res_info:
-            column_names = [col[0] for col in self._session.res_info.description]
-            self._row_factory = self._conn._row_strategy(column_names)
+        self._setup_row_factory()
 
     def execute(self, operation, params=()):
         # Execute the query
@@ -642,7 +653,9 @@ class _Cursor(six.Iterator):
         return row[0]
 
     def nextset(self):
-        return self._session.next_set()
+        res = self._session.next_set()
+        self._setup_row_factory()
+        return res
 
     @property
     def rowcount(self):
@@ -685,7 +698,7 @@ class _Cursor(six.Iterator):
     def fetchone(self):
         row = self._session.fetchone()
         if row:
-            return self._row_factory(*row)
+            return self._row_factory(row)
 
     def fetchmany(self, size=None):
         if size is None:
