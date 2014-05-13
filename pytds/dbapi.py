@@ -70,9 +70,20 @@ def recordtype_row_strategy(column_names):
     import recordtype # optional dependency
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
-    row_class = recordtype.recordtype('Row', column_names)
+    recordtype_row_class = recordtype.recordtype('Row', column_names)
+
+    # custom extension class that supports indexing
+    class Row(recordtype_row_class):
+        def __getitem__(self, index):
+            if isinstance(index, slice):
+                return tuple(getattr(self, x) for x in self.__slots__[index])
+            return getattr(self, self.__slots__[index])
+
+        def __setitem__(self, index, value):
+            setattr(self, self.__slots__[index], value)
+            
     def row_factory(row):
-        return row_class(*row)
+        return Row(*row)
     return row_factory
 
 ######################
