@@ -6,6 +6,8 @@ __version__ = '1.7.0'
 import logging
 import six
 import os
+import re
+import keyword
 from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
@@ -52,10 +54,13 @@ def dict_row_strategy(column_names):
         return dict(zip(column_names, row))
     return row_factory
 
+def is_valid_identifier(name):
+    return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
+
 def namedtuple_row_strategy(column_names):
     import collections
     # replace empty column names with placeholders
-    column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
+    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
     row_class = collections.namedtuple('Row', column_names)
     def row_factory(row):
         return row_class(*row)
@@ -64,10 +69,21 @@ def namedtuple_row_strategy(column_names):
 def recordtype_row_strategy(column_names):
     import recordtype # optional dependency
     # replace empty column names with placeholders
-    column_names = [(name or 'col%s_' % idx) for idx, name in enumerate(column_names)]
-    row_class = recordtype.recordtype('Row', column_names)
+    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    recordtype_row_class = recordtype.recordtype('Row', column_names)
+
+    # custom extension class that supports indexing
+    class Row(recordtype_row_class):
+        def __getitem__(self, index):
+            if isinstance(index, slice):
+                return tuple(getattr(self, x) for x in self.__slots__[index])
+            return getattr(self, self.__slots__[index])
+
+        def __setitem__(self, index, value):
+            setattr(self, self.__slots__[index], value)
+            
     def row_factory(row):
-        return row_class(*row)
+        return Row(*row)
     return row_factory
 
 ######################
@@ -205,7 +221,7 @@ class _Connection(object):
         if not self._autocommit:
             self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
-    def __init__(self, server='.', database='', user='', password='', timeout=None,
+    def __init__(self, server=None, database=None, user=None, password=None, timeout=None,
                  login_timeout=60, as_dict=None,
                  appname=None, port=None, tds_version=TDS74,
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
@@ -257,7 +273,7 @@ class _Connection(object):
         login.language = ''  # use database default
         login.attach_db_file = ''
         login.tds_version = tds_version
-        login.database = database
+        login.database = database or ''
         login.bulk_copy = False
         login.text_size = 0
         login.client_lcid = lcid.LANGID_ENGLISH_US
@@ -279,7 +295,7 @@ class _Connection(object):
 
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
-        login.server_name = server
+        login.server_name = server or '.'
         login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
         login.blocksize = blocksize
         login.auth = auth
