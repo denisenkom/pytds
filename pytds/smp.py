@@ -3,7 +3,7 @@ import logging
 import threading
 from six.moves import range
 try:
-    from bitarray1 import bitarray
+    from bitarray import bitarray
 except ImportError:
     class bitarray(list):
         def __init__(self, len):
