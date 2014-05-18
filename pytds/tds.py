@@ -2375,6 +2375,27 @@ _type_map72.update({
     SYBIMAGE: Image72,
     })
 
+def _create_exception_by_message(msg, custom_error_msg = None):
+    msg_no = msg['msgno']
+    if custom_error_msg is not None:
+        error_msg = custom_error_msg
+    else:
+        error_msg = msg['message']
+    if msg_no in prog_errors:
+        ex = ProgrammingError(error_msg)
+    elif msg_no in integrity_errors:
+        ex = IntegrityError(error_msg)
+    else:
+        ex = OperationalError(error_msg)
+    ex.msg_no = msg['msgno']
+    ex.text = msg['message']
+    ex.srvname = msg['server']
+    ex.procname = msg['proc_name']
+    ex.number = msg['msgno']
+    ex.severity = msg['severity']
+    ex.state = msg['state']
+    ex.line = msg['line_number']
+    return ex
 
 class _TdsSession(object):
     def __init__(self, tds, transport, tzinfo_factory):
@@ -2416,22 +2437,8 @@ class _TdsSession(object):
             else:
                 break
 
-        msg_no = msg['msgno']
         error_msg = ' '.join(msg['message'] for msg in self.messages)
-        if msg_no in prog_errors:
-            ex = ProgrammingError(error_msg)
-        elif msg_no in integrity_errors:
-            ex = IntegrityError(error_msg)
-        else:
-            ex = OperationalError(error_msg)
-        ex.msg_no = msg['msgno']
-        ex.text = msg['message']
-        ex.srvname = msg['server']
-        ex.procname = msg['proc_name']
-        ex.number = msg['msgno']
-        ex.severity = msg['severity']
-        ex.state = msg['state']
-        ex.line = msg['line_number']
+        ex = _create_exception_by_message(msg, error_msg)
         self.messages = []
         raise ex
 
@@ -3415,18 +3422,14 @@ class _TdsSession(object):
         if self.find_result_or_done():
             return True
 
-    def fetchone(self, as_dict):
+    def fetchone(self):
         if self.res_info is None:
             raise Error("Previous statement didn't produce any results")
 
         if not self.next_row():
             return None
 
-        cols = self.res_info.columns
-        row = tuple(self.row)
-        if as_dict:
-            row = dict((col.column_name, col.value) for col in cols if col.column_name)
-        return row
+        return self.row
 
     def next_row(self):
         if not self.more_rows:

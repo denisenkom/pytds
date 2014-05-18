@@ -6,6 +6,8 @@ __version__ = '1.7.0'
 import logging
 import six
 import os
+import re
+import keyword
 from six.moves import xrange
 from . import lcid
 from datetime import date, datetime, time
@@ -13,6 +15,7 @@ from . import tz
 import socket
 import errno
 import uuid
+import warnings
 from .tds import (
     Error, LoginError, DatabaseError,
     InterfaceError, TimeoutError, OperationalError,
@@ -20,7 +23,7 @@ from .tds import (
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
     _TdsSocket, tds7_get_instances, ClosedConnectionError,
-    SP_EXECUTESQL, Column,
+    SP_EXECUTESQL, Column, _create_exception_by_message,
     )
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,50 @@ paramstyle = 'pyformat'
 class _TdsLogin:
     pass
 
+def tuple_row_strategy(column_names):
+    return tuple
+
+def list_row_strategy(column_names):
+    return list
+
+def dict_row_strategy(column_names):
+    # replace empty column names with indices
+    column_names = [(name or idx) for idx, name in enumerate(column_names)]
+    def row_factory(row):
+        return dict(zip(column_names, row))
+    return row_factory
+
+def is_valid_identifier(name):
+    return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
+
+def namedtuple_row_strategy(column_names):
+    import collections
+    # replace empty column names with placeholders
+    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    row_class = collections.namedtuple('Row', column_names)
+    def row_factory(row):
+        return row_class(*row)
+    return row_factory
+
+def recordtype_row_strategy(column_names):
+    import recordtype # optional dependency
+    # replace empty column names with placeholders
+    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    recordtype_row_class = recordtype.recordtype('Row', column_names)
+
+    # custom extension class that supports indexing
+    class Row(recordtype_row_class):
+        def __getitem__(self, index):
+            if isinstance(index, slice):
+                return tuple(getattr(self, x) for x in self.__slots__[index])
+            return getattr(self, self.__slots__[index])
+
+        def __setitem__(self, index, value):
+            setattr(self, self.__slots__[index], value)
+            
+    def row_factory(row):
+        return Row(*row)
+    return row_factory
 
 ######################
 ## Connection class ##
@@ -49,11 +96,14 @@ class _Connection(object):
         Instructs all cursors this connection creates to return results
         as a dictionary rather than a tuple.
         """
-        return self._as_dict
+        return self._row_strategy == dict_row_strategy
 
     @as_dict.setter
     def as_dict(self, value):
-        self._as_dict = value
+        if value:
+            self._row_strategy = dict_row_strategy
+        else:
+            self._row_strategy = tuple_row_strategy
 
     @property
     def autocommit_state(self):
@@ -171,12 +221,13 @@ class _Connection(object):
         if not self._autocommit:
             self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
-    def __init__(self, server='.', database='', user='', password='', timeout=None,
-                 login_timeout=60, as_dict=False,
+    def __init__(self, server=None, database=None, user=None, password=None, timeout=None,
+                 login_timeout=60, as_dict=None,
                  appname=None, port=None, tds_version=TDS74,
                  encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
                  blocksize=4096, use_mars=False, auth=None, readonly=False,
-                 load_balancer=None, use_tz=None, bytes_to_unicode=True):
+                 load_balancer=None, use_tz=None, bytes_to_unicode=True,
+                 row_strategy=None):
         """
         Constructor for creating a connection to the database. Returns a
         Connection object.
@@ -199,6 +250,8 @@ class _Connection(object):
         :type appname: string
         :keyword port: the TCP port to use to connect to the server
         :type appname: string
+        :keyword row_strategy: strategy used to create rows, determines type of returned rows, can be custom or one of: tuple_row_strategy, list_row_strategy, dict_row_strategy, namedtuple_row_strategy, recordtype_row_strategy
+        :type row_strategy: function of list of column names returning row factory
         """
 
         # support MS methods of connecting locally
@@ -220,7 +273,7 @@ class _Connection(object):
         login.language = ''  # use database default
         login.attach_db_file = ''
         login.tds_version = tds_version
-        login.database = database
+        login.database = database or ''
         login.bulk_copy = False
         login.text_size = 0
         login.client_lcid = lcid.LANGID_ENGLISH_US
@@ -242,7 +295,7 @@ class _Connection(object):
 
         login.connect_timeout = login_timeout
         login.query_timeout = timeout
-        login.server_name = server
+        login.server_name = server or '.'
         login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
         login.blocksize = blocksize
         login.auth = auth
@@ -252,7 +305,15 @@ class _Connection(object):
         self._use_tz = use_tz
         self._autocommit = autocommit
         self._login = login
-        self._as_dict = as_dict
+
+        assert row_strategy == None or as_dict == None, 'Both row_startegy and as_dict were specified, you should use either one or another'
+        if as_dict != None:
+            self.as_dict = as_dict
+        elif row_strategy != None:
+            self._row_strategy = row_strategy
+        else:
+            self._row_strategy = tuple_row_strategy # default row strategy
+            
         self._isolation_level = 0
         self._dirty = False
         from .tz import FixedOffsetTimezone
@@ -400,6 +461,12 @@ class _Cursor(six.Iterator):
         """
         return self
 
+    def _setup_row_factory(self):
+        self._row_factory = None
+        if self._session.res_info:
+            column_names = [col[0] for col in self._session.res_info.description]
+            self._row_factory = self._conn._row_strategy(column_names)
+
     def _callproc(self, procname, parameters):
         self._ensure_transaction()
         results = list(parameters)
@@ -408,6 +475,7 @@ class _Cursor(six.Iterator):
         self._session.process_rpc()
         for key, param in self._session.output_params.items():
             results[key] = param.value
+        self._setup_row_factory()
         return results
 
     def callproc(self, procname, parameters=()):
@@ -534,6 +602,7 @@ class _Cursor(six.Iterator):
         else:
             self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
         self._session.find_result_or_done()
+        self._setup_row_factory()
 
     def execute(self, operation, params=()):
         # Execute the query
@@ -595,7 +664,9 @@ class _Cursor(six.Iterator):
         return row[0]
 
     def nextset(self):
-        return self._session.next_set()
+        res = self._session.next_set()
+        self._setup_row_factory()
+        return res
 
     @property
     def rowcount(self):
@@ -614,6 +685,18 @@ class _Cursor(six.Iterator):
             return None
 
     @property
+    def messages(self):
+        #warnings.warn('DB-API extension cursor.messages used')
+        if self._session:
+            result = []
+            for msg in self._session.messages:
+                ex = _create_exception_by_message(msg)
+                result.append((type(ex), ex))
+            return result
+        else:
+            return None
+
+    @property
     def native_description(self):
         if self._session is None:
             return None
@@ -624,7 +707,9 @@ class _Cursor(six.Iterator):
             return None
 
     def fetchone(self):
-        return self._session.fetchone(self._conn.as_dict)
+        row = self._session.fetchone()
+        if row:
+            return self._row_factory(row)
 
     def fetchmany(self, size=None):
         if size is None:
