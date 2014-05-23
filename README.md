@@ -14,8 +14,13 @@ Features
 * Fully supports new MSSQL 2008 date types: datetime2, date, time, datetimeoffset
 * MARS
 
-Install
--------
+Missing Features
+----------------
+
+* SSL encryption
+
+Installation
+------------
 
 To install run this command:
 
@@ -25,7 +30,12 @@ For a better performance install bitarray package too:
 
     pip install bitarray
 
+Example
+-------
+
 To connect to database do
     
     import pytds
     conn = pytds.connect('server', 'database', 'user', 'password')
+
+For the api reference see [DBAPI Specification](http://legacy.python.org/dev/peps/pep-0249/)
