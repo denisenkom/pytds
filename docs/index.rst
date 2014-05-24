@@ -18,7 +18,7 @@ Reference
 pytds
 -----
 
-.. automodule:: pytds.dbapi
+.. automodule:: pytds
    :members:
 
 pytds.extensions

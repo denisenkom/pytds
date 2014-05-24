@@ -30,7 +30,7 @@ from pytds.tds import (
     _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, Bit, Int, SmallInt,
     NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation,
     )
-from pytds.dbapi import _TdsLogin
+from pytds import _TdsLogin
 from . import dbapi20
 import pytds
 from . import settings
