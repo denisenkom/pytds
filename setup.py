@@ -1,5 +1,5 @@
 import os
-from distutils.core import setup
+from setuptools import setup
 
 requirements = list(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), 'r').readlines())
 
