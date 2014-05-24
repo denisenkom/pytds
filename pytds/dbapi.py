@@ -28,46 +28,72 @@ from .tds import (
 
 logger = logging.getLogger(__name__)
 
-# compliant with DB SIG 2.0
+#: Compliant with DB SIG 2.0
 apilevel = '2.0'
 
-# module may be shared, but not connections
+#: Module may be shared, but not connections
 threadsafety = 1
 
-# this module uses extended python format codes
+#: This module uses extended python format codes
 paramstyle = 'pyformat'
 
 
 class _TdsLogin:
     pass
 
+
 def tuple_row_strategy(column_names):
+    """ Tuple row strategy, rows returned as tuples, default
+    """
     return tuple
 
+
 def list_row_strategy(column_names):
+    """  List row strategy, rows returned as lists
+    """
     return list
 
+
 def dict_row_strategy(column_names):
+    """ Dict row strategy, rows returned as dictionaries
+    """
     # replace empty column names with indices
     column_names = [(name or idx) for idx, name in enumerate(column_names)]
+
     def row_factory(row):
         return dict(zip(column_names, row))
+
     return row_factory
+
 
 def is_valid_identifier(name):
     return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
 
+
 def namedtuple_row_strategy(column_names):
+    """ Namedtuple row strategy, rows returned as named tuples
+
+    Column names that are not valid Python identifiers will be replaced
+    with col<number>_
+    """
     import collections
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
     row_class = collections.namedtuple('Row', column_names)
+
     def row_factory(row):
         return row_class(*row)
+
     return row_factory
 
+
 def recordtype_row_strategy(column_names):
-    import recordtype # optional dependency
+    """ Recordtype row strategy, rows returned as recordtypes
+
+    Column names that are not valid Python identifiers will be replaced
+    with col<number>_
+    """
+    import recordtype  # optional dependency
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
     recordtype_row_class = recordtype.recordtype('Row', column_names)
@@ -84,12 +110,13 @@ def recordtype_row_strategy(column_names):
             
     def row_factory(row):
         return Row(*row)
+
     return row_factory
 
-######################
-## Connection class ##
-######################
-class _Connection(object):
+
+class Connection(object):
+    """Connection object, this object should be created by calling :func:`connect`"""
+
     @property
     def as_dict(self):
         """
@@ -108,12 +135,15 @@ class _Connection(object):
     @property
     def autocommit_state(self):
         """
-        The current state of autocommit on the connection.
+        An alias for `autocommit`, provided for compatibility with pymssql
         """
         return self._autocommit
 
     @property
     def autocommit(self):
+        """
+        The current state of autocommit on the connection.
+        """
         return self._autocommit
 
     @autocommit.setter
@@ -128,6 +158,7 @@ class _Connection(object):
 
     @property
     def isolation_level(self):
+        """Isolation level for transactions"""
         return self._isolation_level
 
     def set_isolation_level(self, level):
@@ -146,36 +177,38 @@ class _Connection(object):
 
     @property
     def chunk_handler(self):
-        '''
+        """
         Returns current chunk handler
         Default is MemoryChunkedHandler()
-        '''
+        """
         self._assert_open()
         return self._conn.chunk_handler
 
     @chunk_handler.setter
-    def chunk_handler_set(self, value):
+    def chunk_handler(self, value):
         self._assert_open()
         self._conn.chunk_handler = value
 
     @property
     def tds_version(self):
-        '''
-        Returns version of tds protocol that is being used by this connection
-        '''
+        """
+        Version of tds protocol that is being used by this connection
+        """
         self._assert_open()
         return self._conn.tds_version
 
     @property
     def product_version(self):
-        '''
-        Returns version of the server
-        '''
+        """
+        Version of the MSSQL server
+        """
         self._assert_open()
         return self._conn.product_version
 
     @property
     def mars_enabled(self):
+        """ Whether MARS is enabled or not on connection
+        """
         return self._conn.mars_enabled
 
     def _open(self):
@@ -221,105 +254,6 @@ class _Connection(object):
         if not self._autocommit:
             self._main_cursor._begin_tran(isolation_level=self._isolation_level)
 
-    def __init__(self, server=None, database=None, user=None, password=None, timeout=None,
-                 login_timeout=60, as_dict=None,
-                 appname=None, port=None, tds_version=TDS74,
-                 encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
-                 blocksize=4096, use_mars=False, auth=None, readonly=False,
-                 load_balancer=None, use_tz=None, bytes_to_unicode=True,
-                 row_strategy=None):
-        """
-        Constructor for creating a connection to the database. Returns a
-        Connection object.
-
-        :param server: database host
-        :type server: string
-        :param user: database user to connect as
-        :type user: string
-        :param password: user's password
-        :type password: string
-        :param database: the database to initially connect to
-        :type database: string
-        :param timeout: query timeout in seconds, default 0 (no timeout)
-        :type timeout: int
-        :param login_timeout: timeout for connection and login in seconds, default 60
-        :type login_timeout: int
-        :keyword as_dict: whether rows should be returned as dictionaries instead of tuples.
-        :type as_dict: boolean
-        :keyword appname: Set the application name to use for the connection
-        :type appname: string
-        :keyword port: the TCP port to use to connect to the server
-        :type appname: string
-        :keyword row_strategy: strategy used to create rows, determines type of returned rows, can be custom or one of: tuple_row_strategy, list_row_strategy, dict_row_strategy, namedtuple_row_strategy, recordtype_row_strategy
-        :type row_strategy: function of list of column names returning row factory
-        """
-
-        # support MS methods of connecting locally
-        instance = ""
-        if "\\" in server:
-            server, instance = server.split("\\")
-
-        if server in (".", "(local)"):
-            server = "localhost"
-
-        login = _TdsLogin()
-        login.client_host_name = socket.gethostname()[:128]
-        login.library = "Python TDS Library"
-        login.encryption_level = encryption_level
-        login.user_name = user or ''
-        login.password = password or ''
-        login.app_name = appname or 'pytds'
-        login.port = port
-        login.language = ''  # use database default
-        login.attach_db_file = ''
-        login.tds_version = tds_version
-        login.database = database or ''
-        login.bulk_copy = False
-        login.text_size = 0
-        login.client_lcid = lcid.LANGID_ENGLISH_US
-        login.use_mars = use_mars
-        login.pid = os.getpid()
-        login.change_password = ''
-        login.client_id = uuid.getnode()  # client mac address
-        if use_tz:
-            login.client_tz = use_tz
-        else:
-            login.client_tz = tz.local
-
-        # that will set:
-        # ANSI_DEFAULTS to ON,
-        # IMPLICIT_TRANSACTIONS to OFF,
-        # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
-        # and ROWCOUNT to infinite
-        login.option_flag2 = TDS_ODBC_ON
-
-        login.connect_timeout = login_timeout
-        login.query_timeout = timeout
-        login.server_name = server or '.'
-        login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
-        login.blocksize = blocksize
-        login.auth = auth
-        login.readonly = readonly
-        login.load_balancer = load_balancer or SimpleLoadBalancer([server])
-        login.bytes_to_unicode = bytes_to_unicode
-        self._use_tz = use_tz
-        self._autocommit = autocommit
-        self._login = login
-
-        assert row_strategy == None or as_dict == None, 'Both row_startegy and as_dict were specified, you should use either one or another'
-        if as_dict != None:
-            self.as_dict = as_dict
-        elif row_strategy != None:
-            self._row_strategy = row_strategy
-        else:
-            self._row_strategy = tuple_row_strategy # default row strategy
-            
-        self._isolation_level = 0
-        self._dirty = False
-        from .tz import FixedOffsetTimezone
-        self._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
-        self._open()
-
     def __enter__(self):
         return self
 
@@ -364,9 +298,9 @@ class _Connection(object):
                                    self._conn.create_session(self._tzinfo_factory),
                                    self._tzinfo_factory)
         else:
-            return _Cursor(self,
-                           self._conn.main_session,
-                           self._tzinfo_factory)
+            return Cursor(self,
+                          self._conn.main_session,
+                          self._tzinfo_factory)
 
     def rollback(self):
         """
@@ -401,14 +335,12 @@ class _Connection(object):
             self._conn.close()
 
     def close(self):
-        """
-        close() -- close connection to an MS SQL Server.
+        """ Close connection to an MS SQL Server.
 
         This function tries to close the connection and free all memory used.
         It can be called more than once in a row. No exception is raised in
         this case.
         """
-        #logger.debug("MSSQLConnection.close()")
         if self._conn:
             self._conn.close()
             self._conn = None
@@ -424,10 +356,7 @@ class _Connection(object):
             self._active_cursor = cursor
 
 
-##################
-## Cursor class ##
-##################
-class _Cursor(six.Iterator):
+class Cursor(six.Iterator):
     """
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
@@ -493,14 +422,20 @@ class _Cursor(six.Iterator):
 
     @property
     def return_value(self):
+        """  Alias to :func:`get_proc_return_status`
+        """
         return self.get_proc_return_status()
 
     @property
     def connection(self):
+        """ Provides link back to :class:`Connection` of this cursor
+        """
         return self._conn
 
     @property
     def spid(self):
+        """ MSSQL Server's SPID (session id)
+        """
         return self._session._spid
 
     def _get_tzinfo_factory(self):
@@ -512,6 +447,8 @@ class _Cursor(six.Iterator):
     tzinfo_factory = property(_get_tzinfo_factory, _set_tzinfo_factory)
 
     def get_proc_return_status(self):
+        """ Last stored proc result
+        """
         if self._session is None:
             return None
         if not self._session.has_status:
@@ -519,6 +456,8 @@ class _Cursor(six.Iterator):
         return self._session.ret_status if self._session.has_status else None
 
     def cancel(self):
+        """ Cancel current statement
+        """
         self._assert_open()
         self._conn._try_activate_cursor(self)
         self._session.cancel_if_pending()
@@ -605,7 +544,11 @@ class _Cursor(six.Iterator):
         self._setup_row_factory()
 
     def execute(self, operation, params=()):
-        # Execute the query
+        """ Execute the query
+
+        :param operation: SQL statement
+        :type operation: str
+        """
         self._assert_open()
         self._conn._try_activate_cursor(self)
         self._execute(operation, params)
@@ -638,8 +581,6 @@ class _Cursor(six.Iterator):
 
     def execute_scalar(self, query_string, params=None):
         """
-        execute_scalar(query_string, params=None)
-
         This method sends a query to the MS SQL Server to which this object
         instance is connected, then returns first column of first row from
         result. An exception is raised on failure. If there are pending
@@ -651,9 +592,10 @@ class _Cursor(six.Iterator):
         for details.
 
         This method is useful if you want just a single value, as in:
-            conn.execute_scalar('SELECT COUNT(*) FROM employees')
 
-        This method works in the same way as 'iter(conn).next()[0]'.
+            ``conn.execute_scalar('SELECT COUNT(*) FROM employees')``
+
+        This method works in the same way as ``iter(conn).next()[0]``.
         Remaining rows, if any, can still be iterated after calling this
         method.
         """
@@ -664,18 +606,29 @@ class _Cursor(six.Iterator):
         return row[0]
 
     def nextset(self):
+        """ Move to next recordset in batch statement, all rows of current recordset are
+        discarded if present.
+
+        :returns: true if successful or ``None`` when there are no more recordsets
+        """
         res = self._session.next_set()
         self._setup_row_factory()
         return res
 
     @property
     def rowcount(self):
+        """ Number of rows affected by previous statement
+
+        :returns: -1 if this information was not supplied by MSSQL server
+        """
         if self._session is None:
             return -1
         return self._session.rows_affected
 
     @property
     def description(self):
+        """ Cursor description, see http://legacy.python.org/dev/peps/pep-0249/#description
+        """
         if self._session is None:
             return None
         res = self._session.res_info
@@ -686,6 +639,8 @@ class _Cursor(six.Iterator):
 
     @property
     def messages(self):
+        """ Messages generated by server, see http://legacy.python.org/dev/peps/pep-0249/#cursor-messages
+        """
         #warnings.warn('DB-API extension cursor.messages used')
         if self._session:
             result = []
@@ -698,6 +653,8 @@ class _Cursor(six.Iterator):
 
     @property
     def native_description(self):
+        """ todo document
+        """
         if self._session is None:
             return None
         res = self._session.res_info
@@ -707,11 +664,18 @@ class _Cursor(six.Iterator):
             return None
 
     def fetchone(self):
+        """ Fetches next row, or ``None`` if there are no more rows
+        """
         row = self._session.fetchone()
         if row:
             return self._row_factory(row)
 
     def fetchmany(self, size=None):
+        """ Fetches next multiple rows
+
+        :param size: Maximum number of rows to return, default value is cursor.arraysize
+        :returns: List of rows
+        """
         if size is None:
             size = self.arraysize
 
@@ -724,6 +688,8 @@ class _Cursor(six.Iterator):
         return rows
 
     def fetchall(self):
+        """ Fetches all remaining rows
+        """
         return list(row for row in self)
 
     def __next__(self):
@@ -747,6 +713,38 @@ class _Cursor(six.Iterator):
     def copy_to(self, file, table_or_view, sep='\t', columns=None,
             check_constraints=False, fire_triggers=False, keep_nulls=False,
             kb_per_batch=None, rows_per_batch=None, order=None, tablock=False):
+        """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
+
+        :param file: Source file-like object, should be in csv format
+        :param table_or_view: Destination table or view in the database
+        :type table_or_view: str
+
+        Optional parameters:
+
+        :keyword sep: Separator used in csv file
+        :type sep: str
+        :keyword columns: List of column names in target table to insert to,
+          if not provided will insert into all columns
+        :type columns: list
+        :keyword check_constraints: Check table constraints for incoming data
+        :type check_constraints: bool
+        :keyword fire_triggers: Enable or disable triggers for table
+        :type fire_triggers: bool
+        :keyword keep_nulls: If enabled null values inserted as-is, instead of
+          inserting default value for column
+        :type keep_nulls: bool
+        :keyword kb_per_batch: Kilobytes per batch can be used to optimize performance, see MSSQL
+          server documentation for details
+        :type kb_per_batch: int
+        :keyword rows_per_batch: Rows per batch can be used to optimize performance, see MSSQL
+          server documentation for details
+        :type rows_per_batch: int
+        :keyword order: The ordering of the data in source table. List of columns with ASC or DESC suffix.
+          E.g. ``['order_id ASC', 'name DESC']``
+          Can be used to optimize performance, see MSSQL server documentation for details
+        :type order: list
+        :keyword tablock: Enable or disable table lock for the duration of bulk load
+        """
         import csv
         reader = csv.reader(file, delimiter=sep)
         if not columns:
@@ -779,7 +777,7 @@ class _Cursor(six.Iterator):
         self._session.process_simple_request()
 
 
-class _MarsCursor(_Cursor):
+class _MarsCursor(Cursor):
     def _assert_open(self):
         if not self._conn:
             raise Error('Cursor is closed')
@@ -842,7 +840,128 @@ class _MarsCursor(_Cursor):
         self._conn._dirty = False
 
 
-connect = _Connection
+def connect(server=None, database=None, user=None, password=None, timeout=None,
+        login_timeout=60, as_dict=None,
+        appname=None, port=None, tds_version=TDS74,
+        encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
+        blocksize=4096, use_mars=False, auth=None, readonly=False,
+        load_balancer=None, use_tz=None, bytes_to_unicode=True,
+        row_strategy=None):
+    """
+    Opens connection to the database
+
+    :keyword server: database host
+    :type server: string
+    :keyword database: the database to initially connect to
+    :type database: string
+    :keyword user: database user to connect as
+    :type user: string
+    :keyword password: user's password
+    :type password: string
+    :keyword timeout: query timeout in seconds, default 0 (no timeout)
+    :type timeout: int
+    :keyword login_timeout: timeout for connection and login in seconds, default 60
+    :type login_timeout: int
+    :keyword as_dict: whether rows should be returned as dictionaries instead of tuples.
+    :type as_dict: boolean
+    :keyword appname: Set the application name to use for the connection
+    :type appname: string
+    :keyword port: the TCP port to use to connect to the server
+    :type port: int
+    :keyword tds_version: Maximum TDS version to use, should only be used for testing
+    :type tds_version: int
+    :keyword encryption_level: Encryption level to use, not supported
+    :keyword autocommit: Enable or disable database level autocommit
+    :type autocommit: bool
+    :keyword blocksize: Size of block for the TDS protocol, usually should not be used
+    :type blocksize: int
+    :keyword use_mars: Enable or disable MARS
+    :type use_mars: bool
+    :keyword auth: An instance of authentication method class, e.g. Ntlm or Sspi
+    :keyword readonly: Allows to enable read-only mode for connection, only supported by MSSQL 2012,
+      earlier versions will ignore this parameter
+    :type readonly: bool
+    :keyword load_balancer: An instance of load balancer class to use, if not provided will not use load balancer
+    :keyword use_tz: Provides timezone for naive database times, if not provided date and time will be returned
+      in naive format
+    :keyword bytes_to_unicode: If true single byte database strings will be converted to unicode Python strings,
+      otherwise will return strings as ``bytes`` without conversion.
+    :type bytes_to_unicode: bool
+    :keyword row_strategy: strategy used to create rows, determines type of returned rows, can be custom or one of:
+      :func:`tuple_row_strategy`, :func:`list_row_strategy`, :func:`dict_row_strategy`,
+      :func:`namedtuple_row_strategy`, :func:`recordtype_row_strategy`
+    :type row_strategy: function of list of column names returning row factory
+    :returns: An instance of :class:`Connection`
+    """
+
+    # support MS methods of connecting locally
+    instance = ""
+    if "\\" in server:
+        server, instance = server.split("\\")
+
+    if server in (".", "(local)"):
+        server = "localhost"
+
+    login = _TdsLogin()
+    login.client_host_name = socket.gethostname()[:128]
+    login.library = "Python TDS Library"
+    login.encryption_level = encryption_level
+    login.user_name = user or ''
+    login.password = password or ''
+    login.app_name = appname or 'pytds'
+    login.port = port
+    login.language = ''  # use database default
+    login.attach_db_file = ''
+    login.tds_version = tds_version
+    login.database = database or ''
+    login.bulk_copy = False
+    login.text_size = 0
+    login.client_lcid = lcid.LANGID_ENGLISH_US
+    login.use_mars = use_mars
+    login.pid = os.getpid()
+    login.change_password = ''
+    login.client_id = uuid.getnode()  # client mac address
+    if use_tz:
+        login.client_tz = use_tz
+    else:
+        login.client_tz = tz.local
+
+    # that will set:
+    # ANSI_DEFAULTS to ON,
+    # IMPLICIT_TRANSACTIONS to OFF,
+    # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
+    # and ROWCOUNT to infinite
+    login.option_flag2 = TDS_ODBC_ON
+
+    login.connect_timeout = login_timeout
+    login.query_timeout = timeout
+    login.server_name = server or '.'
+    login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
+    login.blocksize = blocksize
+    login.auth = auth
+    login.readonly = readonly
+    login.load_balancer = load_balancer or SimpleLoadBalancer([server])
+    login.bytes_to_unicode = bytes_to_unicode
+
+    conn = Connection()
+    conn._use_tz = use_tz
+    conn._autocommit = autocommit
+    conn._login = login
+
+    assert row_strategy == None or as_dict == None, 'Both row_startegy and as_dict were specified, you should use either one or another'
+    if as_dict != None:
+        conn.as_dict = as_dict
+    elif row_strategy != None:
+        conn._row_strategy = row_strategy
+    else:
+        conn._row_strategy = tuple_row_strategy # default row strategy
+
+    conn._isolation_level = 0
+    conn._dirty = False
+    from .tz import FixedOffsetTimezone
+    conn._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
+    conn._open()
+    return conn
 
 
 def Date(year, month, day):

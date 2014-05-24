@@ -1,4 +1,11 @@
 # vim: set fileencoding=utf8 :
+"""
+.. module:: login
+   :platform: Unix, Windows, MacOSX
+   :synopsis: Login classes
+
+.. moduleauthor:: Mikhail Denisenko <denisenkom@gmail.com>
+"""
 import socket
 import logging
 
@@ -6,6 +13,23 @@ logger = logging.getLogger(__name__)
 
 
 class SspiAuth(object):
+    """ SSPI authentication
+
+    :platform: Windows
+
+    Required parameters are server_name and port or spn
+
+    :keyword user_name: User name, if not provided current security context will be used
+    :type user_name: str
+    :keyword password: User password, if not provided current security context will be used
+    :type password: str
+    :keyword server_name: MSSQL server host name
+    :type server_name: str
+    :keyword port: MSSQL server port
+    :type port: int
+    :keyword spn: Service name
+    :type spn: str
+    """
     def __init__(self, user_name='', password='', server_name='', port=None, spn=None):
         from . import sspi
         # parse username/password informations
@@ -66,6 +90,13 @@ class SspiAuth(object):
 
 
 class NtlmAuth(object):
+    """ NTLM authentication, uses Python implementation
+
+    :param user_name: User name
+    :type user_name: str
+    :param password: User password
+    :type password: str
+    """
     def __init__(self, user_name, password):
         self._domain, self._user = user_name.split('\\', 1)
         self._password = password
