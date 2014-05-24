@@ -1,8 +1,9 @@
 pytds
 =====
 
-![Build Status](https://secure.travis-ci.org/denisenkom/pytds.png?branch=master)
-   
+.. image:: https://secure.travis-ci.org/denisenkom/pytds.png?branch=master
+   :target: https://travis-ci.org/denisenkom/pytds
+
 
 Python DBAPI driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation
 
@@ -24,18 +25,26 @@ Installation
 
 To install run this command:
 
-    pip install python-tds
+.. code-block:: bash
+
+    $ pip install python-tds
 
 For a better performance install bitarray package too:
 
-    pip install bitarray
+.. code-block:: bash
+
+    $ pip install bitarray
+
+Documentation
+-------------
+Documentation is available at http://python-tds.readthedocs.org/en/latest/.
 
 Example
 -------
 
 To connect to database do
-    
+
+.. code-block:: python
+
     import pytds
     conn = pytds.connect('server', 'database', 'user', 'password')
-
-For the api reference see [DBAPI Specification](http://legacy.python.org/dev/peps/pep-0249/)
