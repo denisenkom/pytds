@@ -47,7 +47,10 @@ To connect to database do
 .. code-block:: python
 
     import pytds
-    conn = pytds.connect('server', 'database', 'user', 'password')
+    with pytds.connect('server', 'database', 'user', 'password') as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.fetchall()
 
 
 .. _Python DBAPI: http://legacy.python.org/dev/peps/pep-0249/
