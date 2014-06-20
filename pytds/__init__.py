@@ -124,6 +124,10 @@ def recordtype_row_strategy(column_names):
 class Connection(object):
     """Connection object, this object should be created by calling :func:`connect`"""
 
+    def __init__(self):
+        self._closed = False
+        self._conn = None
+
     @property
     def as_dict(self):
         """
@@ -172,9 +176,9 @@ class Connection(object):
         self._isolation_level = level
 
     def _assert_open(self):
-        if not self._conn:
+        if self._closed:
             raise Error('Connection closed')
-        if not self._conn.is_connected():
+        if not self._conn or not self._conn.is_connected():
             self._open()
 
     def _trancount(self):
@@ -351,6 +355,7 @@ class Connection(object):
         if self._conn:
             self._conn.close()
             self._conn = None
+        self._closed = True
 
     def _try_activate_cursor(self, cursor):
         if cursor is not self._active_cursor:
