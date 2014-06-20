@@ -1,10 +1,11 @@
 import os
 from setuptools import setup
+import version
 
 requirements = list(open(os.path.join(os.path.dirname(__file__), 'requirements.txt'), 'r').readlines())
 
 setup(name='python-tds',
-      version='1.7.0',
+      version=version.get_git_version(),
       description='Python DBAPI driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation',
       author='Mikhail Denisenko',
       author_email='denisenkom@gmail.com',
