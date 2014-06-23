@@ -1541,21 +1541,25 @@ class VarBinary(BaseType):
 
 
 class VarBinary72(VarBinary):
-    def __init__(self, size):
-        self._size = size
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_usmallint()
         if size == 0xffff:
-            self.read = self._read_max
-            self.write = self._write_max
-            self.write_info = self._write_info_max
-            self.get_declaration = self._get_declaration_max
+            return VarBinaryMax()
+        return cls(size)
 
-    def _get_declaration_max(self):
+
+class VarBinaryMax(VarBinary):
+    def __init__(self):
+        super(VarBinaryMax, self).__init__(0)
+
+    def get_declaration(self):
         return 'VARBINARY(MAX)'
 
-    def _write_info_max(self, w):
+    def write_info(self, w):
         w.put_usmallint(0xffff)
 
-    def _write_max(self, w, val):
+    def write(self, w, val):
         if val is None:
             w.put_uint8(0xffffffffffffffff)
         else:
@@ -1565,7 +1569,7 @@ class VarBinary72(VarBinary):
                 w.write(val)
             w.put_uint(0)
 
-    def _read_max(self, r):
+    def read(self, r):
         size = r.get_uint8()
         if size == 0xffffffffffffffff:
             return None
@@ -3704,7 +3708,7 @@ class _TdsSocket(object):
 
     def long_binary_type(self):
         if IS_TDS72_PLUS(self):
-            return VarBinary72(0xffff)
+            return VarBinaryMax()
         else:
             return Image70()
 
