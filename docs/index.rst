@@ -12,32 +12,13 @@ Even though it is implemented in Python performance is comparable to ADO and Fre
 
 It also supports Python 3.
 
-Reference
-=========
+.. rubric:: Contents
 
-pytds
------
+.. toctree::
+    :maxdepth: 2
 
-.. automodule:: pytds
-   :members:
-
-pytds.extensions
-----------------
-
-.. automodule:: pytds.extensions
-   :members:
-
-pytds.login  -- login with NTLM and SSPI
-----------------------------------------
-
-.. automodule:: pytds.login
-   :members:
-
-pytds.tz -- timezones
----------------------
-
-.. automodule:: pytds.tz
-   :members:
+    pytds
+    extensions
 
 Indices and tables
 ==================

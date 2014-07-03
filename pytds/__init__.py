@@ -165,7 +165,13 @@ class Connection(object):
 
     @property
     def isolation_level(self):
-        """Isolation level for transactions"""
+        """Isolation level for transactions,
+        for possible values see :ref:`isolation-level-constants`
+
+        .. seealso:: `SET TRANSACTION ISOLATION LEVEL`__ in MSSQL documentation
+
+            .. __: http://msdn.microsoft.com/en-us/library/ms173763.aspx
+        """
         return self._isolation_level
 
     def set_isolation_level(self, level):
