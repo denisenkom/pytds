@@ -17,6 +17,7 @@ import pytds.tz
 import pytds.login
 tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
+import pytds.extensions
 from six import text_type
 from six.moves import xrange
 import struct
@@ -291,6 +292,17 @@ class TestCase2(TestCase):
         if not hasattr(settings, 'BROWSER_ADDRESS'):
             return unittest.skip('BROWSER_ADDRESS setting is not defined')
         pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
+
+    def test_isolation_level(self):
+        # enable autocommit and then reenable to force new transaction to be started
+        self.conn.autocommit = True
+        self.conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE
+        self.conn.autocommit = False
+        with self.conn.cursor() as cur:
+            cur.execute('select transaction_isolation_level '
+                        'from sys.dm_exec_sessions where session_id = @@SPID')
+            lvl, = cur.fetchone()
+        self.assertEqual(pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE, lvl)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")

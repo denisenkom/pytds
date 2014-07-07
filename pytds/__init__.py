@@ -178,7 +178,8 @@ class Connection(object):
         """
         return self._isolation_level
 
-    def set_isolation_level(self, level):
+    @isolation_level.setter
+    def isolation_level(self, level):
         self._isolation_level = level
 
     def _assert_open(self):
