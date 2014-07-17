@@ -245,28 +245,46 @@ class Connection(object):
             login.port = 1433
         connect_timeout = login.connect_timeout
         err = None
-        for host in login.load_balancer.choose():
-            try:
-                sock = socket.create_connection(
-                    (host, login.port),
-                    connect_timeout or 90000)
-                sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-            except socket.error as e:
-                err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
-                continue
-            try:
-                self._conn = _TdsSocket(self._use_tz)
-                self._conn.login(self._login, sock, self._tzinfo_factory)
-                break
-            except Exception as e:
-                sock.close()
-                err = e
-                #raise
-                continue
+        if login.load_balancer:
+            for host in login.load_balancer.choose():
+                try:
+                    sock = socket.create_connection(
+                        (host, login.port),
+                        connect_timeout or 90000)
+                    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+                except socket.error as e:
+                    err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                    continue
+                try:
+                    self._conn = _TdsSocket(self._use_tz)
+                    self._conn.login(self._login, sock, self._tzinfo_factory)
+                    break
+                except Exception as e:
+                    sock.close()
+                    err = e
+                    #raise
+                    continue
+            else:
+                if not err:
+                    err = LoginError("Cannot connect to server, load balancer returned empty list")
+                raise err
         else:
-            if not err:
-                err = LoginError("Cannot connect to server, load balancer returned empty list")
-            raise err
+            retry_time = 0
+            retry_delay = 0.2
+            last_error = None
+            while True:
+                retry_time += 0.08 * connect_timeout
+                for i, srv in enumerate(login.servers):
+                    try:
+                        sock = socket.create_connection(
+                            (srv, login.port),
+                            retry_time)
+                        sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+                    except socket.error as e:
+                        last_error = e
+
+            for srv in itertools.cycle(login.servers):
+
         sock.settimeout(login.query_timeout)
         self._active_cursor = self._main_cursor = self.cursor()
         if not self._autocommit:
@@ -865,12 +883,14 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
             encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
-            row_strategy=None):
+            row_strategy=None, failover_partner=None):
     """
     Opens connection to the database
 
     :keyword server: database host
     :type server: string
+    :keyword failover_partner: secondary database host, used if primary is not accessible
+    :type failover_partner: string
     :keyword database: the database to initially connect to
     :type database: string
     :keyword user: database user to connect as
@@ -959,8 +979,11 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
     login.blocksize = blocksize
     login.auth = auth
     login.readonly = readonly
-    login.load_balancer = load_balancer or SimpleLoadBalancer([server])
+    login.load_balancer = load_balancer
     login.bytes_to_unicode = bytes_to_unicode
+    login.servers = [server or '.']
+    if failover_partner:
+        login.servers.append(failover_partner)
 
     conn = Connection()
     conn._use_tz = use_tz
