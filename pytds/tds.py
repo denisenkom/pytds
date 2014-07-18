@@ -3778,21 +3778,15 @@ def _parse_instances(msg):
 # @return default port number or 0 if error
 # @remark experimental, cf. MC-SQLR.pdf.
 #
-def tds7_get_instances(ip_addr):
+def tds7_get_instances(ip_addr, timeout=5):
     s = socket.socket(type=socket.SOCK_DGRAM)
-    s.settimeout(5)
+    s.settimeout(timeout)
     try:
-        #
-        # Request the instance's port from the server.
-        # There is no easy way to detect if port is closed so we always try to
-        # get a reply from server 16 times.
-        #
-        for num_try in range(16):
-            # send the request
-            s.sendto(b'\x03', (ip_addr, 1434))
-            msg = s.recv(16 * 1024 - 1)
-            # got data, read and parse
-            return _parse_instances(msg)
+        # send the request
+        s.sendto(b'\x03', (ip_addr, 1434))
+        msg = s.recv(16 * 1024 - 1)
+        # got data, read and parse
+        return _parse_instances(msg)
     finally:
         s.close()
 

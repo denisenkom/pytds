@@ -3,6 +3,7 @@
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = '1.7.0'
 
+from collections import deque
 import logging
 import six
 import os
@@ -230,65 +231,80 @@ class Connection(object):
         return self._conn.mars_enabled
 
     def _open(self):
+        import time
         self._conn = None
         self._dirty = False
         login = self._login
-        if IS_TDS7_PLUS(login) and login.instance_name and not login.port:
-            instances = tds7_get_instances(login.server_name)
-            if login.instance_name not in instances:
-                raise LoginError("Instance {0} not found on server {1}".format(login.instance_name, login.server_name))
-            instdict = instances[login.instance_name]
-            if 'tcp' not in instdict:
-                raise LoginError("Instance {0} doen't have tcp connections enabled".format(login.instance_name))
-            login.port = int(instdict['tcp'])
-        if not login.port:
-            login.port = 1433
         connect_timeout = login.connect_timeout
-        err = None
-        if login.load_balancer:
-            for host in login.load_balancer.choose():
+
+        # using retry algorithm specified in
+        # http://msdn.microsoft.com/en-us/library/ms175484.aspx
+        retry_time = 0.08 * connect_timeout
+        retry_delay = 0.2
+        last_error = None
+        end_time = time.time() + connect_timeout
+        while True:
+            for _ in xrange(len(login.servers)):
+                host, port, instance = login.servers[0]
                 try:
+                    login.server_name = host
+                    login.instance_name = instance
+                    port = _resolve_instance_port(
+                        host,
+                        port,
+                        instance,
+                        timeout=retry_time)
                     sock = socket.create_connection(
-                        (host, login.port),
-                        connect_timeout or 90000)
-                    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-                except socket.error as e:
-                    err = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
-                    continue
-                try:
-                    self._conn = _TdsSocket(self._use_tz)
-                    self._conn.login(self._login, sock, self._tzinfo_factory)
-                    break
+                        (host, port),
+                        retry_time)
                 except Exception as e:
-                    sock.close()
-                    err = e
-                    #raise
-                    continue
-            else:
-                if not err:
-                    err = LoginError("Cannot connect to server, load balancer returned empty list")
-                raise err
-        else:
-            retry_time = 0
-            retry_delay = 0.2
-            last_error = None
-            while True:
-                retry_time += 0.08 * connect_timeout
-                for i, srv in enumerate(login.servers):
+                    last_error = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+                else:
                     try:
-                        sock = socket.create_connection(
-                            (srv, login.port),
-                            retry_time)
                         sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-                    except socket.error as e:
+                        sock.settimeout(retry_time)
+                        conn = _TdsSocket(self._use_tz)
+                        conn.login(login, sock, self._tzinfo_factory)
+                        if conn.mars_enabled:
+                            cursor = _MarsCursor(
+                                self,
+                                conn.create_session(self._tzinfo_factory),
+                                self._tzinfo_factory)
+                        else:
+                            cursor = Cursor(
+                                self,
+                                conn.main_session,
+                                self._tzinfo_factory)
+
+                        self._active_cursor = self._main_cursor = cursor
+                        if not self._autocommit:
+                            cursor._session.begin_tran(isolation_level=self._isolation_level)
+                        sock.settimeout(login.query_timeout)
+                    except OperationalError as e:
+                        sock.close()
                         last_error = e
+                        if e.msg_no in (
+                                18456,  # login failed
+                                18486,  # account is locked
+                                18487,  # password expired
+                                18488,  # password should be changed
+                                ):
+                            raise
+                    except Exception as e:
+                        sock.close()
+                        last_error = e
+                    else:
+                        self._conn = conn
+                        return
 
-            for srv in itertools.cycle(login.servers):
+                if time.time() > end_time:
+                    raise last_error
 
-        sock.settimeout(login.query_timeout)
-        self._active_cursor = self._main_cursor = self.cursor()
-        if not self._autocommit:
-            self._main_cursor._begin_tran(isolation_level=self._isolation_level)
+                login.servers.rotate(-1)
+
+            time.sleep(retry_delay)
+            retry_time += 0.08 * connect_timeout
+            retry_delay = min(1, retry_delay * 2)
 
     def __enter__(self):
         return self
@@ -877,8 +893,32 @@ class _MarsCursor(Cursor):
         self._conn._dirty = False
 
 
+def _resolve_instance_port(server, port, instance, timeout=5):
+    if instance and not port:
+        instances = tds7_get_instances(server, timeout=timeout)
+        if instance not in instances:
+            raise LoginError("Instance {0} not found on server {1}".format(instance, server))
+        instdict = instances[instance]
+        if 'tcp' not in instdict:
+            raise LoginError("Instance {0} doen't have tcp connections enabled".format(instance))
+        port = int(instdict['tcp'])
+    return port or 1433
+
+
+def _parse_server(server):
+    instance = ""
+    if "\\" in server:
+        server, instance = server.split("\\")
+
+    # support MS methods of connecting locally
+    if server in (".", "(local)"):
+        server = "localhost"
+
+    return server, instance.upper()
+
+
 def connect(server=None, database=None, user=None, password=None, timeout=None,
-            login_timeout=60, as_dict=None,
+            login_timeout=15, as_dict=None,
             appname=None, port=None, tds_version=TDS74,
             encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
@@ -899,7 +939,7 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
     :type password: string
     :keyword timeout: query timeout in seconds, default 0 (no timeout)
     :type timeout: int
-    :keyword login_timeout: timeout for connection and login in seconds, default 60
+    :keyword login_timeout: timeout for connection and login in seconds, default 15
     :type login_timeout: int
     :keyword as_dict: whether rows should be returned as dictionaries instead of tuples.
     :type as_dict: boolean
@@ -932,15 +972,6 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
     :type row_strategy: function of list of column names returning row factory
     :returns: An instance of :class:`Connection`
     """
-
-    # support MS methods of connecting locally
-    instance = ""
-    if "\\" in server:
-        server, instance = server.split("\\")
-
-    if server in (".", "(local)"):
-        server = "localhost"
-
     login = _TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
@@ -974,16 +1005,27 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
 
     login.connect_timeout = login_timeout
     login.query_timeout = timeout
-    login.server_name = server or '.'
-    login.instance_name = instance.upper()  # to make case-insensitive comparison work this should be upper
     login.blocksize = blocksize
     login.auth = auth
     login.readonly = readonly
     login.load_balancer = load_balancer
     login.bytes_to_unicode = bytes_to_unicode
-    login.servers = [server or '.']
-    if failover_partner:
-        login.servers.append(failover_partner)
+
+    if load_balancer and failover_partner:
+        raise ValueError("Both load_balancer and failover_partner shoudln't be specified")
+    if load_balancer:
+        servers = [(server, None) for server in load_balancer.choose()]
+    else:
+        servers = [(server or 'localhost', port)]
+        if failover_partner:
+            servers.append((failover_partner, port))
+
+    login.servers = deque()
+    for server, port in servers:
+        host, instance = _parse_server(server)
+        if instance and port:
+            raise ValueError("Both instance and port shouldn't be specified")
+        login.servers.append((host, port, instance))
 
     conn = Connection()
     conn._use_tz = use_tz

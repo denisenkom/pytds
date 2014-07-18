@@ -647,11 +647,7 @@ class TestVariant(TestCase):
 class BadConnection(unittest.TestCase):
     def test_invalid_parameters(self):
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-        with self.assertRaises(Error):
-            with connect(server=settings.HOST + 'bad', database='master', user=settings.USER + 'bad', password=settings.PASSWORD) as conn:
+            with connect(server=settings.HOST + 'bad', database='master', user='baduser', password=settings.PASSWORD, login_timeout=5) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
@@ -659,7 +655,7 @@ class BadConnection(unittest.TestCase):
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database='master', user=settings.USER, password=None) as conn:
+            with connect(server=settings.HOST, database='master', user='baduser', password=None) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
@@ -750,18 +746,6 @@ class ConnectionClosing(unittest.TestCase):
             #        with self.assertRaises(Exception):
             #            tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
             #        self.assertFalse(cur._session.is_connected())
-
-
-class Bug1(TestCase):
-    def runTest(self):
-        try:
-            with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                    cur.fetchall()
-                conn.rollback()
-        except:
-            pass
 
 
 #class EncryptionTest(unittest.TestCase):
