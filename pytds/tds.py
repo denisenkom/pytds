@@ -2439,7 +2439,6 @@ class _TdsSession(object):
 
         error_msg = ' '.join(msg['message'] for msg in self.messages)
         ex = _create_exception_by_message(msg, error_msg)
-        self.messages = []
         raise ex
 
     def get_type_factory(self, type_id):

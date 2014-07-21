@@ -283,13 +283,25 @@ class Connection(object):
                     except OperationalError as e:
                         sock.close()
                         last_error = e
-                        if e.msg_no in (
-                                18456,  # login failed
-                                18486,  # account is locked
-                                18487,  # password expired
-                                18488,  # password should be changed
-                                ):
-                            raise
+                        # if there are more than one message this means
+                        # that the login was successful, like in the
+                        # case when database is not accessible
+                        # mssql returns 2 messages:
+                        # 1) Cannot open database "<dbname>" requested by the login. The login failed.
+                        # 2) Login failed for user '<username>'
+                        # in this case we want to retry
+                        if len(conn.main_session.messages) <= 1:
+                            # for the following error messages we don't retry
+                            # because if the password is incorrect and we
+                            # retry multiple times this can cause account
+                            # to be locked
+                            if e.msg_no in (
+                                    18456,  # login failed
+                                    18486,  # account is locked
+                                    18487,  # password expired
+                                    18488,  # password should be changed
+                                    ):
+                                raise
                     except Exception as e:
                         sock.close()
                         last_error = e
@@ -917,6 +929,29 @@ def _parse_server(server):
     return server, instance.upper()
 
 
+# map to servers deques, used to store active/passive servers
+# between calls to connect function
+# deques are used because they can be rotated
+_servers_deques = {}
+
+
+def _get_servers_deque(servers, database):
+    """ Returns deque of servers for given tuple of servers and
+    database name.
+    This deque have active server at the begining, if first server
+    is not accessible at the moment the deque will be rotated,
+    second server will be moved to the first position, thirt to the
+    second position etc, and previously first server will be moved
+    to the last position.
+    This allows to remember last successful server between calls
+    to connect function.
+    """
+    key = (servers, database)
+    if key not in _servers_deques:
+        _servers_deques[key] = deque(servers)
+    return _servers_deques[key]
+
+
 def connect(server=None, database=None, user=None, password=None, timeout=None,
             login_timeout=15, as_dict=None,
             appname=None, port=None, tds_version=TDS74,
@@ -1020,12 +1055,14 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
         if failover_partner:
             servers.append((failover_partner, port))
 
-    login.servers = deque()
+    parsed_servers = []
     for server, port in servers:
         host, instance = _parse_server(server)
         if instance and port:
             raise ValueError("Both instance and port shouldn't be specified")
-        login.servers.append((host, port, instance))
+        parsed_servers.append((host, port, instance))
+
+    login.servers = _get_servers_deque(tuple(parsed_servers), database)
 
     conn = Connection()
     conn._use_tz = use_tz
