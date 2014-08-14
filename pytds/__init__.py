@@ -395,8 +395,7 @@ class Connection(object):
             raise
 
     def __del__(self):
-        if self._conn is not None:
-            self._conn.close()
+        self.close()
 
     def close(self):
         """ Close connection to an MS SQL Server.
@@ -407,6 +406,8 @@ class Connection(object):
         """
         if self._conn:
             self._conn.close()
+            self._active_cursor = None
+            self._main_cursor = None
             self._conn = None
         self._closed = True
 
@@ -445,8 +446,7 @@ class Cursor(six.Iterator):
         return self
 
     def __exit__(self, *args):
-        if self._conn is not None:
-            self.close()
+        self.close()
 
     def __iter__(self):
         """
