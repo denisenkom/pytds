@@ -17,6 +17,7 @@ import pytds.tz
 import pytds.login
 tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
+import pytds.extensions
 from six import text_type
 from six.moves import xrange
 import struct
@@ -291,6 +292,17 @@ class TestCase2(TestCase):
         if not hasattr(settings, 'BROWSER_ADDRESS'):
             return unittest.skip('BROWSER_ADDRESS setting is not defined')
         pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
+
+    def test_isolation_level(self):
+        # enable autocommit and then reenable to force new transaction to be started
+        self.conn.autocommit = True
+        self.conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE
+        self.conn.autocommit = False
+        with self.conn.cursor() as cur:
+            cur.execute('select transaction_isolation_level '
+                        'from sys.dm_exec_sessions where session_id = @@SPID')
+            lvl, = cur.fetchone()
+        self.assertEqual(pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE, lvl)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
@@ -635,11 +647,7 @@ class TestVariant(TestCase):
 class BadConnection(unittest.TestCase):
     def test_invalid_parameters(self):
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-        with self.assertRaises(Error):
-            with connect(server=settings.HOST + 'bad', database='master', user=settings.USER + 'bad', password=settings.PASSWORD) as conn:
+            with connect(server=settings.HOST + 'bad', database='master', user='baduser', password=settings.PASSWORD, login_timeout=5) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
@@ -647,7 +655,7 @@ class BadConnection(unittest.TestCase):
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database='master', user=settings.USER, password=None) as conn:
+            with connect(server=settings.HOST, database='master', user='baduser', password=None) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
@@ -738,18 +746,6 @@ class ConnectionClosing(unittest.TestCase):
             #        with self.assertRaises(Exception):
             #            tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
             #        self.assertFalse(cur._session.is_connected())
-
-
-class Bug1(TestCase):
-    def runTest(self):
-        try:
-            with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD + 'bad') as conn:
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                    cur.fetchall()
-                conn.rollback()
-        except:
-            pass
 
 
 #class EncryptionTest(unittest.TestCase):

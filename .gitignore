@@ -8,7 +8,11 @@ python_tds.egg-info
 .coverage
 coverage.xml
 test.sh
+env/
 env2/
 env3/
 prof/
 RELEASE-VERSION
+.DS_Store
+.idea/
+docs/_build
