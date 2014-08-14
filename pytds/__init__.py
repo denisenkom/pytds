@@ -27,6 +27,7 @@ from .tds import (
     _TdsSocket, tds7_get_instances, ClosedConnectionError,
     SP_EXECUTESQL, Column, _create_exception_by_message,
 )
+import weakref
 
 def _ver_to_int(ver):
     maj, minor, rev = ver.split('.')
@@ -428,16 +429,17 @@ class Cursor(six.Iterator):
     and fetch results from a database connection.
     """
     def __init__(self, conn, session, tzinfo_factory):
-        self._conn = conn
+        self._conn = weakref.ref(conn)
         self.arraysize = 1
         self._session = session
         self._tzinfo_factory = tzinfo_factory
 
     def _assert_open(self):
-        if not self._conn:
+        conn = self._conn()
+        if not conn:
             raise Error('Cursor is closed')
-        self._conn._assert_open()
-        self._session = self._conn._conn._main_session
+        conn._assert_open()
+        self._session = conn._conn._main_session
 
     def __del__(self):
         self.close()
@@ -457,9 +459,10 @@ class Cursor(six.Iterator):
 
     def _setup_row_factory(self):
         self._row_factory = None
+        conn = self._conn()
         if self._session.res_info:
             column_names = [col[0] for col in self._session.res_info.description]
-            self._row_factory = self._conn._row_strategy(column_names)
+            self._row_factory = conn._row_strategy(column_names)
 
     def _callproc(self, procname, parameters):
         self._ensure_transaction()
@@ -481,8 +484,9 @@ class Cursor(six.Iterator):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
+        conn = self._conn()
         self._assert_open()
-        self._conn._try_activate_cursor(self)
+        conn._try_activate_cursor(self)
         return self._callproc(procname, parameters)
 
     @property
@@ -495,7 +499,7 @@ class Cursor(six.Iterator):
     def connection(self):
         """ Provides link back to :class:`Connection` of this cursor
         """
-        return self._conn
+        return self._conn()
 
     @property
     def spid(self):
@@ -523,28 +527,30 @@ class Cursor(six.Iterator):
     def cancel(self):
         """ Cancel current statement
         """
+        conn = self._conn()
         self._assert_open()
-        self._conn._try_activate_cursor(self)
+        conn._try_activate_cursor(self)
         self._session.cancel_if_pending()
 
     def close(self):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        if self._conn is not None:
-            if self is self._conn._active_cursor:
-                self._conn._active_cursor = self._conn._main_cursor
+        conn = self._conn()
+        if conn is not None:
+            if self is conn._active_cursor:
+                conn._active_cursor = conn._main_cursor
                 self._session = None
-            self._conn = None
 
     def _exec_with_retry(self, fun):
+        conn = self._conn()
         self._assert_open()
-        in_tran = self._conn._conn.tds72_transaction
-        if in_tran and self._conn._dirty:
-            self._conn._dirty = True
+        in_tran = conn._conn.tds72_transaction
+        if in_tran and conn._dirty:
+            conn._dirty = True
             return fun()
         else:
-            self._conn._dirty = True
+            conn._dirty = True
             try:
                 return fun()
             except socket.error as e:
@@ -557,8 +563,9 @@ class Cursor(six.Iterator):
             return fun()
 
     def _ensure_transaction(self):
-        if not self._conn._autocommit and not self._conn._conn.tds72_transaction:
-            self._conn._main_cursor._begin_tran(isolation_level=self._conn._isolation_level)
+        conn = self._conn()
+        if not conn._autocommit and not conn._conn.tds72_transaction:
+            conn._main_cursor._begin_tran(isolation_level=conn._isolation_level)
 
     def _execute(self, operation, params):
         self._ensure_transaction()
@@ -614,26 +621,30 @@ class Cursor(six.Iterator):
         :param operation: SQL statement
         :type operation: str
         """
+        conn = self._conn()
         self._assert_open()
-        self._conn._try_activate_cursor(self)
+        conn._try_activate_cursor(self)
         self._execute(operation, params)
 
     def _begin_tran(self, isolation_level):
+        conn = self._conn()
         self._assert_open()
-        self._conn._try_activate_cursor(self)
+        conn._try_activate_cursor(self)
         self._session.begin_tran(isolation_level=isolation_level)
 
     def _commit(self, cont, isolation_level=0):
+        conn = self._conn()
         self._assert_open()
-        self._conn._try_activate_cursor(self)
+        conn._try_activate_cursor(self)
         self._session.commit(cont=cont, isolation_level=isolation_level)
-        self._conn._dirty = False
+        conn._dirty = False
 
     def _rollback(self, cont, isolation_level=0):
+        conn = self._conn()
         self._assert_open()
-        self._conn._try_activate_cursor(self)
+        conn._try_activate_cursor(self)
         self._session.rollback(cont=cont, isolation_level=isolation_level)
-        self._conn._dirty = False
+        conn._dirty = False
 
     def executemany(self, operation, params_seq):
         counts = []
@@ -810,12 +821,13 @@ class Cursor(six.Iterator):
         :type order: list
         :keyword tablock: Enable or disable table lock for the duration of bulk load
         """
+        conn = self._conn()
         import csv
         reader = csv.reader(file, delimiter=sep)
         if not columns:
             self.execute('select top 1 * from [{}] where 1<>1'.format(table_or_view))
             columns = [col[0] for col in self.description]
-        metadata = [Column(name=col, type=self._conn._conn.NVarChar(4000), flags=Column.fNullable) for col in columns]
+        metadata = [Column(name=col, type=conn._conn.NVarChar(4000), flags=Column.fNullable) for col in columns]
         col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
                             for col in metadata)
         with_opts = []
@@ -844,18 +856,20 @@ class Cursor(six.Iterator):
 
 class _MarsCursor(Cursor):
     def _assert_open(self):
-        if not self._conn:
+        conn = self._conn()
+        if not conn:
             raise Error('Cursor is closed')
-        self._conn._assert_open()
+        conn._assert_open()
         if not self._session.is_connected():
-            self._session = self._conn._conn.create_session(self._tzinfo_factory)
+            self._session = conn._conn.create_session(self._tzinfo_factory)
 
     @property
     def spid(self):
         # not thread safe for connection
-        dirty = self._conn._dirty
+        conn = self._conn()
+        dirty = conn._dirty
         spid = self.execute_scalar('select @@SPID')
-        self._conn._dirty = dirty
+        conn._dirty = dirty
         return spid
 
     def cancel(self):
@@ -866,13 +880,13 @@ class _MarsCursor(Cursor):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        if self._conn is not None:
+        if self._session is not None:
             try:
                 self._session.close()
+                self._session = None
             except socket.error as e:
                 if e.errno != errno.ECONNRESET:
                     raise
-            self._conn = None
 
     def execute(self, operation, params=()):
         self._assert_open()
@@ -895,14 +909,16 @@ class _MarsCursor(Cursor):
         self._session.begin_tran(isolation_level=isolation_level)
 
     def _commit(self, cont, isolation_level=0):
+        conn = self._conn()
         self._assert_open()
         self._session.commit(cont=cont, isolation_level=isolation_level)
-        self._conn._dirty = False
+        conn._dirty = False
 
     def _rollback(self, cont, isolation_level=0):
+        conn = self._conn()
         self._assert_open()
         self._session.rollback(cont=cont, isolation_level=isolation_level)
-        self._conn._dirty = False
+        conn._dirty = False
 
 
 def _resolve_instance_port(server, port, instance, timeout=5):
