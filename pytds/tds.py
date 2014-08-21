@@ -2570,8 +2570,6 @@ class _TdsSession(object):
         msg['message'] = r.read_ucs2(r.get_smallint())
         # server name
         msg['server'] = r.read_ucs2(r.get_byte())
-        if not msg['server'] and self.login:
-            msg['server'] = self.server_name
         # stored proc name if available
         msg['proc_name'] = r.read_ucs2(r.get_byte())
         msg['line_number'] = r.get_int() if IS_TDS72_PLUS(self) else r.get_smallint()
