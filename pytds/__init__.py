@@ -435,11 +435,14 @@ class Cursor(six.Iterator):
         self._tzinfo_factory = tzinfo_factory
 
     def _assert_open(self):
-        conn = self._conn()
+        conn = self._conn
+        if conn is not None:
+            conn = conn()
         if not conn:
-            raise Error('Cursor is closed')
+            raise InterfaceError('Cursor is closed')
         conn._assert_open()
         self._session = conn._conn._main_session
+        return conn
 
     def __del__(self):
         self.close()
@@ -484,8 +487,7 @@ class Cursor(six.Iterator):
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
         """
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         conn._try_activate_cursor(self)
         return self._callproc(procname, parameters)
 
@@ -527,8 +529,7 @@ class Cursor(six.Iterator):
     def cancel(self):
         """ Cancel current statement
         """
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.cancel_if_pending()
 
@@ -536,15 +537,17 @@ class Cursor(six.Iterator):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        conn = self._conn()
+        conn = self._conn
+        if conn is not None:
+            conn = conn()
         if conn is not None:
             if self is conn._active_cursor:
                 conn._active_cursor = conn._main_cursor
                 self._session = None
+            self._conn = None
 
     def _exec_with_retry(self, fun):
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         in_tran = conn._conn.tds72_transaction
         if in_tran and conn._dirty:
             conn._dirty = True
@@ -559,7 +562,7 @@ class Cursor(six.Iterator):
             except ClosedConnectionError:
                 pass
             # in case of connection reset try again
-            self._assert_open()
+            conn = self._assert_open()
             return fun()
 
     def _ensure_transaction(self):
@@ -621,27 +624,23 @@ class Cursor(six.Iterator):
         :param operation: SQL statement
         :type operation: str
         """
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._execute(operation, params)
 
     def _begin_tran(self, isolation_level):
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.begin_tran(isolation_level=isolation_level)
 
     def _commit(self, cont, isolation_level=0):
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.commit(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
     def _rollback(self, cont, isolation_level=0):
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.rollback(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
@@ -856,17 +855,20 @@ class Cursor(six.Iterator):
 
 class _MarsCursor(Cursor):
     def _assert_open(self):
-        conn = self._conn()
+        conn = self._conn
+        if conn is not None:
+            conn = conn()
         if not conn:
-            raise Error('Cursor is closed')
+            raise InterfaceError('Cursor is closed')
         conn._assert_open()
         if not self._session.is_connected():
             self._session = conn._conn.create_session(self._tzinfo_factory)
+        return conn
 
     @property
     def spid(self):
         # not thread safe for connection
-        conn = self._conn()
+        conn = self._assert_open()
         dirty = conn._dirty
         spid = self.execute_scalar('select @@SPID')
         conn._dirty = dirty
@@ -909,14 +911,12 @@ class _MarsCursor(Cursor):
         self._session.begin_tran(isolation_level=isolation_level)
 
     def _commit(self, cont, isolation_level=0):
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         self._session.commit(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
     def _rollback(self, cont, isolation_level=0):
-        conn = self._conn()
-        self._assert_open()
+        conn = self._assert_open()
         self._session.rollback(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
