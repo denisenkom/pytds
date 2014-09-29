@@ -16,3 +16,4 @@ RELEASE-VERSION
 .DS_Store
 .idea/
 docs/_build
+.tox/
