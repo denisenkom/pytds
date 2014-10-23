@@ -7,7 +7,7 @@ pytds
 
 `Python DBAPI`_ driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation
 
-It can be used with https://bitbucket.org/denisenkom/django-pytds as a django database backend.
+It can be used with https://pypi.python.org/pypi/django-sqlserver as a Django database backend.
 
 Features
 --------
