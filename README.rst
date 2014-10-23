@@ -5,7 +5,8 @@ pytds
    :target: https://travis-ci.org/denisenkom/pytds
 
 
-`Python DBAPI`_ driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation
+`Python DBAPI`_ driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation.
+Doesn't depend on ADO or FreeTDS.  Can be used on any platform, including Linux, MacOS, Windows.
 
 It can be used with https://pypi.python.org/pypi/django-sqlserver as a Django database backend.
 
