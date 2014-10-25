@@ -152,6 +152,11 @@ class Connection(object):
         """
         return self._autocommit
 
+    def set_autocommit(self, value):
+        """ An alias for `autocommit`, provided for compatibility with ADO dbapi
+        """
+        self.autocommit = value
+
     @property
     def autocommit(self):
         """
