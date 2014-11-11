@@ -541,6 +541,16 @@ class _TdsEnv:
 
 
 def skipall(stm, size):
+    """ Skips exactly size bytes in stm
+
+    If EOF is reached before size bytes are skipped
+    will raise :class:`ClosedConnectionError`
+
+    :param stm: Stream to skip bytes in, should have read method
+                this read method can return less than requested
+                number of bytes.
+    :param size: Number of bytes to skip.
+    """
     res = stm.read(size)
     if len(res) == size:
         return
@@ -555,6 +565,19 @@ def skipall(stm, size):
 
 
 def readall(stm, size):
+    """ Reads exactly size bytes in stm
+
+    May call stm.read multiple times until required
+    number of bytes read.
+    If EOF is reached before size bytes are read
+    will raise :class:`ClosedConnectionError`
+
+    :param stm: Stream to read bytes from, should have read method
+                this read method can return less than requested
+                number of bytes.
+    :param size: Number of bytes to read.
+    :returns: Bytes buffer of exactly given size.
+    """
     res = stm.read(size)
     if len(res) == size:
         return res
@@ -582,6 +605,12 @@ def readall_fast(stm, size):
 
 
 class _TdsReader(object):
+    """ TDS stream reader
+
+    Provides stream-like interface for TDS packeted stream.
+    Also provides convinience methods to decode primitive data like
+    different kinds of integers etc.
+    """
     def __init__(self, session):
         self._buf = ''
         self._pos = 0  # position in the buffer
@@ -594,13 +623,27 @@ class _TdsReader(object):
 
     @property
     def session(self):
+        """ Link to :class:`_TdsSession` object
+        """
         return self._session
 
     @property
     def packet_type(self):
+        """ Type of current packet
+
+        Possible values are TDS_QUERY, TDS_LOGIN, etc.
+        """
         return self._type
 
     def read_fast(self, size):
+        """ Faster version of read
+
+        Instead of returning sliced buffer it returns reference to internal
+        buffer and the offset to this buffer.
+
+        :param size: Number of bytes to read
+        :returns: Tuple of bytes buffer, and offset in this buffer
+        """
         if self._pos >= len(self._buf):
             if self._have >= self._size:
                 self._read_packet()
@@ -613,59 +656,100 @@ class _TdsReader(object):
         return self._buf, offset
 
     def unpack(self, struct):
+        """ Unpacks given structure from stream
+
+        :param struct: A struct.Struct instance
+        :returns: Result of unpacking
+        """
         buf, offset = readall_fast(self, struct.size)
         return struct.unpack_from(buf, offset)
 
     def get_byte(self):
+        """ Reads one byte from stream """
         return self.unpack(_byte)[0]
 
     def get_smallint(self):
+        """ Reads 16bit signed integer from the stream """
         return self.unpack(_smallint_le)[0]
 
     def get_usmallint(self):
+        """ Reads 16bit unsigned integer from the stream """
         return self.unpack(_usmallint_le)[0]
 
     def get_int(self):
+        """ Reads 32bit signed integer from the stream """
         return self.unpack(_int_le)[0]
 
     def get_uint(self):
+        """ Reads 32bit unsigned integer from the stream """
         return self.unpack(_uint_le)[0]
 
     def get_uint_be(self):
+        """ Reads 32bit unsigned big-endian integer from the stream """
         return self.unpack(_uint_be)[0]
 
     def get_uint8(self):
+        """ Reads 64bit unsigned integer from the stream """
         return self.unpack(_uint8_le)[0]
 
     def get_int8(self):
+        """ Reads 64bit signed integer from the stream """
         return self.unpack(_int8_le)[0]
 
     def read_ucs2(self, num_chars):
+        """ Reads num_chars UCS2 string from the stream """
         buf = readall(self, num_chars * 2)
         return ucs2_codec.decode(buf)[0]
 
     def read_str(self, size, codec):
+        """ Reads byte string from the stream and decodes it
+
+        :param size: Size of string in bytes
+        :param codec: Instance of codec to decode string
+        :returns: Unicode string
+        """
         return codec.decode(readall(self, size))[0]
 
     def get_collation(self):
+        """ Reads :class:`Collation` object from stream """
         buf = readall(self, Collation.wire_size)
         return Collation.unpack(buf)
 
     def unget_byte(self):
+        """ Returns one last read byte to stream
+
+        Can only be called once per read byte.
+        """
         # this is a one trick pony...don't call it twice
         assert self._pos > 0
         self._pos -= 1
 
     def peek(self):
+        """ Returns next byte from stream without consuming it
+        """
         res = self.get_byte()
         self.unget_byte()
         return res
 
     def read(self, size):
+        """ Reads size bytes from buffer
+
+        May return fewer bytes than requested
+        :param size: Number of bytes to read
+        :returns: Bytes buffer, possibly shorter than requested,
+                  returns empty buffer in case of EOF
+        """
         buf, offset = self.read_fast(size)
         return buf[offset:offset + size]
 
     def _read_packet(self):
+        """ Reads next TDS packet from the underlying transport
+
+        If timeout is happened during reading of packet's header will
+        cancel current request.
+        Can only be called when transport's read pointer is at the begining
+        of the packet.
+        """
         try:
             header = readall(self._transport, _header.size)
         except TimeoutError:
@@ -679,11 +763,21 @@ class _TdsReader(object):
         self._have += len(self._buf)
 
     def read_whole_packet(self):
+        """ Reads single packet and returns bytes payload of the packet
+
+        Can only be called when transport's read pointer is at the begining
+        of the packet.
+        """
         self._read_packet()
         return readall(self, self._size - _header.size)
 
 
 class _TdsWriter(object):
+    """ TDS stream writer
+
+    Handles splitting of incoming data into TDS packets according to TDS protocol.
+    Provides convinience methods for writing primitive data types.
+    """
     def __init__(self, session, bufsize):
         self._session = session
         self._tds = session
@@ -694,10 +788,12 @@ class _TdsWriter(object):
 
     @property
     def session(self):
+        """ Back reference to parent :class:`_TdsSession` object """
         return self._session
 
     @property
     def bufsize(self):
+        """ Size of the buffer """
         return len(self._buf)
 
     @bufsize.setter
@@ -711,49 +807,70 @@ class _TdsWriter(object):
             self._buf = self._buf[0:bufsize]
 
     def begin_packet(self, packet_type):
+        """ Starts new packet stream
+
+        :param packet_type: Type of TDS stream, e.g. TDS_PRELOGIN, TDS_QUERY etc.
+        """
         self._type = packet_type
         self._pos = 8
 
     def pack(self, struct, *args):
+        """ Packs and writes structure into stream """
         self.write(struct.pack(*args))
 
     def put_byte(self, value):
+        """ Writes single byte into stream """
         self.pack(_byte, value)
 
     def put_smallint(self, value):
+        """ Writes 16-bit signed integer into the stream """
         self.pack(_smallint_le, value)
 
     def put_usmallint(self, value):
+        """ Writes 16-bit unsigned integer into the stream """
         self.pack(_usmallint_le, value)
 
     def put_smallint_be(self, value):
+        """ Writes 16-bit signed big-endian integer into the stream """
         self.pack(_smallint_be, value)
 
     def put_usmallint_be(self, value):
+        """ Writes 16-bit unsigned big-endian integer into the stream """
         self.pack(_usmallint_be, value)
 
     def put_int(self, value):
+        """ Writes 32-bit signed integer into the stream """
         self.pack(_int_le, value)
 
     def put_uint(self, value):
+        """ Writes 32-bit unsigned integer into the stream """
         self.pack(_uint_le, value)
 
     def put_int_be(self, value):
+        """ Writes 32-bit signed big-endian integer into the stream """
         self.pack(_int_be, value)
 
     def put_uint_be(self, value):
+        """ Writes 32-bit unsigned big-endian integer into the stream """
         self.pack(_uint_be, value)
 
     def put_int8(self, value):
+        """ Writes 64-bit signed integer into the stream """
         self.pack(_int8_le, value)
 
     def put_uint8(self, value):
+        """ Writes 64-bit unsigned integer into the stream """
         self.pack(_uint8_le, value)
 
     def put_collation(self, collation):
+        """ Writes :class:`Collation` structure into the stream """
         self.write(collation.pack())
 
     def write(self, data):
+        """ Writes given bytes buffer into the stream
+
+        Function returns only when entire buffer is written
+        """
         data_off = 0
         while data_off < len(data):
             left = len(self._buf) - self._pos
@@ -766,9 +883,11 @@ class _TdsWriter(object):
                 data_off += to_write
 
     def write_ucs2(self, s):
+        """ Write string encoding it in UCS2 into stream """
         self.write_string(s, ucs2_codec)
 
     def write_string(self, s, codec):
+        """ Write string encoding it with codec into stream """
         for i in xrange(0, len(s), self.bufsize):
             chunk = s[i:i + self.bufsize]
             buf, consumed = codec.encode(chunk)
@@ -776,9 +895,11 @@ class _TdsWriter(object):
             self.write(buf)
 
     def flush(self):
+        """ Closes current packet stream """
         return self._write_packet(final=True)
 
     def _write_packet(self, final):
+        """ Writes single TDS packet into underlying transport """
         status = 1 if final else 0
         _header.pack_into(self._buf, 0, self._type, status, self._pos, 0, self._packet_no)
         self._packet_no = (self._packet_no + 1) % 256
