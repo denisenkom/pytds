@@ -331,20 +331,21 @@ def force_unicode(s):
         return s
 
 
-#
-# Quote an id
-# \param tds    state information for the socket and the TDS protocol
-# \param buffer buffer to store quoted id. If NULL do not write anything
-#        (useful to compute quote length)
-# \param id     id to quote
-# \param idlen  id length
-# \result written chars (not including needed terminator)
-#
-def tds_quote_id(tds, id):
+def tds_quote_id(id):
+    """ Quote an identifier
+
+    :param id: id to quote
+    :returns: Quoted identifier
+    """
     return '[{0}]'.format(id.replace(']', ']]'))
 
 
 def tds7_crypt_pass(password):
+    """ Mangle password according to tds rules
+
+    :param password: Password str
+    :returns: Byte-string with encoded password
+    """
     encoded = bytearray(ucs2_codec.encode(password)[0])
     for i, ch in enumerate(encoded):
         encoded[i] = ((ch << 4) & 0xff | (ch >> 4)) ^ 0xA5
@@ -352,10 +353,12 @@ def tds7_crypt_pass(password):
 
 
 def total_seconds(td):
-    if hasattr(td, 'total_seconds'):
-        return td.total_seconds()
-    else:
-        return td.days * 24 * 60 * 60 + td.seconds
+    """ Total number of seconds in timedelta object
+
+    Python 2.6 doesn't have total_seconds method, this function
+    provides a backport
+    """
+    return td.days * 24 * 60 * 60 + td.seconds
 
 
 # store a tuple of programming error codes
@@ -382,16 +385,19 @@ if sys.version_info[0] >= 3:
     def _ord(val):
         return val
 
-    def _decode_num(buf):
-        return reduce(lambda acc, val: acc * 256 + val, reversed(buf), 0)
 else:
     exc_base_class = StandardError
 
     def _ord(val):
         return ord(val)
 
-    def _decode_num(buf):
-        return reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
+
+def _decode_num(buf):
+    """ Decodes little-endian integer from buffer
+
+    Buffer can be of any size
+    """
+    return reduce(lambda acc, val: acc * 256 + _ord(val), reversed(buf), 0)
 
 
 # exception hierarchy
@@ -3577,7 +3583,7 @@ class _TdsSocket(object):
         if text_size:
             q.append('set textsize {0}'.format(int(text_size)))
         if login.database and self.env.database != login.database:
-            q.append('use ' + tds_quote_id(self, login.database))
+            q.append('use ' + tds_quote_id(login.database))
         if q:
             self._main_session.submit_plain_query(''.join(q))
             self._main_session.process_simple_request()
