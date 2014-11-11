@@ -709,10 +709,10 @@ class ConnectionClosing(unittest.TestCase):
     def test_connection_closed_by_server(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        kwargs['autocommit'] = True
         with connect(**kwargs) as master_conn:
-            kwargs['autocommit'] = False
+            master_conn.autocommit = True
             with connect(**kwargs) as conn:
+                conn.autocommit = False
                 # test overall recovery
                 with conn.cursor() as cur:
                     cur.execute('select 1')
