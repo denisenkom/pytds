@@ -562,7 +562,7 @@ class Cursor(six.Iterator):
             try:
                 return fun()
             except socket.error as e:
-                if e.errno != errno.ECONNRESET:
+                if e.errno not in (errno.ECONNRESET, errno.EPIPE):
                     raise
             except ClosedConnectionError:
                 pass
