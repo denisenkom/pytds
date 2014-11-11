@@ -986,27 +986,6 @@ class RegressionSuite(TestCase):
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class TestLoadBalancer(DbTestCase):
-    def test_second(self):
-        server = settings.CONNECT_KWARGS['server']
-        if '\\' in server:
-            server, _ = server.split('\\')
-        lb = SimpleLoadBalancer(['badserver', server])
-        with connect(load_balancer=lb, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
-            with conn.cursor() as cur:
-                cur.execute('select 1')
-                cur.fetchall()
-
-    def test_none(self):
-        lb = SimpleLoadBalancer(['badserver'])
-        with self.assertRaises(LoginError):
-            with connect(load_balancer=lb, *settings.CONNECT_ARGS, **settings.CONNECT_KWARGS) as conn:
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                    cur.fetchall()
-
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestIntegrityError(DbTestCase):
     def test_primary_key(self):
         cursor = self.conn.cursor()
