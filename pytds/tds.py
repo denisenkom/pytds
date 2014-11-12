@@ -899,7 +899,12 @@ class _TdsWriter(object):
         return self._write_packet(final=True)
 
     def _write_packet(self, final):
-        """ Writes single TDS packet into underlying transport """
+        """ Writes single TDS packet into underlying transport.
+
+        Data for the packet is taken from internal buffer.
+
+        :param final: True means this is the final packet in substream.
+        """
         status = 1 if final else 0
         _header.pack_into(self._buf, 0, self._type, status, self._pos, 0, self._packet_no)
         self._packet_no = (self._packet_no + 1) % 256
@@ -934,8 +939,64 @@ class MemoryStrChunkedHandler(object):
 
 
 class BaseType(object):
+    """ Base type for TDS data types.
+
+    All TDS types should derive from it.
+    In addition actual types should provide the following:
+
+    - type - class variable storing type identifier
+    """
     def get_typeid(self):
+        """ Returns type identifier of type. """
         return self.type
+
+    def get_declaration(self):
+        """ Returns SQL declaration for this type.
+        
+        Examples are: NVARCHAR(10), TEXT, TINYINT
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def from_stream(cls, r):
+        """ Class method that reads and returns a type instance.
+
+        :param r: An instance of :class:`_TdsReader` to read type from.
+
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
+
+    def write_info(self, w):
+        """ Writes type info into w stream.
+
+        :param w: An instance of :class:`_TdsWriter` to write into.
+
+        Should be symmetrical to from_stream method.
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
+
+    def write(self, w, value):
+        """ Writes type's value into stream
+
+        :param w: An instance of :class:`_TdsWriter` to write into.
+        :param value: A value to be stored, should be compatible with the type
+
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
+
+    def read(self, r):
+        """ Reads value from the stream.
+
+        :param r: An instance of :class:`_TdsReader` to read value from.
+        :return: A read value.
+
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
 
 
 class Bit(BaseType):
@@ -2506,6 +2567,7 @@ _type_map72.update({
     SYBIMAGE: Image72,
     })
 
+
 def _create_exception_by_message(msg, custom_error_msg = None):
     msg_no = msg['msgno']
     if custom_error_msg is not None:
@@ -2528,7 +2590,13 @@ def _create_exception_by_message(msg, custom_error_msg = None):
     ex.line = msg['line_number']
     return ex
 
+
 class _TdsSession(object):
+    """ TDS session
+
+    Represents a single TDS session within MARS connection, when MARS enabled there could be multiple TDS sessions
+    within one connection.
+    """
     def __init__(self, tds, transport, tzinfo_factory):
         self.out_pos = 8
         self.res_info = None
@@ -2559,6 +2627,10 @@ class _TdsSession(object):
         return res
 
     def raise_db_exception(self):
+        """ Raises exception from last server message
+
+        This function will skip messages: The statement has been terminated
+        """
         if not self.messages:
             raise Error("Request failed, server didn't send error message")
         while True:
@@ -2572,12 +2644,6 @@ class _TdsSession(object):
         ex = _create_exception_by_message(msg, error_msg)
         raise ex
 
-    def get_type_factory(self, type_id):
-        factory = self._tds._type_map.get(type_id)
-        if not factory:
-            raise InterfaceError('Invalid type id', type_id)
-        return factory
-
     def get_type_info(self, curcol):
         r = self._reader
         # User defined data type of the column
@@ -2587,7 +2653,10 @@ class _TdsSession(object):
         curcol.column_writeable = (curcol.flags & Column.fReadWrite) > 0
         curcol.column_identity = (curcol.flags & Column.fIdentity) > 0
         type_id = r.get_byte()
-        curcol.type = self.get_type_factory(type_id).from_stream(r)
+        type_class = self._tds._type_map.get(type_id)
+        if not type_class:
+            raise InterfaceError('Invalid type id', type_id)
+        curcol.type = type_class.from_stream(r)
 
     def tds7_process_result(self):
         r = self._reader
