@@ -2645,6 +2645,10 @@ class _TdsSession(object):
         raise ex
 
     def get_type_info(self, curcol):
+        """ Reads TYPE_INFO structure (http://msdn.microsoft.com/en-us/library/dd358284.aspx)
+
+        :param curcol: An instance of :class:`Column` that will receive read information
+        """
         r = self._reader
         # User defined data type of the column
         curcol.column_usertype = r.get_uint() if IS_TDS72_PLUS(self) else r.get_usmallint()
@@ -2659,6 +2663,11 @@ class _TdsSession(object):
         curcol.type = type_class.from_stream(r)
 
     def tds7_process_result(self):
+        """ Reads and processes COLMETADATA stream
+
+        This stream contains a list of returned columns.
+        Stream format link: http://msdn.microsoft.com/en-us/library/dd357363.aspx
+        """
         r = self._reader
         #logger.debug("processing TDS7 result metadata.")
 
@@ -2704,6 +2713,11 @@ class _TdsSession(object):
         return info
 
     def process_param(self):
+        """ Reads and processes RETURNVALUE stream.
+
+        This stream is used to send OUTPUT parameters from RPC to client.
+        Stream format url: http://msdn.microsoft.com/en-us/library/dd303881.aspx
+        """
         r = self._reader
         if IS_TDS72_PLUS(self):
             ordinal = r.get_usmallint()
@@ -2720,16 +2734,17 @@ class _TdsSession(object):
         self.return_value_index += 1
 
     def process_cancel(self):
-        '''
+        """
         Process the incoming token stream until it finds
         an end token DONE with the cancel flag set.
         At that point the connection should be ready to handle a new query.
-        '''
+
+        In case when no cancel request is pending this function does nothing.
+        """
         # silly cases, nothing to do
         if not self.in_cancel:
             return
 
-        # TODO support TDS5 cancel, wait for cancel packet first, then wait for done
         while True:
             token_id = self.get_token_id()
             self.process_token(token_id)
@@ -2737,6 +2752,15 @@ class _TdsSession(object):
                 return
 
     def process_msg(self, marker):
+        """ Reads and processes ERROR/INFO streams
+
+        Stream formats:
+
+        - ERROR: http://msdn.microsoft.com/en-us/library/dd304156.aspx
+        - INFO: http://msdn.microsoft.com/en-us/library/dd303398.aspx
+
+        :param marker: TDS_ERROR_TOKEN or TDS_INFO_TOKEN
+        """
         r = self._reader
         r.get_smallint()  # size
         msg = {}
@@ -2786,15 +2810,24 @@ class _TdsSession(object):
         self.messages.append(msg)
 
     def process_row(self):
+        """ Reads and handles ROW stream.
+
+        This stream contains list of values of one returned row.
+        Stream format url: http://msdn.microsoft.com/en-us/library/dd357254.aspx
+        """
         r = self._reader
         info = self.res_info
         info.row_count += 1
         for i, curcol in enumerate(info.columns):
             curcol.value = self.row[i] = curcol.type.read(r)
 
-    # NBC=null bitmap compression row
-    # http://msdn.microsoft.com/en-us/library/dd304783(v=prot.20).aspx
     def process_nbcrow(self):
+        """ Reads and handles NBCROW stream.
+
+        This stream contains list of values of one returned row in a compressed way,
+        introduced in TDS 7.3.B
+        Stream format url: http://msdn.microsoft.com/en-us/library/dd304783.aspx
+        """
         r = self._reader
         info = self.res_info
         if not info:
@@ -2813,6 +2846,11 @@ class _TdsSession(object):
             self.row[i] = value
 
     def process_orderby(self):
+        """ Reads and processes ORDER stream
+
+        Used to inform client by which column dataset is ordered.
+        Stream format url: http://msdn.microsoft.com/en-us/library/dd303317.aspx
+        """
         r = self._reader
         skipall(r, r.get_smallint())
 
@@ -2821,6 +2859,16 @@ class _TdsSession(object):
         skipall(r, r.get_int())
 
     def process_end(self, marker):
+        """ Reads and processes DONE/DONEINPROC/DONEPROC streams
+
+        Stream format urls:
+
+        - DONE: http://msdn.microsoft.com/en-us/library/dd340421.aspx
+        - DONEINPROC: http://msdn.microsoft.com/en-us/library/dd340553.aspx
+        - DONEPROC: http://msdn.microsoft.com/en-us/library/dd340753.aspx
+
+        :param marker: Can be TDS_DONE_TOKEN or TDS_DONEINPROC_TOKEN or TDS_DONEPROC_TOKEN
+        """
         self.more_rows = False
         r = self._reader
         status = r.get_usmallint()
@@ -2851,6 +2899,10 @@ class _TdsSession(object):
             self.raise_db_exception()
 
     def process_env_chg(self):
+        """ Reads and processes ENVCHANGE stream.
+
+        Stream info url: http://msdn.microsoft.com/en-us/library/dd303449.aspx
+        """
         r = self._reader
         size = r.get_smallint()
         type = r.get_byte()
@@ -2915,6 +2967,10 @@ class _TdsSession(object):
             skipall(r, size - 1)
 
     def process_auth(self):
+        """ Reads and processes SSPI stream.
+
+        Stream info: http://msdn.microsoft.com/en-us/library/dd302844.aspx
+        """
         r = self._reader
         w = self._writer
         pdu_size = r.get_smallint()
@@ -2926,9 +2982,18 @@ class _TdsSession(object):
             w.flush()
 
     def is_connected(self):
+        """
+        :return: True if transport is connected
+        """
         return self._transport.is_connected()
 
     def bad_stream(self, msg):
+        """ Called when input stream contains unexpected data.
+
+        Will close stream and raise :class:`InterfaceError`
+        :param msg: Message for InterfaceError exception.
+        :return: Never returns, always raises exception.
+        """
         self.close()
         raise InterfaceError(msg)
 
