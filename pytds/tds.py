@@ -1,5 +1,6 @@
 import struct
 import codecs
+from contextlib import contextmanager
 import logging
 import socket
 import sys
@@ -2999,16 +3000,25 @@ class _TdsSession(object):
 
     @property
     def tds_version(self):
+        """ Returns integer encoded current TDS protocol version
+        """
         return self._tds.tds_version
 
     @property
     def conn(self):
+        """ Reference to owning :class:`_TdsSocket`
+        """
         return self._tds
 
     def close(self):
         self._transport.close()
 
     def set_state(self, state):
+        """ Switches state of the TDS session.
+
+        It also does state transitions checks.
+        :param state: New state, one of TDS_PENDING/TDS_READING/TDS_IDLE/TDS_DEAD/TDS_QUERING
+        """
         prior_state = self.state
         if state == prior_state:
             return state
@@ -3047,8 +3057,16 @@ class _TdsSession(object):
             assert False
         return self.state
 
+    @contextmanager
     def state_context(self, state):
-        return _StateContext(self, state)
+        if self.set_state(state) != state:
+            raise Error("Couldn't switch to state")
+        try:
+            yield
+        except:
+            if self.state != TDS_DEAD:
+                self.set_state(TDS_IDLE)
+            raise
 
     def query_flush_packet(self):
         # TODO depend on result ??
@@ -3766,22 +3784,6 @@ _token_map = {
     TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
     TDS_RETURNSTATUS_TOKEN: lambda self: self.process_returnstatus(),
     }
-
-
-class _StateContext(object):
-    def __init__(self, session, state):
-        self._session = session
-        self._state = state
-
-    def __enter__(self):
-        if self._session.set_state(self._state) != self._state:
-            raise Error("Couldn't switch to state")
-        return self
-
-    def __exit__(self, type, value, traceback):
-        if type is not None:
-            if self._session.state != TDS_DEAD:
-                self._session.set_state(TDS_IDLE)
 
 
 class _TdsSocket(object):
