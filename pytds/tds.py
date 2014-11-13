@@ -3086,6 +3086,22 @@ class _TdsSession(object):
             self._writer.flush()
 
     def make_param(self, name, value):
+        """ Generates instance of :class:`Column` from value and name
+
+        Function guesses type of the parameter from the type of value.
+
+        Value can also be of a special types:
+
+        - An instance of :class:`Column`, in which case it is just returned.
+        - An instance of :class:`output`, in which case parameter will become
+          an output parameter.
+        - A singleton :var:`default`, in which case default value will be passed
+          into a stored proc.
+
+        :param name: Name of the parameter, will populate column_name property of returned column.
+        :param value: Value of the parameter, also used to guess the type of parameter.
+        :return: An instance of :class:`Column`
+        """
         if isinstance(value, Column):
             value.column_name = name
             return value
@@ -3149,8 +3165,14 @@ class _TdsSession(object):
         return column
 
     def _convert_params(self, parameters):
+        """ Converts a dict of list of parameters into a list of :class:`Column` instances.
+
+        :param parameters: Can be a list of parameter values, or a dict of parameter names to values.
+        :return: A list of :class:`Column` instances.
+        """
         if isinstance(parameters, dict):
-            return [self.make_param(name, value) for name, value in parameters.items()]
+            return [self.make_param(name, value)
+                    for name, value in parameters.items()]
         else:
             params = []
             for parameter in parameters:
@@ -3158,6 +3180,11 @@ class _TdsSession(object):
             return params
 
     def cancel_if_pending(self):
+        """ Cancels current pending request.
+
+        Does nothing if no request is pending, otherwise sends cancel request,
+        and waits for response.
+        """
         if self.state == TDS_IDLE:
             return
         if not self.in_cancel:
@@ -3165,6 +3192,18 @@ class _TdsSession(object):
         self.process_cancel()
 
     def submit_rpc(self, rpc_name, params, flags):
+        """ Sends an RPC request.
+
+        This call will transition session into pending state.
+        If some operation is currently pending on the session, it will be
+        cancelled before sending this request.
+
+        Spec: http://msdn.microsoft.com/en-us/library/dd357576.aspx
+
+        :param rpc_name: Name of the RPC to call, can be an instance of :class:`InternalProc`
+        :param params: Stored proc parameters, should be a list of :class:`Column` instances.
+        :param flags: See spec for possible flags.
+        """
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()
@@ -3204,6 +3243,16 @@ class _TdsSession(object):
                 param.type.write(w, param.value)
 
     def submit_plain_query(self, operation):
+        """ Sends a plain query to server.
+
+        This call will transition session into pending state.
+        If some operation is currently pending on the session, it will be
+        cancelled before sending this request.
+
+        Spec: http://msdn.microsoft.com/en-us/library/dd358575.aspx
+
+        :param operation: A string representing sql statement.
+        """
         #logger.debug('submit_plain_query(%s)', operation)
         self.messages = []
         self.cancel_if_pending()
