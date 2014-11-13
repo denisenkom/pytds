@@ -3263,6 +3263,14 @@ class _TdsSession(object):
             w.write_ucs2(operation)
 
     def submit_bulk(self, metadata, rows):
+        """ Sends insert bulk command.
+
+        Spec: http://msdn.microsoft.com/en-us/library/dd358082.aspx
+
+        :param metadata: A list of :class:`Column` instances.
+        :param rows: A collection of rows, each row is a collection of values.
+        :return:
+        """
         num_cols = len(metadata)
         w = self._writer
         with self.querying_context(TDS_BULK):
@@ -3292,6 +3300,10 @@ class _TdsSession(object):
                 w.put_int(0)
 
     def _put_cancel(self):
+        """ Sends a cancel request to the server.
+
+        Switches connection to IN_CANCEL state.
+        """
         self._writer.begin_packet(TDS_CANCEL)
         self._writer.flush()
         self.in_cancel = 1
