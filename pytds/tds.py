@@ -318,6 +318,60 @@ PLP_NULL = 0xffffffffffffffff
 PLP_UNKNOWN = 0xfffffffffffffffe
 
 
+class PlpReader(object):
+    """ Partially length prefixed reader
+
+    Spec: http://msdn.microsoft.com/en-us/library/dd340469.aspx
+    """
+    def __init__(self, r):
+        """
+        :param r: An instance of :class:`_TdsReader`
+        """
+        self._rdr = r
+        size = r.get_uint8()
+        self._size = size
+
+    def is_null(self):
+        """
+        :return: True if stored value is NULL
+        """
+        return self._size == PLP_NULL
+
+    def is_unknown_len(self):
+        """
+        :return: True if total size is unknown upfront
+        """
+        return self._size == PLP_UNKNOWN
+
+    def size(self):
+        """
+        :return: Total size in bytes if is_uknown_len and is_null are both False
+        """
+        return self._size
+
+    def chunks(self):
+        """ Generates chunks from stream, each chunk is an instace of bytes.
+        """
+        if self.is_null():
+            return
+        total = 0
+        while True:
+            chunk_len = self._rdr.get_uint()
+            if chunk_len == 0:
+                if not self.is_unknown_len() and total != self._size:
+                    msg = "PLP actual length (%d) doesn't match reported length (%d)" % (total, self._size)
+                    self._rdr.session.bad_stream(msg)
+
+                return
+
+            total += chunk_len
+            left = chunk_len
+            while left:
+                buf = self._rdr.read(left)
+                yield buf
+                left -= len(buf)
+
+
 class SimpleLoadBalancer(object):
     def __init__(self, hosts):
         self._hosts = hosts
@@ -1387,22 +1441,16 @@ class VarCharMax(VarChar72):
             w.put_int(0)
 
     def read(self, r):
-        size = r.get_uint8()
-        if size == PLP_NULL:
+        r = PlpReader(r)
+        if r.is_null():
             return None
         chunks = []
         decoder = self._codec.incrementaldecoder()
-        while True:
-            chunk_len = r.get_int()
-            if chunk_len <= 0:
-                chunks.append(decoder.decode(b'', True))
-                return ''.join(chunks)
-            left = chunk_len
-            while left:
-                buf = r.read(left)
-                chunk = decoder.decode(buf)
-                left -= len(buf)
-                chunks.append(chunk)
+        for chunk in r.chunks():
+            chunks.append(decoder.decode(chunk))
+
+        chunks.append(decoder.decode(b'', True))
+        return ''.join(chunks)
 
 
 class NVarChar70(BaseType):
@@ -1500,23 +1548,14 @@ class NVarCharMax(NVarChar72):
             w.put_uint(0)
 
     def read(self, r):
-        size = r.get_uint8()
-        if size == PLP_NULL:
+        r = PlpReader(r)
+        if r.is_null():
             return None
-        chunks = []
         decoder = ucs2_codec.incrementaldecoder()
-        while True:
-            chunk_len = r.get_uint()
-            if chunk_len <= 0:
-                chunks.append(decoder.decode(b'', True))
-                res = ''.join(chunks)
-                return res
-            left = chunk_len
-            while left:
-                buf = r.read(left)
-                chunk = decoder.decode(buf)
-                left -= len(buf)
-                chunks.append(chunk)
+        chunks = [decoder.decode(ch) for ch in r.chunks()]
+        chunks.append(decoder.decode(b'', True))
+        res = ''.join(chunks)
+        return res
 
 
 class Xml(NVarCharMax):
@@ -1767,19 +1806,10 @@ class VarBinaryMax(VarBinary):
             w.put_uint(0)
 
     def read(self, r):
-        size = r.get_uint8()
-        if size == PLP_NULL:
+        r = PlpReader(r)
+        if r.is_null():
             return None
-        chunks = []
-        while True:
-            chunk_len = r.get_uint()
-            if chunk_len == 0:
-                return b''.join(chunks)
-            left = chunk_len
-            while left:
-                chunk = r.read(left)
-                left -= len(chunk)
-                chunks.append(chunk)
+        return b''.join(r.chunks())
 
 
 class Image70(BaseType):
