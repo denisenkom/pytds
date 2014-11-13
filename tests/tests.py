@@ -1406,61 +1406,6 @@ class TestMessages(unittest.TestCase):
         instances = pytds.tds._parse_instances(data)
         self.assertDictEqual(ref, instances)
 
-    def test_make_varchar(self):
-        tds = _TdsSocket()
-        tds.tds_version = TDS72
-        tds._main_session = _TdsSession(tds, tds, None)
-        column = pytds.tds.Column()
-        tds._main_session.conn.collation = pytds.tds.raw_collation
-
-        tds._main_session.make_varchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.VarCharMax)
-
-        tds._main_session.make_varchar(column, 'x' * 8001)
-        self.assertIsInstance(column.type, pytds.tds.VarCharMax)
-
-        tds.tds_version = TDS71
-        tds._main_session.make_varchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.Text71)
-
-        tds._main_session.make_varchar(column, 'x' * 8001)
-        self.assertIsInstance(column.type, pytds.tds.Text71)
-
-        tds.tds_version = TDS70
-        tds.server_codec = codecs.lookup('ascii')
-        tds._main_session.make_varchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.Text70)
-
-        tds._main_session.make_varchar(column, 'x' * 8001)
-        self.assertIsInstance(column.type, pytds.tds.Text70)
-
-    def test_make_nvarchar(self):
-        tds = _TdsSocket()
-        tds.tds_version = TDS72
-        tds._main_session = _TdsSession(tds, tds, None)
-        column = pytds.tds.Column()
-        tds._main_session.conn.collation = pytds.tds.raw_collation
-
-        tds._main_session.make_nvarchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.NVarCharMax)
-
-        tds._main_session.make_nvarchar(column, 'x' * 4001)
-        self.assertIsInstance(column.type, pytds.tds.NVarCharMax)
-
-        tds.tds_version = TDS71
-        tds._main_session.make_nvarchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.NText71)
-
-        tds._main_session.make_nvarchar(column, 'x' * 4001)
-        self.assertIsInstance(column.type, pytds.tds.NText71)
-
-        tds.tds_version = TDS70
-        tds._main_session.make_nvarchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.NText70)
-
-        tds._main_session.make_nvarchar(column, 'x' * 4001)
-        self.assertIsInstance(column.type, pytds.tds.NText70)
-
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):

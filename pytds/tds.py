@@ -3085,12 +3085,6 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
-    def make_varchar(self, column, value):
-        column.type = self.conn.long_varchar_type(collation=self.conn.collation)
-
-    def make_nvarchar(self, column, value):
-        column.type = self.conn.long_string_type(collation=self.conn.collation)
-
     def make_param(self, name, value):
         if isinstance(value, Column):
             value.column_name = name
@@ -3130,11 +3124,11 @@ class _TdsSession(object):
                 column.type = self.conn.VarBinary(size or 1)
         elif isinstance(value, six.binary_type):
             if self._tds.login.bytes_to_unicode:
-                self.make_nvarchar(column, value)
+                column.type = self.conn.long_string_type(collation=self.conn.collation)
             else:
-                self.make_varchar(column, value)
+                column.type = self.conn.long_varchar_type(collation=self.conn.collation)
         elif isinstance(value, six.string_types):
-            self.make_nvarchar(column, value)
+            column.type = self.conn.long_string_type(collation=self.conn.collation)
         elif isinstance(value, datetime):
             if IS_TDS73_PLUS(self):
                 if value.tzinfo and not self.use_tz:
