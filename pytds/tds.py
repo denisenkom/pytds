@@ -3115,13 +3115,7 @@ class _TdsSession(object):
         elif isinstance(value, float):
             column.type = FloatN(8)
         elif isinstance(value, Binary):
-            size = len(value)
-            if size == 0:
-                size = 1
-            if size > 8000:
-                column.type = self.conn.long_binary_type()
-            else:
-                column.type = self.conn.VarBinary(size or 1)
+            column.type = self.conn.long_binary_type()
         elif isinstance(value, six.binary_type):
             if self._tds.login.bytes_to_unicode:
                 column.type = self.conn.long_string_type(collation=self.conn.collation)
