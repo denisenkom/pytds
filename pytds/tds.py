@@ -3058,15 +3058,24 @@ class _TdsSession(object):
         return self.state
 
     @contextmanager
-    def state_context(self, state):
-        if self.set_state(state) != state:
+    def querying_context(self, packet_type):
+        """ Context manager for querying.
+
+        Sets state to TDS_QUERYING, and reverts it to TDS_IDLE if exception happens inside managed block,
+        and to TDS_PENDING if managed block succeeds and flushes buffer.
+        """
+        if self.set_state(TDS_QUERYING) != TDS_QUERYING:
             raise Error("Couldn't switch to state")
+        self._writer.begin_packet(packet_type)
         try:
             yield
         except:
             if self.state != TDS_DEAD:
                 self.set_state(TDS_IDLE)
             raise
+        else:
+            self.set_state(TDS_PENDING)
+            self._writer.flush()
 
     def query_flush_packet(self):
         # TODO depend on result ??
@@ -3180,8 +3189,7 @@ class _TdsSession(object):
         self.cancel_if_pending()
         self.res_info = None
         w = self._writer
-        with self.state_context(TDS_QUERYING):
-            w.begin_packet(TDS_RPC)
+        with self.querying_context(TDS_RPC):
             self._START_QUERY()
             if IS_TDS71_PLUS(self) and isinstance(rpc_name, InternalProc):
                 w.put_smallint(-1)
@@ -3213,7 +3221,6 @@ class _TdsSession(object):
                 w.put_byte(param.type.type)
                 param.type.write_info(w)
                 param.type.write(w, param.value)
-            self.query_flush_packet()
 
     def submit_plain_query(self, operation):
         #logger.debug('submit_plain_query(%s)', operation)
@@ -3221,17 +3228,14 @@ class _TdsSession(object):
         self.cancel_if_pending()
         self.res_info = None
         w = self._writer
-        with self.state_context(TDS_QUERYING):
-            w.begin_packet(TDS_QUERY)
+        with self.querying_context(TDS_QUERY):
             self._START_QUERY()
             w.write_ucs2(operation)
-            self.query_flush_packet()
 
     def submit_bulk(self, metadata, rows):
         num_cols = len(metadata)
         w = self._writer
-        with self.state_context(TDS_QUERYING):
-            w.begin_packet(TDS_BULK)
+        with self.querying_context(TDS_BULK):
             w.put_byte(TDS7_RESULT_TOKEN)
             w.put_usmallint(num_cols)
             for col in metadata:
@@ -3256,8 +3260,6 @@ class _TdsSession(object):
                 w.put_int8(0)
             else:
                 w.put_int(0)
-            self.query_flush_packet()
-
 
     def _put_cancel(self):
         self._writer.begin_packet(TDS_CANCEL)
@@ -3276,15 +3278,13 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.state_context(TDS_QUERYING):
-                w.begin_packet(TDS7_TRANS)
+            with self.querying_context(TDS7_TRANS):
                 self._start_query()
                 w.pack(self._begin_tran_struct_72,
                     5,  # TM_BEGIN_XACT
                     isolation_level,
                     0,  # new transaction name
                     )
-                self.query_flush_packet()
         else:
             self.submit_plain_query("BEGIN TRANSACTION")
             self.conn.tds72_transaction = 1
@@ -3307,8 +3307,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.state_context(TDS_QUERYING):
-                w.begin_packet(TDS7_TRANS)
+            with self.querying_context(TDS7_TRANS):
                 self._start_query()
                 flags = 0
                 if cont:
@@ -3323,7 +3322,6 @@ class _TdsSession(object):
                         isolation_level,
                         0,  # new transaction name
                         )
-                self.query_flush_packet()
         else:
             self.submit_plain_query("IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
             self.conn.tds72_transaction = 1 if cont else 0
@@ -3343,8 +3341,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.state_context(TDS_QUERYING):
-                w.begin_packet(TDS7_TRANS)
+            with self.querying_context(TDS7_TRANS):
                 self._start_query()
                 flags = 0
                 if cont:
@@ -3359,7 +3356,6 @@ class _TdsSession(object):
                         isolation_level,
                         0,  # new transaction name
                         )
-                self.query_flush_packet()
         else:
             self.submit_plain_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
             self.conn.tds72_transaction = 1 if cont else 0
