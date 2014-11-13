@@ -3077,11 +3077,6 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
-    def query_flush_packet(self):
-        # TODO depend on result ??
-        self.set_state(TDS_PENDING)
-        self._writer.flush()
-
     def make_varchar(self, column, value):
         size = len(value)
         if size > 8000:
