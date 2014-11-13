@@ -372,6 +372,18 @@ class PlpReader(object):
                 left -= len(buf)
 
 
+def iterdecode(iterable, codec):
+    """ Uses an incremental decoder to decode each chunk in iterable.
+    This function is a generator.
+
+    :param codec: An instance of codec
+    """
+    decoder = codec.incrementaldecoder()
+    for chunk in iterable:
+        yield decoder.decode(chunk)
+    yield decoder.decode(b'', True)
+
+
 class SimpleLoadBalancer(object):
     def __init__(self, hosts):
         self._hosts = hosts
@@ -624,8 +636,38 @@ def skipall(stm, size):
         left -= len(buf)
 
 
+def read_chunks(stm, size):
+    """ Reads exactly size bytes from stm and produces chunks
+
+    May call stm.read multiple times until required
+    number of bytes is read.
+    If EOF is reached before size bytes are read
+    will raise :class:`ClosedConnectionError`
+
+    :param stm: Stream to read bytes from, should have read method,
+                this read method can return less than requested
+                number of bytes.
+    :param size: Number of bytes to read.
+    """
+    if size == 0:
+        yield b''
+        return
+
+    res = stm.read(size)
+    if len(res) == 0:
+        raise ClosedConnectionError()
+    yield res
+    left = size - len(res)
+    while left:
+        buf = stm.read(left)
+        if len(buf) == 0:
+            raise ClosedConnectionError()
+        yield buf
+        left -= len(buf)
+
+
 def readall(stm, size):
-    """ Reads exactly size bytes in stm
+    """ Reads exactly size bytes from stm
 
     May call stm.read multiple times until required
     number of bytes read.
@@ -638,20 +680,7 @@ def readall(stm, size):
     :param size: Number of bytes to read.
     :returns: Bytes buffer of exactly given size.
     """
-    res = stm.read(size)
-    if len(res) == size:
-        return res
-    elif len(res) == 0:
-        raise ClosedConnectionError()
-    chunks = [res]
-    left = size - len(res)
-    while left:
-        buf = stm.read(left)
-        if len(buf) == 0:
-            raise ClosedConnectionError()
-        chunks.append(buf)
-        left -= len(buf)
-    return b''.join(chunks)
+    return b''.join(read_chunks(stm, size))
 
 
 def readall_fast(stm, size):
@@ -1444,13 +1473,7 @@ class VarCharMax(VarChar72):
         r = PlpReader(r)
         if r.is_null():
             return None
-        chunks = []
-        decoder = self._codec.incrementaldecoder()
-        for chunk in r.chunks():
-            chunks.append(decoder.decode(chunk))
-
-        chunks.append(decoder.decode(b'', True))
-        return ''.join(chunks)
+        return ''.join(iterdecode(r.chunks(), self._codec))
 
 
 class NVarChar70(BaseType):
@@ -1551,10 +1574,7 @@ class NVarCharMax(NVarChar72):
         r = PlpReader(r)
         if r.is_null():
             return None
-        decoder = ucs2_codec.incrementaldecoder()
-        chunks = [decoder.decode(ch) for ch in r.chunks()]
-        chunks.append(decoder.decode(b'', True))
-        res = ''.join(chunks)
+        res = ''.join(iterdecode(r.chunks(), ucs2_codec))
         return res
 
 
