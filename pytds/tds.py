@@ -313,6 +313,11 @@ _flt8_struct = struct.Struct('d')
 _flt4_struct = struct.Struct('f')
 
 
+PLP_MARKER = 0xffff
+PLP_NULL = 0xffffffffffffffff
+PLP_UNKNOWN = 0xfffffffffffffffe
+
+
 class SimpleLoadBalancer(object):
     def __init__(self, hosts):
         self._hosts = hosts
@@ -1366,23 +1371,24 @@ class VarCharMax(VarChar72):
         return 'VARCHAR(MAX)'
 
     def write_info(self, w):
-        w.put_usmallint(0xffff)
+        w.put_usmallint(PLP_MARKER)
         w.put_collation(self._collation)
 
     def write(self, w, val):
         if val is None:
-            w.put_uint8(0xffffffffffffffff)
+            w.put_uint8(PLP_NULL)
         else:
             val = force_unicode(val)
             val, _ = self._codec.encode(val)
             w.put_int8(len(val))
-            w.put_int(len(val))
-            w.write(val)
+            if len(val) > 0:
+                w.put_int(len(val))
+                w.write(val)
             w.put_int(0)
 
     def read(self, r):
         size = r.get_uint8()
-        if size == 0xffffffffffffffff:
+        if size == PLP_NULL:
             return None
         chunks = []
         decoder = self._codec.incrementaldecoder()
@@ -1477,23 +1483,25 @@ class NVarCharMax(NVarChar72):
         return 'NVARCHAR(MAX)'
 
     def write_info(self, w):
-        w.put_usmallint(0xffff)
+        w.put_usmallint(PLP_MARKER)
         w.put_collation(self._collation)
 
     def write(self, w, val):
         if val is None:
-            w.put_uint8(0xffffffffffffffff)
+            w.put_uint8(PLP_NULL)
         else:
             if isinstance(val, bytes):
                 val = force_unicode(val)
-            w.put_uint8(len(val) * 2)
-            w.put_uint(len(val) * 2)
-            w.write_ucs2(val)
+            val, _ = ucs2_codec.encode(val)
+            w.put_uint8(len(val))
+            if len(val) > 0:
+                w.put_uint(len(val))
+                w.write(val)
             w.put_uint(0)
 
     def read(self, r):
         size = r.get_uint8()
-        if size == 0xffffffffffffffff:
+        if size == PLP_NULL:
             return None
         chunks = []
         decoder = ucs2_codec.incrementaldecoder()
@@ -1746,11 +1754,11 @@ class VarBinaryMax(VarBinary):
         return 'VARBINARY(MAX)'
 
     def write_info(self, w):
-        w.put_usmallint(0xffff)
+        w.put_usmallint(PLP_MARKER)
 
     def write(self, w, val):
         if val is None:
-            w.put_uint8(0xffffffffffffffff)
+            w.put_uint8(PLP_NULL)
         else:
             w.put_uint8(len(val))
             if val:
@@ -1760,7 +1768,7 @@ class VarBinaryMax(VarBinary):
 
     def read(self, r):
         size = r.get_uint8()
-        if size == 0xffffffffffffffff:
+        if size == PLP_NULL:
             return None
         chunks = []
         while True:
@@ -3078,20 +3086,10 @@ class _TdsSession(object):
             self._writer.flush()
 
     def make_varchar(self, column, value):
-        size = len(value)
-        if size > 8000:
-            column.type = self.conn.long_varchar_type(collation=self.conn.collation)
-        else:
-            column.type = self.conn.VarChar(size or 1, collation=self.conn.collation)
+        column.type = self.conn.long_varchar_type(collation=self.conn.collation)
 
     def make_nvarchar(self, column, value):
-        size = len(value)
-        # use lower limit because there could be surrogate characters consisting of
-        # two 16bit code points
-        if size > 2000:
-            column.type = self.conn.long_string_type(collation=self.conn.collation)
-        else:
-            column.type = self.conn.NVarChar(4000, collation=self.conn.collation)
+        column.type = self.conn.long_string_type(collation=self.conn.collation)
 
     def make_param(self, name, value):
         if isinstance(value, Column):
@@ -3119,7 +3117,7 @@ class _TdsSession(object):
             elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
                 column.type = MsDecimal(0, 38)
             else:
-                raise DataError('Numeric value out or range')
+                raise DataError('Numeric value out of range')
         elif isinstance(value, float):
             column.type = FloatN(8)
         elif isinstance(value, Binary):

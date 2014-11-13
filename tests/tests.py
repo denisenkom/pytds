@@ -128,9 +128,7 @@ class TestCase2(TestCase):
         assert None == cur.execute_scalar("select cast(NULL as nchar(10)) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
-        self.assertEqual(u'Iñtërnâtiônàlizætiøn1', cur.execute_scalar('select %s', (u'Iñtërnâtiônàlizætiøn1'.encode('utf8'),)))
         assert 5 == cur.execute_scalar('select 5 as fieldname')
-        self.assertEqual(u'\U0001d6fc', cur.execute_scalar('select %s', (u'\U0001d6fc',)))
 
     def test_decimals(self):
         cur = self.conn.cursor()
@@ -212,8 +210,7 @@ class TestCase2(TestCase):
             self.assertIs(cur.fetchone(), None)
 
     def test_parameters(self):
-        def test_val(val):
-            self._test_val(val)
+        test_val = self._test_val
 
         test_val(u'hello')
         test_val(u'x' * 5000)
@@ -243,6 +240,8 @@ class TestCase2(TestCase):
         test_val(False)
         test_val(True)
         test_val(uuid.uuid4())
+        test_val(u'Iñtërnâtiônàlizætiøn1')
+        test_val(u'\U0001d6fc')
 
     def test_varcharmax(self):
         self._test_val('x' * 9000)
@@ -1415,16 +1414,14 @@ class TestMessages(unittest.TestCase):
         tds._main_session.conn.collation = pytds.tds.raw_collation
 
         tds._main_session.make_varchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.VarChar72)
-        self.assertEqual(1, column.type._size)
+        self.assertIsInstance(column.type, pytds.tds.VarCharMax)
 
         tds._main_session.make_varchar(column, 'x' * 8001)
         self.assertIsInstance(column.type, pytds.tds.VarCharMax)
 
         tds.tds_version = TDS71
         tds._main_session.make_varchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.VarChar71)
-        self.assertEqual(1, column.type._size)
+        self.assertIsInstance(column.type, pytds.tds.Text71)
 
         tds._main_session.make_varchar(column, 'x' * 8001)
         self.assertIsInstance(column.type, pytds.tds.Text71)
@@ -1432,8 +1429,7 @@ class TestMessages(unittest.TestCase):
         tds.tds_version = TDS70
         tds.server_codec = codecs.lookup('ascii')
         tds._main_session.make_varchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.VarChar70)
-        self.assertEqual(1, column.type._size)
+        self.assertIsInstance(column.type, pytds.tds.Text70)
 
         tds._main_session.make_varchar(column, 'x' * 8001)
         self.assertIsInstance(column.type, pytds.tds.Text70)
@@ -1446,24 +1442,21 @@ class TestMessages(unittest.TestCase):
         tds._main_session.conn.collation = pytds.tds.raw_collation
 
         tds._main_session.make_nvarchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.NVarChar72)
-        self.assertEqual(4000, column.type._size)
+        self.assertIsInstance(column.type, pytds.tds.NVarCharMax)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
         self.assertIsInstance(column.type, pytds.tds.NVarCharMax)
 
         tds.tds_version = TDS71
         tds._main_session.make_nvarchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.NVarChar71)
-        self.assertEqual(4000, column.type._size)
+        self.assertIsInstance(column.type, pytds.tds.NText71)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
         self.assertIsInstance(column.type, pytds.tds.NText71)
 
         tds.tds_version = TDS70
         tds._main_session.make_nvarchar(column, '')
-        self.assertIsInstance(column.type, pytds.tds.NVarChar70)
-        self.assertEqual(4000, column.type._size)
+        self.assertIsInstance(column.type, pytds.tds.NText70)
 
         tds._main_session.make_nvarchar(column, 'x' * 4001)
         self.assertIsInstance(column.type, pytds.tds.NText70)
