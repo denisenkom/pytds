@@ -684,6 +684,15 @@ def readall(stm, size):
 
 
 def readall_fast(stm, size):
+    """
+    Slightly faster version of readall, it reads no more than two chunks.
+    Meaning that it can only be used to read small data that doesn't span
+    more that two packets.
+
+    :param stm: Stream to read from, should have read method.
+    :param size: Number of bytes to read.
+    :return:
+    """
     buf, offset = stm.read_fast(size)
     if len(buf) - offset < size:
         # slow case
@@ -854,7 +863,7 @@ class _TdsReader(object):
     def read_whole_packet(self):
         """ Reads single packet and returns bytes payload of the packet
 
-        Can only be called when transport's read pointer is at the begining
+        Can only be called when transport's read pointer is at the beginning
         of the packet.
         """
         self._read_packet()
