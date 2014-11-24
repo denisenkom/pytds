@@ -20,6 +20,13 @@ It also supports Python 3.
     pytds
     extensions
 
+Connection to Mirrored Servers
+==============================
+
+When MSSQL server is setup with mirroring you should connect to it using two parameters of :func:`pytds.connect`, one parameter is ``server``
+this should be a main server and parameter ``failover_partner`` should be a mirror server.
+See also `MSDN article <http://msdn.microsoft.com/en-us/library/ms175484.aspx>`_.
+
 Indices and tables
 ==================
 
