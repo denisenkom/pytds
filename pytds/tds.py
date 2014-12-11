@@ -1057,6 +1057,19 @@ class BaseType(object):
         raise NotImplementedError
 
     @classmethod
+    def from_declaration(cls, declaration):
+        """ Class method that parses declaration and returns a type instance.
+
+        :param declaration: declaration string
+                            Examples are: NVARCHAR(10), TEXT, TINYINT
+        :return: If declaration is parsed, returns type instance,
+                 otherwise returns None.
+
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
+
+    @classmethod
     def from_stream(cls, r):
         """ Class method that reads and returns a type instance.
 
@@ -1113,6 +1126,11 @@ class BasePrimitiveType(BaseType):
         return self.declaration
 
     @classmethod
+    def from_declaration(cls, declaration):
+        if declaration == cls.declaration:
+            return cls.instance
+
+    @classmethod
     def from_stream(cls, r):
         return cls.instance
 
@@ -1141,6 +1159,10 @@ class BaseTypeN(BaseType):
     def get_declaration(self):
         return self._current_subtype.get_declaration()
 
+    @classmethod
+    def from_declaration(cls, declaration):
+        pass
+    
     @classmethod
     def from_stream(cls, r):
         size = r.get_byte()
