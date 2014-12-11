@@ -1096,6 +1096,30 @@ class BaseType(object):
         """
         raise NotImplementedError
 
+    
+class BasePrimitiveType(BaseType):
+    """ Base type for primitive TDS data types.
+
+    Primitive type is a fixed size type with no type arguments.
+    All primitive TDS types should derive from it.
+    In addition actual types should provide the following:
+
+    - type - class variable storing type identifier
+    - declaration - class variable storing name of sql type
+    - isntance - class variable storing instance of class
+    """
+
+    def get_declaration(self):
+        return self.declaration
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls.instance
+
+    def write_info(self, w):
+        pass
+
+
 class BaseTypeN(BaseType):
     """ Base type for nullable TDS data types.
 
@@ -1142,18 +1166,9 @@ class BaseTypeN(BaseType):
         w.put_byte(self._size)
         self._current_subtype.write(w, val)
 
-class Bit(BaseType):
+class Bit(BasePrimitiveType):
     type = SYBBIT
-
-    def get_declaration(self):
-        return 'BIT'
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def write_info(self, w):
-        pass
+    declaration = 'BIT'
 
     def write(self, w, value):
         w.put_byte(1 if value else 0)
@@ -1166,93 +1181,60 @@ Bit.instance = Bit()
 
 class BitN(BaseTypeN):
     type = SYBBITN
-    
     subtypes = {1 : Bit}
     
 BitN.instance = BitN(1)
 
 
-class TinyInt(BaseType):
+class TinyInt(BasePrimitiveType):
     type = SYBINT1
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'TINYINT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'TINYINT'
 
     def write(self, w, val):
         w.put_byte(val)
 
     def read(self, r):
         return r.get_byte()
+    
 TinyInt.instance = TinyInt()
 
 
-class SmallInt(BaseType):
+class SmallInt(BasePrimitiveType):
     type = SYBINT2
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'SMALLINT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'SMALLINT'
 
     def write(self, w, val):
         w.put_smallint(val)
 
     def read(self, r):
         return r.get_smallint()
+    
 SmallInt.instance = SmallInt()
 
 
-class Int(BaseType):
+class Int(BasePrimitiveType):
     type = SYBINT4
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'INT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'INT'
 
     def write(self, w, val):
         w.put_int(val)
 
     def read(self, r):
         return r.get_int()
+    
 Int.instance = Int()
 
 
-class BigInt(BaseType):
+class BigInt(BasePrimitiveType):
     type = SYBINT8
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'BIGINT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'BIGINT'
 
     def write(self, w, val):
         w.put_int8(val)
 
     def read(self, r):
         return r.get_int8()
+
 BigInt.instance = BigInt()
 
 
@@ -1267,45 +1249,29 @@ class IntN(BaseTypeN):
         }
 
     
-class Real(BaseType):
+class Real(BasePrimitiveType):
     type = SYBREAL
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'REAL'
-
-    def write_info(self, w):
-        pass
+    declaration = 'REAL'
 
     def write(self, w, val):
         w.pack(_flt4_struct, val)
 
     def read(self, r):
         return r.unpack(_flt4_struct)[0]
+    
 Real.instance = Real()
 
 
-class Float(BaseType):
+class Float(BasePrimitiveType):
     type = SYBFLT8
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'FLOAT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'FLOAT'
 
     def write(self, w, val):
         w.pack(_flt8_struct, val)
 
     def read(self, r):
         return r.unpack(_flt8_struct)[0]
+    
 Float.instance = Float()
 
 
@@ -1826,22 +1792,12 @@ class BaseDateTime(BaseType):
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
 
-class SmallDateTime(BaseDateTime):
+class SmallDateTime(BasePrimitiveType, BaseDateTime):
     type = SYBDATETIME4
+    declaration = 'SMALLDATETIME'
 
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(2079, 6, 6, 23, 59, 0)
     _struct = struct.Struct('<HH')
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def get_declaration(self):
-        return 'SMALLDATETIME'
-
-    def write_info(self, w):
-        pass
 
     def write(self, w, val):
         if val.tzinfo:
@@ -1858,28 +1814,16 @@ class SmallDateTime(BaseDateTime):
         if r.session.tzinfo_factory is not None:
             tzinfo = r.session.tzinfo_factory(0)
         return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=tzinfo)
+    
 SmallDateTime.instance = SmallDateTime()
 
 
-class DateTime(BaseDateTime):
+class DateTime(BasePrimitiveType, BaseDateTime):
     type = SYBDATETIME
+    declaration = 'DATETIME'
 
     _struct = struct.Struct('<ll')
-
-    _base_date = datetime(1900, 1, 1)
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
-    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def get_declaration(self):
-        return 'DATETIME'
-
-    def write_info(self, w):
-        pass
-
+    
     def write(self, w, val):
         if val.tzinfo:
             if not w.session.use_tz:
@@ -1914,19 +1858,16 @@ class DateTime(BaseDateTime):
         ms = int(round(time % 300 * 10 / 3.0))
         secs = time // 300
         return cls._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
+    
 DateTime.instance = DateTime()
 
 
-class DateTimeN(BaseTypeN):
+class DateTimeN(BaseTypeN, BaseDateTime):
     type = SYBDATETIMN
     subtypes = {
         4: SmallDateTime.instance,
         8: DateTime.instance,
         }
-
-    _base_date = datetime(1900, 1, 1)
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
-    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
 
 class BaseDateTime73(BaseType):
@@ -1973,21 +1914,12 @@ class BaseDateTime73(BaseType):
         return (self._base_date + timedelta(days=days)).date()
 
 
-class MsDate(BaseDateTime73):
+class MsDate(BasePrimitiveType, BaseDateTime73):
     type = SYBMSDATE
+    declaration = 'DATE'
 
     MIN = date(1, 1, 1)
     MAX = date(9999, 12, 31)
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'DATE'
-
-    def write_info(self, w):
-        pass
 
     def write(self, w, value):
         if value is None:
@@ -2004,6 +1936,7 @@ class MsDate(BaseDateTime73):
         if size == 0:
             return None
         return self._read_date(r)
+    
 MsDate.instance = MsDate()
 
 
@@ -2247,18 +2180,9 @@ class MsDecimal(BaseType):
         return self.read_fixed(r, size)
 
 
-class Money4(BaseType):
+class Money4(BasePrimitiveType):
     type = SYBMONEY4
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def write_info(self, w):
-        pass
-
-    def get_declaration(self):
-        return 'SMALLMONEY'
+    declaration = 'SMALLMONEY'
 
     def read(self, r):
         return Decimal(r.get_int()) / 10000
@@ -2270,22 +2194,11 @@ class Money4(BaseType):
 Money4.instance = Money4()
 
 
-class Money8(BaseType):
+class Money8(BasePrimitiveType):
     type = SYBMONEY
+    declaration = 'MONEY'
+    
     _struct = struct.Struct('<lL')
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def write_info(self, w):
-        pass
-
-    def get_declaration(self):
-        return 'MONEY'
-
-    def get_typeid(self):
-        return self.type
 
     def read(self, r):
         hi, lo = r.unpack(self._struct)
