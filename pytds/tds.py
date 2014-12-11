@@ -2945,10 +2945,62 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
+    def _autodetect_column_type(self, value):
+        """ Function guesses type of the parameter from the type of value.
+
+        :param value: Value to be passed to db
+        :return: An instance of subclass of :class:`BaseType`
+        """
+        if value is None:
+            return self.conn.NVarChar(1, collation=self.conn.collation)
+        elif isinstance(value, bool):
+            return BitN.instance
+        elif isinstance(value, six.integer_types):
+            if -2 ** 31 <= value <= 2 ** 31 - 1:
+                return IntN(4)
+            elif -2 ** 63 <= value <= 2 ** 63 - 1:
+                return IntN(8)
+            elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
+                return MsDecimal(0, 38)
+            else:
+                raise DataError('Numeric value out of range')
+        elif isinstance(value, float):
+            return FloatN(8)
+        elif isinstance(value, Binary):
+            return self.conn.long_binary_type()
+        elif isinstance(value, six.binary_type):
+            if self._tds.login.bytes_to_unicode:
+                return self.conn.long_string_type(collation=self.conn.collation)
+            else:
+                return self.conn.long_varchar_type(collation=self.conn.collation)
+        elif isinstance(value, six.string_types):
+            return self.conn.long_string_type(collation=self.conn.collation)
+        elif isinstance(value, datetime):
+            if IS_TDS73_PLUS(self):
+                if value.tzinfo and not self.use_tz:
+                    return DateTimeOffset(6)
+                else:
+                    return DateTime2(6)
+            else:
+                return DateTimeN(8)
+        elif isinstance(value, date):
+            if IS_TDS73_PLUS(self):
+                return MsDate.instance
+            else:
+                return DateTimeN(8)
+        elif isinstance(value, time):
+            if not IS_TDS73_PLUS(self):
+                raise DataError('Time type is not supported on MSSQL 2005 and lower')
+            return MsTime(6)
+        elif isinstance(value, Decimal):
+            return MsDecimal.from_value(value)
+        elif isinstance(value, uuid.UUID):
+            return MsUnique.instance
+        else:
+            raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
+
     def make_param(self, name, value):
         """ Generates instance of :class:`Column` from value and name
-
-        Function guesses type of the parameter from the type of value.
 
         Value can also be of a special types:
 
@@ -2975,55 +3027,9 @@ class _TdsSession(object):
             column.flags = fDefaultValue
             value = None
         column.value = value
-        if value is None:
-            column.type = self.conn.NVarChar(1, collation=self.conn.collation)
-        elif isinstance(value, bool):
-            column.type = BitN.instance
-        elif isinstance(value, six.integer_types):
-            if -2 ** 31 <= value <= 2 ** 31 - 1:
-                column.type = IntN(4)
-            elif -2 ** 63 <= value <= 2 ** 63 - 1:
-                column.type = IntN(8)
-            elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
-                column.type = MsDecimal(0, 38)
-            else:
-                raise DataError('Numeric value out of range')
-        elif isinstance(value, float):
-            column.type = FloatN(8)
-        elif isinstance(value, Binary):
-            column.type = self.conn.long_binary_type()
-        elif isinstance(value, six.binary_type):
-            if self._tds.login.bytes_to_unicode:
-                column.type = self.conn.long_string_type(collation=self.conn.collation)
-            else:
-                column.type = self.conn.long_varchar_type(collation=self.conn.collation)
-        elif isinstance(value, six.string_types):
-            column.type = self.conn.long_string_type(collation=self.conn.collation)
-        elif isinstance(value, datetime):
-            if IS_TDS73_PLUS(self):
-                if value.tzinfo and not self.use_tz:
-                    column.type = DateTimeOffset(6)
-                else:
-                    column.type = DateTime2(6)
-            else:
-                column.type = DateTimeN(8)
-        elif isinstance(value, date):
-            if IS_TDS73_PLUS(self):
-                column.type = MsDate.instance
-            else:
-                column.type = DateTimeN(8)
-        elif isinstance(value, time):
-            if not IS_TDS73_PLUS(self):
-                raise DataError('Time type is not supported on MSSQL 2005 and lower')
-            column.type = MsTime(6)
-        elif isinstance(value, Decimal):
-            column.type = MsDecimal.from_value(value)
-        elif isinstance(value, uuid.UUID):
-            column.type = MsUnique.instance
-        else:
-            raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
+        column.type = self._autodetect_column_type(value)
         return column
-
+        
     def _convert_params(self, parameters):
         """ Converts a dict of list of parameters into a list of :class:`Column` instances.
 
