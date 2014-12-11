@@ -568,11 +568,11 @@ ROWID = DBAPITypeObject()
 # stored procedure output parameter
 class output:
     #property
-    def type(self):
+    def type_name(self):
         """
         This is the type of the parameter.
         """
-        return self._type
+        return self._type_name
 
     @property
     def value(self):
@@ -581,8 +581,13 @@ class output:
         """
         return self._value
 
-    def __init__(self, param_type, value=None):
-        self._type = param_type
+    def __init__(self, param_type=None, value=None):
+        if param_type is not None:
+            self._type_name = param_type.strip().upper()
+        else:
+            self._type_name = None
+            if value is None or value is default:
+                raise ValueError('Output type cannot be autodetected')
         self._value = value
 
 
