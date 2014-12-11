@@ -470,7 +470,7 @@ class DbTests(DbTestCase):
         ''')
         val = 45
         #params = {'@param': val, '@outparam': output(None), '@add': 1}
-        values = cur.callproc('testproc', (val, default, output(None, 1)))
+        values = cur.callproc('testproc', (val, default, output(value=1)))
         #self.assertEqual(cur.fetchall(), [(val,)])
         self.assertEqual(val + 2, values[2])
         self.assertEqual(val + 2, cur.get_proc_return_status())
@@ -1483,10 +1483,35 @@ END
         with self._connect() as con:
             cur = con.cursor()
             self._outparam_setup(cur)
-            values = cur.callproc('add_one_out', (1, pytds.output(None, 1)))
+            values = cur.callproc('add_one_out', (1, output(value=1)))
             self.assertEqual(len(values), 2, 'expected 2 parameters')
             self.assertEqual(values[0], 1, 'input parameter should be unchanged')
             self.assertEqual(values[1], 2, 'output parameter should get new values')
+
+    def test_outparam_null_default(self):
+        with self.assertRaises(ValueError):
+            output(None, None)
+
+        with self._connect() as con:
+            cur = con.cursor()
+            cur.execute('''
+            create procedure testproc (@inparam int, @outint int = 8 output, @outstr varchar(max) = 'defstr' output)
+            as
+            begin
+                set nocount on
+                set @outint = isnull(@outint, -10) + @inparam
+                set @outstr = isnull(@outstr, 'null') + cast(@inparam as varchar(max))
+                set @inparam = 8
+            end
+            ''')
+            values = cur.callproc('testproc', (1, output(value=4), output(value='str')))
+            self.assertEqual([1, 5, 'str1'], values)
+            values = cur.callproc('testproc', (1, output(value=None, param_type='int'), output(value=None, param_type='varchar(max)')))
+            self.assertEqual([1, -9, 'null1'], values)
+            values = cur.callproc('testproc', (1, output(value=default, param_type='int'), output(value=default, param_type='varchar(max)')))
+            self.assertEqual([1, 9, 'defstr1'], values)
+            values = cur.callproc('testproc', (1, output(value=default, param_type='bit'), output(value=default, param_type='varchar(5)')))
+            self.assertEqual([1, 1, 'defst'], values)
 
     # Don't need setoutputsize tests.
     def test_setoutputsize(self):
