@@ -1917,45 +1917,16 @@ class DateTime(BaseDateTime):
 DateTime.instance = DateTime()
 
 
-class DateTimeN(BaseType):
+class DateTimeN(BaseTypeN):
     type = SYBDATETIMN
+    subtypes = {
+        4: SmallDateTime.instance,
+        8: DateTime.instance,
+        }
 
     _base_date = datetime(1900, 1, 1)
     _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
-
-    def __init__(self, size):
-        assert size in (4, 8)
-        self._size = size
-        self._subtype = {4: SmallDateTime.instance, 8: DateTime.instance}[size]
-
-    @classmethod
-    def from_stream(self, r):
-        size = r.get_byte()
-        if size not in (4, 8):
-            raise InterfaceError('Invalid SYBDATETIMN size', size)
-        return DateTimeN(size)
-
-    def get_declaration(self):
-        return self._subtype.get_declaration()
-
-    def write_info(self, w):
-        w.put_byte(self._size)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_byte(0)
-        else:
-            w.put_byte(self._size)
-            self._subtype.write(w, val)
-
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
-        if size != self._size:
-            r.bad_stream('Received an invalid column length from server')
-        return self._subtype.read(r)
 
 
 class BaseDateTime73(BaseType):
