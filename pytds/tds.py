@@ -1208,7 +1208,7 @@ Bit.instance = Bit()
 
 class BitN(BaseTypeN):
     type = SYBBITN
-    subtypes = {1 : Bit}
+    subtypes = {1 : Bit.instance}
     
 BitN.instance = BitN(1)
 
