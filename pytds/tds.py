@@ -7,6 +7,7 @@ import sys
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from . import tz
+import re
 import uuid
 import six
 from six.moves import reduce
@@ -567,7 +568,7 @@ ROWID = DBAPITypeObject()
 
 # stored procedure output parameter
 class output:
-    #property
+    @property
     def type_name(self):
         """
         This is the type of the parameter.
@@ -1062,11 +1063,12 @@ class BaseType(object):
         raise NotImplementedError
 
     @classmethod
-    def from_declaration(cls, declaration):
+    def from_declaration(cls, declaration, nullable, connection):
         """ Class method that parses declaration and returns a type instance.
 
-        :param declaration: declaration string
-                            Examples are: NVARCHAR(10), TEXT, TINYINT
+        :param declaration: type declaration string
+        :param nullable: true if type have to be nullable, false otherwise
+        :param connection: instance of :class:`_TdsSocket`
         :return: If declaration is parsed, returns type instance,
                  otherwise returns None.
 
@@ -1131,8 +1133,8 @@ class BasePrimitiveType(BaseType):
         return self.declaration
 
     @classmethod
-    def from_declaration(cls, declaration):
-        if declaration == cls.declaration:
+    def from_declaration(cls, declaration, nullable, connection):
+        if not nullable and declaration == cls.declaration:
             return cls.instance
 
     @classmethod
@@ -1165,8 +1167,12 @@ class BaseTypeN(BaseType):
         return self._current_subtype.get_declaration()
 
     @classmethod
-    def from_declaration(cls, declaration):
-        pass
+    def from_declaration(cls, declaration, nullable, connection):
+        if nullable:
+            for size, subtype in cls.subtypes.items():
+                inst = subtype.from_declaration(declaration, False, connection)
+                if inst:
+                    return cls(size)
     
     @classmethod
     def from_stream(cls, r):
@@ -1325,6 +1331,12 @@ class VarChar70(BaseType):
         size = r.get_smallint()
         return cls(size, codec=r._session.conn.server_codec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'VARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.server_codec)
+
     def get_declaration(self):
         return 'VARCHAR({0})'.format(self._size)
 
@@ -1360,6 +1372,12 @@ class VarChar71(VarChar70):
         collation = r.get_collation()
         return cls(size, collation)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'VARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
+
     def write_info(self, w):
         super(VarChar71, self).write_info(w)
         w.put_collation(self._collation)
@@ -1373,6 +1391,14 @@ class VarChar72(VarChar71):
         if size == 0xffff:
             return VarCharMax(collation)
         return cls(size, collation)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'VARCHAR(MAX)':
+            return VarCharMax(connection.collation)
+        m = re.match(r'VARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
 
 
 class VarCharMax(VarChar72):
@@ -1418,6 +1444,12 @@ class NVarChar70(BaseType):
         size = r.get_usmallint()
         return cls(size / 2)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+
     def get_declaration(self):
         return 'NVARCHAR({0})'.format(self._size)
 
@@ -1454,6 +1486,12 @@ class NVarChar71(NVarChar70):
         collation = r.get_collation()
         return cls(size / 2, collation)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
+
     def write_info(self, w):
         super(NVarChar71, self).write_info(w)
         w.put_collation(self._collation)
@@ -1471,8 +1509,13 @@ class NVarChar72(NVarChar71):
             return NVarCharMax(size, collation)
         return cls(size / 2, collation=collation)
 
-    def get_declaration(self):
-        return super(NVarChar72, self).get_declaration()
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'NVARCHAR(MAX)':
+            return VarCharMax(connection.collation)
+        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
 
 
 class NVarCharMax(NVarChar72):
@@ -1527,6 +1570,11 @@ class Xml(NVarCharMax):
             schema['collection'] = r.read_ucs2(r.get_smallint())
         return cls(schema)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'XML':
+            return cls()
+
     def write_info(self, w):
         if self._schema:
             w.put_byte(1)
@@ -1554,6 +1602,11 @@ class Text70(BaseType):
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name, codec=r.session.conn.server_codec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'TEXT':
+            return cls()
+    
     def get_declaration(self):
         return 'TEXT'
 
@@ -1627,6 +1680,11 @@ class NText70(BaseType):
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'NTEXT':
+            return cls()
+    
     def get_declaration(self):
         return 'NTEXT'
 
@@ -1705,6 +1763,12 @@ class VarBinary(BaseType):
         size = r.get_usmallint()
         return cls(size)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'VARBINARY\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+    
     def get_declaration(self):
         return 'VARBINARY({0})'.format(self._size)
 
@@ -1732,6 +1796,14 @@ class VarBinary72(VarBinary):
         if size == 0xffff:
             return VarBinaryMax()
         return cls(size)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'VARBINARY(MAX)':
+            return VarBinaryMax()
+        m = re.match(r'VARBINARY\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
 
 
 class VarBinaryMax(VarBinary):
@@ -1776,6 +1848,11 @@ class Image70(BaseType):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'IMAGE':
+            return cls()
 
     def read(self, r):
         size = r.get_byte()
@@ -3022,14 +3099,17 @@ class _TdsSession(object):
         column.flags = 0
         if isinstance(value, output):
             column.flags |= fByRefValue
+            if value.type_name:
+                column.type = self._tds.type_by_declaration(value.type_name, True)
             value = value.value
         if value is default:
-            column.flags = fDefaultValue
+            column.flags |= fDefaultValue
             value = None
         column.value = value
-        column.type = self._autodetect_column_type(value)
+        if column.type is None:
+            column.type = self._autodetect_column_type(value)
         return column
-        
+
     def _convert_params(self, parameters):
         """ Converts a dict of list of parameters into a list of :class:`Column` instances.
 
@@ -3891,6 +3971,16 @@ class _TdsSocket(object):
             return NText71(-1, '', collation)
         else:
             return NText70()
+
+    def type_by_declaration(self, declaration, nullable):
+        for type_class in self._type_map.values():
+            try:
+                type_inst = type_class.from_declaration(declaration, nullable, self)
+                if type_inst:
+                    return type_inst 
+            except NotImplementedError:
+                pass
+        raise ValueError('Unable to parse type declaration', declaration)
 
 
 class Column(object):
