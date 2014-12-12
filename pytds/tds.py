@@ -567,11 +567,27 @@ ROWID = DBAPITypeObject()
 
 
 # stored procedure output parameter
-class output:
+class output(object):
+    # TODO: typemap uses protocol-specific types
+    #       it won't work for tds70/tds71
+    _typemap = (
+        (bool, 'bit'),
+        (six.integer_types, 'bigint'),
+        (float, 'float'),
+        (six.text_type, 'nvarchar(max)'),
+        (six.string_types, 'varchar(max)'),
+        (six.binary_type, 'varbinary(max)'),
+        (Decimal, 'decimal'),
+        (date, 'date'),
+        (time, 'time'),
+        (datetime, 'datetime2'),
+        (timedelta, 'datetimeoffset'),
+        )
+    
     @property
     def type_name(self):
         """
-        This is the type of the parameter.
+        This is the type declaration of the parameter.
         """
         return self._type_name
 
@@ -583,8 +599,21 @@ class output:
         return self._value
 
     def __init__(self, param_type=None, value=None):
+        """ Creates procedure output parameter.
+        
+        :param param_type: either sql type declaration or python type
+        :param value: value to pass into procedure
+        """
         if param_type is not None:
-            self._type_name = param_type.strip().upper()
+            if isinstance(param_type, type):
+                for supertype, name in self._typemap:
+                    if issubclass(param_type, supertype):
+                        param_type = name
+                        break
+            if isinstance(param_type, six.string_types):
+                self._type_name = param_type.strip().upper()
+            else:
+                raise ValueError('Invalid param_type', param_type)
         else:
             self._type_name = None
             if value is None or value is default:
@@ -2113,6 +2142,8 @@ class DateTime2(BaseDateTime73):
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'DATETIME2':
+            return cls(7)
         m = re.match(r'DATETIME2\((\d+)\)', declaration)
         if m:
             return cls(int(m.group(1)))
@@ -2161,6 +2192,8 @@ class DateTimeOffset(BaseDateTime73):
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'DATETIMEOFFSET':
+            return cls(7)
         m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
         if m:
             return cls(int(m.group(1)))
