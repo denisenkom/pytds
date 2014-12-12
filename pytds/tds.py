@@ -583,7 +583,7 @@ class output(object):
         """
         return self._value
 
-    def __init__(self, param_type=None, value=None):
+    def __init__(self, value=None, param_type=None):
         """ Creates procedure output parameter.
         
         :param param_type: either sql type declaration or python type
