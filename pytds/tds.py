@@ -1552,13 +1552,14 @@ class NVarCharMax(NVarChar72):
 
 class Xml(NVarCharMax):
     type = SYBMSXML
+    declaration = 'XML'
 
     def __init__(self, schema={}):
         super(Xml, self).__init__(0)
         self._schema = schema
 
     def get_declaration(self):
-        return 'XML'
+        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
@@ -1572,7 +1573,7 @@ class Xml(NVarCharMax):
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'XML':
+        if declaration == cls.declaration:
             return cls()
 
     def write_info(self, w):
@@ -1590,6 +1591,7 @@ class Xml(NVarCharMax):
 
 class Text70(BaseType):
     type = SYBTEXT
+    declaration = 'TEXT'
 
     def __init__(self, size=0, table_name='', codec=None):
         self._size = size
@@ -1604,11 +1606,11 @@ class Text70(BaseType):
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'TEXT':
+        if declaration == cls.declaration:
             return cls()
     
     def get_declaration(self):
-        return 'TEXT'
+        return self.declaration
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -1669,6 +1671,7 @@ class Text72(Text71):
 
 class NText70(BaseType):
     type = SYBNTEXT
+    declaration = 'NTEXT'
 
     def __init__(self, size=0, table_name=''):
         self._size = size
@@ -1682,11 +1685,11 @@ class NText70(BaseType):
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'NTEXT':
+        if declaration == cls.declaration:
             return cls()
     
     def get_declaration(self):
-        return 'NTEXT'
+        return self.declaration
 
     def read(self, r):
         textptr_size = r.get_byte()
@@ -1835,13 +1838,14 @@ class VarBinaryMax(VarBinary):
 
 class Image70(BaseType):
     type = SYBIMAGE
+    declaration = 'IMAGE'
 
     def __init__(self, size=0, table_name=''):
         self._table_name = table_name
         self._size = size
 
     def get_declaration(self):
-        return 'IMAGE'
+        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
@@ -1851,7 +1855,7 @@ class Image70(BaseType):
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'IMAGE':
+        if declaration == cls.declaration:
             return cls()
 
     def read(self, r):
@@ -2056,6 +2060,12 @@ class MsTime(BaseDateTime73):
         prec = r.get_byte()
         return cls(prec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'TIME\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+
     def get_declaration(self):
         return 'TIME({0})'.format(self._prec)
 
@@ -2101,6 +2111,12 @@ class DateTime2(BaseDateTime73):
     def get_declaration(self):
         return 'DATETIME2({0})'.format(self._prec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'DATETIME2\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+
     def write_info(self, w):
         w.put_byte(self._prec)
 
@@ -2143,6 +2159,12 @@ class DateTimeOffset(BaseDateTime73):
         prec = r.get_byte()
         return cls(prec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+    
     def get_declaration(self):
         return 'DATETIMEOFFSET({0})'.format(self._prec)
 
@@ -2231,6 +2253,14 @@ class MsDecimal(BaseType):
     def from_stream(cls, r):
         size, prec, scale = r.unpack(cls._info_struct)
         return cls(scale=scale, prec=prec)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'DECIMAL':
+            return cls(0, 18)
+        m = re.match(r'DECIMAL\((\d+),\s*(\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(2)), int(m.group(1)))
 
     def get_declaration(self):
         return 'DECIMAL({0},{1})'.format(self._prec, self._scale)
@@ -2328,6 +2358,7 @@ class MoneyN(BaseTypeN):
 
 class MsUnique(BaseType):
     type = SYBUNIQUE
+    declaration = 'UNIQUEIDENTIFIER'
 
     @classmethod
     def from_stream(cls, r):
@@ -2336,8 +2367,13 @@ class MsUnique(BaseType):
             raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return cls.instance
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls.instance
+
     def get_declaration(self):
-        return 'UNIQUEIDENTIFIER'
+        return self.declaration
 
     def write_info(self, w):
         w.put_byte(16)
@@ -2386,6 +2422,7 @@ def _variant_read_binary(r, size):
 
 class Variant(BaseType):
     type = SYBVARIANT
+    declaration = 'SQL_VARIANT'
 
     _decimal_info_struct = struct.Struct('BB')
 
@@ -2425,12 +2462,17 @@ class Variant(BaseType):
         self._size = size
 
     def get_declaration(self):
-        return 'SQL_VARIANT'
+        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
         return Variant(size)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls(0)
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -2451,6 +2493,7 @@ class Variant(BaseType):
         if val is None:
             w.put_int(0)
             return
+        raise NotImplementedError
 
 
 _type_map = {
@@ -3974,12 +4017,9 @@ class _TdsSocket(object):
 
     def type_by_declaration(self, declaration, nullable):
         for type_class in self._type_map.values():
-            try:
-                type_inst = type_class.from_declaration(declaration, nullable, self)
-                if type_inst:
-                    return type_inst 
-            except NotImplementedError:
-                pass
+            type_inst = type_class.from_declaration(declaration, nullable, self)
+            if type_inst:
+                return type_inst 
         raise ValueError('Unable to parse type declaration', declaration)
 
 
