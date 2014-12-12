@@ -568,28 +568,13 @@ ROWID = DBAPITypeObject()
 
 # stored procedure output parameter
 class output(object):
-    # TODO: typemap uses protocol-specific types
-    #       it won't work for tds70/tds71
-    _typemap = (
-        (bool, 'bit'),
-        (six.integer_types, 'bigint'),
-        (float, 'float'),
-        (six.text_type, 'nvarchar(max)'),
-        (six.string_types, 'varchar(max)'),
-        (six.binary_type, 'varbinary(max)'),
-        (Decimal, 'decimal'),
-        (date, 'date'),
-        (time, 'time'),
-        (datetime, 'datetime2'),
-        (timedelta, 'datetimeoffset'),
-        )
-    
     @property
-    def type_name(self):
+    def type(self):
         """
-        This is the type declaration of the parameter.
+        This is either the sql type declaration or python type instance
+        of the parameter.
         """
-        return self._type_name
+        return self._type
 
     @property
     def value(self):
@@ -604,20 +589,13 @@ class output(object):
         :param param_type: either sql type declaration or python type
         :param value: value to pass into procedure
         """
-        if param_type is not None:
-            if isinstance(param_type, type):
-                for supertype, name in self._typemap:
-                    if issubclass(param_type, supertype):
-                        param_type = name
-                        break
-            if isinstance(param_type, six.string_types):
-                self._type_name = param_type.strip().upper()
-            else:
-                raise ValueError('Invalid param_type', param_type)
-        else:
-            self._type_name = None
+        if param_type is None:
             if value is None or value is default:
                 raise ValueError('Output type cannot be autodetected')
+        elif isinstance(param_type, type) and value is not None:
+            if value is not default and not isinstance(value, param_type):
+                raise ValueError('value should match param_type', value, param_type)
+        self._type = param_type
         self._value = value
 
 
@@ -2128,7 +2106,7 @@ class MsTime(BaseDateTime73):
 class DateTime2(BaseDateTime73):
     type = SYBMSDATETIME2
 
-    def __init__(self, prec):
+    def __init__(self, prec=7):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 3
 
@@ -2143,7 +2121,7 @@ class DateTime2(BaseDateTime73):
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == 'DATETIME2':
-            return cls(7)
+            return cls()
         m = re.match(r'DATETIME2\((\d+)\)', declaration)
         if m:
             return cls(int(m.group(1)))
@@ -2181,7 +2159,7 @@ class DateTime2(BaseDateTime73):
 class DateTimeOffset(BaseDateTime73):
     type = SYBMSDATETIMEOFFSET
 
-    def __init__(self, prec):
+    def __init__(self, prec=7):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 5
 
@@ -2193,7 +2171,7 @@ class DateTimeOffset(BaseDateTime73):
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == 'DATETIMEOFFSET':
-            return cls(7)
+            return cls()
         m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
         if m:
             return cls(int(m.group(1)))
@@ -2261,7 +2239,7 @@ class MsDecimal(BaseType):
     def precision(self):
         return self._prec
 
-    def __init__(self, scale, prec):
+    def __init__(self, scale=0, prec=18):
         if prec > 38:
             raise DataError('Precision of decimal value is out of range')
         self._scale = scale
@@ -2290,7 +2268,7 @@ class MsDecimal(BaseType):
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == 'DECIMAL':
-            return cls(0, 18)
+            return cls()
         m = re.match(r'DECIMAL\((\d+),\s*(\d+)\)', declaration)
         if m:
             return cls(int(m.group(2)), int(m.group(1)))
@@ -3098,17 +3076,23 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
-    def _autodetect_column_type(self, value):
+    def _autodetect_column_type(self, value, value_type):
         """ Function guesses type of the parameter from the type of value.
 
-        :param value: Value to be passed to db
+        :param value: value to be passed to db, can be None
+        :param value_type: value type, if value is None, type is used instead of it
         :return: An instance of subclass of :class:`BaseType`
         """
-        if value is None:
+        if value is None and value_type is None:
             return self.conn.NVarChar(1, collation=self.conn.collation)
-        elif isinstance(value, bool):
+        assert value_type is not None
+        assert value is None or isinstance(value, value_type)
+        
+        if issubclass(value_type, bool):
             return BitN.instance
-        elif isinstance(value, six.integer_types):
+        elif issubclass(value_type, six.integer_types):
+            if value == None:
+                return IntN(8)
             if -2 ** 31 <= value <= 2 ** 31 - 1:
                 return IntN(4)
             elif -2 ** 63 <= value <= 2 ** 63 - 1:
@@ -3117,40 +3101,43 @@ class _TdsSession(object):
                 return MsDecimal(0, 38)
             else:
                 raise DataError('Numeric value out of range')
-        elif isinstance(value, float):
+        elif issubclass(value_type, float):
             return FloatN(8)
-        elif isinstance(value, Binary):
+        elif issubclass(value_type, Binary):
             return self.conn.long_binary_type()
-        elif isinstance(value, six.binary_type):
+        elif issubclass(value_type, six.binary_type):
             if self._tds.login.bytes_to_unicode:
                 return self.conn.long_string_type(collation=self.conn.collation)
             else:
                 return self.conn.long_varchar_type(collation=self.conn.collation)
-        elif isinstance(value, six.string_types):
+        elif issubclass(value_type, six.string_types):
             return self.conn.long_string_type(collation=self.conn.collation)
-        elif isinstance(value, datetime):
+        elif issubclass(value_type, datetime):
             if IS_TDS73_PLUS(self):
-                if value.tzinfo and not self.use_tz:
-                    return DateTimeOffset(6)
+                if value != None and value.tzinfo and not self.use_tz:
+                    return DateTimeOffset()
                 else:
-                    return DateTime2(6)
+                    return DateTime2()
             else:
                 return DateTimeN(8)
-        elif isinstance(value, date):
+        elif issubclass(value_type, date):
             if IS_TDS73_PLUS(self):
                 return MsDate.instance
             else:
                 return DateTimeN(8)
-        elif isinstance(value, time):
+        elif issubclass(value_type, time):
             if not IS_TDS73_PLUS(self):
                 raise DataError('Time type is not supported on MSSQL 2005 and lower')
             return MsTime(6)
-        elif isinstance(value, Decimal):
-            return MsDecimal.from_value(value)
-        elif isinstance(value, uuid.UUID):
+        elif issubclass(value_type, Decimal):
+            if value != None:
+                return MsDecimal.from_value(value)
+            else:
+                return MsDecimal()
+        elif issubclass(value_type, uuid.UUID):
             return MsUnique.instance
         else:
-            raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
+            raise DataError('Parameter type is not supported: {!r} {!r}'.format(value, value_type))
 
     def make_param(self, name, value):
         """ Generates instance of :class:`Column` from value and name
@@ -3173,17 +3160,23 @@ class _TdsSession(object):
         column = Column()
         column.column_name = name
         column.flags = 0
+        
         if isinstance(value, output):
             column.flags |= fByRefValue
-            if value.type_name:
-                column.type = self._tds.type_by_declaration(value.type_name, True)
+            if isinstance(value.type, six.string_types):
+                column.type = self._tds.type_by_declaration(value.type, True)
+            value_type = value.type or type(value.value)
             value = value.value
+        else:
+            value_type = type(value)
+            
         if value is default:
             column.flags |= fDefaultValue
             value = None
+
         column.value = value
         if column.type is None:
-            column.type = self._autodetect_column_type(value)
+            column.type = self._autodetect_column_type(value, value_type)
         return column
 
     def _convert_params(self, parameters):
@@ -4049,6 +4042,7 @@ class _TdsSocket(object):
             return NText70()
 
     def type_by_declaration(self, declaration, nullable):
+        declaration = declaration.strip().upper()
         for type_class in self._type_map.values():
             type_inst = type_class.from_declaration(declaration, nullable, self)
             if type_inst:
