@@ -1512,6 +1512,8 @@ END
             self.assertEqual([1, 9, 'defstr1'], values)
             values = cur.callproc('testproc', (1, output(value=default, param_type='bit'), output(value=default, param_type='varchar(5)')))
             self.assertEqual([1, 1, 'defst'], values)
+            values = cur.callproc('testproc', (1, output(value=default, param_type=int), output(value=default, param_type=str)))
+            self.assertEqual([1, 9, 'defstr1'], values)
 
     # Don't need setoutputsize tests.
     def test_setoutputsize(self):
