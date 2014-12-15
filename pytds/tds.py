@@ -7,6 +7,7 @@ import sys
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 from . import tz
+import re
 import uuid
 import six
 from six.moves import reduce
@@ -566,11 +567,12 @@ ROWID = DBAPITypeObject()
 
 
 # stored procedure output parameter
-class output:
-    #property
+class output(object):
+    @property
     def type(self):
         """
-        This is the type of the parameter.
+        This is either the sql type declaration or python type instance
+        of the parameter.
         """
         return self._type
 
@@ -581,7 +583,18 @@ class output:
         """
         return self._value
 
-    def __init__(self, param_type, value=None):
+    def __init__(self, value=None, param_type=None):
+        """ Creates procedure output parameter.
+        
+        :param param_type: either sql type declaration or python type
+        :param value: value to pass into procedure
+        """
+        if param_type is None:
+            if value is None or value is default:
+                raise ValueError('Output type cannot be autodetected')
+        elif isinstance(param_type, type) and value is not None:
+            if value is not default and not isinstance(value, param_type):
+                raise ValueError('value should match param_type', value, param_type)
         self._type = param_type
         self._value = value
 
@@ -1057,6 +1070,20 @@ class BaseType(object):
         raise NotImplementedError
 
     @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        """ Class method that parses declaration and returns a type instance.
+
+        :param declaration: type declaration string
+        :param nullable: true if type have to be nullable, false otherwise
+        :param connection: instance of :class:`_TdsSocket`
+        :return: If declaration is parsed, returns type instance,
+                 otherwise returns None.
+
+        Should be implemented in actual types.
+        """
+        raise NotImplementedError
+
+    @classmethod
     def from_stream(cls, r):
         """ Class method that reads and returns a type instance.
 
@@ -1096,12 +1123,26 @@ class BaseType(object):
         """
         raise NotImplementedError
 
+    
+class BasePrimitiveType(BaseType):
+    """ Base type for primitive TDS data types.
 
-class Bit(BaseType):
-    type = SYBBIT
+    Primitive type is a fixed size type with no type arguments.
+    All primitive TDS types should derive from it.
+    In addition actual types should provide the following:
+
+    - type - class variable storing type identifier
+    - declaration - class variable storing name of sql type
+    - isntance - class variable storing instance of class
+    """
 
     def get_declaration(self):
-        return 'BIT'
+        return self.declaration
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if not nullable and declaration == cls.declaration:
+            return cls.instance
 
     @classmethod
     def from_stream(cls, r):
@@ -1109,6 +1150,65 @@ class Bit(BaseType):
 
     def write_info(self, w):
         pass
+
+
+class BaseTypeN(BaseType):
+    """ Base type for nullable TDS data types.
+
+    All nullable TDS types should derive from it.
+    In addition actual types should provide the following:
+
+    - type - class variable storing type identifier
+    - subtypes - class variable storing dict {subtype_size: subtype_instance}
+    """
+
+    def __init__(self, size):
+        assert size in self.subtypes
+        self._size = size
+        self._current_subtype = self.subtypes[size]
+
+    def get_typeid(self):
+        return self._current_subtype.get_typeid()
+
+    def get_declaration(self):
+        return self._current_subtype.get_declaration()
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if nullable:
+            for size, subtype in cls.subtypes.items():
+                inst = subtype.from_declaration(declaration, False, connection)
+                if inst:
+                    return cls(size)
+    
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size not in cls.subtypes:
+            raise InterfaceError('Invalid %s size' % cls.type, size)
+        return cls(size)
+
+    def write_info(self, w):
+        w.put_byte(self._size)
+
+    def read(self, r):
+        size = r.get_byte()
+        if size == 0:
+            return None
+        if size not in self.subtypes:
+            raise r.session.bad_stream('Invalid %s size' % self.type, size)
+        return self.subtypes[size].read(r)
+
+    def write(self, w, val):
+        if val is None:
+            w.put_byte(0)
+            return
+        w.put_byte(self._size)
+        self._current_subtype.write(w, val)
+
+class Bit(BasePrimitiveType):
+    type = SYBBIT
+    declaration = 'BIT'
 
     def write(self, w, value):
         w.put_byte(1 if value else 0)
@@ -1119,278 +1219,111 @@ class Bit(BaseType):
 Bit.instance = Bit()
 
 
-class BitN(BaseType):
+class BitN(BaseTypeN):
     type = SYBBITN
-
-    def get_declaration(self):
-        return 'BIT'
-
-    @classmethod
-    def from_stream(cls, r):
-        size = r.get_byte()
-        if size != 1:
-            raise InterfaceError('Invalid BIT field size', size)
-        return cls()
-
-    def write_info(self, w):
-        w.put_byte(1)
-
-    def write(self, w, value):
-        if value is None:
-            w.put_byte(0)
-        else:
-            w.put_byte(1)
-            w.put_byte(1 if value else 0)
-
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
-        if size != 1:
-            raise InterfaceError('Invalid BIT field size', size)
-        return bool(r.get_byte())
-
-BitN.instance = BitN()
+    subtypes = {1 : Bit.instance}
+    
+BitN.instance = BitN(1)
 
 
-class TinyInt(BaseType):
+class TinyInt(BasePrimitiveType):
     type = SYBINT1
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'TINYINT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'TINYINT'
 
     def write(self, w, val):
         w.put_byte(val)
 
     def read(self, r):
         return r.get_byte()
+    
 TinyInt.instance = TinyInt()
 
 
-class SmallInt(BaseType):
+class SmallInt(BasePrimitiveType):
     type = SYBINT2
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'SMALLINT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'SMALLINT'
 
     def write(self, w, val):
         w.put_smallint(val)
 
     def read(self, r):
         return r.get_smallint()
+    
 SmallInt.instance = SmallInt()
 
 
-class Int(BaseType):
+class Int(BasePrimitiveType):
     type = SYBINT4
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'INT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'INT'
 
     def write(self, w, val):
         w.put_int(val)
 
     def read(self, r):
         return r.get_int()
+    
 Int.instance = Int()
 
 
-class BigInt(BaseType):
+class BigInt(BasePrimitiveType):
     type = SYBINT8
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'BIGINT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'BIGINT'
 
     def write(self, w, val):
         w.put_int8(val)
 
     def read(self, r):
         return r.get_int8()
+
 BigInt.instance = BigInt()
 
 
-class IntN(BaseType):
+class IntN(BaseTypeN):
     type = SYBINTN
-
-    _declarations = {
-        1: 'TINYINT',
-        2: 'SMALLINT',
-        4: 'INT',
-        8: 'BIGINT',
-        }
-
-    _struct = {
-        1: struct.Struct('B'),
-        2: struct.Struct('<h'),
-        4: struct.Struct('<l'),
-        8: struct.Struct('<q'),
-        }
-
-    _subtype = {
+    
+    subtypes = {
         1: TinyInt.instance,
         2: SmallInt.instance,
         4: Int.instance,
         8: BigInt.instance,
         }
 
-    _valid_sizes = set((1, 2, 4, 8))
-
-    def __init__(self, size):
-        assert size in self._valid_sizes
-        self._size = size
-        self._current_struct = self._struct[size]
-        self._typeid = self._subtype[size].type
-
-    def get_typeid(self):
-        return self._typeid
-
-    @classmethod
-    def from_stream(cls, r):
-        size = r.get_byte()
-        if size not in cls._valid_sizes:
-            raise InterfaceError('Invalid size of INTN field', size)
-        return cls(size)
-
-    def get_declaration(self):
-        return self._declarations[self._size]
-
-    def write_info(self, w):
-        w.put_byte(self._size)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_byte(0)
-        else:
-            w.put_byte(self._size)
-            w.pack(self._current_struct, val)
-
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
-        if size not in self._valid_sizes:
-            raise InterfaceError('Invalid size of INTN field', size)
-        return r.unpack(self._struct[size])[0]
-
-
-class Real(BaseType):
+    
+class Real(BasePrimitiveType):
     type = SYBREAL
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'REAL'
-
-    def write_info(self, w):
-        pass
+    declaration = 'REAL'
 
     def write(self, w, val):
         w.pack(_flt4_struct, val)
 
     def read(self, r):
         return r.unpack(_flt4_struct)[0]
+    
 Real.instance = Real()
 
 
-class Float(BaseType):
+class Float(BasePrimitiveType):
     type = SYBFLT8
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'FLOAT'
-
-    def write_info(self, w):
-        pass
+    declaration = 'FLOAT'
 
     def write(self, w, val):
         w.pack(_flt8_struct, val)
 
     def read(self, r):
         return r.unpack(_flt8_struct)[0]
+    
 Float.instance = Float()
 
 
-class FloatN(BaseType):
+class FloatN(BaseTypeN):
     type = SYBFLTN
-
-    _subtype = {
+    
+    subtypes = {
         4: Real.instance,
         8: Float.instance,
         }
 
-    def __init__(self, size):
-        self._size = size
-        self._typeid = self._subtype[size].type
-
-    @classmethod
-    def from_stream(cls, r):
-        size = r.get_byte()
-        if size not in (4, 8):
-            raise InterfaceError('Invalid SYBFLTN size', size)
-        return cls(size)
-
-    def get_declaration(self):
-        if self._size == 8:
-            return 'FLOAT'
-        else:
-            return 'REAL'
-
-    def write_info(self, w):
-        w.put_byte(self._size)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_byte(0)
-        else:
-            w.put_byte(self._size)
-            self._subtype[self._size].write(w, val)
-
-    def read(self, r):
-        size = r.get_byte()
-        if not size:
-            return None
-        else:
-            if size == 8:
-                return r.unpack(_flt8_struct)[0]
-            elif size == 4:
-                return r.unpack(_flt4_struct)[0]
-            else:
-                raise InterfaceError('Invalid SYBFLTN size', size)
-
-
+    
 class VarChar70(BaseType):
     type = XSYBVARCHAR
 
@@ -1404,6 +1337,12 @@ class VarChar70(BaseType):
     def from_stream(cls, r):
         size = r.get_smallint()
         return cls(size, codec=r._session.conn.server_codec)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'VARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.server_codec)
 
     def get_declaration(self):
         return 'VARCHAR({0})'.format(self._size)
@@ -1440,6 +1379,12 @@ class VarChar71(VarChar70):
         collation = r.get_collation()
         return cls(size, collation)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'VARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
+
     def write_info(self, w):
         super(VarChar71, self).write_info(w)
         w.put_collation(self._collation)
@@ -1453,6 +1398,14 @@ class VarChar72(VarChar71):
         if size == 0xffff:
             return VarCharMax(collation)
         return cls(size, collation)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'VARCHAR(MAX)':
+            return VarCharMax(connection.collation)
+        m = re.match(r'VARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
 
 
 class VarCharMax(VarChar72):
@@ -1498,6 +1451,12 @@ class NVarChar70(BaseType):
         size = r.get_usmallint()
         return cls(size / 2)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+
     def get_declaration(self):
         return 'NVARCHAR({0})'.format(self._size)
 
@@ -1534,6 +1493,12 @@ class NVarChar71(NVarChar70):
         collation = r.get_collation()
         return cls(size / 2, collation)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
+
     def write_info(self, w):
         super(NVarChar71, self).write_info(w)
         w.put_collation(self._collation)
@@ -1551,8 +1516,13 @@ class NVarChar72(NVarChar71):
             return NVarCharMax(size, collation)
         return cls(size / 2, collation=collation)
 
-    def get_declaration(self):
-        return super(NVarChar72, self).get_declaration()
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'NVARCHAR(MAX)':
+            return VarCharMax(connection.collation)
+        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)), connection.collation)
 
 
 class NVarCharMax(NVarChar72):
@@ -1589,13 +1559,14 @@ class NVarCharMax(NVarChar72):
 
 class Xml(NVarCharMax):
     type = SYBMSXML
+    declaration = 'XML'
 
     def __init__(self, schema={}):
         super(Xml, self).__init__(0)
         self._schema = schema
 
     def get_declaration(self):
-        return 'XML'
+        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
@@ -1606,6 +1577,11 @@ class Xml(NVarCharMax):
             schema['owner'] = r.read_ucs2(r.get_byte())
             schema['collection'] = r.read_ucs2(r.get_smallint())
         return cls(schema)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls()
 
     def write_info(self, w):
         if self._schema:
@@ -1622,6 +1598,7 @@ class Xml(NVarCharMax):
 
 class Text70(BaseType):
     type = SYBTEXT
+    declaration = 'TEXT'
 
     def __init__(self, size=0, table_name='', codec=None):
         self._size = size
@@ -1634,8 +1611,13 @@ class Text70(BaseType):
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name, codec=r.session.conn.server_codec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls()
+    
     def get_declaration(self):
-        return 'TEXT'
+        return self.declaration
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -1696,6 +1678,7 @@ class Text72(Text71):
 
 class NText70(BaseType):
     type = SYBNTEXT
+    declaration = 'NTEXT'
 
     def __init__(self, size=0, table_name=''):
         self._size = size
@@ -1707,8 +1690,13 @@ class NText70(BaseType):
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls()
+    
     def get_declaration(self):
-        return 'NTEXT'
+        return self.declaration
 
     def read(self, r):
         textptr_size = r.get_byte()
@@ -1785,6 +1773,12 @@ class VarBinary(BaseType):
         size = r.get_usmallint()
         return cls(size)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'VARBINARY\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+    
     def get_declaration(self):
         return 'VARBINARY({0})'.format(self._size)
 
@@ -1812,6 +1806,14 @@ class VarBinary72(VarBinary):
         if size == 0xffff:
             return VarBinaryMax()
         return cls(size)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'VARBINARY(MAX)':
+            return VarBinaryMax()
+        m = re.match(r'VARBINARY\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
 
 
 class VarBinaryMax(VarBinary):
@@ -1843,19 +1845,25 @@ class VarBinaryMax(VarBinary):
 
 class Image70(BaseType):
     type = SYBIMAGE
+    declaration = 'IMAGE'
 
     def __init__(self, size=0, table_name=''):
         self._table_name = table_name
         self._size = size
 
     def get_declaration(self):
-        return 'IMAGE'
+        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls()
 
     def read(self, r):
         size = r.get_byte()
@@ -1899,22 +1907,12 @@ class BaseDateTime(BaseType):
     _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
 
 
-class SmallDateTime(BaseDateTime):
+class SmallDateTime(BasePrimitiveType, BaseDateTime):
     type = SYBDATETIME4
+    declaration = 'SMALLDATETIME'
 
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
     _max_date = datetime(2079, 6, 6, 23, 59, 0)
     _struct = struct.Struct('<HH')
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def get_declaration(self):
-        return 'SMALLDATETIME'
-
-    def write_info(self, w):
-        pass
 
     def write(self, w, val):
         if val.tzinfo:
@@ -1931,28 +1929,16 @@ class SmallDateTime(BaseDateTime):
         if r.session.tzinfo_factory is not None:
             tzinfo = r.session.tzinfo_factory(0)
         return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=tzinfo)
+    
 SmallDateTime.instance = SmallDateTime()
 
 
-class DateTime(BaseDateTime):
+class DateTime(BasePrimitiveType, BaseDateTime):
     type = SYBDATETIME
+    declaration = 'DATETIME'
 
     _struct = struct.Struct('<ll')
-
-    _base_date = datetime(1900, 1, 1)
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
-    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def get_declaration(self):
-        return 'DATETIME'
-
-    def write_info(self, w):
-        pass
-
+    
     def write(self, w, val):
         if val.tzinfo:
             if not w.session.use_tz:
@@ -1987,48 +1973,16 @@ class DateTime(BaseDateTime):
         ms = int(round(time % 300 * 10 / 3.0))
         secs = time // 300
         return cls._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
+    
 DateTime.instance = DateTime()
 
 
-class DateTimeN(BaseType):
+class DateTimeN(BaseTypeN, BaseDateTime):
     type = SYBDATETIMN
-
-    _base_date = datetime(1900, 1, 1)
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
-    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
-
-    def __init__(self, size):
-        assert size in (4, 8)
-        self._size = size
-        self._subtype = {4: SmallDateTime.instance, 8: DateTime.instance}[size]
-
-    @classmethod
-    def from_stream(self, r):
-        size = r.get_byte()
-        if size not in (4, 8):
-            raise InterfaceError('Invalid SYBDATETIMN size', size)
-        return DateTimeN(size)
-
-    def get_declaration(self):
-        return self._subtype.get_declaration()
-
-    def write_info(self, w):
-        w.put_byte(self._size)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_byte(0)
-        else:
-            w.put_byte(self._size)
-            self._subtype.write(w, val)
-
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
-        if size != self._size:
-            r.bad_stream('Received an invalid column length from server')
-        return self._subtype.read(r)
+    subtypes = {
+        4: SmallDateTime.instance,
+        8: DateTime.instance,
+        }
 
 
 class BaseDateTime73(BaseType):
@@ -2075,21 +2029,12 @@ class BaseDateTime73(BaseType):
         return (self._base_date + timedelta(days=days)).date()
 
 
-class MsDate(BaseDateTime73):
+class MsDate(BasePrimitiveType, BaseDateTime73):
     type = SYBMSDATE
+    declaration = 'DATE'
 
     MIN = date(1, 1, 1)
     MAX = date(9999, 12, 31)
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls()
-
-    def get_declaration(self):
-        return 'DATE'
-
-    def write_info(self, w):
-        pass
 
     def write(self, w, value):
         if value is None:
@@ -2106,6 +2051,7 @@ class MsDate(BaseDateTime73):
         if size == 0:
             return None
         return self._read_date(r)
+    
 MsDate.instance = MsDate()
 
 
@@ -2120,6 +2066,12 @@ class MsTime(BaseDateTime73):
     def from_stream(cls, r):
         prec = r.get_byte()
         return cls(prec)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        m = re.match(r'TIME\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
 
     def get_declaration(self):
         return 'TIME({0})'.format(self._prec)
@@ -2154,7 +2106,7 @@ class MsTime(BaseDateTime73):
 class DateTime2(BaseDateTime73):
     type = SYBMSDATETIME2
 
-    def __init__(self, prec):
+    def __init__(self, prec=7):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 3
 
@@ -2165,6 +2117,14 @@ class DateTime2(BaseDateTime73):
 
     def get_declaration(self):
         return 'DATETIME2({0})'.format(self._prec)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'DATETIME2':
+            return cls()
+        m = re.match(r'DATETIME2\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
 
     def write_info(self, w):
         w.put_byte(self._prec)
@@ -2199,7 +2159,7 @@ class DateTime2(BaseDateTime73):
 class DateTimeOffset(BaseDateTime73):
     type = SYBMSDATETIMEOFFSET
 
-    def __init__(self, prec):
+    def __init__(self, prec=7):
         self._prec = prec
         self._size = self._precision_to_len[prec] + 5
 
@@ -2208,6 +2168,14 @@ class DateTimeOffset(BaseDateTime73):
         prec = r.get_byte()
         return cls(prec)
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'DATETIMEOFFSET':
+            return cls()
+        m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(1)))
+    
     def get_declaration(self):
         return 'DATETIMEOFFSET({0})'.format(self._prec)
 
@@ -2271,7 +2239,7 @@ class MsDecimal(BaseType):
     def precision(self):
         return self._prec
 
-    def __init__(self, scale, prec):
+    def __init__(self, scale=0, prec=18):
         if prec > 38:
             raise DataError('Precision of decimal value is out of range')
         self._scale = scale
@@ -2296,6 +2264,14 @@ class MsDecimal(BaseType):
     def from_stream(cls, r):
         size, prec, scale = r.unpack(cls._info_struct)
         return cls(scale=scale, prec=prec)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == 'DECIMAL':
+            return cls()
+        m = re.match(r'DECIMAL\((\d+),\s*(\d+)\)', declaration)
+        if m:
+            return cls(int(m.group(2)), int(m.group(1)))
 
     def get_declaration(self):
         return 'DECIMAL({0},{1})'.format(self._prec, self._scale)
@@ -2349,18 +2325,9 @@ class MsDecimal(BaseType):
         return self.read_fixed(r, size)
 
 
-class Money4(BaseType):
+class Money4(BasePrimitiveType):
     type = SYBMONEY4
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def write_info(self, w):
-        pass
-
-    def get_declaration(self):
-        return 'SMALLMONEY'
+    declaration = 'SMALLMONEY'
 
     def read(self, r):
         return Decimal(r.get_int()) / 10000
@@ -2372,22 +2339,11 @@ class Money4(BaseType):
 Money4.instance = Money4()
 
 
-class Money8(BaseType):
+class Money8(BasePrimitiveType):
     type = SYBMONEY
+    declaration = 'MONEY'
+    
     _struct = struct.Struct('<lL')
-
-    @classmethod
-    def from_stream(cls, r):
-        return cls.instance
-
-    def write_info(self, w):
-        pass
-
-    def get_declaration(self):
-        return 'MONEY'
-
-    def get_typeid(self):
-        return self.type
 
     def read(self, r):
         hi, lo = r.unpack(self._struct)
@@ -2403,53 +2359,17 @@ class Money8(BaseType):
 Money8.instance = Money8()
 
 
-class MoneyN(BaseType):
+class MoneyN(BaseTypeN):
     type = SYBMONEYN
-    _subtypes = {
+    
+    subtypes = {
         4: Money4.instance,
         8: Money8.instance,
         }
 
-    def __init__(self, size):
-        assert size in self._subtypes.keys()
-        self._size = size
-        self._typeid = self._subtypes[size].type
-        self._subtype = self._subtypes[size]
-
-    def get_typeid(self):
-        return self._typeid
-
-    def get_declaration(self):
-        return self._subtype.get_declaration()
-
-    @classmethod
-    def from_stream(cls, r):
-        size = r.get_byte()
-        if size not in cls._subtypes.keys():
-            raise InterfaceError('Invalid SYBMONEYN size', size)
-        return cls(size)
-
-    def write_info(self, w):
-        w.put_byte(self._size)
-
-    def read(self, r):
-        size = r.get_byte()
-        if size == 0:
-            return None
-        if size != self._size:
-            raise r.session.bad_stream('Invalid SYBMONEYN size', size)
-        return self._subtype.read(r)
-
-    def write(self, w, val):
-        if val is None:
-            w.put_byte(0)
-            return
-        w.put_byte(self._size)
-        self._subtype.write(w, val)
-
-
 class MsUnique(BaseType):
     type = SYBUNIQUE
+    declaration = 'UNIQUEIDENTIFIER'
 
     @classmethod
     def from_stream(cls, r):
@@ -2458,8 +2378,13 @@ class MsUnique(BaseType):
             raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return cls.instance
 
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls.instance
+
     def get_declaration(self):
-        return 'UNIQUEIDENTIFIER'
+        return self.declaration
 
     def write_info(self, w):
         w.put_byte(16)
@@ -2508,6 +2433,7 @@ def _variant_read_binary(r, size):
 
 class Variant(BaseType):
     type = SYBVARIANT
+    declaration = 'SQL_VARIANT'
 
     _decimal_info_struct = struct.Struct('BB')
 
@@ -2547,12 +2473,17 @@ class Variant(BaseType):
         self._size = size
 
     def get_declaration(self):
-        return 'SQL_VARIANT'
+        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
         return Variant(size)
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls(0)
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -2573,6 +2504,7 @@ class Variant(BaseType):
         if val is None:
             w.put_int(0)
             return
+        raise NotImplementedError
 
 
 _type_map = {
@@ -3144,10 +3076,71 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
+    def _autodetect_column_type(self, value, value_type):
+        """ Function guesses type of the parameter from the type of value.
+
+        :param value: value to be passed to db, can be None
+        :param value_type: value type, if value is None, type is used instead of it
+        :return: An instance of subclass of :class:`BaseType`
+        """
+        if value is None and value_type is None:
+            return self.conn.NVarChar(1, collation=self.conn.collation)
+        assert value_type is not None
+        assert value is None or isinstance(value, value_type)
+        
+        if issubclass(value_type, bool):
+            return BitN.instance
+        elif issubclass(value_type, six.integer_types):
+            if value == None:
+                return IntN(8)
+            if -2 ** 31 <= value <= 2 ** 31 - 1:
+                return IntN(4)
+            elif -2 ** 63 <= value <= 2 ** 63 - 1:
+                return IntN(8)
+            elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
+                return MsDecimal(0, 38)
+            else:
+                raise DataError('Numeric value out of range')
+        elif issubclass(value_type, float):
+            return FloatN(8)
+        elif issubclass(value_type, Binary):
+            return self.conn.long_binary_type()
+        elif issubclass(value_type, six.binary_type):
+            if self._tds.login.bytes_to_unicode:
+                return self.conn.long_string_type(collation=self.conn.collation)
+            else:
+                return self.conn.long_varchar_type(collation=self.conn.collation)
+        elif issubclass(value_type, six.string_types):
+            return self.conn.long_string_type(collation=self.conn.collation)
+        elif issubclass(value_type, datetime):
+            if IS_TDS73_PLUS(self):
+                if value != None and value.tzinfo and not self.use_tz:
+                    return DateTimeOffset()
+                else:
+                    return DateTime2()
+            else:
+                return DateTimeN(8)
+        elif issubclass(value_type, date):
+            if IS_TDS73_PLUS(self):
+                return MsDate.instance
+            else:
+                return DateTimeN(8)
+        elif issubclass(value_type, time):
+            if not IS_TDS73_PLUS(self):
+                raise DataError('Time type is not supported on MSSQL 2005 and lower')
+            return MsTime(6)
+        elif issubclass(value_type, Decimal):
+            if value != None:
+                return MsDecimal.from_value(value)
+            else:
+                return MsDecimal()
+        elif issubclass(value_type, uuid.UUID):
+            return MsUnique.instance
+        else:
+            raise DataError('Parameter type is not supported: {!r} {!r}'.format(value, value_type))
+
     def make_param(self, name, value):
         """ Generates instance of :class:`Column` from value and name
-
-        Function guesses type of the parameter from the type of value.
 
         Value can also be of a special types:
 
@@ -3167,60 +3160,23 @@ class _TdsSession(object):
         column = Column()
         column.column_name = name
         column.flags = 0
+        
         if isinstance(value, output):
             column.flags |= fByRefValue
+            if isinstance(value.type, six.string_types):
+                column.type = self._tds.type_by_declaration(value.type, True)
+            value_type = value.type or type(value.value)
             value = value.value
-        if value is default:
-            column.flags = fDefaultValue
-            value = None
-        column.value = value
-        if value is None:
-            column.type = self.conn.NVarChar(1, collation=self.conn.collation)
-        elif isinstance(value, bool):
-            column.type = BitN()
-        elif isinstance(value, six.integer_types):
-            if -2 ** 31 <= value <= 2 ** 31 - 1:
-                column.type = IntN(4)
-            elif -2 ** 63 <= value <= 2 ** 63 - 1:
-                column.type = IntN(8)
-            elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
-                column.type = MsDecimal(0, 38)
-            else:
-                raise DataError('Numeric value out of range')
-        elif isinstance(value, float):
-            column.type = FloatN(8)
-        elif isinstance(value, Binary):
-            column.type = self.conn.long_binary_type()
-        elif isinstance(value, six.binary_type):
-            if self._tds.login.bytes_to_unicode:
-                column.type = self.conn.long_string_type(collation=self.conn.collation)
-            else:
-                column.type = self.conn.long_varchar_type(collation=self.conn.collation)
-        elif isinstance(value, six.string_types):
-            column.type = self.conn.long_string_type(collation=self.conn.collation)
-        elif isinstance(value, datetime):
-            if IS_TDS73_PLUS(self):
-                if value.tzinfo and not self.use_tz:
-                    column.type = DateTimeOffset(6)
-                else:
-                    column.type = DateTime2(6)
-            else:
-                column.type = DateTimeN(8)
-        elif isinstance(value, date):
-            if IS_TDS73_PLUS(self):
-                column.type = MsDate()
-            else:
-                column.type = DateTimeN(8)
-        elif isinstance(value, time):
-            if not IS_TDS73_PLUS(self):
-                raise DataError('Time type is not supported on MSSQL 2005 and lower')
-            column.type = MsTime(6)
-        elif isinstance(value, Decimal):
-            column.type = MsDecimal.from_value(value)
-        elif isinstance(value, uuid.UUID):
-            column.type = MsUnique()
         else:
-            raise DataError('Parameter type is not supported: {0}'.format(repr(value)))
+            value_type = type(value)
+            
+        if value is default:
+            column.flags |= fDefaultValue
+            value = None
+
+        column.value = value
+        if column.type is None:
+            column.type = self._autodetect_column_type(value, value_type)
         return column
 
     def _convert_params(self, parameters):
@@ -4084,6 +4040,14 @@ class _TdsSocket(object):
             return NText71(-1, '', collation)
         else:
             return NText70()
+
+    def type_by_declaration(self, declaration, nullable):
+        declaration = declaration.strip().upper()
+        for type_class in self._type_map.values():
+            type_inst = type_class.from_declaration(declaration, nullable, self)
+            if type_inst:
+                return type_inst 
+        raise ValueError('Unable to parse type declaration', declaration)
 
 
 class Column(object):
