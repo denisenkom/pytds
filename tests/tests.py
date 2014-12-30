@@ -1450,6 +1450,8 @@ class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
 CREATE PROCEDURE add_one (@input int)
 AS
 BEGIN
+    select 'a' as a
+    select 'b' as b
     return @input+1
 END
 """,
@@ -1462,8 +1464,17 @@ END
             values = cur.callproc('add_one', (1,))
             self.assertEqual(values[0], 1, 'input parameter should be left unchanged: %s' % (values[0],))
 
-            self.assertEqual(cur.description, None, "No resultset was expected.")
+            self.assertEqual(len(cur.description), 1, "Unexpected resultset.")
+            self.assertEqual(cur.description[0][0], 'a', "Unexpected resultset.")
+            self.assertEqual(cur.fetchall(), [('a',)], 'Unexpected resultset.')
+            
+            self.assertTrue(cur.nextset(), 'No second resultset found.')
+            self.assertEqual(len(cur.description), 1, "Unexpected resultset.")
+            self.assertEqual(cur.description[0][0], 'b', "Unexpected resultset.")
+            
             self.assertEqual(cur.return_value, 2, "Invalid return value: %s" % (cur.return_value,))
+            with self.assertRaises(Error):
+                cur.fetchall()
 
     # This should create a sproc with an output parameter.
     def _outparam_setup(self, cur):
