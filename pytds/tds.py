@@ -2604,6 +2604,8 @@ class _TdsSession(object):
         self.wire_mtx = None
         self.param_info = None
         self.has_status = False
+        self.ret_status = None
+        self.skipped_to_status = False
         self._transport = transport
         self._reader = _TdsReader(self)
         self._reader._transport = transport
@@ -2683,7 +2685,8 @@ class _TdsSession(object):
 
         self.param_info = None
         self.has_status = False
-        self.ret_status = False
+        self.ret_status = None
+        self.skipped_to_status = False
         self.rows_affected = TDS_NO_COUNT
         self.more_rows = True
         self.row = [None] * num_cols
@@ -3759,6 +3762,9 @@ class _TdsSession(object):
         if self.res_info is None:
             raise Error("Previous statement didn't produce any results")
 
+        if self.skipped_to_status:
+            raise Error("Unable to fetch any rows after accessing return_status")
+
         if not self.next_row():
             return None
 
@@ -3812,6 +3818,7 @@ class _TdsSession(object):
                 self.process_token(marker)
 
     def find_return_status(self):
+        self.skipped_to_status = True
         while True:
             marker = self.get_token_id()
             self.process_token(marker)

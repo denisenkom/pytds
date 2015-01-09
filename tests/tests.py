@@ -1465,6 +1465,41 @@ END
             self.assertEqual(cur.description, None, "No resultset was expected.")
             self.assertEqual(cur.return_value, 2, "Invalid return value: %s" % (cur.return_value,))
 
+        # This should create a sproc with a return value.
+    def _retval_select_setup(self, cur):
+        self._try_run2(
+            cur,
+            """IF OBJECT_ID(N'[dbo].[add_one_select]', N'P') IS NOT NULL DROP PROCEDURE [dbo].[add_one_select]""",
+            """
+CREATE PROCEDURE add_one_select (@input int)
+AS
+BEGIN
+    select 'a' as a
+    select 'b' as b
+    return @input+1
+END
+""",
+            )
+
+    def test_retval_select(self):
+        with self._connect() as con:
+            cur = con.cursor()
+            self._retval_select_setup(cur)
+            values = cur.callproc('add_one_select', (1,))
+            self.assertEqual(values[0], 1, 'input parameter should be left unchanged: %s' % (values[0],))
+
+            self.assertEqual(len(cur.description), 1, "Unexpected resultset.")
+            self.assertEqual(cur.description[0][0], 'a', "Unexpected resultset.")
+            self.assertEqual(cur.fetchall(), [('a',)], 'Unexpected resultset.')
+            
+            self.assertTrue(cur.nextset(), 'No second resultset found.')
+            self.assertEqual(len(cur.description), 1, "Unexpected resultset.")
+            self.assertEqual(cur.description[0][0], 'b', "Unexpected resultset.")
+            
+            self.assertEqual(cur.return_value, 2, "Invalid return value: %s" % (cur.return_value,))
+            with self.assertRaises(Error):
+                cur.fetchall()
+
     # This should create a sproc with an output parameter.
     def _outparam_setup(self, cur):
         self._try_run2(
