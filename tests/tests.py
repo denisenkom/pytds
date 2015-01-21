@@ -1523,6 +1523,11 @@ END
             self.assertEqual(values[0], 1, 'input parameter should be unchanged')
             self.assertEqual(values[1], 2, 'output parameter should get new values')
 
+            values = cur.callproc('add_one_out', (None, output(value=1)))
+            self.assertEqual(len(values), 2, 'expected 2 parameters')
+            self.assertEqual(values[0], None, 'input parameter should be unchanged')
+            self.assertEqual(values[1], None, 'output parameter should get new values')
+
     def test_outparam_null_default(self):
         with self.assertRaises(ValueError):
             output(None, None)

@@ -10,6 +10,7 @@ from . import tz
 import re
 import uuid
 import six
+import types
 from six.moves import reduce
 from six.moves import xrange
 try:
@@ -3172,6 +3173,9 @@ class _TdsSession(object):
             value = value.value
         else:
             value_type = type(value)
+
+        if value_type is types.NoneType:
+            value_type = None
             
         if value is default:
             column.flags |= fDefaultValue
