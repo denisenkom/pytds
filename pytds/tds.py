@@ -605,7 +605,7 @@ class Binary(bytes):
         return 'Binary({0})'.format(super(Binary, self).__repr__())
 
 
-class _Default:
+class _Default(object):
     pass
 
 default = _Default()
@@ -3180,6 +3180,8 @@ class _TdsSession(object):
         if value is default:
             column.flags |= fDefaultValue
             value = None
+            if value_type is _Default:
+                value_type = None
 
         column.value = value
         if column.type is None:
