@@ -1568,7 +1568,7 @@ select @var1 = 2
 select 'value'
 """)
             self.assertTrue(cur.description)
-            self.assertEqual(['value'], cur.fetchall())
+            self.assertEqual([(u'value',)], cur.fetchall())
             self.assertFalse(cur.nextset())
 
     # Don't need setoutputsize tests.
