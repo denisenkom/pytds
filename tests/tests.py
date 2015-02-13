@@ -26,7 +26,8 @@ from pytds import (
     connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
     Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
     IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72, TDS70,
-    output, default, InterfaceError, TDS_ENCRYPTION_OFF)
+    output, default, InterfaceError, TDS_ENCRYPTION_OFF,
+    STRING, BINARY, NUMBER, DATETIME, DECIMAL, INTEGER, REAL, XML)
 from pytds.tds import (
     _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, Bit, Int, SmallInt,
     NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation,
@@ -1627,6 +1628,31 @@ end
 
             result = cur.fetchall()
             self.assertEqual(result[0], expected)
+
+    def test_type_objects(self):
+        with self._connect() as con:
+            cur = con.cursor()
+            cur.execute("""
+select cast(0 as varchar), 
+       cast(1 as binary),
+       cast(2 as int),
+       cast(3 as real),
+       cast(4 as decimal),
+       cast('2005' as datetime),
+       cast('6' as xml)
+""")
+            self.assertTrue(cur.description)
+            col_types = [col[1] for col in cur.description]
+            self.assertEqual(col_types[0], STRING)
+            self.assertEqual(col_types[1], BINARY)
+            self.assertEqual(col_types[2], NUMBER)
+            self.assertEqual(col_types[2], INTEGER)
+            self.assertEqual(col_types[3], NUMBER)
+            self.assertEqual(col_types[3], REAL)
+            # self.assertEqual(col_types[4], NUMBER) ?
+            self.assertEqual(col_types[4], DECIMAL)
+            self.assertEqual(col_types[5], DATETIME)
+            self.assertEqual(col_types[6], XML)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")

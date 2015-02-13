@@ -555,6 +555,7 @@ class DBAPITypeObject:
         else:
             return -1
 
+# standard dbapi type objects
 STRING = DBAPITypeObject(SYBVARCHAR, SYBCHAR, SYBTEXT,
                          XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
                          XSYBVARCHAR, XSYBCHAR, SYBMSXML)
@@ -565,6 +566,11 @@ DATETIME = DBAPITypeObject(SYBDATETIME, SYBDATETIME4, SYBDATETIMN)
 DECIMAL = DBAPITypeObject(SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC,
                           SYBDECIMAL)
 ROWID = DBAPITypeObject()
+
+# non-standard, but useful type objects
+INTEGER = DBAPITypeObject(SYBBIT, SYBBITN, SYBINT1, SYBINT2, SYBINT4, SYBINT8, SYBINTN)
+REAL = DBAPITypeObject(SYBREAL, SYBFLT8, SYBFLTN)
+XML = DBAPITypeObject(SYBMSXML)
 
 
 # stored procedure output parameter
