@@ -3798,8 +3798,13 @@ class _TdsSession(object):
             elif marker in (TDS_DONE_TOKEN, TDS_DONEPROC_TOKEN, TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
                 if self.done_flags & TDS_DONE_MORE_RESULTS:
-                    continue
-                return False
+                    if self.done_flags & TDS_DONE_COUNT:
+                        return True
+                    else:
+                        # skip results without rowcount
+                        continue
+                else:
+                    return False
             else:
                 self.process_token(marker)
 
