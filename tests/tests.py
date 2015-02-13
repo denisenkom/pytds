@@ -1567,6 +1567,26 @@ select @var1 = 2
 
 select 'value'
 """)
+            self.assertFalse(cur.description)
+            self.assertTrue(cur.nextset())
+            
+            self.assertFalse(cur.description)
+            self.assertTrue(cur.nextset())
+            
+            self.assertTrue(cur.description)
+            self.assertEqual([(u'value',)], cur.fetchall())
+            self.assertFalse(cur.nextset())
+
+            cur.execute("""
+set nocount on
+
+declare @var1 int
+
+select @var1 = 1
+select @var1 = 2
+
+select 'value'
+""")
             self.assertTrue(cur.description)
             self.assertEqual([(u'value',)], cur.fetchall())
             self.assertFalse(cur.nextset())
