@@ -1512,9 +1512,6 @@ class NVarChar71(NVarChar70):
 
 
 class NVarChar72(NVarChar71):
-    def get_typeid(self):
-        return self.type
-
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
@@ -1571,6 +1568,9 @@ class Xml(NVarCharMax):
     def __init__(self, schema={}):
         super(Xml, self).__init__(0)
         self._schema = schema
+
+    def get_typeid(self):
+        return self.type
 
     def get_declaration(self):
         return self.declaration
