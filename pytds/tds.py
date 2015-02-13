@@ -3174,7 +3174,7 @@ class _TdsSession(object):
         else:
             value_type = type(value)
 
-        if value_type is types.NoneType:
+        if value_type is type(None):
             value_type = None
             
         if value is default:
