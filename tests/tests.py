@@ -1555,6 +1555,42 @@ END
             values = cur.callproc('testproc', (1, output(value=default, param_type=int), output(value=default, param_type=str)))
             self.assertEqual([1, 9, 'defstr1'], values)
 
+    def test_assigning_select(self):
+        # test that assigning select does not interfere with result sets
+        with self._connect() as con:
+            cur = con.cursor()
+            cur.execute("""
+declare @var1 int
+
+select @var1 = 1
+select @var1 = 2
+
+select 'value'
+""")
+            self.assertFalse(cur.description)
+            self.assertTrue(cur.nextset())
+            
+            self.assertFalse(cur.description)
+            self.assertTrue(cur.nextset())
+            
+            self.assertTrue(cur.description)
+            self.assertEqual([(u'value',)], cur.fetchall())
+            self.assertFalse(cur.nextset())
+
+            cur.execute("""
+set nocount on
+
+declare @var1 int
+
+select @var1 = 1
+select @var1 = 2
+
+select 'value'
+""")
+            self.assertTrue(cur.description)
+            self.assertEqual([(u'value',)], cur.fetchall())
+            self.assertFalse(cur.nextset())
+
     # Don't need setoutputsize tests.
     def test_setoutputsize(self):
         pass
