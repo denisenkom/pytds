@@ -33,9 +33,9 @@ from pytds.tds import (
     NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation,
     )
 from pytds import _TdsLogin
-from . import dbapi20
+import dbapi20
 import pytds
-from . import settings
+import settings
 
 
 # set decimal precision to match mssql maximum precision
