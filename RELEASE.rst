@@ -20,7 +20,7 @@ Check build:
 
 Push to github:
 
- git push --tags
+ git push && git push --tags
 
 Upload to pypi:
 
