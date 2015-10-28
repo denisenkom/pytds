@@ -4,7 +4,7 @@ except:
     import unittest
 import ctypes
 from ctypes import create_string_buffer
-from . import settings
+import settings
 import socket
 import sys
 

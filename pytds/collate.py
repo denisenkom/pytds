@@ -207,7 +207,7 @@ class Collation(object):
         self.version = version
 
     def __repr__(self):
-        return 'Collation(lcid={}, sort_id={}, ignore_case={}, ignore_accent={}, ignore_width={}, ignore_kana={}, binary={}, binary2={}, version={})'.format(
+        return 'Collation(lcid={0}, sort_id={1}, ignore_case={2}, ignore_accent={3}, ignore_width={4}, ignore_kana={5}, binary={6}, binary2={7}, version={8})'.format(
             self.lcid,
             self.sort_id,
             self.ignore_case,

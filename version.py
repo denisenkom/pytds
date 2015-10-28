@@ -42,7 +42,7 @@ def call_git_describe(abbrev=4):
                   stdout=PIPE, stderr=PIPE)
         p.stderr.close()
         line = p.stdout.readlines()[0]
-        return str(line.strip())
+        return line.strip().decode('utf8')
 
     except:
         return None
@@ -50,11 +50,11 @@ def call_git_describe(abbrev=4):
 
 def read_release_version():
     try:
-        f = open("RELEASE-VERSION", "r")
+        f = open("RELEASE-VERSION", "rb")
 
         try:
             version = f.readlines()[0]
-            return str(version.strip())
+            return version.strip().decode('utf8')
 
         finally:
             f.close()
