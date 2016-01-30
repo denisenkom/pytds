@@ -400,9 +400,6 @@ class Connection(object):
                 return
             raise
 
-    def __del__(self):
-        self.close()
-
     def close(self):
         """ Close connection to an MS SQL Server.
 
@@ -448,9 +445,6 @@ class Cursor(six.Iterator):
         conn._assert_open()
         self._session = conn._conn._main_session
         return conn
-
-    def __del__(self):
-        self.close()
 
     def __enter__(self):
         return self
