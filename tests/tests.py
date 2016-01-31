@@ -59,6 +59,24 @@ class TestCase(unittest.TestCase):
         self.conn.close()
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class NoMarsTestCase(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['use_mars'] = False
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_commit(self):
+        cursor = self.conn.cursor()
+        cursor.execute('select 1')
+        cursor.fetchall()
+        self.conn.commit()
+
+
 class DbTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -688,9 +706,9 @@ class ConnectionClosing(unittest.TestCase):
             connect(**kwargs).close()
 
     def test_closing_after_closed_by_server(self):
-        '''
+        """
         You should be able to call close on connection closed by server
-        '''
+        """
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
         kwargs['autocommit'] = True
@@ -971,14 +989,6 @@ class CloseCursorTwice(TestCase):
 
 
 class RegressionSuite(TestCase):
-    def test_commit(self):
-        if self.conn.mars_enabled:
-            self.skipTest('Only breaks when mars is disabled')
-        cursor = self.conn.cursor()
-        cursor.execute('select 1')
-        cursor.fetchall()
-        self.conn.commit()
-
     def test_cancel(self):
         self.conn.cursor().cancel()
 
