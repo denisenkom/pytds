@@ -9,7 +9,7 @@ if LIVE_TEST:
     DATABASE=os.environ['DATABASE']
     USER=os.environ['SQLUSER']
     PASSWORD=os.environ['SQLPASSWORD']
-    USE_MARS = bool(os.environ.get('USE_MARS'))
+    USE_MARS = bool(os.environ.get('USE_MARS', True))
     SKIP_SQL_AUTH = bool(os.environ.get('SKIP_SQL_AUTH'))
 
     import pytds
