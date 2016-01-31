@@ -306,6 +306,7 @@ class Connection(object):
                                     18486,  # account is locked
                                     18487,  # password expired
                                     18488,  # password should be changed
+                                    18452,  # login from untrusted domain
                                     ):
                                 raise
                     except Exception as e:
