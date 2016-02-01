@@ -968,18 +968,18 @@ def _get_servers_deque(servers, database):
     return _servers_deques[key]
 
 
-def connect(server=None, database=None, user=None, password=None, timeout=None,
+def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             login_timeout=15, as_dict=None,
             appname=None, port=None, tds_version=TDS74,
             encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
-            row_strategy=None, failover_partner=None):
+            row_strategy=None, failover_partner=None, server=None):
     """
     Opens connection to the database
 
-    :keyword server: database host
-    :type server: string
+    :keyword dsn: SQL server host and instance: <host>[\<instance>]
+    :type dsn: string
     :keyword failover_partner: secondary database host, used if primary is not accessible
     :type failover_partner: string
     :keyword database: the database to initially connect to
@@ -1062,18 +1062,25 @@ def connect(server=None, database=None, user=None, password=None, timeout=None,
     login.load_balancer = load_balancer
     login.bytes_to_unicode = bytes_to_unicode
 
+    if server and dsn:
+        raise ValueError("Both server and dsn shouldn't be specified")
+
+    if server:
+        warnings.warn("server parameter is deprecated, use dsn instead", DeprecationWarning)
+        dsn = server
+
     if load_balancer and failover_partner:
         raise ValueError("Both load_balancer and failover_partner shoudln't be specified")
     if load_balancer:
-        servers = [(server, None) for server in load_balancer.choose()]
+        servers = [(srv, None) for srv in load_balancer.choose()]
     else:
-        servers = [(server or 'localhost', port)]
+        servers = [(dsn or 'localhost', port)]
         if failover_partner:
             servers.append((failover_partner, port))
 
     parsed_servers = []
-    for server, port in servers:
-        host, instance = _parse_server(server)
+    for srv, port in servers:
+        host, instance = _parse_server(srv)
         if instance and port:
             raise ValueError("Both instance and port shouldn't be specified")
         parsed_servers.append((host, port, instance))
