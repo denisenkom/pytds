@@ -1874,3 +1874,28 @@ class TestTds73B(unittest.TestCase):
 
     def test_parsing(self):
         _params_tests(self)
+
+
+class ConnectionStringTestCase(unittest.TestCase):
+    def test_parsing(self):
+        res = pytds._parse_connection_string('Server=myServerAddress;Database=myDataBase;User Id=myUsername; Password=myPassword;')
+        self.assertEqual({'server': 'myServerAddress',
+                          'database': 'myDataBase',
+                          'user_id': 'myUsername',
+                          'password': 'myPassword'},
+                         res)
+
+        res = pytds._parse_connection_string('Server=myServerAddress;Database=myDataBase;Trusted_Connection=True;')
+        self.assertEqual({'server': 'myServerAddress',
+                          'database': 'myDataBase',
+                          'trusted_connection': 'True',
+                          },
+                         res)
+
+        res = pytds._parse_connection_string('Server=myServerName\\myInstanceName;Database=myDataBase;User Id=myUsername; Password=myPassword;')
+        self.assertEqual({'server': 'myServerName\\myInstanceName',
+                          'database': 'myDataBase',
+                          'user_id': 'myUsername',
+                          'password': 'myPassword',
+                          },
+                         res)

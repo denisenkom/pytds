@@ -968,6 +968,24 @@ def _get_servers_deque(servers, database):
     return _servers_deques[key]
 
 
+def _parse_connection_string(connstr):
+    """
+    MSSQL style connection string parser
+
+    Returns normalized dictionary of connection string parameters
+    """
+    res = {}
+    for item in connstr.split(';'):
+        item = item.strip()
+        if not item:
+            continue
+        key, value = item.split('=', 1)
+        key = key.strip().lower().replace(' ', '_')
+        value = value.strip()
+        res[key] = value
+    return res
+
+
 def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             login_timeout=15, as_dict=None,
             appname=None, port=None, tds_version=TDS74,
