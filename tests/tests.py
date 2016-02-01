@@ -59,6 +59,24 @@ class TestCase(unittest.TestCase):
         self.conn.close()
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class NoMarsTestCase(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['database'] = 'master'
+        kwargs['use_mars'] = False
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_commit(self):
+        cursor = self.conn.cursor()
+        cursor.execute('select 1')
+        cursor.fetchall()
+        self.conn.commit()
+
+
 class DbTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -659,14 +677,12 @@ class BadConnection(unittest.TestCase):
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
-    def test_bad_instance_name(self):
-        if not hasattr(settings, 'INSTANCE_PORT'):
-            return self.skipTest('INSTANCE_PORT must be set to run this test')
-        with self.assertRaisesRegexp(LoginError, 'Invalid instance name'):
-            host = settings.HOST
-            if '\\' in host:
-                host, _ = host.split('\\')
-            with connect(server=host + '\\badinstancename', database='master', user=settings.USER, password=settings.PASSWORD, port=settings.INSTANCE_PORT) as conn:
+    def test_instance_and_port(self):
+        host = settings.HOST
+        if '\\' in host:
+            host, _ = host.split('\\')
+        with self.assertRaisesRegexp(ValueError, 'Both instance and port shouldn\'t be specified'):
+            with connect(server=host + '\\badinstancename', database='master', user=settings.USER, password=settings.PASSWORD, port=1212) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
@@ -690,9 +706,9 @@ class ConnectionClosing(unittest.TestCase):
             connect(**kwargs).close()
 
     def test_closing_after_closed_by_server(self):
-        '''
+        """
         You should be able to call close on connection closed by server
-        '''
+        """
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
         kwargs['autocommit'] = True
@@ -973,14 +989,6 @@ class CloseCursorTwice(TestCase):
 
 
 class RegressionSuite(TestCase):
-    def test_commit(self):
-        if self.conn.mars_enabled:
-            self.skipTest('Only breaks when mars is disabled')
-        cursor = self.conn.cursor()
-        cursor.execute('select 1')
-        cursor.fetchall()
-        self.conn.commit()
-
     def test_cancel(self):
         self.conn.cursor().cancel()
 
@@ -1866,3 +1874,28 @@ class TestTds73B(unittest.TestCase):
 
     def test_parsing(self):
         _params_tests(self)
+
+
+class ConnectionStringTestCase(unittest.TestCase):
+    def test_parsing(self):
+        res = pytds._parse_connection_string('Server=myServerAddress;Database=myDataBase;User Id=myUsername; Password=myPassword;')
+        self.assertEqual({'server': 'myServerAddress',
+                          'database': 'myDataBase',
+                          'user_id': 'myUsername',
+                          'password': 'myPassword'},
+                         res)
+
+        res = pytds._parse_connection_string('Server=myServerAddress;Database=myDataBase;Trusted_Connection=True;')
+        self.assertEqual({'server': 'myServerAddress',
+                          'database': 'myDataBase',
+                          'trusted_connection': 'True',
+                          },
+                         res)
+
+        res = pytds._parse_connection_string('Server=myServerName\\myInstanceName;Database=myDataBase;User Id=myUsername; Password=myPassword;')
+        self.assertEqual({'server': 'myServerName\\myInstanceName',
+                          'database': 'myDataBase',
+                          'user_id': 'myUsername',
+                          'password': 'myPassword',
+                          },
+                         res)
