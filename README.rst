@@ -4,6 +4,12 @@ pytds
 .. image:: https://secure.travis-ci.org/denisenkom/pytds.png?branch=master
    :target: https://travis-ci.org/denisenkom/pytds
 
+.. image:: http://img.shields.io/pypi/dm/python-tds.svg
+   :target: https://pypi.python.org/pypi/python-tds/
+
+.. image:: http://img.shields.io/pypi/v/python-tds.svg
+   :target: https://pypi.python.org/pypi/python-tds/
+
 
 `Python DBAPI`_ driver for MSSQL using pure Python TDS (Tabular Data Stream) protocol implementation.
 Doesn't depend on ADO or FreeTDS.  Can be used on any platform, including Linux, MacOS, Windows.
