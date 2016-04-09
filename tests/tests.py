@@ -322,6 +322,12 @@ class TestCase2(TestCase):
             lvl, = cur.fetchone()
         self.assertEqual(pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE, lvl)
 
+    def test_fetch_on_empty_dataset(self):
+        with self.conn.cursor() as cur:
+            cur.execute('declare @x int')
+            with self.assertRaises(ProgrammingError):
+                cur.fetchall()
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DbTests(DbTestCase):

@@ -3772,10 +3772,10 @@ class _TdsSession(object):
 
     def fetchone(self):
         if self.res_info is None:
-            raise Error("Previous statement didn't produce any results")
+            raise ProgrammingError("Previous statement didn't produce any results")
 
         if self.skipped_to_status:
-            raise Error("Unable to fetch any rows after accessing return_status")
+            raise ProgrammingError("Unable to fetch any rows after accessing return_status")
 
         if not self.next_row():
             return None
