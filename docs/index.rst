@@ -27,6 +27,37 @@ When MSSQL server is setup with mirroring you should connect to it using two par
 this should be a main server and parameter ``failover_partner`` should be a mirror server.
 See also `MSDN article <http://msdn.microsoft.com/en-us/library/ms175484.aspx>`_.
 
+Testing
+=======
+
+To run tests you need to have tox installed.  Also you would want to have different versions of Python, you can
+use pyenv to install those.
+
+At a minimun you should set HOST environment variable to point to your SQL server, e.g.:
+
+.. code-block:: bash
+
+   export HOST=mysqlserver
+
+it could also specify SQL server named instance, e.g.:
+
+.. code-block:: bash
+
+   export HOST=mysqlserver\\myinstance
+
+By default tests will use SQL server integrated authentication using user sa with password sa and database test.
+You can specify different user name, password, database with SQLUSER, SQLPASSWORD, DATABASE environment variables.
+
+To enable testing NTLM authentication you should specify NTLM_USER and NTLM_PASSWORD environment variables.
+
+Once environment variables are setup you can run tests by running command:
+
+.. code-block:: bash
+
+   tox
+
+Test configuration stored in tox.ini file at the root of the repository.
+
 Indices and tables
 ==================
 
