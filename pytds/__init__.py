@@ -359,8 +359,8 @@ class Connection(object):
                     return _MarsCursor(self,
                                        self._conn.create_session(self._tzinfo_factory),
                                        self._tzinfo_factory)
-                except socket.error as e:
-                    if e.errno != errno.ECONNRESET:
+                except (socket.error, OSError) as e:
+                    if e.errno not in (errno.EPIPE, errno.ECONNRESET):
                         raise
                 except ClosedConnectionError:
                     pass

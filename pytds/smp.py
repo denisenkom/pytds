@@ -1,6 +1,8 @@
 import struct
 import logging
 import threading
+import socket
+import errno
 from six.moves import range
 try:
     from bitarray import bitarray
@@ -113,8 +115,14 @@ class SmpManager(object):
                         session._high_water_for_recv,
                         )
                     session._state = 'FIN SENT'
-                    self._transport.send(hdr, True)
-                    self._recv_packet(session)
+                    try:
+                        self._transport.send(hdr, True)
+                        self._recv_packet(session)
+                    except (socket.error, OSError) as ex:
+                        if ex.errno in (errno.ECONNRESET, errno.EPIPE):
+                            session._state = 'CLOSED'
+                        else:
+                            raise ex
                 else:
                     session._state = 'CLOSED'
 
