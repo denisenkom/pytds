@@ -385,6 +385,10 @@ class _TdsWriter(object):
                 self._pos += to_write
                 data_off += to_write
 
+    def write_b_varchar(self, s):
+        self.put_byte(len(s))
+        self.write_ucs2(s)
+
     def write_ucs2(self, s):
         """ Write string encoding it in UCS2 into stream """
         self.write_string(s, ucs2_codec)
@@ -499,6 +503,11 @@ _type_map72.update({
     XSYBBINARY: VarBinary72,
     XSYBVARBINARY: VarBinary72,
     SYBIMAGE: Image72,
+})
+
+_type_map73 = _type_map72.copy()
+_type_map73.update({
+    TVPTYPE: Table,
 })
 
 
@@ -1194,9 +1203,11 @@ class _TdsSession(object):
                 # (what's the meaning of "default value" ?)
                 #
                 w.put_byte(param.flags)
-                # FIXME: column_type is wider than one byte.  Do something sensible, not just lop off the high byte.
+
+                # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
                 w.put_byte(param.type.type)
                 param.type.write_info(w)
+
                 param.type.write(w, param.value)
 
     def submit_plain_query(self, operation):
@@ -1824,7 +1835,9 @@ class _TdsSocket(object):
             raise ValueError('This TDS version is not supported')
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
-        if IS_TDS72_PLUS(self):
+        if IS_TDS73_PLUS(self):
+            self._type_map = _type_map73
+        elif IS_TDS72_PLUS(self):
             self._type_map = _type_map72
         elif IS_TDS71_PLUS(self):
             self._type_map = _type_map71

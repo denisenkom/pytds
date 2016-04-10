@@ -1403,6 +1403,7 @@ class MoneyN(BaseTypeN):
         8: Money8.instance,
     }
 
+
 class MsUnique(BaseType):
     type = SYBUNIQUE
     declaration = 'UNIQUEIDENTIFIER'
@@ -1541,3 +1542,114 @@ class Variant(BaseType):
             w.put_int(0)
             return
         raise NotImplementedError
+
+
+class TableValue(object):
+    def __init__(self, columns, rows):
+        self._columns = columns
+        self._rows = rows
+
+    def get_columns(self):
+        return self._columns
+
+
+class Table(BaseType):
+    """
+    Used to represent table valued parameter metadata
+
+    spec: https://msdn.microsoft.com/en-us/library/dd304813.aspx
+    """
+
+    type = TVPTYPE
+
+    def read(self, r):
+        """ According to spec TDS does not support output TVP values """
+        raise NotImplementedError
+
+    def get_declaration(self):
+        raise NotImplementedError
+
+    @classmethod
+    def from_stream(cls, r):
+        """ According to spec TDS does not support output TVP values """
+        raise NotImplementedError
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        raise NotImplementedError
+
+    def __init__(self, typ_dbname, typ_schema, typ_name, columns):
+        """
+        @param typ_dbname: Database where TVP type defined
+        @param typ_schema: Schema where TVP type defined
+        @param typ_name: Name of TVP type
+        @param columns: List of column types
+        """
+        if len(typ_dbname) > 128:
+            raise ValueError("typ_dbname should not be longer that 128 characters")
+        if len(typ_schema) > 128:
+            raise ValueError("typ_schema should not be longer that 128 characters")
+        if len(typ_name) > 128:
+            raise ValueError("typ_name should not be longer that 128 characters")
+        self._typ_dbname = typ_dbname
+        self._typ_schema = typ_schema
+        self._typ_name = typ_name
+        self._columns = columns
+
+    def write_info(self, w):
+        """
+        Writes TVP_TYPENAME structure
+
+        spec: https://msdn.microsoft.com/en-us/library/dd302994.aspx
+        @param w: TdsWriter
+        @return:
+        """
+        w.write_b_varchar(self._typ_dbname)
+        w.write_b_varchar(self._typ_schema)
+        w.write_b_varchar(self._typ_name)
+
+    def write(self, w, val):
+        """
+        Writes remaining part of TVP_TYPE_INFO structure, resuming from TVP_COLMETADATA
+
+        specs:
+        https://msdn.microsoft.com/en-us/library/dd302994.aspx
+        https://msdn.microsoft.com/en-us/library/dd305261.aspx
+        https://msdn.microsoft.com/en-us/library/dd303230.aspx
+
+        @param w: TdsWriter
+        @param val: TableValue or None
+        @return:
+        """
+        if val is None:
+            w.put_usmallint(TVP_NULL_TOKEN)
+            return
+        columns = val.get_columns()
+        w.put_usmallint(len(columns))
+        for column in columns:
+            w.put_uint(column.column_usertype)
+
+            w.put_byte(column.flags)
+
+            # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
+            w.put_byte(column.type.type)
+            column.type.write_info(w)
+
+            w.write_b_varchar('')  # ColName, must be empty in TVP according to spec
+
+        # here can optionally send TVP_ORDER_UNIQUE and TVP_COLUMN_ORDERING
+        # https://msdn.microsoft.com/en-us/library/dd305261.aspx
+
+        # terminating optional metadata
+        w.put_byte(TVP_END_TOKEN)
+
+        # now sending rows using TVP_ROW
+        # https://msdn.microsoft.com/en-us/library/dd305261.aspx
+        for row in val.get_rows():
+            w.put_byte(TVP_ROW_TOKEN)
+            for i, col in columns:
+                if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
+                    col.type.write(w, row[i])
+
+        # terminating rows
+        w.put_byte(TVP_END_TOKEN)
