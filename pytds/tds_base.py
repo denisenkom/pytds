@@ -2,6 +2,8 @@ import socket
 import sys
 
 # tds protocol versions
+import itertools
+
 TDS70 = 0x70000000
 TDS71 = 0x71000000
 TDS71rev1 = 0x71000001
@@ -447,6 +449,60 @@ XML = DBAPITypeObject(SYBMSXML)
 class Binary(bytes):
     def __repr__(self):
         return 'Binary({0})'.format(super(Binary, self).__repr__())
+
+
+class TableValuedParam(object):
+    """
+    sdfsdf
+    """
+    def __init__(self, type_name=None, columns=None, rows=None):
+        # parsing type name
+        self._typ_schema = ''
+        self._typ_name = ''
+        if type_name:
+            parts = type_name.split('.')
+            if len(parts) > 2:
+                raise ValueError('Type name should consist of at most 2 parts, e.g. dbo.MyType')
+            self._typ_name = parts[-1]
+            if len(parts) > 1:
+                self._typ_schema = parts[0]
+
+        self._columns = None
+        self._rows = rows
+        if not columns:
+            # trying to auto detect columns
+            if rows is None:
+                # rows are not present too, this means
+                # entire tvp has value of NULL
+                self._columns = None
+                self._rows = None
+                return
+            else:
+                try:
+                    row = rows.next()
+                except StopIteration:
+                    # no rows
+                    raise ValueError("Cannot infer columns from rows for TVP because there are no rows")
+                else:
+                    # put row back
+                    rows = itertools.chain([row], rows)
+
+                    pass
+
+        self._columns = columns
+        self._rows = rows
+
+    @property
+    def typ_name(self):
+        return self._typ_name
+
+    @property
+    def typ_schema(self):
+        return self._typ_schema
+
+    @property
+    def columns(self):
+        return self._columns
 
 
 class InternalProc(object):

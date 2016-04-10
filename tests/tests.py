@@ -24,13 +24,15 @@ import struct
 import binascii
 from pytds import (
     connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
-    Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary, DateTime,
-    IS_TDS73_PLUS, IS_TDS71_PLUS, NotSupportedError, TDS73, TDS71, TDS72, TDS70,
+    Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary,
+    NotSupportedError,
     output, default, InterfaceError, TDS_ENCRYPTION_OFF,
     STRING, BINARY, NUMBER, DATETIME, DECIMAL, INTEGER, REAL, XML)
 from pytds.tds import (
     _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, Bit, Int, SmallInt,
-    NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation,
+    NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation, DateTime,
+    IS_TDS73_PLUS, IS_TDS71_PLUS, TDS73, TDS71, TDS72, TDS70,
+    TDS_ENCRYPTION_OFF,
     )
 from pytds import _TdsLogin
 import dbapi20
@@ -447,6 +449,17 @@ class DbTests(DbTestCase):
             cur.copy_to(f, 'bulk_insert_table', columns=('num', 'data'))
             cur.execute('select num, data from bulk_insert_table')
             self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
+
+    def test_table_valued_type(self):
+        def rows_gen():
+            yield (1, 'test1')
+            yield (2, 'test2')
+
+        with self.conn.cursor() as cur:
+            cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
+
+            tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen)
+            cur.execute('SELECT * FROM %s', (tvp,))
 
     def test_table_selects(self):
         cur = self.conn.cursor()

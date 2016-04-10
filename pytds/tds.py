@@ -1082,6 +1082,8 @@ class _TdsSession(object):
                 return MsDecimal()
         elif issubclass(value_type, uuid.UUID):
             return MsUnique.instance
+        elif issubclass(value_type, TableValuedParam):
+            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name)
         else:
             raise DataError('Parameter type is not supported: {!r} {!r}'.format(value, value_type))
 

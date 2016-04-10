@@ -1,41 +1,46 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
-
-__author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.8.2'
-
 from collections import deque
+import datetime
+import errno
+import keyword
 import logging
-import six
 import os
 import re
-import keyword
-from six.moves import xrange
-from . import lcid
-from datetime import date, datetime, time
-from . import tz
+import six
 import socket
-import errno
 import uuid
 import warnings
-from .tds import *
+import weakref
+
+from six.moves import xrange
+
+from . import lcid
+from . import tz
 from .tds import (
-    Error, LoginError, DatabaseError,
+    Error, LoginError, DatabaseError, ProgrammingError,
+    IntegrityError, DataError, InternalError,
     InterfaceError, TimeoutError, OperationalError,
+    NotSupportedError, Warning,
     TDS_PENDING, TDS74,
     TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
     IS_TDS7_PLUS,
     _TdsSocket, tds7_get_instances, ClosedConnectionError,
     SP_EXECUTESQL, Column, _create_exception_by_message,
+    Binary, TableValuedParam, output, default
 )
-import weakref
+
+from .tds import ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML
+
+__author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
+__version__ = '1.8.2'
+
 
 def _ver_to_int(ver):
     maj, minor, rev = ver.split('.')
     return (int(maj) << 24) + (int(minor) << 16) + (int(rev) << 8)
 
-intversion = _ver_to_int(__version__)
 
-logger = logging.getLogger(__name__)
+intversion = _ver_to_int(__version__)
 
 #: Compliant with DB SIG 2.0
 apilevel = '2.0'
@@ -574,10 +579,10 @@ class Cursor(six.Iterator):
         self._ensure_transaction()
         operation = six.text_type(operation)
         if params:
+            named_params = {}
             if isinstance(params, (list, tuple)):
                 names = []
                 pid = 1
-                named_params = {}
                 for val in params:
                     if val is None:
                         names.append('NULL')
@@ -593,7 +598,6 @@ class Cursor(six.Iterator):
             elif isinstance(params, dict):
                 # prepend names with @
                 rename = {}
-                named_params = {}
                 for name, value in params.items():
                     if value is None:
                         rename[name] = 'NULL'
@@ -1127,15 +1131,15 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
 
 
 def Date(year, month, day):
-    return date(year, month, day)
+    return datetime.date(year, month, day)
 
 
 def DateFromTicks(ticks):
-    return date.fromtimestamp(ticks)
+    return datetime.date.fromtimestamp(ticks)
 
 
 def Time(hour, minute, second, microsecond=0, tzinfo=None):
-    return time(hour, minute, second, microsecond, tzinfo)
+    return datetime.time(hour, minute, second, microsecond, tzinfo)
 
 
 def TimeFromTicks(ticks):
@@ -1144,8 +1148,8 @@ def TimeFromTicks(ticks):
 
 
 def Timestamp(year, month, day, hour, minute, second, microseconds=0, tzinfo=None):
-    return datetime(year, month, day, hour, minute, second, microseconds, tzinfo)
+    return datetime.datetime(year, month, day, hour, minute, second, microseconds, tzinfo)
 
 
 def TimestampFromTicks(ticks):
-    return datetime.fromtimestamp(ticks)
+    return datetime.datetime.fromtimestamp(ticks)

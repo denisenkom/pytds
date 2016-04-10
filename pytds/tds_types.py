@@ -1578,20 +1578,17 @@ class Table(BaseType):
     def from_declaration(cls, declaration, nullable, connection):
         raise NotImplementedError
 
-    def __init__(self, typ_dbname, typ_schema, typ_name, columns):
+    def __init__(self, typ_schema, typ_name, columns):
         """
-        @param typ_dbname: Database where TVP type defined
         @param typ_schema: Schema where TVP type defined
         @param typ_name: Name of TVP type
         @param columns: List of column types
         """
-        if len(typ_dbname) > 128:
-            raise ValueError("typ_dbname should not be longer that 128 characters")
         if len(typ_schema) > 128:
             raise ValueError("typ_schema should not be longer that 128 characters")
         if len(typ_name) > 128:
             raise ValueError("typ_name should not be longer that 128 characters")
-        self._typ_dbname = typ_dbname
+        self._typ_dbname = ''  # dbname should always be empty string for TVP according to spec
         self._typ_schema = typ_schema
         self._typ_name = typ_name
         self._columns = columns
