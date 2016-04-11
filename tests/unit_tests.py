@@ -1,3 +1,4 @@
+# vim: set fileencoding=utf8 :
 import binascii
 import datetime
 import decimal
