@@ -445,72 +445,6 @@ class MemoryStrChunkedHandler(object):
         return ''.join(self._chunks)
 
 
-_type_map = {
-    SYBINT1: TinyInt,
-    SYBINT2: SmallInt,
-    SYBINT4: Int,
-    SYBINT8: BigInt,
-    SYBINTN: IntN,
-    SYBBIT: Bit,
-    SYBBITN: BitN,
-    SYBREAL: Real,
-    SYBFLT8: Float,
-    SYBFLTN: FloatN,
-    SYBMONEY4: Money4,
-    SYBMONEY: Money8,
-    SYBMONEYN: MoneyN,
-    XSYBCHAR: VarChar70,
-    XSYBVARCHAR: VarChar70,
-    XSYBNCHAR: NVarChar70,
-    XSYBNVARCHAR: NVarChar70,
-    SYBTEXT: Text70,
-    SYBNTEXT: NText70,
-    SYBMSXML: Xml,
-    XSYBBINARY: VarBinary,
-    XSYBVARBINARY: VarBinary,
-    SYBIMAGE: Image70,
-    SYBNUMERIC: MsDecimal,
-    SYBDECIMAL: MsDecimal,
-    SYBVARIANT: Variant,
-    SYBMSDATE: MsDate,
-    SYBMSTIME: MsTime,
-    SYBMSDATETIME2: DateTime2,
-    SYBMSDATETIMEOFFSET: DateTimeOffset,
-    SYBDATETIME4: SmallDateTime,
-    SYBDATETIME: DateTime,
-    SYBDATETIMN: DateTimeN,
-    SYBUNIQUE: MsUnique,
-}
-
-_type_map71 = _type_map.copy()
-_type_map71.update({
-    XSYBCHAR: VarChar71,
-    XSYBNCHAR: NVarChar71,
-    XSYBVARCHAR: VarChar71,
-    XSYBNVARCHAR: NVarChar71,
-    SYBTEXT: Text71,
-    SYBNTEXT: NText71,
-})
-
-_type_map72 = _type_map.copy()
-_type_map72.update({
-    XSYBCHAR: VarChar72,
-    XSYBNCHAR: NVarChar72,
-    XSYBVARCHAR: VarChar72,
-    XSYBNVARCHAR: NVarChar72,
-    SYBTEXT: Text72,
-    SYBNTEXT: NText72,
-    XSYBBINARY: VarBinary72,
-    XSYBVARBINARY: VarBinary72,
-    SYBIMAGE: Image72,
-})
-
-_type_map73 = _type_map72.copy()
-_type_map73.update({
-    TVPTYPE: Table,
-})
-
-
 def _create_exception_by_message(msg, custom_error_msg = None):
     msg_no = msg['msgno']
     if custom_error_msg is not None:
@@ -602,9 +536,7 @@ class _TdsSession(object):
         curcol.column_writeable = (curcol.flags & Column.fReadWrite) > 0
         curcol.column_identity = (curcol.flags & Column.fIdentity) > 0
         type_id = r.get_byte()
-        type_class = self._tds._type_map.get(type_id)
-        if not type_class:
-            raise InterfaceError('Invalid type id', type_id)
+        type_class = self._tds._type_factory.get_type_class(type_id)
         curcol.type = type_class.from_stream(r)
 
     def tds7_process_result(self):
@@ -1022,70 +954,6 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
-    def _autodetect_column_type(self, value, value_type):
-        """ Function guesses type of the parameter from the type of value.
-
-        :param value: value to be passed to db, can be None
-        :param value_type: value type, if value is None, type is used instead of it
-        :return: An instance of subclass of :class:`BaseType`
-        """
-        if value is None and value_type is None:
-            return self.conn.NVarChar(1, collation=self.conn.collation)
-        assert value_type is not None
-        assert value is None or isinstance(value, value_type)
-        
-        if issubclass(value_type, bool):
-            return BitN.instance
-        elif issubclass(value_type, six.integer_types):
-            if value == None:
-                return IntN(8)
-            if -2 ** 31 <= value <= 2 ** 31 - 1:
-                return IntN(4)
-            elif -2 ** 63 <= value <= 2 ** 63 - 1:
-                return IntN(8)
-            elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
-                return MsDecimal(0, 38)
-            else:
-                raise DataError('Numeric value out of range')
-        elif issubclass(value_type, float):
-            return FloatN(8)
-        elif issubclass(value_type, Binary):
-            return self.conn.long_binary_type()
-        elif issubclass(value_type, six.binary_type):
-            if self._tds.login.bytes_to_unicode:
-                return self.conn.long_string_type(collation=self.conn.collation)
-            else:
-                return self.conn.long_varchar_type(collation=self.conn.collation)
-        elif issubclass(value_type, six.string_types):
-            return self.conn.long_string_type(collation=self.conn.collation)
-        elif issubclass(value_type, datetime):
-            if IS_TDS73_PLUS(self):
-                if value != None and value.tzinfo and not self.use_tz:
-                    return DateTimeOffset()
-                else:
-                    return DateTime2()
-            else:
-                return DateTimeN(8)
-        elif issubclass(value_type, date):
-            if IS_TDS73_PLUS(self):
-                return MsDate.instance
-            else:
-                return DateTimeN(8)
-        elif issubclass(value_type, time):
-            if not IS_TDS73_PLUS(self):
-                raise DataError('Time type is not supported on MSSQL 2005 and lower')
-            return MsTime(6)
-        elif issubclass(value_type, Decimal):
-            if value != None:
-                return MsDecimal.from_value(value)
-            else:
-                return MsDecimal()
-        elif issubclass(value_type, uuid.UUID):
-            return MsUnique.instance
-        elif issubclass(value_type, TableValuedParam):
-            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name)
-        else:
-            raise DataError('Parameter type is not supported: {!r} {!r}'.format(value, value_type))
 
     def make_param(self, name, value):
         """ Generates instance of :class:`Column` from value and name
@@ -1112,24 +980,18 @@ class _TdsSession(object):
         if isinstance(value, output):
             column.flags |= fByRefValue
             if isinstance(value.type, six.string_types):
-                column.type = self._tds.type_by_declaration(value.type, True)
-            value_type = value.type or type(value.value)
+                column.type = self.conn._type_factory.type_by_declaration(declaration=value.type, nullable=True, connection=self._tds)
+            elif value.type:
+                column.type = self.conn._type_inferrer.from_class(value.type)
             value = value.value
-        else:
-            value_type = type(value)
 
-        if value_type is type(None):
-            value_type = None
-            
         if value is default:
             column.flags |= fDefaultValue
             value = None
-            if value_type is _Default:
-                value_type = None
 
         column.value = value
         if column.type is None:
-            column.type = self._autodetect_column_type(value, value_type)
+            column.type = self.conn._type_inferrer.from_value(value)
         return column
 
     def _convert_params(self, parameters):
@@ -1815,6 +1677,8 @@ class _TdsSocket(object):
         self._bufsize = 4096
         self.tds_version = TDS74
         self.use_tz = use_tz
+        self._type_factory = TypeFactory(self.tds_version)
+        self._type_inferrer = None
 
     def __repr__(self):
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
@@ -1837,14 +1701,13 @@ class _TdsSocket(object):
             raise ValueError('This TDS version is not supported')
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
-        if IS_TDS73_PLUS(self):
-            self._type_map = _type_map73
-        elif IS_TDS72_PLUS(self):
-            self._type_map = _type_map72
-        elif IS_TDS71_PLUS(self):
-            self._type_map = _type_map71
-        else:
-            self._type_map = _type_map
+        self._type_factory = TypeFactory(self.tds_version)
+        self._type_inferrer = TdsTypeInferrer(
+            type_factory=self._type_factory,
+            collation=self.collation,
+            bytes_to_unicode=self.login.bytes_to_unicode,
+            allow_tz=not self.use_tz
+        )
         text_size = login.text_size
         if self._mars_enabled:
             from .smp import SmpManager
@@ -1914,105 +1777,6 @@ class _TdsSocket(object):
         if self.authentication:
             self.authentication.close()
             self.authentication = None
-
-    def NVarChar(self, size, collation=raw_collation):
-        if IS_TDS72_PLUS(self):
-            return NVarChar72(size, collation)
-        elif IS_TDS71_PLUS(self):
-            return NVarChar71(size, collation)
-        else:
-            return NVarChar70(size)
-
-    def VarChar(self, size, collation=raw_collation):
-        if IS_TDS72_PLUS(self):
-            return VarChar72(size, collation)
-        elif IS_TDS71_PLUS(self):
-            return VarChar71(size, collation)
-        else:
-            return VarChar70(size, codec=self.server_codec)
-
-    def Text(self, size=0, collation=raw_collation):
-        if IS_TDS72_PLUS(self):
-            return Text72(size, collation=collation)
-        elif IS_TDS71_PLUS(self):
-            return Text71(size, collation=collation)
-        else:
-            return Text70(size, codec=self.server_codec)
-
-    def NText(self, size=0, collation=raw_collation):
-        if IS_TDS72_PLUS(self):
-            return NText72(size, collation=collation)
-        elif IS_TDS71_PLUS(self):
-            return NText71(size, collation=collation)
-        else:
-            return NText70(size)
-
-    def VarBinary(self, size):
-        if IS_TDS72_PLUS(self):
-            return VarBinary72(size)
-        else:
-            return VarBinary(size)
-
-    def Image(self, size=0):
-        if IS_TDS72_PLUS(self):
-            return Image72(size)
-        else:
-            return Image70(size)
-
-    Bit = Bit.instance
-    BitN = BitN.instance
-    TinyInt = TinyInt.instance
-    SmallInt = SmallInt.instance
-    Int = Int.instance
-    BigInt = BigInt.instance
-    IntN = IntN
-    Real = Real.instance
-    Float = Float.instance
-    FloatN = FloatN
-    SmallDateTime = SmallDateTime.instance
-    DateTime = DateTime.instance
-    DateTimeN = DateTimeN
-    Date = MsDate.instance
-    Time = MsTime
-    DateTime2 = DateTime2
-    DateTimeOffset = DateTimeOffset
-    Decimal = MsDecimal
-    SmallMoney = Money4.instance
-    Money = Money8.instance
-    MoneyN = MoneyN
-    UniqueIdentifier = MsUnique.instance
-    SqlVariant = Variant
-    Xml = Xml
-
-    def long_binary_type(self):
-        if IS_TDS72_PLUS(self):
-            return VarBinaryMax()
-        else:
-            return Image70()
-
-    def long_varchar_type(self, collation=raw_collation):
-        if IS_TDS72_PLUS(self):
-            return VarCharMax(collation)
-        elif IS_TDS71_PLUS(self):
-            return Text71(-1, '', collation)
-        else:
-            return Text70(codec=self.server_codec)
-
-    def long_string_type(self, collation=raw_collation):
-        if IS_TDS72_PLUS(self):
-            return NVarCharMax(0, collation)
-        elif IS_TDS71_PLUS(self):
-            return NText71(-1, '', collation)
-        else:
-            return NText70()
-
-    def type_by_declaration(self, declaration, nullable):
-        declaration = declaration.strip().upper()
-        for type_class in self._type_map.values():
-            type_inst = type_class.from_declaration(declaration, nullable, self)
-            if type_inst:
-                return type_inst 
-        raise ValueError('Unable to parse type declaration', declaration)
 
 
 class Column(object):

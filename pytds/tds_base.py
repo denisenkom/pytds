@@ -485,12 +485,10 @@ class TableValuedParam(object):
                     raise ValueError("Cannot infer columns from rows for TVP because there are no rows")
                 else:
                     # put row back
-                    rows = itertools.chain([row], rows)
+                    self._rows = itertools.chain([row], rows)
 
-                    pass
-
-        self._columns = columns
-        self._rows = rows
+                    # let's make it all strings for now
+                    self._columns = [STRING for _ in row]
 
     @property
     def typ_name(self):
@@ -503,6 +501,10 @@ class TableValuedParam(object):
     @property
     def columns(self):
         return self._columns
+
+    @property
+    def rows(self):
+        return self._rows
 
 
 class InternalProc(object):

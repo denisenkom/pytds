@@ -1,6 +1,7 @@
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 import struct
+import six
 import re
 import uuid
 
@@ -85,7 +86,15 @@ class PlpReader(object):
                 left -= len(buf)
 
 
-class BaseType(object):
+class CommonEqualityMixin(object):
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+class BaseType(CommonEqualityMixin):
     """ Base type for TDS data types.
 
     All TDS types should derive from it.
@@ -241,6 +250,7 @@ class BaseTypeN(BaseType):
             return
         w.put_byte(self._size)
         self._current_subtype.write(w, val)
+
 
 class Bit(BasePrimitiveType):
     type = SYBBIT
@@ -641,6 +651,9 @@ class Text70(BaseType):
         self._table_name = table_name
         self._codec = codec
 
+    def __repr__(self):
+        return 'Text70(size={},table_name={},codec={})'.format(self._size, self._table_name, self._codec)
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
@@ -684,6 +697,11 @@ class Text71(Text70):
         self._codec = collation.get_codec()
         self._table_name = table_name
 
+    def __repr__(self):
+        return 'Text71(size={}, table_name={}, collation={})'.format(
+            self._size, self._table_name, repr(self._collation)
+        )
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
@@ -719,6 +737,9 @@ class NText70(BaseType):
     def __init__(self, size=0, table_name=''):
         self._size = size
         self._table_name = table_name
+
+    def __repr__(self):
+        return 'NText70(size={}, table_name={})'.format(self._size, self._table_name)
 
     @classmethod
     def from_stream(cls, r):
@@ -759,6 +780,11 @@ class NText71(NText70):
         self._size = size
         self._collation = collation
         self._table_name = table_name
+
+    def __repr__(self):
+        return 'NText71(size={}, table_name={}, collation={})'.format(self._size,
+                                                                      self._table_name,
+                                                                      repr(self._collation))
 
     @classmethod
     def from_stream(cls, r):
@@ -1282,6 +1308,9 @@ class MsDecimal(BaseType):
         self._prec = prec
         self._size = self._bytes_per_prec[prec]
 
+    def __repr__(self):
+        return 'MsDecimal(scale={}, prec={})'.format(self._scale, self._prec)
+
     @classmethod
     def from_value(cls, value):
         if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
@@ -1544,15 +1573,6 @@ class Variant(BaseType):
         raise NotImplementedError
 
 
-class TableValue(object):
-    def __init__(self, columns, rows):
-        self._columns = columns
-        self._rows = rows
-
-    def get_columns(self):
-        return self._columns
-
-
 class Table(BaseType):
     """
     Used to represent table valued parameter metadata
@@ -1615,13 +1635,13 @@ class Table(BaseType):
         https://msdn.microsoft.com/en-us/library/dd303230.aspx
 
         @param w: TdsWriter
-        @param val: TableValue or None
+        @param val: TableValuedParam or None
         @return:
         """
         if val is None:
             w.put_usmallint(TVP_NULL_TOKEN)
             return
-        columns = val.get_columns()
+        columns = val.columns
         w.put_usmallint(len(columns))
         for column in columns:
             w.put_uint(column.column_usertype)
@@ -1642,7 +1662,7 @@ class Table(BaseType):
 
         # now sending rows using TVP_ROW
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
-        for row in val.get_rows():
+        for row in val.rows:
             w.put_byte(TVP_ROW_TOKEN)
             for i, col in columns:
                 if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
@@ -1650,3 +1670,311 @@ class Table(BaseType):
 
         # terminating rows
         w.put_byte(TVP_END_TOKEN)
+
+
+_type_map = {
+    SYBINT1: TinyInt,
+    SYBINT2: SmallInt,
+    SYBINT4: Int,
+    SYBINT8: BigInt,
+    SYBINTN: IntN,
+    SYBBIT: Bit,
+    SYBBITN: BitN,
+    SYBREAL: Real,
+    SYBFLT8: Float,
+    SYBFLTN: FloatN,
+    SYBMONEY4: Money4,
+    SYBMONEY: Money8,
+    SYBMONEYN: MoneyN,
+    XSYBCHAR: VarChar70,
+    XSYBVARCHAR: VarChar70,
+    XSYBNCHAR: NVarChar70,
+    XSYBNVARCHAR: NVarChar70,
+    SYBTEXT: Text70,
+    SYBNTEXT: NText70,
+    SYBMSXML: Xml,
+    XSYBBINARY: VarBinary,
+    XSYBVARBINARY: VarBinary,
+    SYBIMAGE: Image70,
+    SYBNUMERIC: MsDecimal,
+    SYBDECIMAL: MsDecimal,
+    SYBVARIANT: Variant,
+    SYBMSDATE: MsDate,
+    SYBMSTIME: MsTime,
+    SYBMSDATETIME2: DateTime2,
+    SYBMSDATETIMEOFFSET: DateTimeOffset,
+    SYBDATETIME4: SmallDateTime,
+    SYBDATETIME: DateTime,
+    SYBDATETIMN: DateTimeN,
+    SYBUNIQUE: MsUnique,
+}
+
+_type_map71 = _type_map.copy()
+_type_map71.update({
+    XSYBCHAR: VarChar71,
+    XSYBNCHAR: NVarChar71,
+    XSYBVARCHAR: VarChar71,
+    XSYBNVARCHAR: NVarChar71,
+    SYBTEXT: Text71,
+    SYBNTEXT: NText71,
+})
+
+_type_map72 = _type_map.copy()
+_type_map72.update({
+    XSYBCHAR: VarChar72,
+    XSYBNCHAR: NVarChar72,
+    XSYBVARCHAR: VarChar72,
+    XSYBNVARCHAR: NVarChar72,
+    SYBTEXT: Text72,
+    SYBNTEXT: NText72,
+    XSYBBINARY: VarBinary72,
+    XSYBVARBINARY: VarBinary72,
+    SYBIMAGE: Image72,
+})
+
+_type_map73 = _type_map72.copy()
+_type_map73.update({
+    TVPTYPE: Table,
+})
+
+
+class TypeFactory(object):
+    """
+    Factory class for TDS data types
+    """
+    def __init__(self, tds_ver):
+        self._tds_ver = tds_ver
+        if self._tds_ver >= TDS73:
+            self._type_map = _type_map73
+        elif self._tds_ver >= TDS72:
+            self._type_map = _type_map72
+        elif self._tds_ver >= TDS71:
+            self._type_map = _type_map71
+        else:
+            self._type_map = _type_map
+
+    def get_type_class(self, tds_type_id):
+        type_class = self._type_map.get(tds_type_id)
+        if not type_class:
+            raise InterfaceError('Invalid type id {}'.format(tds_type_id))
+        return type_class
+
+    def long_binary_type(self):
+        if self._tds_ver >= TDS72:
+            return VarBinaryMax()
+        else:
+            return Image70()
+
+    def long_varchar_type(self, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return VarCharMax(collation)
+        elif self._tds_ver >= TDS71:
+            return Text71(-1, '', collation)
+        else:
+            return Text70(codec=collation.get_codec())
+
+    def long_string_type(self, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return NVarCharMax(0, collation)
+        elif self._tds_ver >= TDS71:
+            return NText71(-1, '', collation)
+        else:
+            return NText70()
+
+    def short_nvarchar(self, size, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return NVarChar72(size, collation)
+        elif self._tds_ver >= TDS71:
+            return NVarChar71(size, collation)
+        else:
+            return NVarChar70(size)
+
+    def datetime(self, precision):
+        if self._tds_ver >= TDS72:
+            return DateTime2(prec=precision)
+        else:
+            return DateTimeN(8)
+
+    def has_datetime_with_tz(self):
+        return self._tds_ver >= TDS72
+
+    def datetime_with_tz(self, precision):
+        if self._tds_ver >= TDS72:
+            return DateTimeOffset(prec=precision)
+        else:
+            raise DataError('Given TDS version does not support DATETIMEOFFSET type')
+
+    def date(self):
+        if self._tds_ver >= TDS72:
+            return MsDate.instance
+        else:
+            return DateTimeN(8)
+
+    def time(self, precision):
+        if self._tds_ver >= TDS72:
+            return MsTime(prec=precision)
+        else:
+            raise DataError('Given TDS version does not support TIME type')
+
+    def NVarChar(self, size, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return NVarChar72(size, collation)
+        elif self._tds_ver >= TDS71:
+            return NVarChar71(size, collation)
+        else:
+            return NVarChar70(size)
+
+    def VarChar(self, size, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return VarChar72(size, collation)
+        elif self._tds_ver >= TDS71:
+            return VarChar71(size, collation)
+        else:
+            return VarChar70(size, codec=collation.get_codec())
+
+    def Text(self, size=0, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return Text72(size, collation=collation)
+        elif self._tds_ver >= TDS71:
+            return Text71(size, collation=collation)
+        else:
+            return Text70(size, codec=collation.get_codec())
+
+    def NText(self, size=0, collation=raw_collation):
+        if self._tds_ver >= TDS72:
+            return NText72(size, collation=collation)
+        elif self._tds_ver >= TDS71:
+            return NText71(size, collation=collation)
+        else:
+            return NText70(size)
+
+    def VarBinary(self, size):
+        if self._tds_ver >= TDS72:
+            return VarBinary72(size)
+        else:
+            return VarBinary(size)
+
+    def Image(self, size=0):
+        if self._tds_ver >= TDS72:
+            return Image72(size)
+        else:
+            return Image70(size)
+
+    Bit = Bit.instance
+    BitN = BitN.instance
+    TinyInt = TinyInt.instance
+    SmallInt = SmallInt.instance
+    Int = Int.instance
+    BigInt = BigInt.instance
+    IntN = IntN
+    Real = Real.instance
+    Float = Float.instance
+    FloatN = FloatN
+    SmallDateTime = SmallDateTime.instance
+    DateTime = DateTime.instance
+    DateTimeN = DateTimeN
+    Date = MsDate.instance
+    Time = MsTime
+    DateTime2 = DateTime2
+    DateTimeOffset = DateTimeOffset
+    Decimal = MsDecimal
+    SmallMoney = Money4.instance
+    Money = Money8.instance
+    MoneyN = MoneyN
+    UniqueIdentifier = MsUnique.instance
+    SqlVariant = Variant
+    Xml = Xml
+
+    def type_by_declaration(self, declaration, nullable, connection):
+        declaration = declaration.strip().upper()
+        for type_class in self._type_map.values():
+            type_inst = type_class.from_declaration(
+                declaration=declaration, nullable=nullable, connection=connection)
+            if type_inst:
+                return type_inst
+        raise ValueError('Unable to parse type declaration', declaration)
+
+
+class TdsTypeInferrer(object):
+    def __init__(self, type_factory, collation=None, bytes_to_unicode=False, allow_tz=False):
+        """
+        Class used to do TDS type inference
+
+        :param type_factory: Instance of TypeFactory
+        :param collation: Collation to use for strings
+        :param bytes_to_unicode: Treat bytes type as unicode string
+        :param allow_tz: Allow usage of DATETIMEOFFSET type
+        """
+        self._type_factory = type_factory
+        self._collation = collation
+        self._bytes_to_unicode = bytes_to_unicode
+        self._allow_tz = allow_tz
+
+    def from_value(self, value):
+        """ Function infers TDS type from Python value.
+
+        :param value: value from which to infer TDS type
+        :return: An instance of subclass of :class:`BaseType`
+        """
+        if value is None:
+            return self._type_factory.short_nvarchar(1, collation=self._collation)
+        return self._from_class_value(value, type(value))
+
+    def from_class(self, cls):
+        """ Function infers TDS type from Python class.
+
+        :param cls: Class from which to infer type
+        :return: An instance of subclass of :class:`BaseType`
+        """
+        return self._from_class_value(None, cls)
+
+    def _from_class_value(self, value, value_type):
+        type_factory = self._type_factory
+        collation = self._collation
+        bytes_to_unicode = self._bytes_to_unicode
+        allow_tz = self._allow_tz
+
+        if issubclass(value_type, bool):
+            return BitN.instance
+        elif issubclass(value_type, six.integer_types):
+            if value is None:
+                return IntN(8)
+            if -2 ** 31 <= value <= 2 ** 31 - 1:
+                return IntN(4)
+            elif -2 ** 63 <= value <= 2 ** 63 - 1:
+                return IntN(8)
+            elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
+                return MsDecimal(0, 38)
+            else:
+                raise DataError('Numeric value out of range')
+        elif issubclass(value_type, float):
+            return FloatN(8)
+        elif issubclass(value_type, Binary):
+            return type_factory.long_binary_type()
+        elif issubclass(value_type, six.binary_type):
+            if bytes_to_unicode:
+                return type_factory.long_string_type(collation=collation)
+            else:
+                return type_factory.long_varchar_type(collation=collation)
+        elif issubclass(value_type, six.string_types):
+            return type_factory.long_string_type(collation=collation)
+        elif issubclass(value_type, datetime):
+            if value and value.tzinfo and allow_tz:
+                return type_factory.datetime_with_tz(precision=6)
+            else:
+                return type_factory.datetime(precision=6)
+        elif issubclass(value_type, date):
+            return type_factory.date()
+        elif issubclass(value_type, time):
+            return type_factory.time(precision=6)
+        elif issubclass(value_type, Decimal):
+            if value is None:
+                return MsDecimal()
+            else:
+                return MsDecimal.from_value(value)
+        elif issubclass(value_type, uuid.UUID):
+            return MsUnique.instance
+        elif issubclass(value_type, TableValuedParam):
+            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name)
+        else:
+            raise DataError('Cannot infer TDS type from Python value: {!r}'.format(value))
