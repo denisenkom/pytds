@@ -467,28 +467,8 @@ class TableValuedParam(object):
             if len(parts) > 1:
                 self._typ_schema = parts[0]
 
-        self._columns = None
+        self._columns = columns
         self._rows = rows
-        if not columns:
-            # trying to auto detect columns
-            if rows is None:
-                # rows are not present too, this means
-                # entire tvp has value of NULL
-                self._columns = None
-                self._rows = None
-                return
-            else:
-                try:
-                    row = rows.next()
-                except StopIteration:
-                    # no rows
-                    raise ValueError("Cannot infer columns from rows for TVP because there are no rows")
-                else:
-                    # put row back
-                    self._rows = itertools.chain([row], rows)
-
-                    # let's make it all strings for now
-                    self._columns = [STRING for _ in row]
 
     @property
     def typ_name(self):
@@ -615,3 +595,22 @@ def total_seconds(td):
     provides a backport
     """
     return td.days * 24 * 60 * 60 + td.seconds
+
+
+class Column(object):
+    fNullable = 1
+    fCaseSen = 2
+    fReadWrite = 8
+    fIdentity = 0x10
+    fComputed = 0x20
+
+    def __init__(self, name='', type=None, flags=0, value=None):
+        self.char_codec = None
+        self.column_name = name
+        self.column_usertype = 0
+        self.flags = flags
+        self.type = type
+        self.value = value
+
+    def __repr__(self):
+        return '<Column(name={0}, value={1}, type={2})>'.format(repr(self.column_name), repr(self.value), repr(self.type))

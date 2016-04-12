@@ -1779,25 +1779,6 @@ class _TdsSocket(object):
             self.authentication = None
 
 
-class Column(object):
-    fNullable = 1
-    fCaseSen = 2
-    fReadWrite = 8
-    fIdentity = 0x10
-    fComputed = 0x20
-
-    def __init__(self, name='', type=None, flags=0, value=None):
-        self.char_codec = None
-        self.column_name = name
-        self.column_usertype = 0
-        self.flags = flags
-        self.type = type
-        self.value = value
-
-    def __repr__(self):
-        return '<Column(name={0}, value={1}, type={2})>'.format(repr(self.column_name), repr(self.value), repr(self.type))
-
-
 class _Results(object):
     def __init__(self):
         self.columns = []

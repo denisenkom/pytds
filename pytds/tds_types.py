@@ -1935,20 +1935,20 @@ class TdsTypeInferrer(object):
         allow_tz = self._allow_tz
 
         if issubclass(value_type, bool):
-            return BitN.instance
+            return type_factory.BitN
         elif issubclass(value_type, six.integer_types):
             if value is None:
-                return IntN(8)
+                return type_factory.IntN(8)
             if -2 ** 31 <= value <= 2 ** 31 - 1:
-                return IntN(4)
+                return type_factory.IntN(4)
             elif -2 ** 63 <= value <= 2 ** 63 - 1:
-                return IntN(8)
+                return type_factory.IntN(8)
             elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
-                return MsDecimal(0, 38)
+                return type_factory.Decimal(0, 38)
             else:
                 raise DataError('Numeric value out of range')
         elif issubclass(value_type, float):
-            return FloatN(8)
+            return type_factory.FloatN(8)
         elif issubclass(value_type, Binary):
             return type_factory.long_binary_type()
         elif issubclass(value_type, six.binary_type):
@@ -1969,12 +1969,32 @@ class TdsTypeInferrer(object):
             return type_factory.time(precision=6)
         elif issubclass(value_type, Decimal):
             if value is None:
-                return MsDecimal()
+                return type_factory.Decimal()
             else:
-                return MsDecimal.from_value(value)
+                return type_factory.Decimal.from_value(value)
         elif issubclass(value_type, uuid.UUID):
-            return MsUnique.instance
+            return type_factory.UniqueIdentifier.instance
         elif issubclass(value_type, TableValuedParam):
-            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name)
+            columns = value.columns
+            rows = value.rows
+            if columns is None:
+                # trying to auto detect columns
+                if rows is None:
+                    # rows are not present too, this means
+                    # entire tvp has value of NULL
+                    return
+                else:
+                    try:
+                        row = rows.next()
+                    except StopIteration:
+                        # no rows
+                        raise DataError("Cannot infer columns from rows for TVP because there are no rows")
+                    else:
+                        # put row back
+                        rows = itertools.chain([row], rows)
+
+                        # let's make it all strings for now
+                        columns = [Column(type=self.from_value(cell)) for cell in row]
+            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns)
         else:
             raise DataError('Cannot infer TDS type from Python value: {!r}'.format(value))
