@@ -454,9 +454,11 @@ class DbTests(DbTestCase):
 
         with self.conn.cursor() as cur:
             cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
+            self.conn.commit()
 
-            tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen)
+            tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
             cur.execute('SELECT * FROM %s', (tvp,))
+            self.assertEqual(cur.fetchall(), [(1, 'test1'), (2, 'test2')])
 
     def test_table_selects(self):
         cur = self.conn.cursor()

@@ -1587,7 +1587,12 @@ class Table(BaseType):
         raise NotImplementedError
 
     def get_declaration(self):
-        raise NotImplementedError
+        assert not self._typ_dbname
+        if self._typ_schema:
+            full_name = '{}.{}'.format(self._typ_schema, self._typ_name)
+        else:
+            full_name = self._typ_name
+        return '{} READONLY'.format(full_name)
 
     @classmethod
     def from_stream(cls, r):
@@ -1598,7 +1603,7 @@ class Table(BaseType):
     def from_declaration(cls, declaration, nullable, connection):
         raise NotImplementedError
 
-    def __init__(self, typ_schema, typ_name, columns):
+    def __init__(self, typ_schema, typ_name, columns, rows):
         """
         @param typ_schema: Schema where TVP type defined
         @param typ_name: Name of TVP type
@@ -1612,6 +1617,7 @@ class Table(BaseType):
         self._typ_schema = typ_schema
         self._typ_name = typ_name
         self._columns = columns
+        self._rows = rows
 
     def write_info(self, w):
         """
@@ -1625,7 +1631,7 @@ class Table(BaseType):
         w.write_b_varchar(self._typ_schema)
         w.write_b_varchar(self._typ_name)
 
-    def write(self, w, val):
+    def write(self, w, _):
         """
         Writes remaining part of TVP_TYPE_INFO structure, resuming from TVP_COLMETADATA
 
@@ -1638,15 +1644,15 @@ class Table(BaseType):
         @param val: TableValuedParam or None
         @return:
         """
-        if val is None:
+        if self._rows is None:
             w.put_usmallint(TVP_NULL_TOKEN)
             return
-        columns = val.columns
+        columns = self._columns
         w.put_usmallint(len(columns))
         for column in columns:
             w.put_uint(column.column_usertype)
 
-            w.put_byte(column.flags)
+            w.put_usmallint(column.flags)
 
             # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
             w.put_byte(column.type.type)
@@ -1662,9 +1668,9 @@ class Table(BaseType):
 
         # now sending rows using TVP_ROW
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
-        for row in val.rows:
+        for row in self._rows:
             w.put_byte(TVP_ROW_TOKEN)
-            for i, col in columns:
+            for i, col in enumerate(columns):
                 if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
                     col.type.write(w, row[i])
 
@@ -1985,7 +1991,7 @@ class TdsTypeInferrer(object):
                     return
                 else:
                     try:
-                        row = rows.next()
+                        row = next(rows)
                     except StopIteration:
                         # no rows
                         raise DataError("Cannot infer columns from rows for TVP because there are no rows")
@@ -1995,6 +2001,6 @@ class TdsTypeInferrer(object):
 
                         # let's make it all strings for now
                         columns = [Column(type=self.from_value(cell)) for cell in row]
-            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns)
+            return Table(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns, rows=rows)
         else:
             raise DataError('Cannot infer TDS type from Python value: {!r}'.format(value))
