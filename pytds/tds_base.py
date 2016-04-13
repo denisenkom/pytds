@@ -288,6 +288,14 @@ TVP_ORDER_UNIQUE_TOKEN = 0x10
 TVP_COLUMN_ORDERING_TOKEN = 0x11
 
 
+class CommonEqualityMixin(object):
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
 def iterdecode(iterable, codec):
     """ Uses an incremental decoder to decode each chunk in iterable.
     This function is a generator.
@@ -597,7 +605,7 @@ def total_seconds(td):
     return td.days * 24 * 60 * 60 + td.seconds
 
 
-class Column(object):
+class Column(CommonEqualityMixin):
     fNullable = 1
     fCaseSen = 2
     fReadWrite = 8
@@ -613,4 +621,11 @@ class Column(object):
         self.value = value
 
     def __repr__(self):
-        return '<Column(name={0}, value={1}, type={2})>'.format(repr(self.column_name), repr(self.value), repr(self.type))
+        return '<Column(name={},value={},type={},flags={},user_type={},codec={})>'.format(
+            repr(self.column_name),
+            repr(self.value),
+            repr(self.type),
+            repr(self.flags),
+            repr(self.column_usertype),
+            repr(self.char_codec),
+        )

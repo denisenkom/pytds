@@ -86,14 +86,6 @@ class PlpReader(object):
                 left -= len(buf)
 
 
-class CommonEqualityMixin(object):
-    def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-
 class BaseType(CommonEqualityMixin):
     """ Base type for TDS data types.
 
@@ -334,6 +326,9 @@ class IntN(BaseTypeN):
         8: BigInt.instance,
     }
 
+    def __repr__(self):
+        return 'IntN({})'.format(self._size)
+
 
 class Real(BasePrimitiveType):
     type = SYBREAL
@@ -569,6 +564,9 @@ class NVarChar72(NVarChar71):
 
 
 class NVarCharMax(NVarChar72):
+    def __repr__(self):
+        return 'NVarCharMax(s={},c={})'.format(self._size, repr(self._collation))
+
     def get_typeid(self):
         return SYBNTEXT
 
@@ -1618,6 +1616,28 @@ class Table(BaseType):
         self._typ_name = typ_name
         self._columns = columns
         self._rows = rows
+
+    def __repr__(self):
+        return 'Table(s={},n={},cols={},rows={})'.format(
+            self._typ_schema, self._typ_name, repr(self._columns),
+            repr(self._rows)
+        )
+
+    @property
+    def typ_schema(self):
+        return self._typ_schema
+
+    @property
+    def typ_name(self):
+        return self._typ_name
+
+    @property
+    def columns(self):
+        return self._columns
+
+    @property
+    def rows(self):
+        return self._rows
 
     def write_info(self, w):
         """

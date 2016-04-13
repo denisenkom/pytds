@@ -256,7 +256,8 @@ class TestMessages(unittest.TestCase):
             b'\xe0\x00\x00\x08' +  # flags
             b'\x10\xff\xff\xff' +  # client tz
             b'\x04\x02\x00\x00' +  # client lcid
-            b'^\x00\x07\x00l\x00\x04\x00t\x00\x07\x00\x82\x00\x07\x00\x90\x00\n\x00\x00\x00\x00\x00\xa4\x00\x07\x00\xb2\x00\x02\x00\xb6\x00\x08\x00' +
+            b'^\x00\x07\x00l\x00\x04\x00t\x00\x07\x00\x82\x00\x07\x00\x90\x00\n\x00\x00\x00\x00\x00\xa4\x00\x07' +
+            b'\x00\xb2\x00\x02\x00\xb6\x00\x08\x00' +
             b'\x12\x34\x56\x78\x90\xab' +
             b'\xc6\x00\x00' +
             b'\x00\xc6\x00\x08\x00\xd6\x00\x00\x00\x00\x00\x00\x00' +
@@ -279,7 +280,11 @@ class TestMessages(unittest.TestCase):
             b'00000071' +
             b'00100000' +
             binascii.hexlify(struct.pack('<l', pytds.intversion)) +
-            b'6400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c0065007000610074006800')
+            b'6400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b' +
+            b'2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073' +
+            b'007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0' +
+            b'065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c00650070006100' +
+            b'74006800')
         sock._sent = b''
         login.user_name = 'x' * 129
         with self.assertRaisesRegexp(ValueError, 'User name should be no longer that 128 characters'):
@@ -372,7 +377,9 @@ class TestMessages(unittest.TestCase):
         tds._main_session.submit_bulk(metadata, [(False,)])
         self.assertEqual(
             binascii.hexlify(bytes(sock._sent)),
-            binascii.hexlify(b'\x07\x01\x00\x26\x00\x00\x00\x00\x81\x01\x00\x00\x00\x00\x00\x09\x002\x02c\x001\x00\xd1\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'),
+            binascii.hexlify(
+                b'\x07\x01\x00\x26\x00\x00\x00\x00\x81\x01\x00\x00\x00\x00\x00\x09\x002\x02c\x001\x00\xd1\x00\xfd' +
+                b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'),
         )
 
     def test_types(self):
@@ -385,14 +392,16 @@ class TestMessages(unittest.TestCase):
 
         t = pytds.tds.NVarCharMax(
             0,
-            Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False, ignore_kana=False, binary=True, binary2=False, version=0),
+            Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False,
+                      ignore_kana=False, binary=True, binary2=False, version=0),
         )
         t.write_info(w)
         self.assertEqual(w._buf[:w._pos], b'\xff\xff\t\x04\x00\x01\x00')
 
         w._pos = 0
         t.write(w, 'test')
-        self.assertEqual(w._buf[:w._pos], b'\x08\x00\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
+        self.assertEqual(w._buf[:w._pos],
+                         b'\x08\x00\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
 
     def test_get_instances(self):
         data = b'\x05[\x00ServerName;MISHA-PC;InstanceName;SQLEXPRESS;IsClustered;No;Version;10.0.1600.22;tcp;49849;;'
@@ -409,7 +418,8 @@ class TestMessages(unittest.TestCase):
 
 class ConnectionStringTestCase(unittest.TestCase):
     def test_parsing(self):
-        res = pytds._parse_connection_string('Server=myServerAddress;Database=myDataBase;User Id=myUsername; Password=myPassword;')
+        res = pytds._parse_connection_string(
+            'Server=myServerAddress;Database=myDataBase;User Id=myUsername; Password=myPassword;')
         self.assertEqual({'server': 'myServerAddress',
                           'database': 'myDataBase',
                           'user_id': 'myUsername',
@@ -423,7 +433,8 @@ class ConnectionStringTestCase(unittest.TestCase):
                           },
                          res)
 
-        res = pytds._parse_connection_string('Server=myServerName\\myInstanceName;Database=myDataBase;User Id=myUsername; Password=myPassword;')
+        res = pytds._parse_connection_string(
+            'Server=myServerName\\myInstanceName;Database=myDataBase;User Id=myUsername; Password=myPassword;')
         self.assertEqual({'server': 'myServerName\\myInstanceName',
                           'database': 'myDataBase',
                           'user_id': 'myUsername',
@@ -756,3 +767,24 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         res = infer_tds_type(uuid.uuid4(), type_factory=factory)
         self.assertEqual(res, MsUnique())
+
+    def test_tvp(self):
+        def rows_gen():
+            yield (1, 'test1')
+            yield (2, 'test2')
+
+        factory = TypeFactory(TDS74)
+        tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
+        res = infer_tds_type(tvp, type_factory=factory, collation=raw_collation)
+        self.assertEqual(res.typ_schema, 'dbo')
+        self.assertEqual(res.typ_name, 'CategoryTableType')
+        self.assertEqual(list(res.rows), list(rows_gen()))
+        self.assertEqual(res.columns, [Column(type=IntN(4)),
+                                       Column(type=NVarCharMax(size=0, collation=raw_collation))])
+
+        tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType')
+        res = infer_tds_type(tvp, type_factory=factory, collation=raw_collation)
+        self.assertEqual(res.typ_schema, 'dbo')
+        self.assertEqual(res.typ_name, 'CategoryTableType')
+        self.assertEqual(res.rows, None)
+        self.assertEqual(res.columns, None)
