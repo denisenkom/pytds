@@ -2008,13 +2008,17 @@ class TdsTypeInferrer(object):
             columns = value.columns
             rows = value.rows
             if columns is None:
-                # trying to auto detect columns
+                # trying to auto detect columns using data from first row
                 if rows is None:
                     # rows are not present too, this means
                     # entire tvp has value of NULL
                     pass
                 else:
-                    rows = iter(rows)
+                    try:
+                        rows = iter(rows)
+                    except TypeError:
+                        raise DataError('rows should be iterable')
+
                     try:
                         row = next(rows)
                     except StopIteration:
@@ -2026,7 +2030,11 @@ class TdsTypeInferrer(object):
 
                         # use first row to infer types of columns
                         columns = []
-                        for cell in row:
+                        try:
+                            cell_iter = iter(row)
+                        except TypeError:
+                            raise DataError('Each row in table should be an iterable')
+                        for cell in cell_iter:
                             if isinstance(cell, TableValuedParam):
                                 raise DataError('TVP type cannot have nested TVP types')
                             col_type = self.from_value(cell)

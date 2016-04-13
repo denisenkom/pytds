@@ -802,3 +802,17 @@ class TypeInferenceTestCase(unittest.TestCase):
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[(inner_tvp,)])
         with self.assertRaisesRegexp(pytds.DataError, 'TVP type cannot have nested TVP types'):
             infer_tds_type(tvp, type_factory=factory)
+
+    def test_invalid_tvp(self):
+        factory = TypeFactory(TDS74)
+        tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[])
+        with self.assertRaisesRegexp(pytds.DataError, 'Cannot infer columns from rows for TVP because there are no rows'):
+            infer_tds_type(tvp, type_factory=factory)
+
+        tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=5)
+        with self.assertRaisesRegexp(pytds.DataError, 'rows should be iterable'):
+            infer_tds_type(tvp, type_factory=factory)
+
+        tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[None])
+        with self.assertRaisesRegexp(pytds.DataError, 'Each row in table should be an iterable'):
+            infer_tds_type(tvp, type_factory=factory)
