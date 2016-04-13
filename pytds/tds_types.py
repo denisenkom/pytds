@@ -1646,19 +1646,19 @@ class Table(BaseType):
         """
         if self._rows is None:
             w.put_usmallint(TVP_NULL_TOKEN)
-            return
-        columns = self._columns
-        w.put_usmallint(len(columns))
-        for column in columns:
-            w.put_uint(column.column_usertype)
+        else:
+            columns = self._columns
+            w.put_usmallint(len(columns))
+            for column in columns:
+                w.put_uint(column.column_usertype)
 
-            w.put_usmallint(column.flags)
+                w.put_usmallint(column.flags)
 
-            # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
-            w.put_byte(column.type.type)
-            column.type.write_info(w)
+                # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
+                w.put_byte(column.type.type)
+                column.type.write_info(w)
 
-            w.write_b_varchar('')  # ColName, must be empty in TVP according to spec
+                w.write_b_varchar('')  # ColName, must be empty in TVP according to spec
 
         # here can optionally send TVP_ORDER_UNIQUE and TVP_COLUMN_ORDERING
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
@@ -1668,11 +1668,12 @@ class Table(BaseType):
 
         # now sending rows using TVP_ROW
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
-        for row in self._rows:
-            w.put_byte(TVP_ROW_TOKEN)
-            for i, col in enumerate(columns):
-                if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
-                    col.type.write(w, row[i])
+        if self._rows:
+            for row in self._rows:
+                w.put_byte(TVP_ROW_TOKEN)
+                for i, col in enumerate(self._columns):
+                    if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
+                        col.type.write(w, row[i])
 
         # terminating rows
         w.put_byte(TVP_END_TOKEN)
@@ -1988,7 +1989,7 @@ class TdsTypeInferrer(object):
                 if rows is None:
                     # rows are not present too, this means
                     # entire tvp has value of NULL
-                    return
+                    pass
                 else:
                     try:
                         row = next(rows)
@@ -1999,7 +2000,6 @@ class TdsTypeInferrer(object):
                         # put row back
                         rows = itertools.chain([row], rows)
 
-                        # let's make it all strings for now
                         columns = [Column(type=self.from_value(cell)) for cell in row]
             return Table(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns, rows=rows)
         else:
