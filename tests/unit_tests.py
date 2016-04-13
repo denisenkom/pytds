@@ -782,9 +782,23 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res.columns, [Column(type=IntN(4)),
                                        Column(type=NVarCharMax(size=0, collation=raw_collation))])
 
+    def test_null_tvp(self):
+        factory = TypeFactory(TDS74)
         tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType')
+        self.assertTrue(tvp.is_null())
         res = infer_tds_type(tvp, type_factory=factory, collation=raw_collation)
         self.assertEqual(res.typ_schema, 'dbo')
         self.assertEqual(res.typ_name, 'CategoryTableType')
         self.assertEqual(res.rows, None)
         self.assertEqual(res.columns, None)
+        self.assertTrue(res.is_null())
+
+    def test_nested_tvp(self):
+        """
+        Nested TVPs are not allowed by TDS
+        """
+        factory = TypeFactory(TDS74)
+        inner_tvp = pytds.TableValuedParam(type_name='dbo.InnerTVP', rows=[(1,)])
+        tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[(inner_tvp,)])
+        with self.assertRaisesRegexp(pytds.DataError, 'TVP type cannot have nested TVP types'):
+            infer_tds_type(tvp, type_factory=factory)

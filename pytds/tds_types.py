@@ -1639,6 +1639,9 @@ class Table(BaseType):
     def rows(self):
         return self._rows
 
+    def is_null(self):
+        return self._rows is None
+
     def write_info(self, w):
         """
         Writes TVP_TYPENAME structure
@@ -1664,7 +1667,7 @@ class Table(BaseType):
         @param val: TableValuedParam or None
         @return:
         """
-        if self._rows is None:
+        if self.is_null():
             w.put_usmallint(TVP_NULL_TOKEN)
         else:
             columns = self._columns
@@ -2011,6 +2014,7 @@ class TdsTypeInferrer(object):
                     # entire tvp has value of NULL
                     pass
                 else:
+                    rows = iter(rows)
                     try:
                         row = next(rows)
                     except StopIteration:
@@ -2020,7 +2024,15 @@ class TdsTypeInferrer(object):
                         # put row back
                         rows = itertools.chain([row], rows)
 
-                        columns = [Column(type=self.from_value(cell)) for cell in row]
+                        # use first row to infer types of columns
+                        columns = []
+                        for cell in row:
+                            if isinstance(cell, TableValuedParam):
+                                raise DataError('TVP type cannot have nested TVP types')
+                            col_type = self.from_value(cell)
+                            col = Column(type=col_type)
+                            columns.append(col)
+
             return Table(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns, rows=rows)
         else:
             raise DataError('Cannot infer TDS type from Python value: {!r}'.format(value))

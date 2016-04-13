@@ -494,6 +494,9 @@ class TableValuedParam(object):
     def rows(self):
         return self._rows
 
+    def is_null(self):
+        return self._rows is None
+
 
 class InternalProc(object):
     def __init__(self, proc_id, name):
