@@ -1611,6 +1611,9 @@ class Table(BaseType):
             raise ValueError("typ_schema should not be longer that 128 characters")
         if len(typ_name) > 128:
             raise ValueError("typ_name should not be longer that 128 characters")
+        if columns:
+            if len(columns) > 1024:
+                raise ValueError("TVP cannot have more than 1024 columns")
         self._typ_dbname = ''  # dbname should always be empty string for TVP according to spec
         self._typ_schema = typ_schema
         self._typ_name = typ_name
