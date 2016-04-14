@@ -817,6 +817,12 @@ class TypeInferenceTestCase(unittest.TestCase):
         with self.assertRaisesRegexp(pytds.DataError, 'Each row in table should be an iterable'):
             infer_tds_type(tvp, type_factory=factory)
 
+        # too many columns
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[[1] * 1025])
         with self.assertRaisesRegexp(ValueError, 'TVP cannot have more than 1024 columns'):
+            infer_tds_type(tvp, type_factory=factory)
+
+        # too few columns
+        tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[[]])
+        with self.assertRaisesRegexp(ValueError, 'TVP must have at least one column'):
             infer_tds_type(tvp, type_factory=factory)
