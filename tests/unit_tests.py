@@ -14,7 +14,7 @@ from pytds.tds import (
     Collation,
     TdsTypeInferrer, TypeFactory, NVarChar72, IntN, MsDecimal, FloatN, VarBinaryMax, NVarCharMax, VarCharMax, DateTime2,
     DateTimeOffset, MsDate, MsTime, MsUnique, NVarChar71, Image70, NText71, Text71, DateTimeN, TDS70, NVarChar70,
-    NText70, Text70, Bit)
+    NText70, Text70, Bit, VarBinary, VarBinary72)
 from pytds import _TdsLogin
 
 tzoffset = pytds.tz.FixedOffsetTimezone
@@ -480,6 +480,9 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res, FloatN(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
+        self.assertEqual(res, VarBinary72(8000))
+
+        res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
         self.assertEqual(res, VarBinaryMax())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
@@ -543,6 +546,9 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res, FloatN(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
+        self.assertEqual(res, VarBinary72(8000))
+
+        res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
         self.assertEqual(res, VarBinaryMax())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
@@ -606,6 +612,9 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res, FloatN(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
+        self.assertEqual(res, VarBinary72(8000))
+
+        res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
         self.assertEqual(res, VarBinaryMax())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
@@ -669,6 +678,9 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res, FloatN(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
+        self.assertEqual(res, VarBinary(8000))
+
+        res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
         self.assertEqual(res, Image70())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
@@ -732,6 +744,9 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res, FloatN(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
+        self.assertEqual(res, VarBinary(8000))
+
+        res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
         self.assertEqual(res, Image70())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
@@ -825,4 +840,12 @@ class TypeInferenceTestCase(unittest.TestCase):
         # too few columns
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[[]])
         with self.assertRaisesRegexp(ValueError, 'TVP must have at least one column'):
+            infer_tds_type(tvp, type_factory=factory)
+
+        with self.assertRaisesRegexp(ValueError, 'Schema part of TVP name should be no longer than 128 characters'):
+            tvp = pytds.TableValuedParam(type_name=('x' * 129) + '.OuterTVP', rows=[[]])
+            infer_tds_type(tvp, type_factory=factory)
+
+        with self.assertRaisesRegexp(ValueError, 'Name part of TVP name should be no longer than 128 characters'):
+            tvp = pytds.TableValuedParam(type_name='dbo.' + ('x' * 129), rows=[[]])
             infer_tds_type(tvp, type_factory=factory)

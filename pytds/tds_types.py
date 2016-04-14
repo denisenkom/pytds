@@ -828,6 +828,9 @@ class VarBinary(BaseType):
     def __init__(self, size):
         self._size = size
 
+    def __repr__(self):
+        return 'VarBinary({})'.format(self._size)
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
@@ -860,6 +863,9 @@ class VarBinary(BaseType):
 
 
 class VarBinary72(VarBinary):
+    def __repr__(self):
+        return 'VarBinary72({})'.format(self._size)
+
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
@@ -879,6 +885,9 @@ class VarBinary72(VarBinary):
 class VarBinaryMax(VarBinary):
     def __init__(self):
         super(VarBinaryMax, self).__init__(0)
+
+    def __repr__(self):
+        return 'VarBinaryMax()'
 
     def get_declaration(self):
         return 'VARBINARY(MAX)'
@@ -910,6 +919,9 @@ class Image70(BaseType):
     def __init__(self, size=0, table_name=''):
         self._table_name = table_name
         self._size = size
+
+    def __repr__(self):
+        return 'Image70(tn={},s={})'.format(repr(self._table_name), self._size)
 
     def get_declaration(self):
         return self.declaration
@@ -950,6 +962,9 @@ class Image72(Image70):
     def __init__(self, size=0, parts=[]):
         self._parts = parts
         self._size = size
+
+    def __repr__(self):
+        return 'Image72(p={},s={})'.format(self._parts, self._size)
 
     @classmethod
     def from_stream(cls, r):
@@ -1608,9 +1623,9 @@ class Table(BaseType):
         @param columns: List of column types
         """
         if len(typ_schema) > 128:
-            raise ValueError("typ_schema should not be longer that 128 characters")
+            raise ValueError("Schema part of TVP name should be no longer than 128 characters")
         if len(typ_name) > 128:
-            raise ValueError("typ_name should not be longer that 128 characters")
+            raise ValueError("Name part of TVP name should be no longer than 128 characters")
         if columns is not None:
             if len(columns) > 1024:
                 raise ValueError("TVP cannot have more than 1024 columns")
@@ -1985,7 +2000,13 @@ class TdsTypeInferrer(object):
         elif issubclass(value_type, float):
             return type_factory.FloatN(8)
         elif issubclass(value_type, Binary):
-            return type_factory.long_binary_type()
+            if value:
+                if len(value) <= 8000:
+                    return type_factory.VarBinary(8000)
+                else:
+                    return type_factory.long_binary_type()
+            else:
+                return type_factory.long_binary_type()
         elif issubclass(value_type, six.binary_type):
             if bytes_to_unicode:
                 return type_factory.long_string_type(collation=collation)
