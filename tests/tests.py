@@ -27,8 +27,8 @@ from pytds import (
     output, default, InterfaceError, TDS_ENCRYPTION_OFF,
     STRING, BINARY, NUMBER, DATETIME, DECIMAL, INTEGER, REAL, XML)
 from pytds.tds import (
-    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, Bit, Int, SmallInt,
-    NVarChar72, TinyInt, IntN, BigInt, Real, Float, FloatN, Collation, DateTime,
+    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, BitSerializer, IntSerializer, SmallIntSerializer,
+    NVarChar72Serializer, TinyIntSerializer, IntNSerializer, BigIntSerializer, RealSerializer, FloatSerializer, FloatNSerializer, Collation, DateTimeSerializer,
     IS_TDS73_PLUS, IS_TDS71_PLUS, TDS73, TDS71, TDS72, TDS70,
     TDS_ENCRYPTION_OFF,
     )
@@ -365,26 +365,26 @@ class DbTests(DbTestCase):
             cur.execute('drop table bulk_insert_table_ll')
 
     def test_bulk_insert_low_level(self):
-        self._test_bulk_type(Bit.instance, True)
-        self._test_bulk_type(Bit.instance, False)
-        self._test_bulk_type(Int.instance, 2 ** 31 - 1)
-        self._test_bulk_type(Int.instance, -2 ** 31)
-        self._test_bulk_type(SmallInt.instance, -2 ** 15)
-        self._test_bulk_type(SmallInt.instance, 2 ** 15 - 1)
-        self._test_bulk_type(TinyInt.instance, 255)
-        self._test_bulk_type(TinyInt.instance, 0)
-        self._test_bulk_type(BigInt.instance, 2 ** 63 - 1)
-        self._test_bulk_type(BigInt.instance, -2 ** 63)
-        self._test_bulk_type(IntN(1), 255)
-        self._test_bulk_type(IntN(2), 2 ** 15 - 1)
-        self._test_bulk_type(IntN(4), 2 ** 31 - 1)
-        self._test_bulk_type(IntN(8), 2 ** 63 - 1)
-        self._test_bulk_type(IntN(4), None)
-        self._test_bulk_type(Real.instance, 0.25)
-        self._test_bulk_type(Float.instance, 0.25)
-        self._test_bulk_type(FloatN(4), 0.25)
-        self._test_bulk_type(FloatN(8), 0.25)
-        self._test_bulk_type(FloatN(4), None)
+        self._test_bulk_type(BitSerializer.instance, True)
+        self._test_bulk_type(BitSerializer.instance, False)
+        self._test_bulk_type(IntSerializer.instance, 2 ** 31 - 1)
+        self._test_bulk_type(IntSerializer.instance, -2 ** 31)
+        self._test_bulk_type(SmallIntSerializer.instance, -2 ** 15)
+        self._test_bulk_type(SmallIntSerializer.instance, 2 ** 15 - 1)
+        self._test_bulk_type(TinyIntSerializer.instance, 255)
+        self._test_bulk_type(TinyIntSerializer.instance, 0)
+        self._test_bulk_type(BigIntSerializer.instance, 2 ** 63 - 1)
+        self._test_bulk_type(BigIntSerializer.instance, -2 ** 63)
+        self._test_bulk_type(IntNSerializer(1), 255)
+        self._test_bulk_type(IntNSerializer(2), 2 ** 15 - 1)
+        self._test_bulk_type(IntNSerializer(4), 2 ** 31 - 1)
+        self._test_bulk_type(IntNSerializer(8), 2 ** 63 - 1)
+        self._test_bulk_type(IntNSerializer(4), None)
+        self._test_bulk_type(RealSerializer.instance, 0.25)
+        self._test_bulk_type(FloatSerializer.instance, 0.25)
+        self._test_bulk_type(FloatNSerializer(4), 0.25)
+        self._test_bulk_type(FloatNSerializer(8), 0.25)
+        self._test_bulk_type(FloatNSerializer(4), None)
         self._test_bulk_type(self.conn._conn._type_factory.NVarChar(10), u'')
         self._test_bulk_type(self.conn._conn._type_factory.NVarChar(10), u'testtest12')
         self._test_bulk_type(self.conn._conn._type_factory.NVarChar(10), None)
@@ -864,7 +864,7 @@ class SmallDateTimeTest(TestCase):
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DateTimeTest(DbTestCase):
     def _testencdec(self, val):
-        self.assertEqual(val, DateTime.decode(*DateTime._struct.unpack(DateTime.encode(val))))
+        self.assertEqual(val, DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(DateTimeSerializer.encode(val))))
 
     def _testval(self, val):
         with self.conn.cursor() as cur:
@@ -872,10 +872,10 @@ class DateTimeTest(DbTestCase):
             self.assertEqual(cur.fetchall(), [(val,)])
 
     def runTest(self):
-        self.assertEqual(DateTime.decode(*DateTime._struct.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
-        self.assertEqual(DateTime.decode(*DateTime._struct.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTime._max_date)
-        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTime.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
-        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTime.encode(DateTime._max_date))
+        self.assertEqual(DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
+        self.assertEqual(DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTimeSerializer._max_date)
+        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTimeSerializer.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
+        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTimeSerializer._max_date))
         with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T23:59:59.997' as datetime)")
             self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 997000),)])

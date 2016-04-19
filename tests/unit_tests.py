@@ -9,12 +9,12 @@ import uuid
 import pytds
 from pytds.collate import raw_collation
 from pytds.tds import (
-    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, BitN, TDS73, TDS71, TDS72, TDS73, TDS74,
+    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, BitNSerializer, TDS73, TDS71, TDS72, TDS73, TDS74,
     TDS_ENCRYPTION_OFF,
     Collation,
-    TdsTypeInferrer, TypeFactory, NVarChar72, IntN, MsDecimal, FloatN, VarBinaryMax, NVarCharMax, VarCharMax, DateTime2,
-    DateTimeOffset, MsDate, MsTime, MsUnique, NVarChar71, Image70, NText71, Text71, DateTimeN, TDS70, NVarChar70,
-    NText70, Text70, Bit, VarBinary, VarBinary72)
+    TdsTypeInferrer, TypeFactory, NVarChar72Serializer, IntNSerializer, MsDecimalSerializer, FloatNSerializer, VarBinarySerializerMax, NVarCharMaxSerializer, VarCharMaxSerializer, DateTime2Serializer,
+    DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, TDS70, NVarChar70Serializer,
+    NText70Serializer, Text70Serializer, BitSerializer, VarBinarySerializer, VarBinarySerializer72)
 from pytds import _TdsLogin
 
 tzoffset = pytds.tz.FixedOffsetTimezone
@@ -371,7 +371,7 @@ class TestMessages(unittest.TestCase):
         tds._sock = sock
         col1 = Column()
         col1.column_name = 'c1'
-        col1.type = Bit()
+        col1.type = BitSerializer()
         col1.flags = Column.fNullable | Column.fReadWrite
         metadata = [col1]
         tds._main_session.submit_bulk(metadata, [(False,)])
@@ -390,7 +390,7 @@ class TestMessages(unittest.TestCase):
         tds._sock = sock
         w = tds._main_session._writer
 
-        t = pytds.tds.NVarCharMax(
+        t = pytds.tds.NVarCharMaxSerializer(
             0,
             Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False,
                       ignore_kana=False, binary=True, binary2=False, version=0),
@@ -458,244 +458,244 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         # None should infer as NVarChar72
         res = infer_tds_type(None, type_factory=factory)
-        self.assertIsInstance(res, NVarChar72)
+        self.assertIsInstance(res, NVarChar72Serializer)
 
         # bool should infer as Bit
         res = infer_tds_type(True, type_factory=factory)
-        self.assertIsInstance(res, BitN)
+        self.assertIsInstance(res, BitNSerializer)
 
         # small integers inferred as IntN(4)
         res = infer_tds_type(100, type_factory=factory)
-        self.assertEqual(res, IntN(4))
+        self.assertEqual(res, IntNSerializer(4))
 
         # big integers inferred as IntN(8)
         res = infer_tds_type(6000000000, type_factory=factory)
-        self.assertEqual(res, IntN(8))
+        self.assertEqual(res, IntNSerializer(8))
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_type(600000000000000000000, type_factory=factory)
-        self.assertEqual(res, MsDecimal(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(0, 38))
 
         res = infer_tds_type(0.25, type_factory=factory)
-        self.assertEqual(res, FloatN(8))
+        self.assertEqual(res, FloatNSerializer(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
-        self.assertEqual(res, VarBinary72(8000))
+        self.assertEqual(res, VarBinarySerializer72(8000))
 
         res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
-        self.assertEqual(res, VarBinaryMax())
+        self.assertEqual(res, VarBinarySerializerMax())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
-        self.assertEqual(res, NVarCharMax(0, collation=raw_collation))
+        self.assertEqual(res, NVarCharMaxSerializer(0, collation=raw_collation))
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=False, collation=raw_collation)
-        self.assertEqual(res, VarCharMax(collation=raw_collation))
+        self.assertEqual(res, VarCharMaxSerializer(collation=raw_collation))
 
         res = infer_tds_type(u'abc', type_factory=factory, collation=raw_collation)
-        self.assertEqual(res, NVarCharMax(0, collation=raw_collation))
+        self.assertEqual(res, NVarCharMaxSerializer(0, collation=raw_collation))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTime2(prec=6))
+        self.assertEqual(res, DateTime2Serializer(prec=6))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=True)
-        self.assertEqual(res, DateTimeOffset(prec=6))
+        self.assertEqual(res, DateTimeOffsetSerializer(prec=6))
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, MsDate())
+        self.assertEqual(res, MsDateSerializer())
 
         t = datetime.time()
         res = infer_tds_type(t, type_factory=factory)
-        self.assertEqual(res, MsTime(prec=6))
+        self.assertEqual(res, MsTimeSerializer(prec=6))
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
-        self.assertEqual(res, MsDecimal(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
 
         res = infer_tds_type(uuid.uuid4(), type_factory=factory)
-        self.assertEqual(res, MsUnique())
+        self.assertEqual(res, MsUniqueSerializer())
 
     def test_tds73(self):
         factory = TypeFactory(TDS73)
 
         # None should infer as NVarChar72
         res = infer_tds_type(None, type_factory=factory)
-        self.assertIsInstance(res, NVarChar72)
+        self.assertIsInstance(res, NVarChar72Serializer)
 
         # bool should infer as Bit
         res = infer_tds_type(True, type_factory=factory)
-        self.assertIsInstance(res, BitN)
+        self.assertIsInstance(res, BitNSerializer)
 
         # small integers inferred as IntN(4)
         res = infer_tds_type(100, type_factory=factory)
-        self.assertEqual(res, IntN(4))
+        self.assertEqual(res, IntNSerializer(4))
 
         # big integers inferred as IntN(8)
         res = infer_tds_type(6000000000, type_factory=factory)
-        self.assertEqual(res, IntN(8))
+        self.assertEqual(res, IntNSerializer(8))
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_type(600000000000000000000, type_factory=factory)
-        self.assertEqual(res, MsDecimal(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(0, 38))
 
         res = infer_tds_type(0.25, type_factory=factory)
-        self.assertEqual(res, FloatN(8))
+        self.assertEqual(res, FloatNSerializer(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
-        self.assertEqual(res, VarBinary72(8000))
+        self.assertEqual(res, VarBinarySerializer72(8000))
 
         res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
-        self.assertEqual(res, VarBinaryMax())
+        self.assertEqual(res, VarBinarySerializerMax())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
-        self.assertEqual(res, NVarCharMax(0, collation=raw_collation))
+        self.assertEqual(res, NVarCharMaxSerializer(0, collation=raw_collation))
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=False, collation=raw_collation)
-        self.assertEqual(res, VarCharMax(collation=raw_collation))
+        self.assertEqual(res, VarCharMaxSerializer(collation=raw_collation))
 
         res = infer_tds_type(u'abc', type_factory=factory, collation=raw_collation)
-        self.assertEqual(res, NVarCharMax(0, collation=raw_collation))
+        self.assertEqual(res, NVarCharMaxSerializer(0, collation=raw_collation))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTime2(prec=6))
+        self.assertEqual(res, DateTime2Serializer(prec=6))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=True)
-        self.assertEqual(res, DateTimeOffset(prec=6))
+        self.assertEqual(res, DateTimeOffsetSerializer(prec=6))
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, MsDate())
+        self.assertEqual(res, MsDateSerializer())
 
         t = datetime.time()
         res = infer_tds_type(t, type_factory=factory)
-        self.assertEqual(res, MsTime(prec=6))
+        self.assertEqual(res, MsTimeSerializer(prec=6))
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
-        self.assertEqual(res, MsDecimal(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
 
         res = infer_tds_type(uuid.uuid4(), type_factory=factory)
-        self.assertEqual(res, MsUnique())
+        self.assertEqual(res, MsUniqueSerializer())
 
     def test_tds72(self):
         factory = TypeFactory(TDS72)
 
         # None should infer as NVarChar72
         res = infer_tds_type(None, type_factory=factory)
-        self.assertIsInstance(res, NVarChar72)
+        self.assertIsInstance(res, NVarChar72Serializer)
 
         # bool should infer as Bit
         res = infer_tds_type(True, type_factory=factory)
-        self.assertIsInstance(res, BitN)
+        self.assertIsInstance(res, BitNSerializer)
 
         # small integers inferred as IntN(4)
         res = infer_tds_type(100, type_factory=factory)
-        self.assertEqual(res, IntN(4))
+        self.assertEqual(res, IntNSerializer(4))
 
         # big integers inferred as IntN(8)
         res = infer_tds_type(6000000000, type_factory=factory)
-        self.assertEqual(res, IntN(8))
+        self.assertEqual(res, IntNSerializer(8))
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_type(600000000000000000000, type_factory=factory)
-        self.assertEqual(res, MsDecimal(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(0, 38))
 
         res = infer_tds_type(0.25, type_factory=factory)
-        self.assertEqual(res, FloatN(8))
+        self.assertEqual(res, FloatNSerializer(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
-        self.assertEqual(res, VarBinary72(8000))
+        self.assertEqual(res, VarBinarySerializer72(8000))
 
         res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
-        self.assertEqual(res, VarBinaryMax())
+        self.assertEqual(res, VarBinarySerializerMax())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
-        self.assertEqual(res, NVarCharMax(0, collation=raw_collation))
+        self.assertEqual(res, NVarCharMaxSerializer(0, collation=raw_collation))
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=False, collation=raw_collation)
-        self.assertEqual(res, VarCharMax(collation=raw_collation))
+        self.assertEqual(res, VarCharMaxSerializer(collation=raw_collation))
 
         res = infer_tds_type(u'abc', type_factory=factory, collation=raw_collation)
-        self.assertEqual(res, NVarCharMax(0, collation=raw_collation))
+        self.assertEqual(res, NVarCharMaxSerializer(0, collation=raw_collation))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTime2(prec=6))
+        self.assertEqual(res, DateTime2Serializer(prec=6))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=True)
-        self.assertEqual(res, DateTimeOffset(prec=6))
+        self.assertEqual(res, DateTimeOffsetSerializer(prec=6))
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, MsDate())
+        self.assertEqual(res, MsDateSerializer())
 
         t = datetime.time()
         res = infer_tds_type(t, type_factory=factory)
-        self.assertEqual(res, MsTime(prec=6))
+        self.assertEqual(res, MsTimeSerializer(prec=6))
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
-        self.assertEqual(res, MsDecimal(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
 
         res = infer_tds_type(uuid.uuid4(), type_factory=factory)
-        self.assertEqual(res, MsUnique())
+        self.assertEqual(res, MsUniqueSerializer())
 
     def test_tds71(self):
         factory = TypeFactory(TDS71)
 
         # None should infer as NVarChar72
         res = infer_tds_type(None, type_factory=factory)
-        self.assertIsInstance(res, NVarChar71)
+        self.assertIsInstance(res, NVarChar71Serializer)
 
         # bool should infer as Bit
         res = infer_tds_type(True, type_factory=factory)
-        self.assertIsInstance(res, BitN)
+        self.assertIsInstance(res, BitNSerializer)
 
         # small integers inferred as IntN(4)
         res = infer_tds_type(100, type_factory=factory)
-        self.assertEqual(res, IntN(4))
+        self.assertEqual(res, IntNSerializer(4))
 
         # big integers inferred as IntN(8)
         res = infer_tds_type(6000000000, type_factory=factory)
-        self.assertEqual(res, IntN(8))
+        self.assertEqual(res, IntNSerializer(8))
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_type(600000000000000000000, type_factory=factory)
-        self.assertEqual(res, MsDecimal(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(0, 38))
 
         res = infer_tds_type(0.25, type_factory=factory)
-        self.assertEqual(res, FloatN(8))
+        self.assertEqual(res, FloatNSerializer(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
-        self.assertEqual(res, VarBinary(8000))
+        self.assertEqual(res, VarBinarySerializer(8000))
 
         res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
-        self.assertEqual(res, Image70())
+        self.assertEqual(res, Image70Serializer())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
-        self.assertEqual(res, NText71(size=-1, collation=raw_collation))
+        self.assertEqual(res, NText71Serializer(size=-1, collation=raw_collation))
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=False, collation=raw_collation)
-        self.assertEqual(res, Text71(size=-1, collation=raw_collation))
+        self.assertEqual(res, Text71Serializer(size=-1, collation=raw_collation))
 
         res = infer_tds_type(u'abc', type_factory=factory, collation=raw_collation)
-        self.assertEqual(res, NText71(size=-1, collation=raw_collation))
+        self.assertEqual(res, NText71Serializer(size=-1, collation=raw_collation))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTimeN(8))
+        self.assertEqual(res, DateTimeNSerializer(8))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
@@ -704,7 +704,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, DateTimeN(8))
+        self.assertEqual(res, DateTimeNSerializer(8))
 
         t = datetime.time()
         with self.assertRaises(pytds.DataError):
@@ -712,56 +712,56 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
-        self.assertEqual(res, MsDecimal(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
 
         res = infer_tds_type(uuid.uuid4(), type_factory=factory)
-        self.assertEqual(res, MsUnique())
+        self.assertEqual(res, MsUniqueSerializer())
 
     def test_tds70(self):
         factory = TypeFactory(TDS70)
 
         # None should infer as NVarChar70
         res = infer_tds_type(None, type_factory=factory)
-        self.assertIsInstance(res, NVarChar70)
+        self.assertIsInstance(res, NVarChar70Serializer)
 
         # bool should infer as Bit
         res = infer_tds_type(True, type_factory=factory)
-        self.assertIsInstance(res, BitN)
+        self.assertIsInstance(res, BitNSerializer)
 
         # small integers inferred as IntN(4)
         res = infer_tds_type(100, type_factory=factory)
-        self.assertEqual(res, IntN(4))
+        self.assertEqual(res, IntNSerializer(4))
 
         # big integers inferred as IntN(8)
         res = infer_tds_type(6000000000, type_factory=factory)
-        self.assertEqual(res, IntN(8))
+        self.assertEqual(res, IntNSerializer(8))
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_type(600000000000000000000, type_factory=factory)
-        self.assertEqual(res, MsDecimal(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(0, 38))
 
         res = infer_tds_type(0.25, type_factory=factory)
-        self.assertEqual(res, FloatN(8))
+        self.assertEqual(res, FloatNSerializer(8))
 
         res = infer_tds_type(pytds.Binary(b'abc'), type_factory=factory)
-        self.assertEqual(res, VarBinary(8000))
+        self.assertEqual(res, VarBinarySerializer(8000))
 
         res = infer_tds_type(pytds.Binary(b'a' * 8001), type_factory=factory)
-        self.assertEqual(res, Image70())
+        self.assertEqual(res, Image70Serializer())
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=True, collation=raw_collation)
-        self.assertEqual(res, NText70(size=0))
+        self.assertEqual(res, NText70Serializer(size=0))
 
         res = infer_tds_type(b'abc', type_factory=factory, bytes_to_unicode=False, collation=raw_collation)
-        self.assertEqual(res, Text70(size=0, codec=raw_collation.get_codec()))
+        self.assertEqual(res, Text70Serializer(size=0, codec=raw_collation.get_codec()))
 
         res = infer_tds_type(u'abc', type_factory=factory, collation=raw_collation)
-        self.assertEqual(res, NText70(size=0))
+        self.assertEqual(res, NText70Serializer(size=0))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTimeN(8))
+        self.assertEqual(res, DateTimeNSerializer(8))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
@@ -770,7 +770,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, DateTimeN(8))
+        self.assertEqual(res, DateTimeNSerializer(8))
 
         t = datetime.time()
         with self.assertRaises(pytds.DataError):
@@ -778,10 +778,10 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
-        self.assertEqual(res, MsDecimal(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
 
         res = infer_tds_type(uuid.uuid4(), type_factory=factory)
-        self.assertEqual(res, MsUnique())
+        self.assertEqual(res, MsUniqueSerializer())
 
     def test_tvp(self):
         def rows_gen():
@@ -794,8 +794,8 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res.typ_schema, 'dbo')
         self.assertEqual(res.typ_name, 'CategoryTableType')
         self.assertEqual(list(res.rows), list(rows_gen()))
-        self.assertEqual(res.columns, [Column(type=IntN(4)),
-                                       Column(type=NVarCharMax(size=0, collation=raw_collation))])
+        self.assertEqual(res.columns, [Column(type=IntNSerializer(4)),
+                                       Column(type=NVarCharMaxSerializer(size=0, collation=raw_collation))])
 
     def test_null_tvp(self):
         factory = TypeFactory(TDS74)
