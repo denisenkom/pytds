@@ -86,6 +86,14 @@ class PlpReader(object):
                 left -= len(buf)
 
 
+class SqlTypeMetaclass(object):
+    pass
+
+
+class SqlValueMetaclass(object):
+    pass
+
+
 class BaseTypeSerializer(CommonEqualityMixin):
     """ Base type for TDS data types.
 
@@ -363,6 +371,23 @@ class FloatNSerializer(BaseTypeSerializerN):
         4: RealSerializer.instance,
         8: FloatSerializer.instance,
     }
+
+
+class VarChar(SqlValueMetaclass):
+    def __init__(self, val, collation=raw_collation):
+        self._val = val
+        self._collation = collation
+
+    @property
+    def collation(self):
+        return self._collation
+
+    @property
+    def val(self):
+        return self._val
+
+    def __str__(self):
+        return self._val
 
 
 class VarChar70Serializer(BaseTypeSerializer):
@@ -1063,23 +1088,6 @@ class DateTimeNSerializer(BaseTypeSerializerN, BaseDateTimeSerializer):
 _datetime2_base_date = datetime(1, 1, 1)
 
 
-def _days_to_date(days):
-    """
-    Converts days since 0001-01-01 to date object
-    @param days: days since 0001-01-01
-    @return: datetime.date
-    """
-    return (_datetime2_base_date + timedelta(days=days)).date()
-
-
-class SqlTypeMetaclass(object):
-    pass
-
-
-class SqlValueMetaclass(object):
-    pass
-
-
 class DateType(SqlTypeMetaclass):
     pass
 
@@ -1101,7 +1109,7 @@ class Date(SqlValueMetaclass):
         Converts sql date to Python date
         @return: Python date
         """
-        return _days_to_date(self._days)
+        return (_datetime2_base_date + timedelta(days=self._days)).date()
 
     @classmethod
     def from_pydate(cls, pydate):
@@ -1110,7 +1118,7 @@ class Date(SqlValueMetaclass):
         @param value: Python date
         @return: sql date
         """
-        return (datetime.combine(pydate, time(0, 0, 0)) - _datetime2_base_date).days
+        return cls(days=(datetime.combine(pydate, time(0, 0, 0)) - _datetime2_base_date).days)
 
 
 class TimeType(SqlTypeMetaclass):
@@ -1206,6 +1214,28 @@ class DateTime2(SqlValueMetaclass):
                    time=Time.from_pytime(pydatetime.time))
 
 
+class DateTimeOffset(SqlValueMetaclass):
+    def __init__(self, date, time, offset):
+        """
+        Creates datetime2 object
+        @param date: sql date object in UTC
+        @param time: sql time object in UTC
+        @param offset: time zone offset in minutes
+        """
+        self._date = date
+        self._time = time
+        self._offset = offset
+
+    def to_pydatetime(self):
+        """
+        Converts datetimeoffset object into Python's datetime.datetime object
+        @return: time zone aware datetime.datetime
+        """
+        dt = datetime.combine(self._date.to_pydate(), self._time.to_pytime())
+        from .tz import FixedOffsetTimezone
+        return dt.replace(tzinfo=_utc).astimezone(FixedOffsetTimezone(self._offset))
+
+
 class BaseDateTime73Serializer(BaseTypeSerializer):
     _precision_to_len = {
         0: 3,
@@ -1221,30 +1251,24 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
     _base_date = datetime(1, 1, 1)
 
     def _write_time(self, w, t, prec):
-        t = Time.from_pytime(t)
         val = t.nsec // (10 ** (9 - prec))
         w.write(struct.pack('<Q', val)[:self._precision_to_len[prec]])
 
-    def _read_time(self, r, size, prec, use_tz):
+    def _read_time(self, r, size, prec):
         time_buf = readall(r, size)
         val = _decode_num(time_buf)
         val *= 10 ** (7 - prec)
         nanoseconds = val * 100
-        res = Time(nsec=nanoseconds).to_pytime()
-        if use_tz:
-            res = res.replace(tzinfo=use_tz)
-        return res
+        return Time(nsec=nanoseconds)
 
     def _write_date(self, w, value):
-        if type(value) == date:
-            value = datetime.combine(value, time(0, 0, 0))
-        days = (value - self._base_date).days
+        days = value.days
         buf = struct.pack('<l', days)[:3]
         w.write(buf)
 
     def _read_date(self, r):
         days = _decode_num(readall(r, 3))
-        return (self._base_date + timedelta(days=days)).date()
+        return Date(days=days)
 
 
 class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
@@ -1259,16 +1283,16 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
             w.put_byte(0)
         else:
             w.put_byte(3)
-            self._write_date(w, value)
+            self._write_date(w, Date.from_pydate(value))
 
     def read_fixed(self, r):
-        return self._read_date(r)
+        return self._read_date(r).to_pydate()
 
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
-        return self._read_date(r)
+        return self._read_date(r).to_pydate()
 
 MsDateSerializer.instance = MsDateSerializer()
 
@@ -1306,13 +1330,14 @@ class MsTimeSerializer(BaseDateTime73Serializer):
                     raise DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
-            self._write_time(w, value, self._prec)
+            self._write_time(w, Time.from_pytime(value), self._prec)
 
     def read_fixed(self, r, size):
-        tzinfo = None
+        res = self._read_time(r, size, self._prec).to_pytime()
         if r.session.tzinfo_factory is not None:
             tzinfo = r.session.tzinfo_factory(0)
-        return self._read_time(r, size, self._prec, tzinfo)
+            res = res.replace(tzinfo=tzinfo)
+        return res
 
     def read(self, r):
         size = r.get_byte()
@@ -1356,16 +1381,18 @@ class DateTime2Serializer(BaseDateTime73Serializer):
                     raise DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
-            self._write_time(w, value, self._prec)
-            self._write_date(w, value)
+            self._write_time(w, Time.from_pytime(value), self._prec)
+            self._write_date(w, Date.from_pydate(value))
 
     def read_fixed(self, r, size):
-        tzinfo = None
+        time = self._read_time(r, size - 3, self._prec)
+        date = self._read_date(r)
+        dt = DateTime2(date=date, time=time)
+        res = dt.to_pydatetime()
         if r.session.tzinfo_factory is not None:
             tzinfo = r.session.tzinfo_factory(0)
-        time = self._read_time(r, size - 3, self._prec, tzinfo)
-        date = self._read_date(r)
-        return datetime.combine(date, time)
+            res = res.replace(tzinfo=tzinfo)
+        return res
 
     def read(self, r):
         size = r.get_byte()
@@ -1408,20 +1435,16 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
             value = value.astimezone(_utc).replace(tzinfo=None)
 
             w.put_byte(self._size)
-            self._write_time(w, value, self._prec)
-            self._write_date(w, value)
+            self._write_time(w, Time.from_pytime(value), self._prec)
+            self._write_date(w, Date.from_pydate(value))
             w.put_smallint(int(total_seconds(utcoffset)) // 60)
 
     def read_fixed(self, r, size):
-        time = self._read_time(r, size - 5, self._prec, _utc)
+        time = self._read_time(r, size - 5, self._prec)
         date = self._read_date(r)
         offset = r.get_smallint()
-        tzinfo_factory = r._session.tzinfo_factory
-        if tzinfo_factory is None:
-            from .tz import FixedOffsetTimezone
-            tzinfo_factory = FixedOffsetTimezone
-        tz = tzinfo_factory(offset)
-        return datetime.combine(date, time).astimezone(tz)
+        dt = DateTimeOffset(date=date, time=time, offset=offset)
+        return dt.to_pydatetime()
 
     def read(self, r):
         size = r.get_byte()
