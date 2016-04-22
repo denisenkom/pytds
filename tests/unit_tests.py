@@ -16,7 +16,7 @@ from pytds.tds import (
     DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, TDS70, NVarChar70Serializer,
     NText70Serializer, Text70Serializer, BitSerializer, VarBinarySerializer, VarBinarySerializer72)
 from pytds import _TdsLogin
-from pytds.tds_types import DateTimeSerializer, DateTime
+from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateType, TimeType, DateTimeOffsetType
 
 tzoffset = pytds.tz.FixedOffsetTimezone
 
@@ -498,20 +498,20 @@ class TypeInferenceTestCase(unittest.TestCase):
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTime2Serializer(prec=6))
+        self.assertEqual(res, DateTime2Serializer(DateTime2Type(precision=6)))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=True)
-        self.assertEqual(res, DateTimeOffsetSerializer(prec=6))
+        self.assertEqual(res, DateTimeOffsetSerializer(DateTimeOffsetType(precision=6)))
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, MsDateSerializer())
+        self.assertEqual(res, MsDateSerializer(DateType()))
 
         t = datetime.time()
         res = infer_tds_type(t, type_factory=factory)
-        self.assertEqual(res, MsTimeSerializer(prec=6))
+        self.assertEqual(res, MsTimeSerializer(TimeType(precision=6)))
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
@@ -564,20 +564,20 @@ class TypeInferenceTestCase(unittest.TestCase):
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTime2Serializer(prec=6))
+        self.assertEqual(res, DateTime2Serializer(DateTime2Type(precision=6)))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=True)
-        self.assertEqual(res, DateTimeOffsetSerializer(prec=6))
+        self.assertEqual(res, DateTimeOffsetSerializer(DateTimeOffsetType(precision=6)))
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, MsDateSerializer())
+        self.assertEqual(res, MsDateSerializer(DateType()))
 
         t = datetime.time()
         res = infer_tds_type(t, type_factory=factory)
-        self.assertEqual(res, MsTimeSerializer(prec=6))
+        self.assertEqual(res, MsTimeSerializer(TimeType(precision=6)))
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)
@@ -630,20 +630,20 @@ class TypeInferenceTestCase(unittest.TestCase):
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=False)
-        self.assertEqual(res, DateTime2Serializer(prec=6))
+        self.assertEqual(res, DateTime2Serializer(DateTime2Type(precision=6)))
 
         dt = datetime.datetime.now()
         dt = dt.replace(tzinfo=tzoffset(0))
         res = infer_tds_type(dt, type_factory=factory, allow_tz=True)
-        self.assertEqual(res, DateTimeOffsetSerializer(prec=6))
+        self.assertEqual(res, DateTimeOffsetSerializer(DateTimeOffsetType(precision=6)))
 
         d = datetime.date.today()
         res = infer_tds_type(d, type_factory=factory)
-        self.assertEqual(res, MsDateSerializer())
+        self.assertEqual(res, MsDateSerializer(DateType()))
 
         t = datetime.time()
         res = infer_tds_type(t, type_factory=factory)
-        self.assertEqual(res, MsTimeSerializer(prec=6))
+        self.assertEqual(res, MsTimeSerializer(TimeType(precision=6)))
 
         dec = decimal.Decimal()
         res = infer_tds_type(dec, type_factory=factory)

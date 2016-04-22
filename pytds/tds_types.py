@@ -86,11 +86,11 @@ class PlpReader(object):
                 left -= len(buf)
 
 
-class SqlTypeMetaclass(object):
+class SqlTypeMetaclass(CommonEqualityMixin):
     pass
 
 
-class SqlValueMetaclass(object):
+class SqlValueMetaclass(CommonEqualityMixin):
     pass
 
 
