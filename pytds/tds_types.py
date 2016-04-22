@@ -1152,7 +1152,10 @@ _datetime2_base_date = datetime(1, 1, 1)
 
 
 class DateType(SqlTypeMetaclass):
-    pass
+    type = SYBMSDATE
+
+    def get_declaration(self):
+        return "DATE"
 
 
 class Date(SqlValueMetaclass):
@@ -1296,6 +1299,20 @@ class DateTime2(SqlValueMetaclass):
                    time=Time.from_pytime(pydatetime.time))
 
 
+class DateTimeOffsetType(SqlTypeMetaclass):
+    type = SYBMSDATETIMEOFFSET
+
+    def __init__(self, precision):
+        self._precision = precision
+
+    @property
+    def precision(self):
+        return self._precision
+
+    def get_declaration(self):
+        return 'DATETIMEOFFSET({0})'.format(self.precision)
+
+
 class DateTimeOffset(SqlValueMetaclass):
     def __init__(self, date, time, offset):
         """
@@ -1355,6 +1372,16 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
     type = SYBMSDATE
     declaration = 'DATE'
 
+    def __init__(self, typ):
+        self._typ = typ
+
+    def get_declaration(self):
+        return self._typ.get_declaration()
+
+    @classmethod
+    def from_stream(cls, r):
+        return cls(DateType())
+
     def write(self, w, value):
         if value is None:
             w.put_byte(0)
@@ -1370,8 +1397,6 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
         if size == 0:
             return None
         return self._read_date(r).to_pydate()
-
-MsDateSerializer.instance = MsDateSerializer()
 
 
 class MsTimeSerializer(BaseDateTime73Serializer):
@@ -1485,14 +1510,14 @@ class DateTime2Serializer(BaseDateTime73Serializer):
 class DateTimeOffsetSerializer(BaseDateTime73Serializer):
     type = SYBMSDATETIMEOFFSET
 
-    def __init__(self, prec=7):
-        self._prec = prec
-        self._size = self._precision_to_len[prec] + 5
+    def __init__(self, typ):
+        self._typ = typ
+        self._size = self._precision_to_len[typ.precision] + 5
 
     @classmethod
     def from_stream(cls, r):
         prec = r.get_byte()
-        return cls(prec)
+        return cls(DateTimeOffsetType(precision=prec))
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
@@ -1503,10 +1528,10 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
             return cls(int(m.group(1)))
 
     def get_declaration(self):
-        return 'DATETIMEOFFSET({0})'.format(self._prec)
+        return self._typ.get_declaration()
 
     def write_info(self, w):
-        w.put_byte(self._prec)
+        w.put_byte(self._typ.precision)
 
     def write(self, w, value):
         if value is None:
@@ -1516,12 +1541,12 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
             value = value.astimezone(_utc).replace(tzinfo=None)
 
             w.put_byte(self._size)
-            self._write_time(w, Time.from_pytime(value), self._prec)
+            self._write_time(w, Time.from_pytime(value), self._typ.precision)
             self._write_date(w, Date.from_pydate(value))
             w.put_smallint(int(total_seconds(utcoffset)) // 60)
 
     def read_fixed(self, r, size):
-        time = self._read_time(r, size - 5, self._prec)
+        time = self._read_time(r, size - 5, self._typ.precision)
         date = self._read_date(r)
         offset = r.get_smallint()
         dt = DateTimeOffset(date=date, time=time, offset=offset)
@@ -1776,11 +1801,11 @@ class VariantSerializer(BaseTypeSerializer):
         FLT8TYPE: lambda r, size: FloatSerializer.instance.read(r),
         MONEYTYPE: lambda r, size: Money8Serializer.instance.read(r),
         MONEY4TYPE: lambda r, size: Money4Serializer.instance.read(r),
-        DATENTYPE: lambda r, size: MsDateSerializer.instance.read_fixed(r),
+        DATENTYPE: lambda r, size: MsDateSerializer(DateType()).read_fixed(r),
 
         TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),
         DATETIME2NTYPE: lambda r, size: DateTime2Serializer(DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
-        DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(prec=r.get_byte()).read_fixed(r, size),
+        DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(DateTimeOffsetType(precision=r.get_byte())).read_fixed(r, size),
 
         BIGVARBINTYPE: _variant_read_binary,
         BIGBINARYTYPE: _variant_read_binary,
@@ -2136,13 +2161,13 @@ class TypeFactory(object):
 
     def datetime_with_tz(self, precision):
         if self._tds_ver >= TDS72:
-            return DateTimeOffsetSerializer(prec=precision)
+            return DateTimeOffsetSerializer(DateTimeOffsetType(precision=precision))
         else:
             raise DataError('Given TDS version does not support DATETIMEOFFSET type')
 
     def date(self):
         if self._tds_ver >= TDS72:
-            return MsDateSerializer.instance
+            return MsDateSerializer(DateType())
         else:
             return DateTimeNSerializer(8)
 
@@ -2209,7 +2234,7 @@ class TypeFactory(object):
     SmallDateTime = SmallDateTimeSerializer.instance
     DateTime = DateTimeSerializer.instance
     DateTimeN = DateTimeNSerializer
-    Date = MsDateSerializer.instance
+    Date = MsDateSerializer
     Time = MsTimeSerializer
     DateTime2 = DateTime2Serializer
     DateTimeOffset = DateTimeOffsetSerializer
