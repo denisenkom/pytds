@@ -16,6 +16,7 @@ from pytds.tds import (
     DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, TDS70, NVarChar70Serializer,
     NText70Serializer, Text70Serializer, BitSerializer, VarBinarySerializer, VarBinarySerializer72)
 from pytds import _TdsLogin
+from pytds.tds_types import DateTimeSerializer, DateTime
 
 tzoffset = pytds.tz.FixedOffsetTimezone
 
@@ -849,3 +850,14 @@ class TypeInferenceTestCase(unittest.TestCase):
         with self.assertRaisesRegexp(ValueError, 'Name part of TVP name should be no longer than 128 characters'):
             tvp = pytds.TableValuedParam(type_name='dbo.' + ('x' * 129), rows=[[]])
             infer_tds_type(tvp, type_factory=factory)
+
+
+class MiscTestCase(unittest.TestCase):
+    def test_datetime_serializer(self):
+        self.assertEqual(DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(b'\xf2\x9c\x00\x00}uO\x01')),
+                         pytds.Timestamp(2010, 1, 2, 20, 21, 22, 123000))
+        self.assertEqual(DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')),
+                         DateTime.MAX_PYDATETIME)
+        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTimeSerializer.encode(
+            pytds.Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
+        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTime.MAX_PYDATETIME))

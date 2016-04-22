@@ -872,10 +872,6 @@ class DateTimeTest(DbTestCase):
             self.assertEqual(cur.fetchall(), [(val,)])
 
     def runTest(self):
-        self.assertEqual(DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(b'\xf2\x9c\x00\x00}uO\x01')), Timestamp(2010, 1, 2, 20, 21, 22, 123000))
-        self.assertEqual(DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(b'\x7f$-\x00\xff\x81\x8b\x01')), DateTimeSerializer._max_date)
-        self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTimeSerializer.encode(Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
-        self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTimeSerializer._max_date))
         with self.conn.cursor() as cur:
             cur.execute("select cast('9999-12-31T23:59:59.997' as datetime)")
             self.assertEqual(cur.fetchall(), [(Timestamp(9999, 12, 31, 23, 59, 59, 997000),)])

@@ -847,6 +847,11 @@ class NText72Serializer(NText71Serializer):
         return cls(size, parts, collation)
 
 
+class Binary(bytes, SqlValueMetaclass):
+    def __repr__(self):
+        return 'Binary({0})'.format(super(Binary, self).__repr__())
+
+
 class VarBinarySerializer(BaseTypeSerializer):
     type = XSYBVARBINARY
 
@@ -1001,17 +1006,46 @@ class Image72Serializer(Image70Serializer):
         return Image72Serializer(size, parts)
 
 
+_datetime_base_date = datetime(1900, 1, 1)
+
+
+class SmallDateTime(SqlValueMetaclass):
+    """Corresponds to MSSQL smalldatetime"""
+    def __init__(self, days, minutes):
+        """
+
+        @param days: Days since 1900-01-01
+        @param minutes: Minutes since 00:00:00
+        """
+        self._days = days
+        self._minutes = minutes
+
+    @property
+    def days(self):
+        return self._days
+
+    @property
+    def minutes(self):
+        return self._minutes
+
+    def to_pydatetime(self):
+        return _datetime_base_date + timedelta(days=self._days, minutes=self._minutes)
+
+    @classmethod
+    def from_pydatetime(cls, dt):
+        days = (dt - _datetime_base_date).days
+        minutes = dt.hour * 60 + dt.minute
+        return cls(days=days, minutes=minutes)
+
+
 class BaseDateTimeSerializer(BaseTypeSerializer):
-    _base_date = datetime(1900, 1, 1)
-    _min_date = datetime(1753, 1, 1, 0, 0, 0)
-    _max_date = datetime(9999, 12, 31, 23, 59, 59, 997000)
+    pass
 
 
 class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
     type = SYBDATETIME4
     declaration = 'SMALLDATETIME'
 
-    _max_date = datetime(2079, 6, 6, 23, 59, 0)
     _struct = struct.Struct('<HH')
 
     def write(self, w, val):
@@ -1019,18 +1053,55 @@ class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerialize
             if not w.session.use_tz:
                 raise DataError('Timezone-aware datetime is used without specifying use_tz')
             val = val.astimezone(w.session.use_tz).replace(tzinfo=None)
-        days = (val - self._base_date).days
-        minutes = val.hour * 60 + val.minute
-        w.pack(self._struct, days, minutes)
+        dt = SmallDateTime.from_pydatetime(val)
+        w.pack(self._struct, dt.days, dt.minutes)
 
     def read(self, r):
         days, minutes = r.unpack(self._struct)
+        dt = SmallDateTime(days=days, minutes=minutes)
         tzinfo = None
         if r.session.tzinfo_factory is not None:
             tzinfo = r.session.tzinfo_factory(0)
-        return (self._base_date + timedelta(days=days, minutes=minutes)).replace(tzinfo=tzinfo)
+        return dt.to_pydatetime().replace(tzinfo=tzinfo)
 
 SmallDateTimeSerializer.instance = SmallDateTimeSerializer()
+
+
+class DateTime(SqlValueMetaclass):
+    """Corresponds to MSSQL datetime"""
+    MIN_PYDATETIME = datetime(1753, 1, 1, 0, 0, 0)
+    MAX_PYDATETIME = datetime(9999, 12, 31, 23, 59, 59, 997000)
+
+    def __init__(self, days, time_part):
+        """
+
+        @param days: Days since 1900-01-01
+        @param time_part: Number of 1/300 of seconds since 00:00:00
+        """
+        self._days = days
+        self._time_part = time_part
+
+    @property
+    def days(self):
+        return self._days
+
+    @property
+    def time_part(self):
+        return self._time_part
+
+    def to_pydatetime(self):
+        ms = int(round(self._time_part % 300 * 10 / 3.0))
+        secs = self._time_part // 300
+        return _datetime_base_date + timedelta(days=self._days, seconds=secs, milliseconds=ms)
+
+    @classmethod
+    def from_pydatetime(cls, dt):
+        if not (cls.MIN_PYDATETIME <= dt <= cls.MAX_PYDATETIME):
+            raise DataError('Datetime is out of range')
+        days = (dt - _datetime_base_date).days
+        ms = dt.microsecond // 1000
+        tm = (dt.hour * 60 * 60 + dt.minute * 60 + dt.second) * 300 + int(round(ms * 3 / 10.0))
+        return cls(days=days, time_part=tm)
 
 
 class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
@@ -1054,25 +1125,17 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
         return _applytz(self.decode(days, t), tzinfo)
 
     @classmethod
-    def validate(cls, value):
-        if not (cls._min_date <= value <= cls._max_date):
-            raise DataError('Date is out of range')
-
-    @classmethod
     def encode(cls, value):
         #cls.validate(value)
         if type(value) == date:
             value = datetime.combine(value, time(0, 0, 0))
-        days = (value - cls._base_date).days
-        ms = value.microsecond // 1000
-        tm = (value.hour * 60 * 60 + value.minute * 60 + value.second) * 300 + int(round(ms * 3 / 10.0))
-        return cls._struct.pack(days, tm)
+        dt = DateTime.from_pydatetime(value)
+        return cls._struct.pack(dt.days, dt.time_part)
 
     @classmethod
-    def decode(cls, days, time):
-        ms = int(round(time % 300 * 10 / 3.0))
-        secs = time // 300
-        return cls._base_date + timedelta(days=days, seconds=secs, milliseconds=ms)
+    def decode(cls, days, time_part):
+        dt = DateTime(days=days, time_part=time_part)
+        return dt.to_pydatetime()
 
 DateTimeSerializer.instance = DateTimeSerializer()
 
@@ -1093,6 +1156,9 @@ class DateType(SqlTypeMetaclass):
 
 
 class Date(SqlValueMetaclass):
+    MIN_PYDATE = date(1, 1, 1)
+    MAX_PYDATE = date(9999, 12, 31)
+
     def __init__(self, days):
         """
         Creates sql date object
@@ -1248,8 +1314,6 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
         7: 5,
     }
 
-    _base_date = datetime(1, 1, 1)
-
     def _write_time(self, w, t, prec):
         val = t.nsec // (10 ** (9 - prec))
         w.write(struct.pack('<Q', val)[:self._precision_to_len[prec]])
@@ -1274,9 +1338,6 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
 class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
     type = SYBMSDATE
     declaration = 'DATE'
-
-    MIN = date(1, 1, 1)
-    MAX = date(9999, 12, 31)
 
     def write(self, w, value):
         if value is None:
@@ -1752,9 +1813,48 @@ class VariantSerializer(BaseTypeSerializer):
         raise NotImplementedError
 
 
+class TableValuedParam(SqlValueMetaclass):
+    """
+    Used to represent table-valued parameters
+    """
+    def __init__(self, type_name=None, columns=None, rows=None):
+        # parsing type name
+        self._typ_schema = ''
+        self._typ_name = ''
+        if type_name:
+            parts = type_name.split('.')
+            if len(parts) > 2:
+                raise ValueError('Type name should consist of at most 2 parts, e.g. dbo.MyType')
+            self._typ_name = parts[-1]
+            if len(parts) > 1:
+                self._typ_schema = parts[0]
+
+        self._columns = columns
+        self._rows = rows
+
+    @property
+    def typ_name(self):
+        return self._typ_name
+
+    @property
+    def typ_schema(self):
+        return self._typ_schema
+
+    @property
+    def columns(self):
+        return self._columns
+
+    @property
+    def rows(self):
+        return self._rows
+
+    def is_null(self):
+        return self._rows is None
+
+
 class TableSerializer(BaseTypeSerializer):
     """
-    Used to represent table valued parameter metadata
+    Used to serialize table valued parameters
 
     spec: https://msdn.microsoft.com/en-us/library/dd304813.aspx
     """

@@ -454,50 +454,6 @@ REAL = DBAPITypeObject(SYBREAL, SYBFLT8, SYBFLTN)
 XML = DBAPITypeObject(SYBMSXML)
 
 
-class Binary(bytes):
-    def __repr__(self):
-        return 'Binary({0})'.format(super(Binary, self).__repr__())
-
-
-class TableValuedParam(object):
-    """
-    sdfsdf
-    """
-    def __init__(self, type_name=None, columns=None, rows=None):
-        # parsing type name
-        self._typ_schema = ''
-        self._typ_name = ''
-        if type_name:
-            parts = type_name.split('.')
-            if len(parts) > 2:
-                raise ValueError('Type name should consist of at most 2 parts, e.g. dbo.MyType')
-            self._typ_name = parts[-1]
-            if len(parts) > 1:
-                self._typ_schema = parts[0]
-
-        self._columns = columns
-        self._rows = rows
-
-    @property
-    def typ_name(self):
-        return self._typ_name
-
-    @property
-    def typ_schema(self):
-        return self._typ_schema
-
-    @property
-    def columns(self):
-        return self._columns
-
-    @property
-    def rows(self):
-        return self._rows
-
-    def is_null(self):
-        return self._rows is None
-
-
 class InternalProc(object):
     def __init__(self, proc_id, name):
         self.proc_id = proc_id
