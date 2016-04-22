@@ -3,6 +3,9 @@ from __future__ import with_statement
 import os
 import codecs
 from six import StringIO
+
+from pytds.tds_types import TimeType, DateTime2Type
+
 try:
     import unittest2 as unittest
 except:
@@ -354,7 +357,7 @@ class DbTests(DbTestCase):
             cur.execute('create table bulk_insert_table_ll(c1 {0})'.format(typ.get_declaration()))
             cur._session.submit_plain_query('insert bulk bulk_insert_table_ll (c1 {0})'.format(typ.get_declaration()))
             cur._session.process_simple_request()
-            col1 = Column('c1', typ, flags=Column.fNullable)
+            col1 = Column(name='c1', type=typ, flags=Column.fNullable)
             metadata = [col1]
             cur._session.submit_bulk(metadata, [(value,)])
             cur._session.process_simple_request()
@@ -403,12 +406,12 @@ class DbTests(DbTestCase):
         self._test_bulk_type(self.conn._conn._type_factory.Date, date(1, 1, 1))
         self._test_bulk_type(self.conn._conn._type_factory.Date, date(9999, 12, 31))
         self._test_bulk_type(self.conn._conn._type_factory.Date, None)
-        self._test_bulk_type(self.conn._conn._type_factory.Time(0), time(0, 0, 0))
-        self._test_bulk_type(self.conn._conn._type_factory.Time(6), time(23, 59, 59, 999999))
-        self._test_bulk_type(self.conn._conn._type_factory.Time(0), None)
-        self._test_bulk_type(self.conn._conn._type_factory.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
-        self._test_bulk_type(self.conn._conn._type_factory.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
-        self._test_bulk_type(self.conn._conn._type_factory.DateTime2(0), None)
+        self._test_bulk_type(TimeType(precision=0), time(0, 0, 0))
+        self._test_bulk_type(TimeType(precision=6), time(23, 59, 59, 999999))
+        self._test_bulk_type(self.conn._conn._type_factory.Time(TimeType(precision=0)), None)
+        self._test_bulk_type(DateTime2Type(precision=0), datetime(1, 1, 1, 0, 0, 0))
+        self._test_bulk_type(DateTime2Type(precision=6), datetime(9999, 12, 31, 23, 59, 59, 999999))
+        self._test_bulk_type(DateTime2Type(precision=0), None)
         self._test_bulk_type(self.conn._conn._type_factory.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
         self._test_bulk_type(self.conn._conn._type_factory.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
         self._test_bulk_type(self.conn._conn._type_factory.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))
@@ -1382,12 +1385,12 @@ def _params_tests(self):
         test_val(self.conn._conn._type_factory.Date, date(1, 1, 1))
         test_val(self.conn._conn._type_factory.Date, date(9999, 12, 31))
         test_val(self.conn._conn._type_factory.Date, None)
-        test_val(self.conn._conn._type_factory.Time(0), time(0, 0, 0))
-        test_val(self.conn._conn._type_factory.Time(6), time(23, 59, 59, 999999))
-        test_val(self.conn._conn._type_factory.Time(0), None)
-        test_val(self.conn._conn._type_factory.DateTime2(0), datetime(1, 1, 1, 0, 0, 0))
-        test_val(self.conn._conn._type_factory.DateTime2(6), datetime(9999, 12, 31, 23, 59, 59, 999999))
-        test_val(self.conn._conn._type_factory.DateTime2(0), None)
+        test_val(TimeType(precision=0), time(0, 0, 0))
+        test_val(TimeType(precision=6), time(23, 59, 59, 999999))
+        test_val(TimeType(precision=0), None)
+        test_val(DateTime2Type(precision=0), datetime(1, 1, 1, 0, 0, 0))
+        test_val(DateTime2Type(precision=6), datetime(9999, 12, 31, 23, 59, 59, 999999))
+        test_val(DateTime2Type(precision=0), None)
         test_val(self.conn._conn._type_factory.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, utc))
         test_val(self.conn._conn._type_factory.DateTimeOffset(6), datetime(9999, 12, 31, 23, 59, 59, 999999, tzoffset(14)))
         test_val(self.conn._conn._type_factory.DateTimeOffset(0), datetime(1, 1, 1, 0, 0, 0, tzinfo=tzoffset(-14)))

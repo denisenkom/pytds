@@ -536,8 +536,9 @@ class _TdsSession(object):
         curcol.column_writeable = (curcol.flags & Column.fReadWrite) > 0
         curcol.column_identity = (curcol.flags & Column.fIdentity) > 0
         type_id = r.get_byte()
-        type_class = self._tds._type_factory.get_type_class(type_id)
-        curcol.type = type_class.from_stream(r)
+        serializer_class = self._tds._type_factory.get_type_serializer(type_id)
+        curcol.serializer = serializer_class
+        curcol.type = serializer_class.from_stream(r)
 
     def tds7_process_result(self):
         """ Reads and processes COLMETADATA stream
@@ -1069,10 +1070,12 @@ class _TdsSession(object):
                 w.put_byte(param.flags)
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
-                w.put_byte(param.type.type)
-                param.type.write_info(w)
+                type_id = param.type.type
+                w.put_byte(type_id)
+                serializer = param.choose_serializer(self._tds._type_factory)
+                serializer.write_info(w)
 
-                param.type.write(w, param.value)
+                serializer.write(w, param.value)
 
     def submit_plain_query(self, operation):
         """ Sends a plain query to server.
@@ -1105,6 +1108,7 @@ class _TdsSession(object):
         """
         num_cols = len(metadata)
         w = self._writer
+        serializers = []
         with self.querying_context(TDS_BULK):
             w.put_byte(TDS7_RESULT_TOKEN)
             w.put_usmallint(num_cols)
@@ -1114,14 +1118,17 @@ class _TdsSession(object):
                 else:
                     w.put_usmallint(col.column_usertype)
                 w.put_usmallint(col.flags)
-                w.put_byte(col.type.type)
-                col.type.write_info(w)
+                type_id = col.type.type
+                w.put_byte(type_id)
+                serializer = col.choose_serializer(self._tds._type_factory)
+                serializers.append(serializer)
+                serializer.write_info(w)
                 w.put_byte(len(col.column_name))
                 w.write_ucs2(col.column_name)
             for row in rows:
                 w.put_byte(TDS_ROW_TOKEN)
                 for i, col in enumerate(metadata):
-                    col.type.write(w, row[i])
+                    serializers[i].write(w, row[i])
 
             w.put_byte(TDS_DONE_TOKEN)
             w.put_usmallint(TDS_DONE_FINAL)

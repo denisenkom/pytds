@@ -588,3 +588,14 @@ class Column(CommonEqualityMixin):
             repr(self.column_usertype),
             repr(self.char_codec),
         )
+
+    def choose_serializer(self, type_factory):
+        from .tds_types import BaseTypeSerializer
+        if isinstance(self.type, BaseTypeSerializer):
+            # intermediate support for serializers
+            # until we switch to types fully
+            return self.type
+        else:
+            # this will be a main case where self.type is instance of SqlTypeMetadata
+            type_id = self.type.type
+            return type_factory.get_type_serializer(type_id)(self.type)

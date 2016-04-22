@@ -1188,8 +1188,17 @@ class Date(SqlValueMetaclass):
 
 
 class TimeType(SqlTypeMetaclass):
+    type = SYBMSTIME
+
     def __init__(self, precision):
         self._precision = precision
+
+    @property
+    def precision(self):
+        return self._precision
+
+    def get_declaration(self):
+        return 'TIME({0})'.format(self.precision)
 
 
 class Time(SqlValueMetaclass):
@@ -1239,6 +1248,13 @@ class DateTime2Type(SqlTypeMetaclass):
 
     def __init__(self, precision):
         self._precision = precision
+
+    @property
+    def precision(self):
+        return self._precision
+
+    def get_declaration(self):
+        return 'DATETIME2({0})'.format(self.precision)
 
 
 class DateTime2(SqlValueMetaclass):
@@ -1361,14 +1377,18 @@ MsDateSerializer.instance = MsDateSerializer()
 class MsTimeSerializer(BaseDateTime73Serializer):
     type = SYBMSTIME
 
-    def __init__(self, prec):
-        self._prec = prec
-        self._size = self._precision_to_len[prec]
+    def __init__(self, typ):
+        self._typ = typ
+        self._size = self._precision_to_len[typ.precision]
+
+    @classmethod
+    def read_type(cls, r):
+        prec = r.get_byte()
+        return TimeType(precision=prec)
 
     @classmethod
     def from_stream(cls, r):
-        prec = r.get_byte()
-        return cls(prec)
+        return cls(cls.read_type(r))
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
@@ -1377,10 +1397,10 @@ class MsTimeSerializer(BaseDateTime73Serializer):
             return cls(int(m.group(1)))
 
     def get_declaration(self):
-        return 'TIME({0})'.format(self._prec)
+        return self._typ.get_declaration()
 
     def write_info(self, w):
-        w.put_byte(self._prec)
+        w.put_byte(self._typ.precision)
 
     def write(self, w, value):
         if value is None:
@@ -1391,10 +1411,10 @@ class MsTimeSerializer(BaseDateTime73Serializer):
                     raise DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
-            self._write_time(w, Time.from_pytime(value), self._prec)
+            self._write_time(w, Time.from_pytime(value), self._typ.precision)
 
     def read_fixed(self, r, size):
-        res = self._read_time(r, size, self._prec).to_pytime()
+        res = self._read_time(r, size, self._typ.precision).to_pytime()
         if r.session.tzinfo_factory is not None:
             tzinfo = r.session.tzinfo_factory(0)
             res = res.replace(tzinfo=tzinfo)
@@ -1410,17 +1430,17 @@ class MsTimeSerializer(BaseDateTime73Serializer):
 class DateTime2Serializer(BaseDateTime73Serializer):
     type = SYBMSDATETIME2
 
-    def __init__(self, prec=7):
-        self._prec = prec
-        self._size = self._precision_to_len[prec] + 3
+    def __init__(self, typ):
+        self._typ = typ
+        self._size = self._precision_to_len[typ.precision] + 3
 
     @classmethod
     def from_stream(cls, r):
         prec = r.get_byte()
-        return cls(prec)
+        return cls(DateTime2Type(precision=prec))
 
     def get_declaration(self):
-        return 'DATETIME2({0})'.format(self._prec)
+        return self._typ.get_declaration()
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
@@ -1431,7 +1451,7 @@ class DateTime2Serializer(BaseDateTime73Serializer):
             return cls(int(m.group(1)))
 
     def write_info(self, w):
-        w.put_byte(self._prec)
+        w.put_byte(self._typ.precision)
 
     def write(self, w, value):
         if value is None:
@@ -1442,11 +1462,11 @@ class DateTime2Serializer(BaseDateTime73Serializer):
                     raise DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
-            self._write_time(w, Time.from_pytime(value), self._prec)
+            self._write_time(w, Time.from_pytime(value), self._typ.precision)
             self._write_date(w, Date.from_pydate(value))
 
     def read_fixed(self, r, size):
-        time = self._read_time(r, size - 3, self._prec)
+        time = self._read_time(r, size - 3, self._typ.precision)
         date = self._read_date(r)
         dt = DateTime2(date=date, time=time)
         res = dt.to_pydatetime()
@@ -1758,8 +1778,8 @@ class VariantSerializer(BaseTypeSerializer):
         MONEY4TYPE: lambda r, size: Money4Serializer.instance.read(r),
         DATENTYPE: lambda r, size: MsDateSerializer.instance.read_fixed(r),
 
-        TIMENTYPE: lambda r, size: MsTimeSerializer(prec=r.get_byte()).read_fixed(r, size),
-        DATETIME2NTYPE: lambda r, size: DateTime2Serializer(prec=r.get_byte()).read_fixed(r, size),
+        TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),
+        DATETIME2NTYPE: lambda r, size: DateTime2Serializer(DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
         DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(prec=r.get_byte()).read_fixed(r, size),
 
         BIGVARBINTYPE: _variant_read_binary,
@@ -2069,7 +2089,7 @@ class TypeFactory(object):
         else:
             self._type_map = _type_map
 
-    def get_type_class(self, tds_type_id):
+    def get_type_serializer(self, tds_type_id):
         type_class = self._type_map.get(tds_type_id)
         if not type_class:
             raise InterfaceError('Invalid type id {}'.format(tds_type_id))
@@ -2107,7 +2127,7 @@ class TypeFactory(object):
 
     def datetime(self, precision):
         if self._tds_ver >= TDS72:
-            return DateTime2Serializer(prec=precision)
+            return DateTime2Serializer(DateTime2Type(precision=precision))
         else:
             return DateTimeNSerializer(8)
 
@@ -2128,7 +2148,7 @@ class TypeFactory(object):
 
     def time(self, precision):
         if self._tds_ver >= TDS72:
-            return MsTimeSerializer(prec=precision)
+            return MsTimeSerializer(TimeType(precision=precision))
         else:
             raise DataError('Given TDS version does not support TIME type')
 
