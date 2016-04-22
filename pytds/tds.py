@@ -723,6 +723,18 @@ class _TdsSession(object):
                 value = curcol.type.read(r)
             self.row[i] = value
 
+    def process_tabname(self):
+        r = self._reader
+        total_length = r.get_smallint()
+        if not IS_TDS71_PLUS(self):
+            name_length = r.get_smallint()
+        skipall(r, total_length)
+
+    def process_colinfo(self):
+        r = self._reader
+        total_length = r.get_smallint()
+        skipall(r, total_length)
+
     def process_orderby(self):
         """ Reads and processes ORDER stream
 
@@ -1658,6 +1670,8 @@ _token_map = {
     TDS7_RESULT_TOKEN: lambda self: self.tds7_process_result(),
     TDS_ROW_TOKEN: lambda self: self.process_row(),
     TDS_NBC_ROW_TOKEN: lambda self: self.process_nbcrow(),
+    TDS_TABNAME_TOKEN: lambda self: self.process_tabname(),
+    TDS_COLINFO_TOKEN: lambda self: self.process_colinfo(),
     TDS_ORDERBY2_TOKEN: lambda self: self.process_orderby2(),
     TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
     TDS_RETURNSTATUS_TOKEN: lambda self: self.process_returnstatus(),

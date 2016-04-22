@@ -630,6 +630,8 @@ class Cursor(six.Iterator):
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)
+        if operation[:3] == "sp_":
+            return self._callproc(operation, params)
         self._execute(operation, params)
 
     def _begin_tran(self, isolation_level):
