@@ -4,7 +4,8 @@ import os
 import codecs
 from six import StringIO
 
-from pytds.tds_types import TimeType, DateTime2Type, DateType, DateTimeOffsetType
+from pytds.tds_types import TimeType, DateTime2Type, DateType, DateTimeOffsetType, BitType, TinyIntType, SmallIntType, \
+    IntType, BigIntType
 
 try:
     import unittest2 as unittest
@@ -274,8 +275,6 @@ class TestCase2(TestCase):
                 self.assertTupleEqual(cur.fetchone(), (val,))
                 self.assertIs(cur.fetchone(), None)
 
-        with self.assertRaises(DataError):
-            test_val(-10 ** 38)
         ##cur.execute('select %s', '\x00'*(2**31))
         with self.assertRaises(DataError):
             test_val(Decimal('1' + '0' * 38))
@@ -283,6 +282,11 @@ class TestCase2(TestCase):
             test_val(Decimal('-1' + '0' * 38))
         with self.assertRaises(DataError):
             test_val(Decimal('1E38'))
+        with self.conn.cursor() as cur:
+            val = -10 ** 38
+            cur.execute('select %s', (val,))
+            self.assertTupleEqual(cur.fetchone(), (str(val),))
+            self.assertIs(cur.fetchone(), None)
 
     def test_description(self):
         with self.conn.cursor() as cur:
@@ -378,11 +382,11 @@ class DbTests(DbTestCase):
         self._test_bulk_type(TinyIntSerializer.instance, 0)
         self._test_bulk_type(BigIntSerializer.instance, 2 ** 63 - 1)
         self._test_bulk_type(BigIntSerializer.instance, -2 ** 63)
-        self._test_bulk_type(IntNSerializer(1), 255)
-        self._test_bulk_type(IntNSerializer(2), 2 ** 15 - 1)
-        self._test_bulk_type(IntNSerializer(4), 2 ** 31 - 1)
-        self._test_bulk_type(IntNSerializer(8), 2 ** 63 - 1)
-        self._test_bulk_type(IntNSerializer(4), None)
+        self._test_bulk_type(TinyIntType(), 255)
+        self._test_bulk_type(SmallIntType(), 2 ** 15 - 1)
+        self._test_bulk_type(IntType(), 2 ** 31 - 1)
+        self._test_bulk_type(BigIntType(), 2 ** 63 - 1)
+        self._test_bulk_type(IntType(), None)
         self._test_bulk_type(RealSerializer.instance, 0.25)
         self._test_bulk_type(FloatSerializer.instance, 0.25)
         self._test_bulk_type(FloatNSerializer(4), 0.25)
@@ -1359,14 +1363,14 @@ def _params_tests(self):
             self.assertTupleEqual(cur.fetchone(), (val,))
             self.assertIs(cur.fetchone(), None)
 
-    test_val(self.conn._conn._type_factory.BitN, True)
-    test_val(self.conn._conn._type_factory.BitN, False)
-    test_val(self.conn._conn._type_factory.BitN, None)
-    test_val(self.conn._conn._type_factory.IntN(1), 255)
-    test_val(self.conn._conn._type_factory.IntN(2), 2 ** 15 - 1)
-    test_val(self.conn._conn._type_factory.IntN(4), 2 ** 31 - 1)
-    test_val(self.conn._conn._type_factory.IntN(8), 2 ** 63 - 1)
-    test_val(self.conn._conn._type_factory.IntN(4), None)
+    test_val(BitType(), True)
+    test_val(BitType(), False)
+    test_val(BitType(), None)
+    test_val(self.conn._conn._type_factory.IntN(TinyIntType()), 255)
+    test_val(self.conn._conn._type_factory.IntN(SmallIntType()), 2 ** 15 - 1)
+    test_val(self.conn._conn._type_factory.IntN(IntType()), 2 ** 31 - 1)
+    test_val(self.conn._conn._type_factory.IntN(BigIntType()), 2 ** 63 - 1)
+    test_val(self.conn._conn._type_factory.IntN(IntType()), None)
     #test_val(self.conn._conn._type_factory.Real, 0.25)
     #test_val(self.conn._conn._type_factory.Float, 0.25)
     test_val(self.conn._conn._type_factory.FloatN(4), 0.25)

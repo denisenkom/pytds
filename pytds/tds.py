@@ -981,7 +981,7 @@ class _TdsSession(object):
         if isinstance(value, output):
             column.flags |= fByRefValue
             if isinstance(value.type, six.string_types):
-                column.type = self.conn._type_factory.type_by_declaration(declaration=value.type, nullable=True, connection=self._tds)
+                column.type = self.conn._type_factory.serializer_by_declaration(declaration=value.type, nullable=True, connection=self._tds)
             elif value.type:
                 column.type = self.conn._type_inferrer.from_class(value.type)
             value = value.value
@@ -1070,9 +1070,12 @@ class _TdsSession(object):
                 w.put_byte(param.flags)
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
-                type_id = param.type.type
+                serializer = param.choose_serializer(
+                    type_factory=self._tds._type_factory,
+                    collation=self._tds.collation or raw_collation
+                )
+                type_id = serializer.type
                 w.put_byte(type_id)
-                serializer = param.choose_serializer(self._tds._type_factory)
                 serializer.write_info(w)
 
                 serializer.write(w, param.value)
@@ -1118,9 +1121,12 @@ class _TdsSession(object):
                 else:
                     w.put_usmallint(col.column_usertype)
                 w.put_usmallint(col.flags)
-                type_id = col.type.type
+                serializer = col.choose_serializer(
+                    type_factory=self._tds._type_factory,
+                    collation=self._tds.collation,
+                )
+                type_id = serializer.type
                 w.put_byte(type_id)
-                serializer = col.choose_serializer(self._tds._type_factory)
                 serializers.append(serializer)
                 serializer.write_info(w)
                 w.put_byte(len(col.column_name))
@@ -1684,7 +1690,7 @@ class _TdsSocket(object):
         self._bufsize = 4096
         self.tds_version = TDS74
         self.use_tz = use_tz
-        self._type_factory = TypeFactory(self.tds_version)
+        self._type_factory = SerializerFactory(self.tds_version)
         self._type_inferrer = None
 
     def __repr__(self):
@@ -1708,7 +1714,7 @@ class _TdsSocket(object):
             raise ValueError('This TDS version is not supported')
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
-        self._type_factory = TypeFactory(self.tds_version)
+        self._type_factory = SerializerFactory(self.tds_version)
         self._type_inferrer = TdsTypeInferrer(
             type_factory=self._type_factory,
             collation=self.collation,

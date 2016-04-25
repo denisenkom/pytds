@@ -1,6 +1,8 @@
 import socket
 import sys
 
+import six
+
 # tds protocol versions
 import itertools
 
@@ -315,8 +317,10 @@ def force_unicode(s):
             return s.decode('utf8')
         except UnicodeDecodeError as e:
             raise DatabaseError(e)
-    else:
+    elif isinstance(s, six.text_type):
         return s
+    else:
+        return six.text_type(s)
 
 
 def tds_quote_id(ident):
@@ -589,7 +593,7 @@ class Column(CommonEqualityMixin):
             repr(self.char_codec),
         )
 
-    def choose_serializer(self, type_factory):
+    def choose_serializer(self, type_factory, collation):
         from .tds_types import BaseTypeSerializer
         if isinstance(self.type, BaseTypeSerializer):
             # intermediate support for serializers
@@ -597,5 +601,4 @@ class Column(CommonEqualityMixin):
             return self.type
         else:
             # this will be a main case where self.type is instance of SqlTypeMetadata
-            type_id = self.type.type
-            return type_factory.get_type_serializer(type_id)(self.type)
+            return type_factory.serializer_by_type(sql_type=self.type, collation=collation)

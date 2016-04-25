@@ -87,7 +87,169 @@ class PlpReader(object):
 
 
 class SqlTypeMetaclass(CommonEqualityMixin):
-    pass
+    def __repr__(self):
+        return '<sqltype:{}>'.format(self.get_declaration())
+
+    def get_declaration(self):
+        raise NotImplementedError()
+
+
+class ImageType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'IMAGE'
+
+
+class BinaryType(SqlTypeMetaclass):
+    def __init__(self, size=30):
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    def get_declaration(self):
+        return 'BINARY({})'.format(self._size)
+
+
+class VarBinaryType(SqlTypeMetaclass):
+    def __init__(self, size=30):
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    def get_declaration(self):
+        return 'VARBINARY({})'.format(self._size)
+
+
+class VarBinaryMaxType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'VARBINARY(MAX)'
+
+
+class CharType(SqlTypeMetaclass):
+    def __init__(self, size=30):
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    def get_declaration(self):
+        return 'CHAR({})'.format(self._size)
+
+
+class VarCharType(SqlTypeMetaclass):
+    def __init__(self, size=30):
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    def get_declaration(self):
+        return 'VARCHAR({})'.format(self._size)
+
+
+class VarCharMaxType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'VARCHAR(MAX)'
+
+
+class NCharType(SqlTypeMetaclass):
+    def __init__(self, size=30):
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    def get_declaration(self):
+        return 'NCHAR({})'.format(self._size)
+
+
+class NVarCharType(SqlTypeMetaclass):
+    def __init__(self, size=30):
+        self._size = size
+
+    @property
+    def size(self):
+        return self._size
+
+    def get_declaration(self):
+        return 'NVARCHAR({})'.format(self._size)
+
+
+class NVarCharMaxType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'NVARCHAR(MAX)'
+
+
+class TextType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'TEXT'
+
+
+class NTextType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'NTEXT'
+
+
+class XmlType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'XML'
+
+
+class SmallMoneyType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'SMALLMONEY'
+
+
+class MoneyType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'MONEY'
+
+
+class DecimalType(SqlTypeMetaclass):
+    def __init__(self, precision=18, scale=0):
+        self._precision = precision
+        self._scale = scale
+
+    @classmethod
+    def from_value(cls, value):
+        if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
+            raise DataError('Decimal value is out of range')
+        value = value.normalize()
+        _, digits, exp = value.as_tuple()
+        if exp > 0:
+            scale = 0
+            prec = len(digits) + exp
+        else:
+            scale = -exp
+            prec = max(len(digits), scale)
+        return cls(precision=prec, scale=scale)
+
+    @property
+    def precision(self):
+        return self._precision
+
+    @property
+    def scale(self):
+        return self._scale
+
+    def get_declaration(self):
+        return 'DECIMAL({}, {})'.format(self._precision, self._scale)
+
+
+class UniqueIdentifierType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'UNIQUEIDENTIFIER'
+
+
+class VariantType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'SQL_VARIANT'
 
 
 class SqlValueMetaclass(CommonEqualityMixin):
@@ -252,6 +414,55 @@ class BaseTypeSerializerN(BaseTypeSerializer):
         self._current_subtype.write(w, val)
 
 
+class BitType(SqlTypeMetaclass):
+    type = SYBBITN
+
+    def get_declaration(self):
+        return 'BIT'
+
+
+class TinyIntType(SqlTypeMetaclass):
+    type = SYBINTN
+    size = 1
+
+    def get_declaration(self):
+        return 'TINYINT'
+
+
+class SmallIntType(SqlTypeMetaclass):
+    type = SYBINTN
+    size = 2
+
+    def get_declaration(self):
+        return 'SMALLINT'
+
+
+class IntType(SqlTypeMetaclass):
+    type = SYBINTN
+    size = 4
+
+    def get_declaration(self):
+        return 'INT'
+
+
+class BigIntType(SqlTypeMetaclass):
+    type = SYBINTN
+    size = 8
+
+    def get_declaration(self):
+        return 'BIGINT'
+
+
+class RealType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'REAL'
+
+
+class FloatType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'FLOAT'
+
+
 class BitSerializer(BasePrimitiveTypeSerializer):
     type = SYBBIT
     declaration = 'BIT'
@@ -269,7 +480,15 @@ class BitNSerializer(BaseTypeSerializerN):
     type = SYBBITN
     subtypes = {1 : BitSerializer.instance}
 
-BitNSerializer.instance = BitNSerializer(1)
+    def __init__(self, typ):
+        super(BitNSerializer, self).__init__(size=1)
+        self._typ = typ
+
+    def __repr__(self):
+        return 'BitNSerializer({})'.format(self._typ)
+
+
+BitNSerializer.instance = BitNSerializer(BitType())
 
 
 class TinyIntSerializer(BasePrimitiveTypeSerializer):
@@ -333,6 +552,35 @@ class IntNSerializer(BaseTypeSerializerN):
         4: IntSerializer.instance,
         8: BigIntSerializer.instance,
     }
+
+    type_by_size = {
+        1: TinyIntType(),
+        2: SmallIntType(),
+        4: IntType(),
+        8: BigIntType(),
+    }
+
+    def __init__(self, typ):
+        super(IntNSerializer, self).__init__(size=typ.size)
+        self._typ = typ
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if nullable:
+            for size, subtype in cls.subtypes.items():
+                inst = subtype.from_declaration(declaration, False, connection)
+                if inst:
+                    return cls(cls.type_by_size[size])
+
+    @classmethod
+    def from_stream(cls, r):
+        size = r.get_byte()
+        if size not in cls.subtypes:
+            raise InterfaceError('Invalid %s size' % cls.type, size)
+        return cls(cls.type_by_size[size])
+
+    def get_declaration(self):
+        return self._typ.get_declaration()
 
     def __repr__(self):
         return 'IntN({})'.format(self._size)
@@ -475,7 +723,7 @@ class VarChar72Serializer(VarChar71Serializer):
 
 
 class VarCharMaxSerializer(VarChar72Serializer):
-    def __init__(self, collation):
+    def __init__(self, collation=raw_collation):
         super(VarChar72Serializer, self).__init__(0, collation)
 
     def get_declaration(self):
@@ -507,10 +755,11 @@ class VarCharMaxSerializer(VarChar72Serializer):
 class NVarChar70Serializer(BaseTypeSerializer):
     type = XSYBNVARCHAR
 
-    def __init__(self, size):
+    def __init__(self, size, collation=raw_collation):
         #if size <= 0 or size > 4000:
         #    raise DataError('Invalid size for NVARCHAR field')
         self._size = size
+        self._collation = collation
 
     @classmethod
     def from_stream(cls, r):
@@ -549,10 +798,6 @@ class NVarChar70Serializer(BaseTypeSerializer):
 
 
 class NVarChar71Serializer(NVarChar70Serializer):
-    def __init__(self, size, collation=raw_collation):
-        super(NVarChar71Serializer, self).__init__(size)
-        self._collation = collation
-
     @classmethod
     def from_stream(cls, r):
         size = r.get_usmallint()
@@ -576,19 +821,22 @@ class NVarChar72Serializer(NVarChar71Serializer):
         size = r.get_usmallint()
         collation = r.get_collation()
         if size == 0xffff:
-            return NVarCharMaxSerializer(size, collation)
+            return NVarCharMaxSerializer(collation=collation)
         return cls(size / 2, collation=collation)
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == 'NVARCHAR(MAX)':
-            return VarCharMaxSerializer(connection.collation)
+            return NVarCharMaxSerializer(collation=connection.collation)
         m = re.match(r'NVARCHAR\((\d+)\)', declaration)
         if m:
             return cls(int(m.group(1)), connection.collation)
 
 
 class NVarCharMaxSerializer(NVarChar72Serializer):
+    def __init__(self, collation=raw_collation):
+        super(NVarCharMaxSerializer, self).__init__(size=-1, collation=collation)
+
     def __repr__(self):
         return 'NVarCharMax(s={},c={})'.format(self._size, repr(self._collation))
 
@@ -631,6 +879,9 @@ class XmlSerializer(NVarCharMaxSerializer):
         super(XmlSerializer, self).__init__(0)
         self._schema = schema
 
+    def __repr__(self):
+        return 'XmlSerializer(schema={})'.format(repr(self._schema))
+
     def get_typeid(self):
         return self.type
 
@@ -669,10 +920,14 @@ class Text70Serializer(BaseTypeSerializer):
     type = SYBTEXT
     declaration = 'TEXT'
 
-    def __init__(self, size=0, table_name='', codec=None):
+    def __init__(self, size=0, table_name='', collation=raw_collation, codec=None):
         self._size = size
         self._table_name = table_name
-        self._codec = codec
+        self._collation = collation
+        if codec:
+            self._codec = codec
+        else:
+            self._codec = collation.get_codec()
 
     def __repr__(self):
         return 'Text70(size={},table_name={},codec={})'.format(self._size, self._table_name, self._codec)
@@ -714,12 +969,6 @@ class Text70Serializer(BaseTypeSerializer):
 
 
 class Text71Serializer(Text70Serializer):
-    def __init__(self, size=0, table_name='', collation=raw_collation):
-        self._size = size
-        self._collation = collation
-        self._codec = collation.get_codec()
-        self._table_name = table_name
-
     def __repr__(self):
         return 'Text71(size={}, table_name={}, collation={})'.format(
             self._size, self._table_name, repr(self._collation)
@@ -738,8 +987,8 @@ class Text71Serializer(Text70Serializer):
 
 
 class Text72Serializer(Text71Serializer):
-    def __init__(self, size=0, table_name_parts=[], collation=raw_collation):
-        super(Text72Serializer, self).__init__(size, '.'.join(table_name_parts), collation)
+    def __init__(self, size=0, table_name_parts=(), collation=raw_collation):
+        super(Text72Serializer, self).__init__(size=size, table_name='.'.join(table_name_parts), collation=collation)
         self._table_name_parts = table_name_parts
 
     @classmethod
@@ -757,8 +1006,9 @@ class NText70Serializer(BaseTypeSerializer):
     type = SYBNTEXT
     declaration = 'NTEXT'
 
-    def __init__(self, size=0, table_name=''):
+    def __init__(self, size=0, table_name='', collation=raw_collation):
         self._size = size
+        self._collation = collation
         self._table_name = table_name
 
     def __repr__(self):
@@ -799,11 +1049,6 @@ class NText70Serializer(BaseTypeSerializer):
 
 
 class NText71Serializer(NText70Serializer):
-    def __init__(self, size=0, table_name='', collation=raw_collation):
-        self._size = size
-        self._collation = collation
-        self._table_name = table_name
-
     def __repr__(self):
         return 'NText71(size={}, table_name={}, collation={})'.format(self._size,
                                                                       self._table_name,
@@ -831,10 +1076,13 @@ class NText71Serializer(NText70Serializer):
 
 
 class NText72Serializer(NText71Serializer):
-    def __init__(self, size=0, table_name_parts=[], collation=raw_collation):
-        self._size = size
-        self._collation = collation
+    def __init__(self, size=0, table_name_parts=(), collation=raw_collation):
+        super(NText72Serializer, self).__init__(size=size, collation=collation)
         self._table_name_parts = table_name_parts
+
+    def __repr__(self):
+        return 'NText72Serializer(s={},table_name={},coll={})'.format(
+            self._size, self._table_name_parts, self._collation)
 
     @classmethod
     def from_stream(cls, r):
@@ -1007,6 +1255,16 @@ class Image72Serializer(Image70Serializer):
 
 
 _datetime_base_date = datetime(1900, 1, 1)
+
+
+class SmallDateTimeType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'SMALLDATETIME'
+
+
+class DateTimeType(SqlTypeMetaclass):
+    def get_declaration(self):
+        return 'DATETIME'
 
 
 class SmallDateTime(SqlValueMetaclass):
@@ -1193,7 +1451,7 @@ class Date(SqlValueMetaclass):
 class TimeType(SqlTypeMetaclass):
     type = SYBMSTIME
 
-    def __init__(self, precision):
+    def __init__(self, precision=7):
         self._precision = precision
 
     @property
@@ -1249,7 +1507,7 @@ class Time(SqlValueMetaclass):
 class DateTime2Type(SqlTypeMetaclass):
     type = SYBMSDATETIME2
 
-    def __init__(self, precision):
+    def __init__(self, precision=7):
         self._precision = precision
 
     @property
@@ -1302,7 +1560,7 @@ class DateTime2(SqlValueMetaclass):
 class DateTimeOffsetType(SqlTypeMetaclass):
     type = SYBMSDATETIMEOFFSET
 
-    def __init__(self, precision):
+    def __init__(self, precision=7):
         self._precision = precision
 
     @property
@@ -1379,6 +1637,11 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
         return self._typ.get_declaration()
 
     @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        if declaration == cls.declaration:
+            return cls(DateType())
+
+    @classmethod
     def from_stream(cls, r):
         return cls(DateType())
 
@@ -1419,7 +1682,7 @@ class MsTimeSerializer(BaseDateTime73Serializer):
     def from_declaration(cls, declaration, nullable, connection):
         m = re.match(r'TIME\((\d+)\)', declaration)
         if m:
-            return cls(int(m.group(1)))
+            return cls(TimeType(precision=int(m.group(1))))
 
     def get_declaration(self):
         return self._typ.get_declaration()
@@ -1470,10 +1733,10 @@ class DateTime2Serializer(BaseDateTime73Serializer):
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == 'DATETIME2':
-            return cls()
+            return cls(DateTime2Type())
         m = re.match(r'DATETIME2\((\d+)\)', declaration)
         if m:
-            return cls(int(m.group(1)))
+            return cls(DateTime2Type(precision=int(m.group(1))))
 
     def write_info(self, w):
         w.put_byte(self._typ.precision)
@@ -1522,10 +1785,10 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == 'DATETIMEOFFSET':
-            return cls()
+            return cls(DateTimeOffsetType())
         m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
         if m:
-            return cls(int(m.group(1)))
+            return cls(DateTimeOffsetType(precision=int(m.group(1))))
 
     def get_declaration(self):
         return self._typ.get_declaration()
@@ -1598,17 +1861,8 @@ class MsDecimalSerializer(BaseTypeSerializer):
 
     @classmethod
     def from_value(cls, value):
-        if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
-            raise DataError('Decimal value is out of range')
-        value = value.normalize()
-        _, digits, exp = value.as_tuple()
-        if exp > 0:
-            scale = 0
-            prec = len(digits) + exp
-        else:
-            scale = -exp
-            prec = max(len(digits), scale)
-        return cls(scale=scale, prec=prec)
+        sql_type = DecimalType.from_value(value)
+        return cls(scale=sql_type.scale, prec=sql_type.precision)
 
     @classmethod
     def from_stream(cls, r):
@@ -1721,6 +1975,9 @@ class MoneyNSerializer(BaseTypeSerializerN):
 class MsUniqueSerializer(BaseTypeSerializer):
     type = SYBUNIQUE
     declaration = 'UNIQUEIDENTIFIER'
+
+    def __repr__(self):
+        return 'MsUniqueSerializer()'
 
     @classmethod
     def from_stream(cls, r):
@@ -1949,7 +2206,7 @@ class TableSerializer(BaseTypeSerializer):
         self._rows = rows
 
     def __repr__(self):
-        return 'Table(s={},n={},cols={},rows={})'.format(
+        return 'TableSerializer(s={},n={},cols={},rows={})'.format(
             self._typ_schema, self._typ_name, repr(self._columns),
             repr(self._rows)
         )
@@ -2099,7 +2356,7 @@ _type_map73.update({
 })
 
 
-class TypeFactory(object):
+class SerializerFactory(object):
     """
     Factory class for TDS data types
     """
@@ -2122,25 +2379,21 @@ class TypeFactory(object):
 
     def long_binary_type(self):
         if self._tds_ver >= TDS72:
-            return VarBinarySerializerMax()
+            return VarBinaryMaxType()
         else:
-            return Image70Serializer()
+            return ImageType()
 
-    def long_varchar_type(self, collation=raw_collation):
+    def long_varchar_type(self):
         if self._tds_ver >= TDS72:
-            return VarCharMaxSerializer(collation)
-        elif self._tds_ver >= TDS71:
-            return Text71Serializer(-1, '', collation)
+            return VarCharMaxType()
         else:
-            return Text70Serializer(codec=collation.get_codec())
+            return TextType()
 
-    def long_string_type(self, collation=raw_collation):
+    def long_string_type(self):
         if self._tds_ver >= TDS72:
-            return NVarCharMaxSerializer(0, collation)
-        elif self._tds_ver >= TDS71:
-            return NText71Serializer(-1, '', collation)
+            return NVarCharMaxType()
         else:
-            return NText70Serializer()
+            return NTextType()
 
     def short_nvarchar(self, size, collation=raw_collation):
         if self._tds_ver >= TDS72:
@@ -2152,28 +2405,28 @@ class TypeFactory(object):
 
     def datetime(self, precision):
         if self._tds_ver >= TDS72:
-            return DateTime2Serializer(DateTime2Type(precision=precision))
+            return DateTime2Type(precision=precision)
         else:
-            return DateTimeNSerializer(8)
+            return DateTimeType()
 
     def has_datetime_with_tz(self):
         return self._tds_ver >= TDS72
 
     def datetime_with_tz(self, precision):
         if self._tds_ver >= TDS72:
-            return DateTimeOffsetSerializer(DateTimeOffsetType(precision=precision))
+            return DateTimeOffsetType(precision=precision)
         else:
             raise DataError('Given TDS version does not support DATETIMEOFFSET type')
 
     def date(self):
         if self._tds_ver >= TDS72:
-            return MsDateSerializer(DateType())
+            return DateType()
         else:
-            return DateTimeNSerializer(8)
+            return DateTimeType()
 
     def time(self, precision):
         if self._tds_ver >= TDS72:
-            return MsTimeSerializer(TimeType(precision=precision))
+            return TimeType(precision=precision)
         else:
             raise DataError('Given TDS version does not support TIME type')
 
@@ -2246,14 +2499,148 @@ class TypeFactory(object):
     SqlVariant = VariantSerializer
     Xml = XmlSerializer
 
-    def type_by_declaration(self, declaration, nullable, connection):
-        declaration = declaration.strip().upper()
-        for type_class in self._type_map.values():
-            type_inst = type_class.from_declaration(
-                declaration=declaration, nullable=nullable, connection=connection)
-            if type_inst:
-                return type_inst
+    def serializer_by_declaration(self, declaration, nullable, connection):
+        sql_type = _declarations_parser.parse(declaration)
+        return self.serializer_by_type(sql_type=sql_type, collation=connection.collation)
+
+    def serializer_by_type(self, sql_type, collation=raw_collation):
+        typ = sql_type
+        if isinstance(typ, BitType):
+            return BitNSerializer(typ)
+        elif isinstance(typ, TinyIntType):
+            return IntNSerializer(typ)
+        elif isinstance(typ, SmallIntType):
+            return IntNSerializer(typ)
+        elif isinstance(typ, IntType):
+            return IntNSerializer(typ)
+        elif isinstance(typ, BigIntType):
+            return IntNSerializer(typ)
+        elif isinstance(typ, RealType):
+            return FloatNSerializer(size=4)
+        elif isinstance(typ, FloatType):
+            return FloatNSerializer(size=8)
+        elif isinstance(typ, SmallMoneyType):
+            return self._type_map[SYBMONEYN](size=4)
+        elif isinstance(typ, MoneyType):
+            return self._type_map[SYBMONEYN](size=8)
+        elif isinstance(typ, CharType):
+            return self._type_map[XSYBCHAR](size=typ.size, collation=collation)
+        elif isinstance(typ, VarCharType):
+            return self._type_map[XSYBVARCHAR](size=typ.size, collation=collation)
+        elif isinstance(typ, VarCharMaxType):
+            return VarCharMaxSerializer(collation=collation)
+        elif isinstance(typ, NCharType):
+            return self._type_map[XSYBNCHAR](size=typ.size, collation=collation)
+        elif isinstance(typ, NVarCharType):
+            return self._type_map[XSYBNVARCHAR](size=typ.size, collation=collation)
+        elif isinstance(typ, NVarCharMaxType):
+            return NVarCharMaxSerializer(collation=collation)
+        elif isinstance(typ, TextType):
+            return self._type_map[SYBTEXT](collation=collation)
+        elif isinstance(typ, NTextType):
+            return self._type_map[SYBNTEXT](collation=collation)
+        elif isinstance(typ, XmlType):
+            return self._type_map[SYBMSXML]()
+        elif isinstance(typ, BinaryType):
+            return self._type_map[XSYBBINARY]()
+        elif isinstance(typ, VarBinaryType):
+            return self._type_map[XSYBVARBINARY](size=typ.size)
+        elif isinstance(typ, VarBinaryMaxType):
+            return VarBinarySerializerMax()
+        elif isinstance(typ, ImageType):
+            return self._type_map[SYBIMAGE]()
+        elif isinstance(typ, DecimalType):
+            return self._type_map[SYBDECIMAL](scale=typ.scale, prec=typ.precision)
+        elif isinstance(typ, VariantType):
+            return self._type_map[SYBVARIANT](size=0)
+        elif isinstance(typ, SmallDateTimeType):
+            return self._type_map[SYBDATETIMN](size=4)
+        elif isinstance(typ, DateTimeType):
+            return self._type_map[SYBDATETIMN](size=8)
+        elif isinstance(typ, DateType):
+            return self._type_map[SYBMSDATE](typ)
+        elif isinstance(typ, TimeType):
+            return self._type_map[SYBMSTIME](typ)
+        elif isinstance(typ, DateTime2Type):
+            return self._type_map[SYBMSDATETIME2](typ)
+        elif isinstance(typ, DateTimeOffsetType):
+            return self._type_map[SYBMSDATETIMEOFFSET](typ)
+        elif isinstance(typ, UniqueIdentifierType):
+            return self._type_map[SYBUNIQUE]()
+        elif isinstance(typ, TableSerializer):
+            return typ
+        else:
+            raise ValueError('Cannot map type {} to serializer.'.format(typ))
+
+
+class DeclarationsParser(object):
+    def __init__(self):
+        declaration_parsers = [
+            ('bit', BitType),
+            ('tinyint', TinyIntType),
+            ('smallint', SmallIntType),
+            ('(?:int|integer)', IntType),
+            ('bigint', BigIntType),
+            ('real', RealType),
+            ('(?:float|double precision)', FloatType),
+            ('(?:char|character)', CharType),
+            (r'(?:char|character)\((\d+)\)', lambda size_str: CharType(size=int(size_str))),
+            (r'(?:varchar|char(?:|acter)\s+varying)', VarCharType),
+            (r'(?:varchar|char(?:|acter)\s+varying)\((\d+)\)', lambda size_str: VarCharType(size=int(size_str))),
+            (r'varchar\(max\)', VarCharMaxType),
+            (r'(?:nchar|national\s+(?:char|character))', NCharType),
+            (r'(?:nchar|national\s+(?:char|character))\((\d+)\)', lambda size_str: NCharType(size=int(size_str))),
+            (r'(?:nvarchar|national\s+(?:char|character)\s+varying)', NVarCharType),
+            (r'(?:nvarchar|national\s+(?:char|character)\s+varying)\((\d+)\)',
+             lambda size_str: NVarCharType(size=int(size_str))),
+            (r'nvarchar\(max\)', NVarCharMaxType),
+            ('xml', XmlType),
+            ('text', TextType),
+            (r'(?:ntext|national\s+text)', NTextType),
+            ('binary', BinaryType),
+            ('binary\((\d+)\)', lambda size_str: BinaryType(size=int(size_str))),
+            ('(?:varbinary|binary varying)', VarBinaryType),
+            (r'(?:varbinary|binary varying)\((\d+)\)', lambda size_str: VarBinaryType(size=int(size_str))),
+            (r'varbinary\(max\)', VarBinaryMaxType),
+            ('image', ImageType),
+            ('smalldatetime', SmallDateTimeType),
+            ('datetime', DateTimeType),
+            ('date', DateType),
+            (r'time', TimeType),
+            (r'time\((\d+)\)', lambda precision_str: TimeType(precision=int(precision_str))),
+            ('datetime2', DateTime2Type),
+            (r'datetime2\((\d+)\)', lambda precision_str: DateTime2Type(precision=int(precision_str))),
+            ('datetimeoffset', DateTimeOffsetType),
+            (r'datetimeoffset\((\d+)\)',
+             lambda precision_str: DateTimeOffsetType(precision=int(precision_str))),
+            ('(?:decimal|dec|numeric)', DecimalType),
+            ('(?:decimal|dec|numeric)\((\d+)\)',
+             lambda precision_str: DecimalType(precision=int(precision_str))),
+            ('(?:decimal|dec|numeric)\((\d+), (\d+)\)',
+             lambda precision_str, scale_str: DecimalType(precision=int(precision_str), scale=int(scale_str))),
+            ('smallmoney', SmallMoneyType),
+            ('money', MoneyType),
+            ('uniqueidentifier', UniqueIdentifierType),
+            ('sql_variant', VariantType),
+        ]
+        self._compiled = [(re.compile(r'^' + regex + '$', re.IGNORECASE), constructor)
+                          for regex, constructor in declaration_parsers]
+
+    def parse(self, declaration):
+        """
+        Parse sql type declaration, e.g. varchar(10) and return instance of corresponding type class, e.g. VarCharType(10)
+        @param declaration: Sql declaration to parse, e.g. varchar(10)
+        @return: instance of SqlTypeMetaclass
+        """
+        declaration = declaration.strip()
+        for regex, constructor in self._compiled:
+            m = regex.match(declaration)
+            if m:
+                return constructor(*m.groups())
         raise ValueError('Unable to parse type declaration', declaration)
+
+
+_declarations_parser = DeclarationsParser()
 
 
 class TdsTypeInferrer(object):
@@ -2278,8 +2665,10 @@ class TdsTypeInferrer(object):
         :return: An instance of subclass of :class:`BaseType`
         """
         if value is None:
-            return self._type_factory.short_nvarchar(1, collation=self._collation)
-        return self._from_class_value(value, type(value))
+            sql_type = NVarCharType(size=1)
+        else:
+            sql_type = self._from_class_value(value, type(value))
+        return self._type_factory.serializer_by_type(sql_type=sql_type, collation=self._collation)
 
     def from_class(self, cls):
         """ Function infers TDS type from Python class.
@@ -2287,44 +2676,41 @@ class TdsTypeInferrer(object):
         :param cls: Class from which to infer type
         :return: An instance of subclass of :class:`BaseType`
         """
-        return self._from_class_value(None, cls)
+        sql_type = self._from_class_value(None, cls)
+        return self._type_factory.serializer_by_type(sql_type=sql_type, collation=self._collation)
 
     def _from_class_value(self, value, value_type):
         type_factory = self._type_factory
-        collation = self._collation
         bytes_to_unicode = self._bytes_to_unicode
         allow_tz = self._allow_tz
 
         if issubclass(value_type, bool):
-            return type_factory.BitN
+            return BitType()
         elif issubclass(value_type, six.integer_types):
             if value is None:
-                return type_factory.IntN(8)
+                return IntType()
             if -2 ** 31 <= value <= 2 ** 31 - 1:
-                return type_factory.IntN(4)
+                return IntType()
             elif -2 ** 63 <= value <= 2 ** 63 - 1:
-                return type_factory.IntN(8)
+                return BigIntType()
             elif -10 ** 38 + 1 <= value <= 10 ** 38 - 1:
-                return type_factory.Decimal(0, 38)
+                return DecimalType(precision=38)
             else:
-                raise DataError('Numeric value out of range')
+                return VarCharMaxType()
         elif issubclass(value_type, float):
-            return type_factory.FloatN(8)
+            return FloatType()
         elif issubclass(value_type, Binary):
-            if value:
-                if len(value) <= 8000:
-                    return type_factory.VarBinary(8000)
-                else:
-                    return type_factory.long_binary_type()
+            if value is None or len(value) <= 8000:
+                return VarBinaryType(size=8000)
             else:
                 return type_factory.long_binary_type()
         elif issubclass(value_type, six.binary_type):
             if bytes_to_unicode:
-                return type_factory.long_string_type(collation=collation)
+                return type_factory.long_string_type()
             else:
-                return type_factory.long_varchar_type(collation=collation)
+                return type_factory.long_varchar_type()
         elif issubclass(value_type, six.string_types):
-            return type_factory.long_string_type(collation=collation)
+            return type_factory.long_string_type()
         elif issubclass(value_type, datetime):
             if value and value.tzinfo and allow_tz:
                 return type_factory.datetime_with_tz(precision=6)
@@ -2336,11 +2722,11 @@ class TdsTypeInferrer(object):
             return type_factory.time(precision=6)
         elif issubclass(value_type, Decimal):
             if value is None:
-                return type_factory.Decimal()
+                return DecimalType()
             else:
-                return type_factory.Decimal.from_value(value)
+                return DecimalType.from_value(value)
         elif issubclass(value_type, uuid.UUID):
-            return type_factory.UniqueIdentifier.instance
+            return UniqueIdentifierType()
         elif issubclass(value_type, TableValuedParam):
             columns = value.columns
             rows = value.rows
