@@ -594,11 +594,4 @@ class Column(CommonEqualityMixin):
         )
 
     def choose_serializer(self, type_factory, collation):
-        from .tds_types import BaseTypeSerializer
-        if isinstance(self.type, BaseTypeSerializer):
-            # intermediate support for serializers
-            # until we switch to types fully
-            return self.type
-        else:
-            # this will be a main case where self.type is instance of SqlTypeMetadata
-            return type_factory.serializer_by_type(sql_type=self.type, collation=collation)
+        return type_factory.serializer_by_type(sql_type=self.type, collation=collation)

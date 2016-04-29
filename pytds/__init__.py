@@ -14,6 +14,7 @@ import weakref
 
 from six.moves import xrange
 
+from pytds.tds_types import NVarCharType
 from . import lcid
 from . import tz
 from .tds import (
@@ -830,7 +831,7 @@ class Cursor(six.Iterator):
         if not columns:
             self.execute('select top 1 * from [{}] where 1<>1'.format(table_or_view))
             columns = [col[0] for col in self.description]
-        metadata = [Column(name=col, type=conn._conn._type_factory.NVarChar(4000), flags=Column.fNullable) for col in columns]
+        metadata = [Column(name=col, type=NVarCharType(size=4000), flags=Column.fNullable) for col in columns]
         col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
                             for col in metadata)
         with_opts = []

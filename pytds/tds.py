@@ -955,7 +955,6 @@ class _TdsSession(object):
             self.set_state(TDS_PENDING)
             self._writer.flush()
 
-
     def make_param(self, name, value):
         """ Generates instance of :class:`Column` from value and name
 
@@ -981,7 +980,7 @@ class _TdsSession(object):
         if isinstance(value, output):
             column.flags |= fByRefValue
             if isinstance(value.type, six.string_types):
-                column.type = self.conn._type_factory.serializer_by_declaration(declaration=value.type, nullable=True, connection=self._tds)
+                column.type = self.conn._type_factory.sql_type_by_declaration(declaration=value.type)
             elif value.type:
                 column.type = self.conn._type_inferrer.from_class(value.type)
             value = value.value

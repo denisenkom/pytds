@@ -900,7 +900,7 @@ class DeclarationParsingTestCase(unittest.TestCase):
         fake_conn = FakeConn()
 
         for decl, expected_res in test_data:
-            ser = p.serializer_by_declaration(decl, True, fake_conn)
+            ser = p.serializer_by_declaration(decl, fake_conn)
             msg = 'Test for declaration {} failed, expected {} actual {}'.format(decl, expected_res, ser)
             self.assertEqual(ser, expected_res, msg)
 

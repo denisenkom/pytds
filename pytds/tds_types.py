@@ -641,11 +641,15 @@ class VarChar(SqlValueMetaclass):
 class VarChar70Serializer(BaseTypeSerializer):
     type = XSYBVARCHAR
 
-    def __init__(self, size, codec):
+    def __init__(self, size, collation=raw_collation, codec=None):
         #if size <= 0 or size > 8000:
         #    raise DataError('Invalid size for VARCHAR field')
         self._size = size
-        self._codec = codec
+        self._collation = collation
+        if codec:
+            self._codec = codec
+        else:
+            self._codec = collation.get_codec()
 
     @classmethod
     def from_stream(cls, r):
@@ -683,10 +687,6 @@ class VarChar70Serializer(BaseTypeSerializer):
 
 
 class VarChar71Serializer(VarChar70Serializer):
-    def __init__(self, size, collation):
-        super(VarChar71Serializer, self).__init__(size, codec=collation.get_codec())
-        self._collation = collation
-
     @classmethod
     def from_stream(cls, r):
         size = r.get_smallint()
@@ -2115,6 +2115,67 @@ class VariantSerializer(BaseTypeSerializer):
         raise NotImplementedError
 
 
+class TableType(SqlTypeMetaclass):
+    """
+    Used to serialize table valued parameters
+
+    spec: https://msdn.microsoft.com/en-us/library/dd304813.aspx
+    """
+    def __init__(self, typ_schema, typ_name, columns):
+        """
+        @param typ_schema: Schema where TVP type defined
+        @param typ_name: Name of TVP type
+        @param columns: List of column types
+        """
+        if len(typ_schema) > 128:
+            raise ValueError("Schema part of TVP name should be no longer than 128 characters")
+        if len(typ_name) > 128:
+            raise ValueError("Name part of TVP name should be no longer than 128 characters")
+        if columns is not None:
+            if len(columns) > 1024:
+                raise ValueError("TVP cannot have more than 1024 columns")
+            if len(columns) < 1:
+                raise ValueError("TVP must have at least one column")
+        self._typ_dbname = ''  # dbname should always be empty string for TVP according to spec
+        self._typ_schema = typ_schema
+        self._typ_name = typ_name
+        self._columns = columns
+        self._rows = rows
+
+    def __repr__(self):
+        return 'TableSerializer(s={},n={},cols={},rows={})'.format(
+            self._typ_schema, self._typ_name, repr(self._columns),
+            repr(self._rows)
+        )
+
+    def get_declaration(self):
+        assert not self._typ_dbname
+        if self._typ_schema:
+            full_name = '{}.{}'.format(self._typ_schema, self._typ_name)
+        else:
+            full_name = self._typ_name
+        return '{} READONLY'.format(full_name)
+
+    @property
+    def typ_schema(self):
+        return self._typ_schema
+
+    @property
+    def typ_name(self):
+        return self._typ_name
+
+    @property
+    def columns(self):
+        return self._columns
+
+    @property
+    def rows(self):
+        return self._rows
+
+    def is_null(self):
+        return self._rows is None
+
+
 class TableValuedParam(SqlValueMetaclass):
     """
     Used to represent table-valued parameters
@@ -2266,8 +2327,13 @@ class TableSerializer(BaseTypeSerializer):
                 w.put_usmallint(column.flags)
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
-                w.put_byte(column.type.type)
-                column.type.write_info(w)
+                serializer = column.choose_serializer(
+                    type_factory=self._type_factory,
+                    collation=self.collation or raw_collation
+                )
+                type_id = serializer.type
+                w.put_byte(type_id)
+                serializer.write_info(w)
 
                 w.write_b_varchar('')  # ColName, must be empty in TVP according to spec
 
@@ -2395,14 +2461,6 @@ class SerializerFactory(object):
         else:
             return NTextType()
 
-    def short_nvarchar(self, size, collation=raw_collation):
-        if self._tds_ver >= TDS72:
-            return NVarChar72Serializer(size, collation)
-        elif self._tds_ver >= TDS71:
-            return NVarChar71Serializer(size, collation)
-        else:
-            return NVarChar70Serializer(size)
-
     def datetime(self, precision):
         if self._tds_ver >= TDS72:
             return DateTime2Type(precision=precision)
@@ -2430,77 +2488,11 @@ class SerializerFactory(object):
         else:
             raise DataError('Given TDS version does not support TIME type')
 
-    def NVarChar(self, size, collation=raw_collation):
-        if self._tds_ver >= TDS72:
-            return NVarChar72Serializer(size, collation)
-        elif self._tds_ver >= TDS71:
-            return NVarChar71Serializer(size, collation)
-        else:
-            return NVarChar70Serializer(size)
+    def sql_type_by_declaration(self, declaration):
+        return _declarations_parser.parse(declaration)
 
-    def VarChar(self, size, collation=raw_collation):
-        if self._tds_ver >= TDS72:
-            return VarChar72Serializer(size, collation)
-        elif self._tds_ver >= TDS71:
-            return VarChar71Serializer(size, collation)
-        else:
-            return VarChar70Serializer(size, codec=collation.get_codec())
-
-    def Text(self, size=0, collation=raw_collation):
-        if self._tds_ver >= TDS72:
-            return Text72Serializer(size, collation=collation)
-        elif self._tds_ver >= TDS71:
-            return Text71Serializer(size, collation=collation)
-        else:
-            return Text70Serializer(size, codec=collation.get_codec())
-
-    def NText(self, size=0, collation=raw_collation):
-        if self._tds_ver >= TDS72:
-            return NText72Serializer(size, collation=collation)
-        elif self._tds_ver >= TDS71:
-            return NText71Serializer(size, collation=collation)
-        else:
-            return NText70Serializer(size)
-
-    def VarBinary(self, size):
-        if self._tds_ver >= TDS72:
-            return VarBinarySerializer72(size)
-        else:
-            return VarBinarySerializer(size)
-
-    def Image(self, size=0):
-        if self._tds_ver >= TDS72:
-            return Image72Serializer(size)
-        else:
-            return Image70Serializer(size)
-
-    Bit = BitSerializer.instance
-    BitN = BitNSerializer.instance
-    TinyInt = TinyIntSerializer.instance
-    SmallInt = SmallIntSerializer.instance
-    Int = IntSerializer.instance
-    BigInt = BigIntSerializer.instance
-    IntN = IntNSerializer
-    Real = RealSerializer.instance
-    Float = FloatSerializer.instance
-    FloatN = FloatNSerializer
-    SmallDateTime = SmallDateTimeSerializer.instance
-    DateTime = DateTimeSerializer.instance
-    DateTimeN = DateTimeNSerializer
-    Date = MsDateSerializer
-    Time = MsTimeSerializer
-    DateTime2 = DateTime2Serializer
-    DateTimeOffset = DateTimeOffsetSerializer
-    Decimal = MsDecimalSerializer
-    SmallMoney = Money4Serializer.instance
-    Money = Money8Serializer.instance
-    MoneyN = MoneyNSerializer
-    UniqueIdentifier = MsUniqueSerializer.instance
-    SqlVariant = VariantSerializer
-    Xml = XmlSerializer
-
-    def serializer_by_declaration(self, declaration, nullable, connection):
-        sql_type = _declarations_parser.parse(declaration)
+    def serializer_by_declaration(self, declaration, connection):
+        sql_type = self.sql_type_by_declaration(declaration)
         return self.serializer_by_type(sql_type=sql_type, collation=connection.collation)
 
     def serializer_by_type(self, sql_type, collation=raw_collation):
@@ -2668,7 +2660,7 @@ class TdsTypeInferrer(object):
             sql_type = NVarCharType(size=1)
         else:
             sql_type = self._from_class_value(value, type(value))
-        return self._type_factory.serializer_by_type(sql_type=sql_type, collation=self._collation)
+        return sql_type
 
     def from_class(self, cls):
         """ Function infers TDS type from Python class.
@@ -2676,8 +2668,7 @@ class TdsTypeInferrer(object):
         :param cls: Class from which to infer type
         :return: An instance of subclass of :class:`BaseType`
         """
-        sql_type = self._from_class_value(None, cls)
-        return self._type_factory.serializer_by_type(sql_type=sql_type, collation=self._collation)
+        return self._from_class_value(None, cls)
 
     def _from_class_value(self, value, value_type):
         type_factory = self._type_factory
