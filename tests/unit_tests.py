@@ -378,15 +378,35 @@ class TestMessages(unittest.TestCase):
         tds._sock = sock
         col1 = Column()
         col1.column_name = 'c1'
-        col1.type = BitSerializer()
+        col1.type = BitType()
         col1.flags = Column.fNullable | Column.fReadWrite
         metadata = [col1]
         tds._main_session.submit_bulk(metadata, [(False,)])
         self.assertEqual(
             binascii.hexlify(bytes(sock._sent)),
             binascii.hexlify(
-                b'\x07\x01\x00\x26\x00\x00\x00\x00\x81\x01\x00\x00\x00\x00\x00\x09\x002\x02c\x001\x00\xd1\x00\xfd' +
-                b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'),
+                b'\x07'  # type - TDS_BULK
+                b'\x01'  # status - 1 = EOM (end of message)
+                b'\x00\x28'  # size (big endian)
+                b'\x00\x00'  # spid, should be 0 when sent from client (big endian)
+                b'\x00'  # packetid, currently ignored
+                b'\x00'  # window, should be 0
+                b'\x81'  # RESULT TOKEN
+                b'\x01\x00'  # num columns (little endian)
+                b'\x00\x00\x00\x00'  # column user type
+                b'\x09\x00'  # column flags
+                b'\x68'  # column type - SYBBITN
+                b'\x01'  # type size
+                b'\x02'  # column name len in chars
+                b'c\x001\x00'  # utf16 column name
+                b'\xd1'  # TDS_ROW_TOKEN
+                b'\x01'  # type size
+                b'\x00'  # value 0 - false
+                b'\xfd'  # tokey type: TDS_DONE_TOKEN
+                b'\x00\x00'  # status: TDS_DONE_FINAL
+                b'\x00\x00'  # curcmd
+                b'\x00\x00\x00\x00\x00\x00\x00\x00'  # row count
+            ),
         )
 
     def test_types(self):
@@ -802,8 +822,8 @@ class TypeInferenceTestCase(unittest.TestCase):
         self.assertEqual(res.typ_schema, 'dbo')
         self.assertEqual(res.typ_name, 'CategoryTableType')
         self.assertEqual(list(res.rows), list(rows_gen()))
-        self.assertEqual(res.columns, [Column(type=IntNSerializer(IntType())),
-                                       Column(type=NVarCharMaxSerializer(collation=raw_collation))])
+        self.assertEqual(res.columns, [Column(type=IntType()),
+                                       Column(type=NVarCharMaxType())])
 
     def test_null_tvp(self):
         factory = SerializerFactory(TDS74)

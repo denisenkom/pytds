@@ -26,6 +26,8 @@ logger = logging.getLogger()
 
 USE_CORK = hasattr(socket, 'TCP_CORK')
 
+# packet header
+# https://msdn.microsoft.com/en-us/library/dd340948.aspx
 _header = struct.Struct('>BBHHBx')
 
 _byte = struct.Struct('B')
