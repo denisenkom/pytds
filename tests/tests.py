@@ -456,7 +456,7 @@ class DbTests(DbTestCase):
             cur.execute('select num, data from bulk_insert_table')
             self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
 
-    def test_table_valued_type(self):
+    def test_table_valued_type_autodetect(self):
         def rows_gen():
             yield (1, 'test1')
             yield (2, 'test2')
@@ -468,6 +468,28 @@ class DbTests(DbTestCase):
             tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
             cur.execute('SELECT * FROM %s', (tvp,))
             self.assertEqual(cur.fetchall(), [(1, 'test1'), (2, 'test2')])
+
+            cur.execute('DROP TYPE dbo.CategoryTableType')
+            self.conn.commit()
+
+    def test_table_valued_type_explicit(self):
+        def rows_gen():
+            yield (1, 'test1')
+            yield (2, 'test2')
+
+        with self.conn.cursor() as cur:
+            cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
+            self.conn.commit()
+
+            tvp = pytds.TableValuedParam(
+                type_name='dbo.CategoryTableType',
+                columns=(Column(type=IntType()), Column(type=NVarCharType(size=30))),
+                rows=rows_gen())
+            cur.execute('SELECT * FROM %s', (tvp,))
+            self.assertEqual(cur.fetchall(), [(1, 'test1'), (2, 'test2')])
+
+            cur.execute('DROP TYPE dbo.CategoryTableType')
+            self.conn.commit()
 
     def test_table_selects(self):
         cur = self.conn.cursor()
