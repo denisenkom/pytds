@@ -27,6 +27,20 @@ When MSSQL server is setup with mirroring you should connect to it using two par
 this should be a main server and parameter ``failover_partner`` should be a mirror server.
 See also `MSDN article <http://msdn.microsoft.com/en-us/library/ms175484.aspx>`_.
 
+Table Valued Parameters
+=======================
+
+Here is example of using TLV:
+
+.. code-block:: py
+
+        with conn.cursor() as cur:
+            cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
+            conn.commit()
+
+            tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
+            cur.execute('SELECT * FROM %s', (tvp,))
+
 Testing
 =======
 
