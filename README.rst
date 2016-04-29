@@ -44,7 +44,7 @@ For a better performance install bitarray package too:
 
 Documentation
 -------------
-Documentation is available at http://python-tds.readthedocs.org/en/latest/.
+Documentation is available at https://python-tds.readthedocs.io/en/latest/.
 
 Example
 -------
