@@ -268,14 +268,6 @@ class BaseTypeSerializer(CommonEqualityMixin):
         """ Returns type identifier of type. """
         return self.type
 
-    def get_declaration(self):
-        """ Returns SQL declaration for this type.
-
-        Examples are: NVARCHAR(10), TEXT, TINYINT
-        Should be implemented in actual types.
-        """
-        raise NotImplementedError
-
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         """ Class method that parses declaration and returns a type instance.
@@ -343,9 +335,6 @@ class BasePrimitiveTypeSerializer(BaseTypeSerializer):
     - isntance - class variable storing instance of class
     """
 
-    def get_declaration(self):
-        return self.declaration
-
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if not nullable and declaration == cls.declaration:
@@ -376,9 +365,6 @@ class BaseTypeSerializerN(BaseTypeSerializer):
 
     def get_typeid(self):
         return self._current_subtype.get_typeid()
-
-    def get_declaration(self):
-        return self._current_subtype.get_declaration()
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
@@ -579,9 +565,6 @@ class IntNSerializer(BaseTypeSerializerN):
             raise InterfaceError('Invalid %s size' % cls.type, size)
         return cls(cls.type_by_size[size])
 
-    def get_declaration(self):
-        return self._typ.get_declaration()
-
     def __repr__(self):
         return 'IntN({})'.format(self._size)
 
@@ -662,9 +645,6 @@ class VarChar70Serializer(BaseTypeSerializer):
         if m:
             return cls(int(m.group(1)), connection.server_codec)
 
-    def get_declaration(self):
-        return 'VARCHAR({0})'.format(self._size)
-
     def write_info(self, w):
         w.put_smallint(self._size)
         #w.put_smallint(self._size)
@@ -726,9 +706,6 @@ class VarCharMaxSerializer(VarChar72Serializer):
     def __init__(self, collation=raw_collation):
         super(VarChar72Serializer, self).__init__(0, collation)
 
-    def get_declaration(self):
-        return 'VARCHAR(MAX)'
-
     def write_info(self, w):
         w.put_usmallint(PLP_MARKER)
         w.put_collation(self._collation)
@@ -771,9 +748,6 @@ class NVarChar70Serializer(BaseTypeSerializer):
         m = re.match(r'NVARCHAR\((\d+)\)', declaration)
         if m:
             return cls(int(m.group(1)))
-
-    def get_declaration(self):
-        return 'NVARCHAR({0})'.format(self._size)
 
     def write_info(self, w):
         w.put_usmallint(self._size * 2)
@@ -843,9 +817,6 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
     def get_typeid(self):
         return SYBNTEXT
 
-    def get_declaration(self):
-        return 'NVARCHAR(MAX)'
-
     def write_info(self, w):
         w.put_usmallint(PLP_MARKER)
         w.put_collation(self._collation)
@@ -884,9 +855,6 @@ class XmlSerializer(NVarCharMaxSerializer):
 
     def get_typeid(self):
         return self.type
-
-    def get_declaration(self):
-        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
@@ -942,9 +910,6 @@ class Text70Serializer(BaseTypeSerializer):
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == cls.declaration:
             return cls()
-
-    def get_declaration(self):
-        return self.declaration
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -1024,9 +989,6 @@ class NText70Serializer(BaseTypeSerializer):
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == cls.declaration:
             return cls()
-
-    def get_declaration(self):
-        return self.declaration
 
     def read(self, r):
         textptr_size = r.get_byte()
@@ -1120,9 +1082,6 @@ class VarBinarySerializer(BaseTypeSerializer):
         if m:
             return cls(int(m.group(1)))
 
-    def get_declaration(self):
-        return 'VARBINARY({0})'.format(self._size)
-
     def write_info(self, w):
         w.put_usmallint(self._size)
 
@@ -1167,9 +1126,6 @@ class VarBinarySerializerMax(VarBinarySerializer):
     def __repr__(self):
         return 'VarBinaryMax()'
 
-    def get_declaration(self):
-        return 'VARBINARY(MAX)'
-
     def write_info(self, w):
         w.put_usmallint(PLP_MARKER)
 
@@ -1200,9 +1156,6 @@ class Image70Serializer(BaseTypeSerializer):
 
     def __repr__(self):
         return 'Image70(tn={},s={})'.format(repr(self._table_name), self._size)
-
-    def get_declaration(self):
-        return self.declaration
 
     @classmethod
     def from_stream(cls, r):
@@ -1633,9 +1586,6 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
     def __init__(self, typ):
         self._typ = typ
 
-    def get_declaration(self):
-        return self._typ.get_declaration()
-
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
         if declaration == cls.declaration:
@@ -1684,9 +1634,6 @@ class MsTimeSerializer(BaseDateTime73Serializer):
         if m:
             return cls(TimeType(precision=int(m.group(1))))
 
-    def get_declaration(self):
-        return self._typ.get_declaration()
-
     def write_info(self, w):
         w.put_byte(self._typ.precision)
 
@@ -1726,9 +1673,6 @@ class DateTime2Serializer(BaseDateTime73Serializer):
     def from_stream(cls, r):
         prec = r.get_byte()
         return cls(DateTime2Type(precision=prec))
-
-    def get_declaration(self):
-        return self._typ.get_declaration()
 
     @classmethod
     def from_declaration(cls, declaration, nullable, connection):
@@ -1789,9 +1733,6 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
         m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
         if m:
             return cls(DateTimeOffsetType(precision=int(m.group(1))))
-
-    def get_declaration(self):
-        return self._typ.get_declaration()
 
     def write_info(self, w):
         w.put_byte(self._typ.precision)
@@ -1876,9 +1817,6 @@ class MsDecimalSerializer(BaseTypeSerializer):
         m = re.match(r'DECIMAL\((\d+),\s*(\d+)\)', declaration)
         if m:
             return cls(int(m.group(2)), int(m.group(1)))
-
-    def get_declaration(self):
-        return 'DECIMAL({0},{1})'.format(self._prec, self._scale)
 
     def write_info(self, w):
         w.pack(self._info_struct, self._size, self._prec, self._scale)
@@ -1991,9 +1929,6 @@ class MsUniqueSerializer(BaseTypeSerializer):
         if declaration == cls.declaration:
             return cls.instance
 
-    def get_declaration(self):
-        return self.declaration
-
     def write_info(self, w):
         w.put_byte(16)
 
@@ -2080,9 +2015,6 @@ class VariantSerializer(BaseTypeSerializer):
     def __init__(self, size):
         self._size = size
 
-    def get_declaration(self):
-        return self.declaration
-
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
@@ -2140,12 +2072,10 @@ class TableType(SqlTypeMetaclass):
         self._typ_schema = typ_schema
         self._typ_name = typ_name
         self._columns = columns
-        self._rows = rows
 
     def __repr__(self):
-        return 'TableSerializer(s={},n={},cols={},rows={})'.format(
-            self._typ_schema, self._typ_name, repr(self._columns),
-            repr(self._rows)
+        return 'TableType(s={},n={},cols={})'.format(
+            self._typ_schema, self._typ_name, repr(self._columns)
         )
 
     def get_declaration(self):
@@ -2167,13 +2097,6 @@ class TableType(SqlTypeMetaclass):
     @property
     def columns(self):
         return self._columns
-
-    @property
-    def rows(self):
-        return self._rows
-
-    def is_null(self):
-        return self._rows is None
 
 
 class TableValuedParam(SqlValueMetaclass):
@@ -2229,48 +2152,6 @@ class TableValuedParam(SqlValueMetaclass):
             # put row back
             self._rows = itertools.chain([row], rows)
         return row
-
-
-class TableType(SqlTypeMetaclass):
-    def __init__(self, typ_schema, typ_name, columns):
-        """
-        @param typ_schema: Schema where TVP type defined
-        @param typ_name: Name of TVP type
-        @param columns: List of column types
-        """
-        if len(typ_schema) > 128:
-            raise ValueError("Schema part of TVP name should be no longer than 128 characters")
-        if len(typ_name) > 128:
-            raise ValueError("Name part of TVP name should be no longer than 128 characters")
-        if columns is not None:
-            if len(columns) > 1024:
-                raise ValueError("TVP cannot have more than 1024 columns")
-            if len(columns) < 1:
-                raise ValueError("TVP must have at least one column")
-        self._typ_dbname = ''  # dbname should always be empty string for TVP according to spec
-        self._typ_schema = typ_schema
-        self._typ_name = typ_name
-        self._columns = columns
-
-    @property
-    def typ_schema(self):
-        return self._typ_schema
-
-    @property
-    def typ_name(self):
-        return self._typ_name
-
-    @property
-    def columns(self):
-        return self._columns
-
-    def get_declaration(self):
-        assert not self._typ_dbname
-        if self._typ_schema:
-            full_name = '{}.{}'.format(self._typ_schema, self._typ_name)
-        else:
-            full_name = self._typ_name
-        return '{} READONLY'.format(full_name)
 
 
 class TableSerializer(BaseTypeSerializer):
