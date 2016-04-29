@@ -2180,6 +2180,10 @@ class TableSerializer(BaseTypeSerializer):
         self._table_type = table_type
         self._columns_serializers = columns_serializers
 
+    @property
+    def table_type(self):
+        return self._table_type
+
     def __repr__(self):
         return 'TableSerializer(t={},c={})'.format(
             repr(self._table_type), repr(self._columns_serializers)
@@ -2452,7 +2456,9 @@ class SerializerFactory(object):
         elif isinstance(typ, UniqueIdentifierType):
             return self._type_map[SYBUNIQUE]()
         elif isinstance(typ, TableType):
-            columns_serializers = [self.serializer_by_type(col.type) for col in typ.columns]
+            columns_serializers = None
+            if typ.columns is not None:
+                columns_serializers = [self.serializer_by_type(col.type) for col in typ.columns]
             return TableSerializer(table_type=typ, columns_serializers=columns_serializers)
         else:
             raise ValueError('Cannot map type {} to serializer.'.format(typ))

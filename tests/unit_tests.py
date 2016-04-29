@@ -819,22 +819,22 @@ class TypeInferenceTestCase(unittest.TestCase):
         factory = SerializerFactory(TDS74)
         tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
         res = infer_tds_serializer(tvp, serializer_factory=factory, collation=raw_collation)
-        self.assertEqual(res.typ_schema, 'dbo')
-        self.assertEqual(res.typ_name, 'CategoryTableType')
-        self.assertEqual(list(res.rows), list(rows_gen()))
-        self.assertEqual(res.columns, [Column(type=IntType()),
-                                       Column(type=NVarCharMaxType())])
+        self.assertEqual(res.table_type.typ_schema, 'dbo')
+        self.assertEqual(res.table_type.typ_name, 'CategoryTableType')
+        self.assertEqual(list(tvp.rows), list(rows_gen()))
+        self.assertEqual(res.table_type.columns, [Column(type=IntType()),
+                                                  Column(type=NVarCharMaxType())])
 
     def test_null_tvp(self):
         factory = SerializerFactory(TDS74)
         tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType')
         self.assertTrue(tvp.is_null())
         res = infer_tds_serializer(tvp, serializer_factory=factory, collation=raw_collation)
-        self.assertEqual(res.typ_schema, 'dbo')
-        self.assertEqual(res.typ_name, 'CategoryTableType')
-        self.assertEqual(res.rows, None)
-        self.assertEqual(res.columns, None)
-        self.assertTrue(res.is_null())
+        self.assertEqual(res.table_type.typ_schema, 'dbo')
+        self.assertEqual(res.table_type.typ_name, 'CategoryTableType')
+        self.assertEqual(tvp.rows, None)
+        self.assertEqual(res.table_type.columns, None)
+        self.assertTrue(tvp.is_null())
 
     def test_nested_tvp(self):
         """
