@@ -269,20 +269,6 @@ class BaseTypeSerializer(CommonEqualityMixin):
         return self.type
 
     @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        """ Class method that parses declaration and returns a type instance.
-
-        :param declaration: type declaration string
-        :param nullable: true if type have to be nullable, false otherwise
-        :param connection: instance of :class:`_TdsSocket`
-        :return: If declaration is parsed, returns type instance,
-                 otherwise returns None.
-
-        Should be implemented in actual types.
-        """
-        raise NotImplementedError
-
-    @classmethod
     def from_stream(cls, r):
         """ Class method that reads and returns a type instance.
 
@@ -336,11 +322,6 @@ class BasePrimitiveTypeSerializer(BaseTypeSerializer):
     """
 
     @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if not nullable and declaration == cls.declaration:
-            return cls.instance
-
-    @classmethod
     def from_stream(cls, r):
         return cls.instance
 
@@ -365,14 +346,6 @@ class BaseTypeSerializerN(BaseTypeSerializer):
 
     def get_typeid(self):
         return self._current_subtype.get_typeid()
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if nullable:
-            for size, subtype in cls.subtypes.items():
-                inst = subtype.from_declaration(declaration, False, connection)
-                if inst:
-                    return cls(size)
 
     @classmethod
     def from_stream(cls, r):
@@ -551,14 +524,6 @@ class IntNSerializer(BaseTypeSerializerN):
         self._typ = typ
 
     @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if nullable:
-            for size, subtype in cls.subtypes.items():
-                inst = subtype.from_declaration(declaration, False, connection)
-                if inst:
-                    return cls(cls.type_by_size[size])
-
-    @classmethod
     def from_stream(cls, r):
         size = r.get_byte()
         if size not in cls.subtypes:
@@ -639,12 +604,6 @@ class VarChar70Serializer(BaseTypeSerializer):
         size = r.get_smallint()
         return cls(size, codec=r._session.conn.server_codec)
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        m = re.match(r'VARCHAR\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)), connection.server_codec)
-
     def write_info(self, w):
         w.put_smallint(self._size)
         #w.put_smallint(self._size)
@@ -673,12 +632,6 @@ class VarChar71Serializer(VarChar70Serializer):
         collation = r.get_collation()
         return cls(size, collation)
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        m = re.match(r'VARCHAR\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)), connection.collation)
-
     def write_info(self, w):
         super(VarChar71Serializer, self).write_info(w)
         w.put_collation(self._collation)
@@ -692,14 +645,6 @@ class VarChar72Serializer(VarChar71Serializer):
         if size == 0xffff:
             return VarCharMaxSerializer(collation)
         return cls(size, collation)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'VARCHAR(MAX)':
-            return VarCharMaxSerializer(connection.collation)
-        m = re.match(r'VARCHAR\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)), connection.collation)
 
 
 class VarCharMaxSerializer(VarChar72Serializer):
@@ -743,12 +688,6 @@ class NVarChar70Serializer(BaseTypeSerializer):
         size = r.get_usmallint()
         return cls(size / 2)
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)))
-
     def write_info(self, w):
         w.put_usmallint(self._size * 2)
         #w.put_smallint(self._size)
@@ -778,12 +717,6 @@ class NVarChar71Serializer(NVarChar70Serializer):
         collation = r.get_collation()
         return cls(size / 2, collation)
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)), connection.collation)
-
     def write_info(self, w):
         super(NVarChar71Serializer, self).write_info(w)
         w.put_collation(self._collation)
@@ -797,14 +730,6 @@ class NVarChar72Serializer(NVarChar71Serializer):
         if size == 0xffff:
             return NVarCharMaxSerializer(collation=collation)
         return cls(size / 2, collation=collation)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'NVARCHAR(MAX)':
-            return NVarCharMaxSerializer(collation=connection.collation)
-        m = re.match(r'NVARCHAR\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)), connection.collation)
 
 
 class NVarCharMaxSerializer(NVarChar72Serializer):
@@ -866,11 +791,6 @@ class XmlSerializer(NVarCharMaxSerializer):
             schema['collection'] = r.read_ucs2(r.get_smallint())
         return cls(schema)
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls()
-
     def write_info(self, w):
         if self._schema:
             w.put_byte(1)
@@ -905,11 +825,6 @@ class Text70Serializer(BaseTypeSerializer):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name, codec=r.session.conn.server_codec)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls()
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -984,11 +899,6 @@ class NText70Serializer(BaseTypeSerializer):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls()
 
     def read(self, r):
         textptr_size = r.get_byte()
@@ -1076,12 +986,6 @@ class VarBinarySerializer(BaseTypeSerializer):
         size = r.get_usmallint()
         return cls(size)
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        m = re.match(r'VARBINARY\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)))
-
     def write_info(self, w):
         w.put_usmallint(self._size)
 
@@ -1109,14 +1013,6 @@ class VarBinarySerializer72(VarBinarySerializer):
         if size == 0xffff:
             return VarBinarySerializerMax()
         return cls(size)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'VARBINARY(MAX)':
-            return VarBinarySerializerMax()
-        m = re.match(r'VARBINARY\((\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(1)))
 
 
 class VarBinarySerializerMax(VarBinarySerializer):
@@ -1162,11 +1058,6 @@ class Image70Serializer(BaseTypeSerializer):
         size = r.get_int()
         table_name = r.read_ucs2(r.get_smallint())
         return cls(size, table_name)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls()
 
     def read(self, r):
         size = r.get_byte()
@@ -1587,11 +1478,6 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
         self._typ = typ
 
     @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls(DateType())
-
-    @classmethod
     def from_stream(cls, r):
         return cls(DateType())
 
@@ -1627,12 +1513,6 @@ class MsTimeSerializer(BaseDateTime73Serializer):
     @classmethod
     def from_stream(cls, r):
         return cls(cls.read_type(r))
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        m = re.match(r'TIME\((\d+)\)', declaration)
-        if m:
-            return cls(TimeType(precision=int(m.group(1))))
 
     def write_info(self, w):
         w.put_byte(self._typ.precision)
@@ -1673,14 +1553,6 @@ class DateTime2Serializer(BaseDateTime73Serializer):
     def from_stream(cls, r):
         prec = r.get_byte()
         return cls(DateTime2Type(precision=prec))
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'DATETIME2':
-            return cls(DateTime2Type())
-        m = re.match(r'DATETIME2\((\d+)\)', declaration)
-        if m:
-            return cls(DateTime2Type(precision=int(m.group(1))))
 
     def write_info(self, w):
         w.put_byte(self._typ.precision)
@@ -1725,14 +1597,6 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
     def from_stream(cls, r):
         prec = r.get_byte()
         return cls(DateTimeOffsetType(precision=prec))
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'DATETIMEOFFSET':
-            return cls(DateTimeOffsetType())
-        m = re.match(r'DATETIMEOFFSET\((\d+)\)', declaration)
-        if m:
-            return cls(DateTimeOffsetType(precision=int(m.group(1))))
 
     def write_info(self, w):
         w.put_byte(self._typ.precision)
@@ -1809,14 +1673,6 @@ class MsDecimalSerializer(BaseTypeSerializer):
     def from_stream(cls, r):
         size, prec, scale = r.unpack(cls._info_struct)
         return cls(scale=scale, prec=prec)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == 'DECIMAL':
-            return cls()
-        m = re.match(r'DECIMAL\((\d+),\s*(\d+)\)', declaration)
-        if m:
-            return cls(int(m.group(2)), int(m.group(1)))
 
     def write_info(self, w):
         w.pack(self._info_struct, self._size, self._prec, self._scale)
@@ -1924,11 +1780,6 @@ class MsUniqueSerializer(BaseTypeSerializer):
             raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return cls.instance
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls.instance
-
     def write_info(self, w):
         w.put_byte(16)
 
@@ -2019,11 +1870,6 @@ class VariantSerializer(BaseTypeSerializer):
     def from_stream(cls, r):
         size = r.get_int()
         return VariantSerializer(size)
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        if declaration == cls.declaration:
-            return cls(0)
 
     def write_info(self, w):
         w.put_int(self._size)
@@ -2170,10 +2016,6 @@ class TableSerializer(BaseTypeSerializer):
     @classmethod
     def from_stream(cls, r):
         """ According to spec TDS does not support output TVP values """
-        raise NotImplementedError
-
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
         raise NotImplementedError
 
     def __init__(self, table_type, columns_serializers):
