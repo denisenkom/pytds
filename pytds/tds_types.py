@@ -2178,7 +2178,7 @@ class TableType(SqlTypeMetaclass):
 
 class TableValuedParam(SqlValueMetaclass):
     """
-    Used to represent table-valued parameters
+    Used to represent a value of table-valued parameter
     """
     def __init__(self, type_name=None, columns=None, rows=None):
         # parsing type name
@@ -2214,38 +2214,25 @@ class TableValuedParam(SqlValueMetaclass):
     def is_null(self):
         return self._rows is None
 
+    def peek_row(self):
+        try:
+            rows = iter(self._rows)
+        except TypeError:
+            raise DataError('rows should be iterable')
 
-class TableSerializer(BaseTypeSerializer):
-    """
-    Used to serialize table valued parameters
-
-    spec: https://msdn.microsoft.com/en-us/library/dd304813.aspx
-    """
-
-    type = TVPTYPE
-
-    def read(self, r):
-        """ According to spec TDS does not support output TVP values """
-        raise NotImplementedError
-
-    def get_declaration(self):
-        assert not self._typ_dbname
-        if self._typ_schema:
-            full_name = '{}.{}'.format(self._typ_schema, self._typ_name)
+        try:
+            row = next(rows)
+        except StopIteration:
+            # no rows
+            raise DataError("Cannot infer columns from rows for TVP because there are no rows")
         else:
-            full_name = self._typ_name
-        return '{} READONLY'.format(full_name)
+            # put row back
+            self._rows = itertools.chain([row], rows)
+        return row
 
-    @classmethod
-    def from_stream(cls, r):
-        """ According to spec TDS does not support output TVP values """
-        raise NotImplementedError
 
-    @classmethod
-    def from_declaration(cls, declaration, nullable, connection):
-        raise NotImplementedError
-
-    def __init__(self, typ_schema, typ_name, columns, rows):
+class TableType(SqlTypeMetaclass):
+    def __init__(self, typ_schema, typ_name, columns):
         """
         @param typ_schema: Schema where TVP type defined
         @param typ_name: Name of TVP type
@@ -2264,13 +2251,6 @@ class TableSerializer(BaseTypeSerializer):
         self._typ_schema = typ_schema
         self._typ_name = typ_name
         self._columns = columns
-        self._rows = rows
-
-    def __repr__(self):
-        return 'TableSerializer(s={},n={},cols={},rows={})'.format(
-            self._typ_schema, self._typ_name, repr(self._columns),
-            repr(self._rows)
-        )
 
     @property
     def typ_schema(self):
@@ -2284,12 +2264,45 @@ class TableSerializer(BaseTypeSerializer):
     def columns(self):
         return self._columns
 
-    @property
-    def rows(self):
-        return self._rows
+    def get_declaration(self):
+        assert not self._typ_dbname
+        if self._typ_schema:
+            full_name = '{}.{}'.format(self._typ_schema, self._typ_name)
+        else:
+            full_name = self._typ_name
+        return '{} READONLY'.format(full_name)
 
-    def is_null(self):
-        return self._rows is None
+
+class TableSerializer(BaseTypeSerializer):
+    """
+    Used to serialize table valued parameters
+
+    spec: https://msdn.microsoft.com/en-us/library/dd304813.aspx
+    """
+
+    type = TVPTYPE
+
+    def read(self, r):
+        """ According to spec TDS does not support output TVP values """
+        raise NotImplementedError
+
+    @classmethod
+    def from_stream(cls, r):
+        """ According to spec TDS does not support output TVP values """
+        raise NotImplementedError
+
+    @classmethod
+    def from_declaration(cls, declaration, nullable, connection):
+        raise NotImplementedError
+
+    def __init__(self, table_type, columns_serializers):
+        self._table_type = table_type
+        self._columns_serializers = columns_serializers
+
+    def __repr__(self):
+        return 'TableSerializer(t={},c={})'.format(
+            repr(self._table_type), repr(self._columns_serializers)
+        )
 
     def write_info(self, w):
         """
@@ -2299,11 +2312,11 @@ class TableSerializer(BaseTypeSerializer):
         @param w: TdsWriter
         @return:
         """
-        w.write_b_varchar(self._typ_dbname)
-        w.write_b_varchar(self._typ_schema)
-        w.write_b_varchar(self._typ_name)
+        w.write_b_varchar("")  # db_name, should be empty
+        w.write_b_varchar(self._table_type.typ_schema)
+        w.write_b_varchar(self._table_type.typ_name)
 
-    def write(self, w, _):
+    def write(self, w, val):
         """
         Writes remaining part of TVP_TYPE_INFO structure, resuming from TVP_COLMETADATA
 
@@ -2316,21 +2329,19 @@ class TableSerializer(BaseTypeSerializer):
         @param val: TableValuedParam or None
         @return:
         """
-        if self.is_null():
+        if val.is_null():
             w.put_usmallint(TVP_NULL_TOKEN)
         else:
-            columns = self._columns
+            columns = self._table_type.columns
             w.put_usmallint(len(columns))
-            for column in columns:
+            for i, column in enumerate(columns):
                 w.put_uint(column.column_usertype)
 
                 w.put_usmallint(column.flags)
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
-                serializer = column.choose_serializer(
-                    type_factory=self._type_factory,
-                    collation=self.collation or raw_collation
-                )
+
+                serializer = self._columns_serializers[i]
                 type_id = serializer.type
                 w.put_byte(type_id)
                 serializer.write_info(w)
@@ -2345,12 +2356,12 @@ class TableSerializer(BaseTypeSerializer):
 
         # now sending rows using TVP_ROW
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
-        if self._rows:
-            for row in self._rows:
+        if val.rows:
+            for row in val.rows:
                 w.put_byte(TVP_ROW_TOKEN)
-                for i, col in enumerate(self._columns):
+                for i, col in enumerate(self._table_type.columns):
                     if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
-                        col.type.write(w, row[i])
+                        self._columns_serializers[i].write(w, row[i])
 
         # terminating rows
         w.put_byte(TVP_END_TOKEN)
@@ -2559,8 +2570,9 @@ class SerializerFactory(object):
             return self._type_map[SYBMSDATETIMEOFFSET](typ)
         elif isinstance(typ, UniqueIdentifierType):
             return self._type_map[SYBUNIQUE]()
-        elif isinstance(typ, TableSerializer):
-            return typ
+        elif isinstance(typ, TableType):
+            columns_serializers = [self.serializer_by_type(col.type) for col in typ.columns]
+            return TableSerializer(table_type=typ, columns_serializers=columns_serializers)
         else:
             raise ValueError('Cannot map type {} to serializer.'.format(typ))
 
@@ -2728,33 +2740,20 @@ class TdsTypeInferrer(object):
                     # entire tvp has value of NULL
                     pass
                 else:
+                    # use first row to infer types of columns
+                    row = value.peek_row()
+                    columns = []
                     try:
-                        rows = iter(rows)
+                        cell_iter = iter(row)
                     except TypeError:
-                        raise DataError('rows should be iterable')
+                        raise DataError('Each row in table should be an iterable')
+                    for cell in cell_iter:
+                        if isinstance(cell, TableValuedParam):
+                            raise DataError('TVP type cannot have nested TVP types')
+                        col_type = self.from_value(cell)
+                        col = Column(type=col_type)
+                        columns.append(col)
 
-                    try:
-                        row = next(rows)
-                    except StopIteration:
-                        # no rows
-                        raise DataError("Cannot infer columns from rows for TVP because there are no rows")
-                    else:
-                        # put row back
-                        rows = itertools.chain([row], rows)
-
-                        # use first row to infer types of columns
-                        columns = []
-                        try:
-                            cell_iter = iter(row)
-                        except TypeError:
-                            raise DataError('Each row in table should be an iterable')
-                        for cell in cell_iter:
-                            if isinstance(cell, TableValuedParam):
-                                raise DataError('TVP type cannot have nested TVP types')
-                            col_type = self.from_value(cell)
-                            col = Column(type=col_type)
-                            columns.append(col)
-
-            return TableSerializer(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns, rows=rows)
+            return TableType(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns)
         else:
             raise DataError('Cannot infer TDS type from Python value: {!r}'.format(value))
