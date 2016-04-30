@@ -264,6 +264,18 @@ class BaseTypeSerializer(CommonEqualityMixin):
 
     - type - class variable storing type identifier
     """
+    def __init__(self, precision=None, scale=None):
+        self._precision = precision
+        self._scale = scale
+
+    @property
+    def precision(self):
+        return self._precision
+
+    @property
+    def scale(self):
+        return self._scale
+
     def get_typeid(self):
         """ Returns type identifier of type. """
         return self.type
@@ -340,6 +352,7 @@ class BaseTypeSerializerN(BaseTypeSerializer):
     """
 
     def __init__(self, size):
+        super(BaseTypeSerializerN, self).__init__()
         assert size in self.subtypes
         self._size = size
         self._current_subtype = self.subtypes[size]
@@ -590,6 +603,7 @@ class VarChar70Serializer(BaseTypeSerializer):
     type = XSYBVARCHAR
 
     def __init__(self, size, collation=raw_collation, codec=None):
+        super(VarChar70Serializer, self).__init__()
         self._size = size
         self._collation = collation
         if codec:
@@ -674,6 +688,7 @@ class NVarChar70Serializer(BaseTypeSerializer):
     type = XSYBNVARCHAR
 
     def __init__(self, size, collation=raw_collation):
+        super(NVarChar70Serializer, self).__init__()
         self._size = size
         self._collation = collation
 
@@ -802,6 +817,7 @@ class Text70Serializer(BaseTypeSerializer):
     declaration = 'TEXT'
 
     def __init__(self, size=0, table_name='', collation=raw_collation, codec=None):
+        super(Text70Serializer, self).__init__()
         self._size = size
         self._table_name = table_name
         self._collation = collation
@@ -880,6 +896,7 @@ class NText70Serializer(BaseTypeSerializer):
     declaration = 'NTEXT'
 
     def __init__(self, size=0, table_name='', collation=raw_collation):
+        super(NText70Serializer, self).__init__()
         self._size = size
         self._collation = collation
         self._table_name = table_name
@@ -969,6 +986,7 @@ class VarBinarySerializer(BaseTypeSerializer):
     type = XSYBVARBINARY
 
     def __init__(self, size):
+        super(VarBinarySerializer, self).__init__()
         self._size = size
 
     def __repr__(self):
@@ -1040,6 +1058,7 @@ class Image70Serializer(BaseTypeSerializer):
     declaration = 'IMAGE'
 
     def __init__(self, size=0, table_name=''):
+        super(Image70Serializer, self).__init__()
         self._table_name = table_name
         self._size = size
 
@@ -1222,7 +1241,7 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
     @classmethod
     def encode(cls, value):
         if type(value) == datetime.date:
-            value = datetime.combine(value, datetime.time(0, 0, 0))
+            value = datetime.datetime.combine(value, datetime.time(0, 0, 0))
         dt = DateTime.from_pydatetime(value)
         return cls._struct.pack(dt.days, dt.time_part)
 
@@ -1470,6 +1489,7 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
     declaration = 'DATE'
 
     def __init__(self, typ):
+        super(MsDateSerializer, self).__init__()
         self._typ = typ
 
     @classmethod
@@ -1497,6 +1517,7 @@ class MsTimeSerializer(BaseDateTime73Serializer):
     type = SYBMSTIME
 
     def __init__(self, typ):
+        super(MsTimeSerializer, self).__init__(precision=typ.precision)
         self._typ = typ
         self._size = self._precision_to_len[typ.precision]
 
@@ -1541,6 +1562,7 @@ class DateTime2Serializer(BaseDateTime73Serializer):
     type = SYBMSDATETIME2
 
     def __init__(self, typ):
+        super(DateTime2Serializer, self).__init__(precision=typ.precision)
         self._typ = typ
         self._size = self._precision_to_len[typ.precision] + 3
 
@@ -1585,6 +1607,7 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
     type = SYBMSDATETIMEOFFSET
 
     def __init__(self, typ):
+        super(DateTimeOffsetSerializer, self).__init__(precision=typ.precision)
         self._typ = typ
         self._size = self._precision_to_len[typ.precision] + 5
 
@@ -1641,23 +1664,14 @@ class MsDecimalSerializer(BaseTypeSerializer):
 
     _info_struct = struct.Struct('BBB')
 
-    @property
-    def scale(self):
-        return self._scale
-
-    @property
-    def precision(self):
-        return self._prec
-
-    def __init__(self, scale=0, prec=18):
-        if prec > 38:
+    def __init__(self, precision=18, scale=0):
+        super(MsDecimalSerializer, self).__init__(precision=precision, scale=scale)
+        if precision > 38:
             raise DataError('Precision of decimal value is out of range')
-        self._scale = scale
-        self._prec = prec
-        self._size = self._bytes_per_prec[prec]
+        self._size = self._bytes_per_prec[precision]
 
     def __repr__(self):
-        return 'MsDecimal(scale={}, prec={})'.format(self._scale, self._prec)
+        return 'MsDecimal(scale={}, prec={})'.format(self.scale, self.precision)
 
     @classmethod
     def from_value(cls, value):
@@ -1667,10 +1681,10 @@ class MsDecimalSerializer(BaseTypeSerializer):
     @classmethod
     def from_stream(cls, r):
         size, prec, scale = r.unpack(cls._info_struct)
-        return cls(scale=scale, prec=prec)
+        return cls(scale=scale, precision=prec)
 
     def write_info(self, w):
-        w.pack(self._info_struct, self._size, self._prec, self._scale)
+        w.pack(self._info_struct, self._size, self.precision, self.scale)
 
     def write(self, w, value):
         if value is None:
@@ -1812,7 +1826,7 @@ def _variant_read_nstr(r, size):
 
 def _variant_read_decimal(r, size):
     prec, scale = r.unpack(VariantSerializer._decimal_info_struct)
-    return MsDecimalSerializer(prec=prec, scale=scale).read_fixed(r, size)
+    return MsDecimalSerializer(precision=prec, scale=scale).read_fixed(r, size)
 
 
 def _variant_read_binary(r, size):
@@ -1860,6 +1874,7 @@ class VariantSerializer(BaseTypeSerializer):
     }
 
     def __init__(self, size):
+        super(VariantSerializer, self).__init__()
         self._size = size
 
     @classmethod
@@ -2015,6 +2030,7 @@ class TableSerializer(BaseTypeSerializer):
         raise NotImplementedError
 
     def __init__(self, table_type, columns_serializers):
+        super(TableSerializer, self).__init__()
         self._table_type = table_type
         self._columns_serializers = columns_serializers
 
@@ -2276,7 +2292,7 @@ class SerializerFactory(object):
         elif isinstance(typ, ImageType):
             return self._type_map[SYBIMAGE]()
         elif isinstance(typ, DecimalType):
-            return self._type_map[SYBDECIMAL](scale=typ.scale, prec=typ.precision)
+            return self._type_map[SYBDECIMAL](scale=typ.scale, precision=typ.precision)
         elif isinstance(typ, VariantType):
             return self._type_map[SYBVARIANT](size=0)
         elif isinstance(typ, SmallDateTimeType):

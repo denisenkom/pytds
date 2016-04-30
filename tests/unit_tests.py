@@ -9,13 +9,8 @@ import uuid
 import pytds
 from pytds.collate import raw_collation
 from pytds.tds import (
-    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, BitNSerializer, TDS73, TDS71, TDS72, TDS73, TDS74,
-    TDS_ENCRYPTION_OFF,
-    Collation,
-    TdsTypeInferrer, SerializerFactory, NVarChar72Serializer, IntNSerializer, MsDecimalSerializer, FloatNSerializer, VarBinarySerializerMax, NVarCharMaxSerializer, VarCharMaxSerializer, DateTime2Serializer,
-    DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, TDS70, NVarChar70Serializer,
-    NText70Serializer, Text70Serializer, BitSerializer, VarBinarySerializer, VarBinarySerializer72,
-    SmallDateTimeSerializer)
+    _TdsSocket, _TdsSession, Collation,
+    )
 from pytds import _TdsLogin
 from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateType, TimeType, DateTimeOffsetType, IntType, \
     BigIntType, TinyIntType, SmallIntType, VarChar72Serializer, XmlSerializer, Text72Serializer, NText72Serializer, \
@@ -23,6 +18,13 @@ from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateTyp
     ImageType, VarBinaryType, VarBinaryMaxType, SmallMoneyType, MoneyType, DecimalType, UniqueIdentifierType, \
     VariantType, BinaryType, RealType, FloatType, CharType, VarCharType, VarCharMaxType, NCharType, NVarCharType, \
     NVarCharMaxType, TextType, NTextType
+from pytds.tds_types import (
+    TDS_ENCRYPTION_REQUIRE, Column, BitNSerializer, TDS73, TDS71, TDS72, TDS73, TDS74,
+    TDS_ENCRYPTION_OFF,
+    TdsTypeInferrer, SerializerFactory, NVarChar72Serializer, IntNSerializer, MsDecimalSerializer, FloatNSerializer, VarBinarySerializerMax, NVarCharMaxSerializer, VarCharMaxSerializer, DateTime2Serializer,
+    DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, TDS70, NVarChar70Serializer,
+    NText70Serializer, Text70Serializer, VarBinarySerializer, VarBinarySerializer72,
+    )
 
 tzoffset = pytds.tz.FixedOffsetTimezone
 
@@ -54,7 +56,7 @@ class _FakeSock(object):
 
 class TestMessages(unittest.TestCase):
     def _make_login(self):
-        from pytds.tds import TDS74
+        from pytds.tds_base import TDS74
         login = _TdsLogin()
         login.blocksize = 4096
         login.use_tz = None
@@ -127,7 +129,7 @@ class TestMessages(unittest.TestCase):
         tds.sock = sock
         login = _TdsLogin()
         login.encryption_level = TDS_ENCRYPTION_OFF
-        tds._main_session._process_prelogin(login)
+        tds._main_session.process_prelogin(login)
         self.assertFalse(tds._mars_enabled)
         self.assertTupleEqual(tds.server_library_version, (0xa001588, 0))
 
@@ -140,7 +142,7 @@ class TestMessages(unittest.TestCase):
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
-            tds._main_session._process_prelogin(login)
+            tds._main_session.process_prelogin(login)
 
         # test bad offset 1
         sock = _FakeSock([
@@ -151,7 +153,7 @@ class TestMessages(unittest.TestCase):
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
-            tds._main_session._process_prelogin(login)
+            tds._main_session.process_prelogin(login)
 
         # test bad offset 2
         sock = _FakeSock([
@@ -162,7 +164,7 @@ class TestMessages(unittest.TestCase):
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
-            tds._main_session._process_prelogin(login)
+            tds._main_session.process_prelogin(login)
 
     def test_prelogin_generation(self):
         sock = _FakeSock('')
@@ -173,7 +175,7 @@ class TestMessages(unittest.TestCase):
         login.instance_name = 'MSSQLServer'
         login.encryption_level = TDS_ENCRYPTION_OFF
         login.use_mars = False
-        tds._main_session._send_prelogin(login)
+        tds._main_session.send_prelogin(login)
         template = (b'\x12\x01\x00:\x00\x00\x00\x00\x00\x00' +
                     b'\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x0c\x03' +
                     b'\x00-\x00\x04\x04\x001\x00\x01\xff' + struct.pack('>l', pytds.intversion) +
@@ -183,18 +185,18 @@ class TestMessages(unittest.TestCase):
         login.instance_name = 'x' * 65499
         sock._sent = b''
         with self.assertRaisesRegexp(ValueError, 'Instance name is too long'):
-            tds._main_session._send_prelogin(login)
+            tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b'')
 
         login.instance_name = u'тест'
         with self.assertRaises(UnicodeEncodeError):
-            tds._main_session._send_prelogin(login)
+            tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b'')
 
         login.instance_name = 'x'
         login.encryption_level = TDS_ENCRYPTION_REQUIRE
         with self.assertRaisesRegexp(pytds.NotSupportedError, 'Client requested encryption but it is not supported'):
-            tds._main_session._send_prelogin(login)
+            tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b'')
 
     def test_login_parsing(self):
@@ -417,7 +419,7 @@ class TestMessages(unittest.TestCase):
         tds.sock = sock
         w = tds._main_session._writer
 
-        t = pytds.tds.NVarCharMaxSerializer(
+        t = pytds.tds_types.NVarCharMaxSerializer(
             Collation(lcid=1033, sort_id=0, ignore_case=False, ignore_accent=False, ignore_width=False,
                       ignore_kana=False, binary=True, binary2=False, version=0),
         )
@@ -502,7 +504,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_serializer(600000000000000000000, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=38))
 
         res = infer_tds_serializer(0.25, serializer_factory=factory)
         self.assertEqual(res, FloatNSerializer(8))
@@ -542,7 +544,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_serializer(dec, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=1))
 
         res = infer_tds_serializer(uuid.uuid4(), serializer_factory=factory)
         self.assertEqual(res, MsUniqueSerializer())
@@ -568,7 +570,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_serializer(600000000000000000000, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=38))
 
         res = infer_tds_serializer(0.25, serializer_factory=factory)
         self.assertEqual(res, FloatNSerializer(8))
@@ -608,7 +610,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_serializer(dec, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=1))
 
         res = infer_tds_serializer(uuid.uuid4(), serializer_factory=factory)
         self.assertEqual(res, MsUniqueSerializer())
@@ -634,7 +636,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_serializer(600000000000000000000, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=38))
 
         res = infer_tds_serializer(0.25, serializer_factory=factory)
         self.assertEqual(res, FloatNSerializer(8))
@@ -674,7 +676,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_serializer(dec, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=1))
 
         res = infer_tds_serializer(uuid.uuid4(), serializer_factory=factory)
         self.assertEqual(res, MsUniqueSerializer())
@@ -700,7 +702,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_serializer(600000000000000000000, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=38))
 
         res = infer_tds_serializer(0.25, serializer_factory=factory)
         self.assertEqual(res, FloatNSerializer(8))
@@ -740,7 +742,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_serializer(dec, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=1))
 
         res = infer_tds_serializer(uuid.uuid4(), serializer_factory=factory)
         self.assertEqual(res, MsUniqueSerializer())
@@ -766,7 +768,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         # even bigger integers inferred as MsDecimal
         res = infer_tds_serializer(600000000000000000000, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(0, 38))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=38))
 
         res = infer_tds_serializer(0.25, serializer_factory=factory)
         self.assertEqual(res, FloatNSerializer(8))
@@ -806,7 +808,7 @@ class TypeInferenceTestCase(unittest.TestCase):
 
         dec = decimal.Decimal()
         res = infer_tds_serializer(dec, serializer_factory=factory)
-        self.assertEqual(res, MsDecimalSerializer(scale=0, prec=1))
+        self.assertEqual(res, MsDecimalSerializer(scale=0, precision=1))
 
         res = infer_tds_serializer(uuid.uuid4(), serializer_factory=factory)
         self.assertEqual(res, MsUniqueSerializer())
@@ -907,7 +909,7 @@ class DeclarationParsingTestCase(unittest.TestCase):
             ('datetimeoffset', DateTimeOffsetSerializer(DateTimeOffsetType(precision=7))),
             ('datetimeoffset(7)', DateTimeOffsetSerializer(DateTimeOffsetType(precision=7))),
             ('decimal', MsDecimalSerializer()),
-            ('decimal(10, 2)', MsDecimalSerializer(scale=2, prec=10)),
+            ('decimal(10, 2)', MsDecimalSerializer(scale=2, precision=10)),
             ('smallmoney', MoneyNSerializer(size=4)),
             ('money', MoneyNSerializer(size=8)),
             ('uniqueidentifier', MsUniqueSerializer()),

@@ -593,8 +593,8 @@ class _TdsSession(object):
             self.get_type_info(curcol)
 
             curcol.column_name = r.read_ucs2(r.get_byte())
-            precision = curcol.serializer.precision if hasattr(curcol.serializer, 'precision') else None
-            scale = curcol.serializer.scale if hasattr(curcol.serializer, 'scale') else None
+            precision = curcol.serializer.precision
+            scale = curcol.serializer.scale
             size = curcol.serializer._size if hasattr(curcol.serializer, '_size') else None
             header_tuple.append(
                 (curcol.column_name,
