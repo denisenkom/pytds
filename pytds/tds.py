@@ -423,10 +423,12 @@ class MemoryChunkedHandler(object):
     def __init__(self):
         self.size = 0
         self._chunks = []
+        self._column = None
 
     def begin(self, column, size):
         self.size = size
         self._chunks = []
+        self._column = column
 
     def new_chunk(self, val):
         self._chunks.append(val)
@@ -439,10 +441,12 @@ class MemoryStrChunkedHandler(object):
     def __init__(self):
         self.size = 0
         self._chunks = []
+        self._column = None
 
     def begin(self, column, size):
         self.size = size
         self._chunks = []
+        self._column = column
 
     def new_chunk(self, val):
         self._chunks.append(val)
@@ -526,6 +530,7 @@ class _TdsSession(object):
         """
         if not self.messages:
             raise tds_base.Error("Request failed, server didn't send error message")
+        msg = None
         while True:
             msg = self.messages[-1]
             if msg['msgno'] == 3621:  # the statement has been terminated
@@ -533,7 +538,7 @@ class _TdsSession(object):
             else:
                 break
 
-        error_msg = ' '.join(msg['message'] for msg in self.messages)
+        error_msg = ' '.join(m['message'] for m in self.messages)
         ex = _create_exception_by_message(msg, error_msg)
         raise ex
 
@@ -1358,7 +1363,7 @@ class _TdsSession(object):
             if login.encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE:
                 raise tds_base.Error('Server required encryption but it is not supported')
             return
-        self.sock = ssl.wrap_socket(self.sock, ssl_version=ssl.PROTOCOL_SSLv3)
+        # self.sock = ssl.wrap_socket(self.sock, ssl_version=ssl.PROTOCOL_SSLv3)
 
     def tds7_send_login(self, login):
         option_flag2 = login.option_flag2
