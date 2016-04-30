@@ -7,13 +7,16 @@ from six.moves import range
 try:
     from bitarray import bitarray
 except ImportError:
-    class bitarray(list):
-        def __init__(self, len):
-            self[:] = [False] * len
+    class BitArray(list):
+        def __init__(self, size):
+            super(BitArray, self).__init__()
+            self[:] = [False] * size
 
         def setall(self, val):
             for i in range(len(self)):
                 self[i] = val
+
+    bitarray = BitArray
 
 
 from .tds import Error, readall, skipall
@@ -198,7 +201,6 @@ class SmpManager(object):
             smid, flags, sid, l, seq_num, wnd = self._smp_header.unpack(readall(self._transport, self._smp_header.size))
             if smid != self._smid:
                 self._bad_stm('Invalid SMP packet signature')
-            #logger.debug('received smp packet t:%s sid:%s len:%s num:%s wnd:%s', self._type_to_str(flags), sid, l, seq_num, wnd)
             try:
                 session = self._sessions[sid]
             except KeyError:
