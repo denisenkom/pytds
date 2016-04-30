@@ -1,7 +1,6 @@
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal, localcontext
 import struct
-import six
 import re
 import uuid
 
@@ -437,7 +436,7 @@ BitSerializer.instance = BitSerializer()
 
 class BitNSerializer(BaseTypeSerializerN):
     type = SYBBITN
-    subtypes = {1 : BitSerializer.instance}
+    subtypes = {1: BitSerializer.instance}
 
     def __init__(self, typ):
         super(BitNSerializer, self).__init__(size=1)
@@ -590,8 +589,6 @@ class VarChar70Serializer(BaseTypeSerializer):
     type = XSYBVARCHAR
 
     def __init__(self, size, collation=raw_collation, codec=None):
-        #if size <= 0 or size > 8000:
-        #    raise DataError('Invalid size for VARCHAR field')
         self._size = size
         self._collation = collation
         if codec:
@@ -606,7 +603,6 @@ class VarChar70Serializer(BaseTypeSerializer):
 
     def write_info(self, w):
         w.put_smallint(self._size)
-        #w.put_smallint(self._size)
 
     def write(self, w, val):
         if val is None:
@@ -615,7 +611,6 @@ class VarChar70Serializer(BaseTypeSerializer):
             val = force_unicode(val)
             val, _ = self._codec.encode(val)
             w.put_smallint(len(val))
-            #w.put_smallint(len(val))
             w.write(val)
 
     def read(self, r):
@@ -678,8 +673,6 @@ class NVarChar70Serializer(BaseTypeSerializer):
     type = XSYBNVARCHAR
 
     def __init__(self, size, collation=raw_collation):
-        #if size <= 0 or size > 4000:
-        #    raise DataError('Invalid size for NVARCHAR field')
         self._size = size
         self._collation = collation
 
@@ -690,7 +683,6 @@ class NVarChar70Serializer(BaseTypeSerializer):
 
     def write_info(self, w):
         w.put_usmallint(self._size * 2)
-        #w.put_smallint(self._size)
 
     def write(self, w, val):
         if val is None:
@@ -771,9 +763,9 @@ class XmlSerializer(NVarCharMaxSerializer):
     type = SYBMSXML
     declaration = 'XML'
 
-    def __init__(self, schema={}):
+    def __init__(self, schema=None):
         super(XmlSerializer, self).__init__(0)
-        self._schema = schema
+        self._schema = schema or {}
 
     def __repr__(self):
         return 'XmlSerializer(schema={})'.format(repr(self._schema))
@@ -1081,9 +1073,9 @@ class Image70Serializer(BaseTypeSerializer):
 
 
 class Image72Serializer(Image70Serializer):
-    def __init__(self, size=0, parts=[]):
+    def __init__(self, size=0, parts=()):
+        super(Image72Serializer, self).__init__(size=size, table_name='.'.join(parts))
         self._parts = parts
-        self._size = size
 
     def __repr__(self):
         return 'Image72(p={},s={})'.format(self._parts, self._size)
@@ -1228,7 +1220,6 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
 
     @classmethod
     def encode(cls, value):
-        #cls.validate(value)
         if type(value) == date:
             value = datetime.combine(value, time(0, 0, 0))
         dt = DateTime.from_pydatetime(value)
@@ -1286,7 +1277,7 @@ class Date(SqlValueMetaclass):
     def from_pydate(cls, pydate):
         """
         Creates sql date object from Python date object.
-        @param value: Python date
+        @param pydate: Python date
         @return: sql date
         """
         return cls(days=(datetime.combine(pydate, time(0, 0, 0)) - _datetime2_base_date).days)
@@ -1453,7 +1444,8 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
         val = t.nsec // (10 ** (9 - prec))
         w.write(struct.pack('<Q', val)[:self._precision_to_len[prec]])
 
-    def _read_time(self, r, size, prec):
+    @staticmethod
+    def _read_time(r, size, prec):
         time_buf = readall(r, size)
         val = _decode_num(time_buf)
         val *= 10 ** (7 - prec)
@@ -1695,7 +1687,7 @@ class MsDecimalSerializer(BaseTypeSerializer):
             if not positive:
                 val *= -1
             size -= 1
-            val = val * (10 ** scale)
+            val *= 10 ** scale
         for i in range(size):
             w.put_byte(int(val % 256))
             val //= 256
@@ -1749,7 +1741,7 @@ class Money8Serializer(BasePrimitiveTypeSerializer):
         return Decimal(val) / 10000
 
     def write(self, w, val):
-        val = val * 10000
+        val *= 10000
         hi = int(val // (2 ** 32))
         lo = int(val % (2 ** 32))
         w.pack(self._struct, hi, lo)
@@ -1848,7 +1840,8 @@ class VariantSerializer(BaseTypeSerializer):
 
         TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),
         DATETIME2NTYPE: lambda r, size: DateTime2Serializer(DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
-        DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(DateTimeOffsetType(precision=r.get_byte())).read_fixed(r, size),
+        DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(
+            DateTimeOffsetType(precision=r.get_byte())).read_fixed(r, size),
 
         BIGVARBINTYPE: _variant_read_binary,
         BIGBINARYTYPE: _variant_read_binary,
@@ -2361,7 +2354,9 @@ class DeclarationsParser(object):
 
     def parse(self, declaration):
         """
-        Parse sql type declaration, e.g. varchar(10) and return instance of corresponding type class, e.g. VarCharType(10)
+        Parse sql type declaration, e.g. varchar(10) and return instance of corresponding type class,
+        e.g. VarCharType(10)
+
         @param declaration: Sql declaration to parse, e.g. varchar(10)
         @return: instance of SqlTypeMetaclass
         """
