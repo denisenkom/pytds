@@ -30,7 +30,7 @@ See also `MSDN article <http://msdn.microsoft.com/en-us/library/ms175484.aspx>`_
 Table Valued Parameters
 =======================
 
-Here is example of using TLV:
+Here is example of using TVP:
 
 .. code-block:: py
 
