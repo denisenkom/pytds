@@ -20,8 +20,6 @@ from .tds_base import readall, readall_fast, skipall
 
 logger = logging.getLogger()
 
-USE_CORK = hasattr(socket, 'TCP_CORK')
-
 # packet header
 # https://msdn.microsoft.com/en-us/library/dd340948.aspx
 _header = struct.Struct('>BBHHBx')
@@ -1760,9 +1758,6 @@ class _TdsSocket(object):
                 if hasattr(socket, 'MSG_MORE'):
                     flags |= socket.MSG_MORE
             self.sock.sendall(data, flags)
-            if final and USE_CORK:
-                self.sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
-                self.sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
         except:
             self.close()
             raise
