@@ -1,11 +1,10 @@
 import struct
 import codecs
-from contextlib import contextmanager
+import contextlib
 import logging
 import socket
 import sys
 import datetime
-from decimal import Decimal, localcontext
 from . import tz
 import re
 import uuid
@@ -422,12 +421,15 @@ class _TdsWriter(object):
 
 
 class MemoryChunkedHandler(object):
+    def __init__(self):
+        self.size = 0
+        self._chunks = []
+
     def begin(self, column, size):
         self.size = size
         self._chunks = []
 
     def new_chunk(self, val):
-        #logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
         self._chunks.append(val)
 
     def end(self):
@@ -435,12 +437,15 @@ class MemoryChunkedHandler(object):
 
 
 class MemoryStrChunkedHandler(object):
+    def __init__(self):
+        self.size = 0
+        self._chunks = []
+
     def begin(self, column, size):
         self.size = size
         self._chunks = []
 
     def new_chunk(self, val):
-        #logger.debug('MemoryChunkedHandler.new_chunk(sz=%d)', len(val))
         self._chunks.append(val)
 
     def end(self):
@@ -499,6 +504,12 @@ class _TdsSession(object):
         self.use_tz = tds.use_tz
         self._spid = 0
         self.tzinfo_factory = tzinfo_factory
+        self.more_rows = False
+        self.done_flags = 0
+        self.internal_sp_called = 0
+        self.output_params = {}
+        self.authentication = None
+        self.return_value_index = 0
 
     def __repr__(self):
         fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={} in_cancel={}>"
@@ -644,12 +655,8 @@ class _TdsSession(object):
         """
         r = self._reader
         r.get_smallint()  # size
-        msg = {}
-        msg['marker'] = marker
-        msg['msgno'] = r.get_int()
-        msg['state'] = r.get_byte()
-        msg['severity'] = r.get_byte()
-        msg['sql_state'] = None
+        msg = {'marker': marker, 'msgno': r.get_int(), 'state': r.get_byte(), 'severity': r.get_byte(),
+               'sql_state': None}
         has_eed = False
         if marker == TDS_EED_TOKEN:
             if msg['severity'] <= 10:
@@ -667,16 +674,12 @@ class _TdsSession(object):
             msg['priv_msg_type'] = 1
         else:
             logger.error('tds_process_msg() called with unknown marker "{0}"'.format(marker))
-        #logger.debug('tds_process_msg() reading message {0} from server'.format(msg['msgno']))
         msg['message'] = r.read_ucs2(r.get_smallint())
         # server name
         msg['server'] = r.read_ucs2(r.get_byte())
         # stored proc name if available
         msg['proc_name'] = r.read_ucs2(r.get_byte())
         msg['line_number'] = r.get_int() if IS_TDS72_PLUS(self) else r.get_smallint()
-        if not msg['sql_state']:
-            #msg['sql_state'] = tds_alloc_lookup_sqlstate(self, msg['msgno'])
-            pass
         # in case extended error data is sent, we just try to discard it
         if has_eed:
             while True:
@@ -756,19 +759,11 @@ class _TdsSession(object):
         r.get_usmallint()  # cur_cmd
         more_results = status & TDS_DONE_MORE_RESULTS != 0
         was_cancelled = status & TDS_DONE_CANCELLED != 0
-        #error = status & TDS_DONE_ERROR != 0
         done_count_valid = status & TDS_DONE_COUNT != 0
-        #logger.debug(
-        #    'process_end: more_results = {0}\n'
-        #    '\t\twas_cancelled = {1}\n'
-        #    '\t\terror = {2}\n'
-        #    '\t\tdone_count_valid = {3}'.format(more_results, was_cancelled, error, done_count_valid))
         if self.res_info:
             self.res_info.more_results = more_results
         rows_affected = r.get_int8() if IS_TDS72_PLUS(self) else r.get_int()
-        #logger.debug('\t\trows_affected = {0}'.format(rows_affected))
         if was_cancelled or (not more_results and not self.in_cancel):
-            #logger.debug('process_end() state set to TDS_IDLE')
             self.in_cancel = False
             self.set_state(TDS_IDLE)
         if done_count_valid:
@@ -787,15 +782,10 @@ class _TdsSession(object):
         r = self._reader
         size = r.get_smallint()
         type = r.get_byte()
-        #logger.debug("process_env_chg: type: {0}".format(type))
         if type == TDS_ENV_SQLCOLLATION:
             size = r.get_byte()
-            #logger.debug("process_env_chg(): {0} bytes of collation data received".format(size))
-            #logger.debug("self.collation was {0}".format(self.conn.collation))
             self.conn.collation = r.get_collation()
             skipall(r, size - 5)
-            #tds7_srv_charset_changed(tds, tds.conn.collation)
-            #logger.debug("self.collation now {0}".format(self.conn.collation))
             # discard old one
             skipall(r, r.get_byte())
         elif type == TDS_ENV_BEGINTRANS:
@@ -812,8 +802,6 @@ class _TdsSession(object):
             r.read_ucs2(r.get_byte())
             new_block_size = int(newval)
             if new_block_size >= 512:
-                #logger.info("changing block size from {0} to {1}".format(oldval, new_block_size))
-                #
                 # Is possible to have a shrink if server limits packet
                 # size more than what we specified
                 #
@@ -830,11 +818,9 @@ class _TdsSession(object):
         elif type == TDS_ENV_CHARSET:
             newval = r.read_ucs2(r.get_byte())
             r.read_ucs2(r.get_byte())
-            #logger.debug("server indicated charset change to \"{0}\"\n".format(newval))
             self.conn.env.charset = newval
             remap = {'iso_1': 'iso8859-1'}
             self.conn.server_codec = codecs.lookup(remap.get(newval, newval))
-            #tds_srv_charset_changed(self, newval)
         elif type == TDS_ENV_DB_MIRRORING_PARTNER:
             r.read_ucs2(r.get_byte())
             r.read_ucs2(r.get_byte())
@@ -937,7 +923,7 @@ class _TdsSession(object):
             assert False
         return self.state
 
-    @contextmanager
+    @contextlib.contextmanager
     def querying_context(self, packet_type):
         """ Context manager for querying.
 
@@ -1161,14 +1147,14 @@ class _TdsSession(object):
         self.process_simple_request()
 
     def submit_begin_tran(self, isolation_level=0):
-        #logger.debug('submit_begin_tran()')
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
             with self.querying_context(TDS7_TRANS):
                 self._start_query()
-                w.pack(self._begin_tran_struct_72,
+                w.pack(
+                    self._begin_tran_struct_72,
                     5,  # TM_BEGIN_XACT
                     isolation_level,
                     0,  # new transaction name
@@ -1190,7 +1176,6 @@ class _TdsSession(object):
             self._tds._sock.settimeout(prev_timeout)
 
     def submit_rollback(self, cont, isolation_level=0):
-        #logger.debug('submit_rollback(%s, %s)', id(self), cont)
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -1200,13 +1185,15 @@ class _TdsSession(object):
                 flags = 0
                 if cont:
                     flags |= 1
-                w.pack(self._commit_rollback_tran_struct72_hdr,
+                w.pack(
+                    self._commit_rollback_tran_struct72_hdr,
                     8,  # TM_ROLLBACK_XACT
                     0,  # transaction name
                     flags,
                     )
                 if cont:
-                    w.pack(self._continue_tran_struct72,
+                    w.pack(
+                        self._continue_tran_struct72,
                         isolation_level,
                         0,  # new transaction name
                         )
@@ -1224,7 +1211,6 @@ class _TdsSession(object):
             self._tds._sock.settimeout(prev_timeout)
 
     def submit_commit(self, cont, isolation_level=0):
-        #logger.debug('submit_commit(%s)', cont)
         if IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -1234,13 +1220,15 @@ class _TdsSession(object):
                 flags = 0
                 if cont:
                     flags |= 1
-                w.pack(self._commit_rollback_tran_struct72_hdr,
+                w.pack(
+                    self._commit_rollback_tran_struct72_hdr,
                     7,  # TM_COMMIT_XACT
                     0,  # transaction name
                     flags,
                     )
                 if cont:
-                    w.pack(self._continue_tran_struct72,
+                    w.pack(
+                        self._continue_tran_struct72,
                         isolation_level,
                         0,  # new transaction name
                         )
@@ -1399,7 +1387,8 @@ class _TdsSession(object):
         current_pos = 86 + 8 if IS_TDS72_PLUS(self) else 86
         client_host_name = login.client_host_name
         login.client_host_name = client_host_name
-        packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) + len(login.library) + len(login.language) + len(login.database)) * 2
+        packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) +
+                                     len(login.library) + len(login.language) + len(login.database)) * 2
         if login.auth:
             self.authentication = login.auth
             auth_packet = login.auth.create_packet()
@@ -1512,17 +1501,14 @@ class _TdsSession(object):
     def process_login_tokens(self):
         r = self._reader
         succeed = False
-        #logger.debug('process_login_tokens()')
         while True:
             marker = r.get_byte()
-            #logger.debug('looking for login token, got  {0:x}({1})'.format(marker, tds_token_name(marker)))
             if marker == TDS_LOGINACK_TOKEN:
                 succeed = True
                 size = r.get_smallint()
                 r.get_byte()  # interface
                 version = r.get_uint_be()
                 self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(version, version)
-                #logger.debug('server reports TDS version {0:x}'.format(version))
                 if not IS_TDS7_PLUS(self):
                     self.bad_stream('Only TDS 7.0 and higher are supported')
                 # get server product name
@@ -1534,7 +1520,6 @@ class _TdsSession(object):
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
-                #logger.debug('Product version {0:x}'.format(product_version))
                 if self.conn.authentication:
                     self.conn.authentication.close()
                     self.conn.authentication = None
