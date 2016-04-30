@@ -1,10 +1,9 @@
 import time as _time
-from datetime import tzinfo, timedelta, datetime
+from datetime import tzinfo, timedelta
 
 ZERO = timedelta(0)
 HOUR = timedelta(hours=1)
 
-# A UTC class.
 
 class UTC(tzinfo):
     """UTC"""
@@ -24,6 +23,7 @@ utc = UTC()
 # Note that FixedOffset(0, "UTC") is a different way to build a
 # UTC tzinfo object.
 
+
 class FixedOffsetTimezone(tzinfo):
     """Fixed offset in minutes east from UTC."""
 
@@ -41,13 +41,14 @@ class FixedOffsetTimezone(tzinfo):
         return ZERO
 
 
-STDOFFSET = timedelta(seconds = -_time.timezone)
+STDOFFSET = timedelta(seconds=-_time.timezone)
 if _time.daylight:
-    DSTOFFSET = timedelta(seconds = -_time.altzone)
+    DSTOFFSET = timedelta(seconds=-_time.altzone)
 else:
     DSTOFFSET = STDOFFSET
 
 DSTDIFF = DSTOFFSET - STDOFFSET
+
 
 class LocalTimezone(tzinfo):
 
