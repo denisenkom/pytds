@@ -17,9 +17,8 @@ except ImportError:
                 self[i] = val
 
     bitarray = BitArray
+from .tds_base import Error, readall, skipall
 
-
-from .tds import Error, readall, skipall
 
 logger = logging.getLogger(__name__)
 

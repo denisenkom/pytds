@@ -17,19 +17,23 @@ from pytds.tds_types import NVarCharType
 from . import lcid
 from . import tz
 from .tds import (
+    SimpleLoadBalancer,
+    _TdsSocket, tds7_get_instances,
+    _create_exception_by_message,
+    output, default
+)
+from . import tds_base
+from .tds_base import (
     Error, LoginError, DatabaseError, ProgrammingError,
     IntegrityError, DataError, InternalError,
     InterfaceError, TimeoutError, OperationalError,
-    NotSupportedError, Warning,
-    TDS_PENDING, TDS74,
-    TDS_ENCRYPTION_OFF, TDS_ODBC_ON, SimpleLoadBalancer,
-    IS_TDS7_PLUS,
-    _TdsSocket, tds7_get_instances, ClosedConnectionError,
-    SP_EXECUTESQL, Column, _create_exception_by_message,
-    Binary, TableValuedParam, output, default
+    NotSupportedError, Warning, ClosedConnectionError,
+    Column
 )
 
-from .tds import ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML
+from .tds_types import (
+    ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML, TableValuedParam, Binary
+)
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = '1.8.2'
@@ -432,7 +436,7 @@ class Connection(object):
             if session.in_cancel:
                 session.process_cancel()
 
-            if session.state == TDS_PENDING:
+            if session.state == tds_base.TDS_PENDING:
                 raise InterfaceError('Results are still pending on connection')
             self._active_cursor = cursor
 
@@ -618,7 +622,7 @@ class Cursor(six.Iterator):
                     u'{0} {1}'.format(p.column_name, p.type.get_declaration())
                     for p in named_params)
                 self._exec_with_retry(lambda: self._session.submit_rpc(
-                    SP_EXECUTESQL,
+                    tds_base.SP_EXECUTESQL,
                     [self._session.make_param('', operation), self._session.make_param('', param_definition)] + named_params,
                     0))
             else:
@@ -999,8 +1003,8 @@ def _parse_connection_string(connstr):
 
 def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             login_timeout=15, as_dict=None,
-            appname=None, port=None, tds_version=TDS74,
-            encryption_level=TDS_ENCRYPTION_OFF, autocommit=False,
+            appname=None, port=None, tds_version=tds_base.TDS74,
+            encryption_level=tds_base.TDS_ENCRYPTION_OFF, autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
             row_strategy=None, failover_partner=None, server=None):
@@ -1081,7 +1085,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     # IMPLICIT_TRANSACTIONS to OFF,
     # TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and below), TEXTSIZE to infinite (introduced in TDS 7.3),
     # and ROWCOUNT to infinite
-    login.option_flag2 = TDS_ODBC_ON
+    login.option_flag2 = tds_base.TDS_ODBC_ON
 
     login.connect_timeout = login_timeout
     login.query_timeout = timeout

@@ -27,17 +27,15 @@ import pytds.extensions
 from six import text_type
 from six.moves import xrange
 from pytds import (
-    connect, ProgrammingError, TimeoutError, Time, SimpleLoadBalancer, LoginError,
-    Error, IntegrityError, Timestamp, DataError, DECIMAL, Date, Binary,
-    NotSupportedError,
-    output, default, InterfaceError, TDS_ENCRYPTION_OFF,
+    connect, ProgrammingError, TimeoutError, Time,
+    Error, IntegrityError, Timestamp, DataError, Date, Binary,
+    output, default,
     STRING, BINARY, NUMBER, DATETIME, DECIMAL, INTEGER, REAL, XML)
-from pytds.tds import (
-    _TdsSocket, _TdsSession, TDS_ENCRYPTION_REQUIRE, Column, BitSerializer, IntSerializer, SmallIntSerializer,
-    NVarChar72Serializer, TinyIntSerializer, IntNSerializer, BigIntSerializer, RealSerializer, FloatSerializer, FloatNSerializer, Collation, DateTimeSerializer,
-    IS_TDS73_PLUS, IS_TDS71_PLUS, TDS73, TDS71, TDS72, TDS70,
-    TDS_ENCRYPTION_OFF,
-    SmallMoneyType)
+from pytds.tds_types import (DateTimeSerializer, SmallMoneyType)
+from pytds.tds_base import (
+    Column,
+    IS_TDS73_PLUS, IS_TDS71_PLUS,
+    )
 import dbapi20
 import pytds
 import settings
@@ -1403,7 +1401,7 @@ def _params_tests(self):
     test_val(DateTimeType(), datetime(1753, 1, 1, 0, 0, 0))
     test_val(DateTimeType(), datetime(9999, 12, 31, 23, 59, 59, 990000))
     test_val(DateTimeType(), None)
-    if pytds.tds.IS_TDS73_PLUS(self.conn._conn):
+    if pytds.tds_base.IS_TDS73_PLUS(self.conn._conn):
         test_val(DateType(), date(1, 1, 1))
         test_val(DateType(), date(9999, 12, 31))
         test_val(DateType(), None)
@@ -1427,7 +1425,7 @@ def _params_tests(self):
     test_val(MoneyType(), None)
     test_val(UniqueIdentifierType(), None)
     test_val(UniqueIdentifierType(), uuid.uuid4())
-    if pytds.tds.IS_TDS71_PLUS(self.conn._conn):
+    if pytds.tds_base.IS_TDS71_PLUS(self.conn._conn):
         test_val(VariantType(), None)
         #test_val(self.conn._conn.type_factory.SqlVariant(10), 100)
     test_val(VarBinaryType(size=10), b'')
@@ -1451,7 +1449,7 @@ def _params_tests(self):
     test_val(ImageType(), None)
     test_val(ImageType(), b'')
     test_val(ImageType(), b'test')
-    if pytds.tds.IS_TDS72_PLUS(self.conn._conn):
+    if pytds.tds_base.IS_TDS72_PLUS(self.conn._conn):
         test_val(VarBinaryMaxType(), None)
         test_val(VarBinaryMaxType(), b'')
         test_val(VarBinaryMaxType(), b'testtest12')
@@ -1470,7 +1468,7 @@ class TestTds70(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        kwargs['tds_version'] = pytds.tds.TDS70
+        kwargs['tds_version'] = pytds.tds_base.TDS70
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def test_parsing(self):
@@ -1482,7 +1480,7 @@ class TestTds71(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        kwargs['tds_version'] = pytds.tds.TDS71
+        kwargs['tds_version'] = pytds.tds_base.TDS71
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def test_parsing(self):
@@ -1494,7 +1492,7 @@ class TestTds72(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        kwargs['tds_version'] = pytds.tds.TDS72
+        kwargs['tds_version'] = pytds.tds_base.TDS72
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def test_parsing(self):
@@ -1506,7 +1504,7 @@ class TestTds73A(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        kwargs['tds_version'] = pytds.tds.TDS73A
+        kwargs['tds_version'] = pytds.tds_base.TDS73A
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def test_parsing(self):
@@ -1518,7 +1516,7 @@ class TestTds73B(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        kwargs['tds_version'] = pytds.tds.TDS73B
+        kwargs['tds_version'] = pytds.tds_base.TDS73B
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def test_parsing(self):
