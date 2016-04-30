@@ -105,7 +105,10 @@ def tds7_crypt_pass(password):
 
 
 class _TdsEnv:
-    pass
+    def __init__(self):
+        self.database = None
+        self.language = None
+        self.charset = None
 
 
 class _TdsReader(object):
@@ -563,7 +566,6 @@ class _TdsSession(object):
         Stream format link: http://msdn.microsoft.com/en-us/library/dd357363.aspx
         """
         r = self._reader
-        #logger.debug("processing TDS7 result metadata.")
 
         # read number of columns and allocate the columns structure
 
@@ -587,7 +589,6 @@ class _TdsSession(object):
         # loop through the columns populating COLINFO struct from
         # server response
         #
-        #logger.debug("setting up {0} columns".format(num_cols))
         header_tuple = []
         for col in range(num_cols):
             curcol = Column()
@@ -1237,7 +1238,8 @@ class _TdsSession(object):
                         0,  # new transaction name
                         )
         else:
-            self.submit_plain_query("IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
+            self.submit_plain_query(
+                "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
             self.conn.tds72_transaction = 1 if cont else 0
 
     _tds72_query_start = struct.Struct('<IIHQI')
@@ -1775,7 +1777,7 @@ class _TdsSocket(object):
         if self.sock is not None:
             self.sock.close()
         if self._smp_manager:
-            self._smp_manager._transport_closed()
+            self._smp_manager.transport_closed()
         self._main_session.state = TDS_DEAD
         if self.authentication:
             self.authentication.close()

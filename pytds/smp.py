@@ -251,6 +251,6 @@ class SmpManager(object):
     def close(self):
         self._transport.close()
 
-    def _transport_closed(self):
+    def transport_closed(self):
         for session in self._sessions.values():
             session.state = 'CLOSED'
