@@ -26,33 +26,33 @@ logger = logging.getLogger(__name__)
 
 class _SmpSession(object):
     def __init__(self, mgr, session_id):
-        self._session_id = session_id
-        self._seq_num_for_send = 0
-        self._high_water_for_send = 4
+        self.session_id = session_id
+        self.seq_num_for_send = 0
+        self.high_water_for_send = 4
         self._seq_num_for_recv = 0
-        self._high_water_for_recv = 4
+        self.high_water_for_recv = 4
         self._last_high_water_for_recv = 4
         self._mgr = mgr
-        self._recv_queue = []
-        self._send_queue = []
-        self._state = 'new'
+        self.recv_queue = []
+        self.send_queue = []
+        self.state = 'new'
         self._curr_buf_pos = 0
         self._curr_buf = b''
 
     def __repr__(self):
         fmt = "<_SmpSession sid={} state={} recv_queue={} send_queue={} seq_num_for_send={}>"
-        return fmt.format(self._session_id, self._state, self._recv_queue, self._send_queue,
-                          self._seq_num_for_send)
+        return fmt.format(self.session_id, self.state, self.recv_queue, self.send_queue,
+                          self.seq_num_for_send)
 
     def close(self):
-        self._mgr._close_smp_session(self)
+        self._mgr.close_smp_session(self)
 
     def send(self, data, final):
-        self._mgr._send_packet(self, data)
+        self._mgr.send_packet(self, data)
 
     def read(self, size):
         if not self._curr_buf[self._curr_buf_pos:]:
-            self._curr_buf = self._mgr._recv_packet(self)
+            self._curr_buf = self._mgr.recv_packet(self)
             self._curr_buf_pos = 0
             if not self._curr_buf:
                 return b''
@@ -61,7 +61,7 @@ class _SmpSession(object):
         return res
 
     def is_connected(self):
-        return self._state == 'SESSION ESTABLISHED'
+        return self.state == 'SESSION ESTABLISHED'
 
 
 class SmpManager(object):
@@ -97,89 +97,89 @@ class SmpManager(object):
                 session_id,
                 self._smp_header.size,
                 0,
-                session._high_water_for_recv,
+                session.high_water_for_recv,
                 )
             self._transport.send(hdr, True)
-            session._state = 'SESSION ESTABLISHED'
+            session.state = 'SESSION ESTABLISHED'
         return session
 
-    def _close_smp_session(self, session):
-        if session._state in ('CLOSED', 'FIN SENT'):
+    def close_smp_session(self, session):
+        if session.state in ('CLOSED', 'FIN SENT'):
             return
-        elif session._state == 'SESSION ESTABLISHED':
+        elif session.state == 'SESSION ESTABLISHED':
             with self._lock:
                 if self._transport.is_connected():
                     hdr = self._smp_header.pack(
                         self._smid,
                         self._FIN,
-                        session._session_id,
+                        session.session_id,
                         self._smp_header.size,
-                        session._seq_num_for_send,
-                        session._high_water_for_recv,
+                        session.seq_num_for_send,
+                        session.high_water_for_recv,
                         )
-                    session._state = 'FIN SENT'
+                    session.state = 'FIN SENT'
                     try:
                         self._transport.send(hdr, True)
-                        self._recv_packet(session)
+                        self.recv_packet(session)
                     except (socket.error, OSError) as ex:
                         if ex.errno in (errno.ECONNRESET, errno.EPIPE):
-                            session._state = 'CLOSED'
+                            session.state = 'CLOSED'
                         else:
                             raise ex
                 else:
-                    session._state = 'CLOSED'
+                    session.state = 'CLOSED'
 
-    def _send_queued_packets(self, session):
+    def send_queued_packets(self, session):
         with self._lock:
-            while session._send_queue and session._seq_num_for_send < session._high_water_for_send:
-                data = session._send_queue.pop(0)
-                self._send_packet(session, data)
+            while session.send_queue and session.seq_num_for_send < session.high_water_for_send:
+                data = session.send_queue.pop(0)
+                self.send_packet(session, data)
 
     @staticmethod
     def _add_one_wrap(val):
         return 0 if val == 2 ** 32 - 1 else val + 1
 
-    def _send_packet(self, session, data):
+    def send_packet(self, session, data):
         with self._lock:
-            if session._seq_num_for_send < session._high_water_for_send:
+            if session.seq_num_for_send < session.high_water_for_send:
                 l = self._smp_header.size + len(data)
-                seq_num = self._add_one_wrap(session._seq_num_for_send)
+                seq_num = self._add_one_wrap(session.seq_num_for_send)
                 hdr = self._smp_header.pack(
                     self._smid,
                     self._DATA,
-                    session._session_id,
+                    session.session_id,
                     l,
                     seq_num,
-                    session._high_water_for_recv,
+                    session.high_water_for_recv,
                     )
-                session._last_high_water_for_recv = session._high_water_for_recv
+                session._last_high_water_for_recv = session.high_water_for_recv
                 self._transport.send(hdr + data, True)
-                session._seq_num_for_send = self._add_one_wrap(session._seq_num_for_send)
+                session.seq_num_for_send = self._add_one_wrap(session.seq_num_for_send)
             else:
-                session._send_queue.append(data)
+                session.send_queue.append(data)
                 self._read_smp_message()
 
-    def _recv_packet(self, session):
+    def recv_packet(self, session):
         with self._lock:
-            if session._state == 'CLOSED':
+            if session.state == 'CLOSED':
                 return b''
-            while not session._recv_queue:
+            while not session.recv_queue:
                 self._read_smp_message()
-                if session._state in ('CLOSED', 'FIN RECEIVED'):
+                if session.state in ('CLOSED', 'FIN RECEIVED'):
                     return b''
-            session._high_water_for_recv = self._add_one_wrap(session._high_water_for_recv)
-            if session._high_water_for_recv - session._last_high_water_for_recv >= 2:
+            session.high_water_for_recv = self._add_one_wrap(session.high_water_for_recv)
+            if session.high_water_for_recv - session._last_high_water_for_recv >= 2:
                 hdr = self._smp_header.pack(
                     self._smid,
                     self._ACK,
-                    session._session_id,
+                    session.session_id,
                     self._smp_header.size,
-                    session._seq_num_for_send,
-                    session._high_water_for_recv,
+                    session.seq_num_for_send,
+                    session.high_water_for_recv,
                     )
                 self._transport.send(hdr, True)
-                session._last_high_water_for_recv = session._high_water_for_recv
-            return session._recv_queue.pop(0)
+                session._last_high_water_for_recv = session.high_water_for_recv
+            return session.recv_queue.pop(0)
 
     @classmethod
     def _type_to_str(cls, t):
@@ -205,44 +205,44 @@ class SmpManager(object):
                 session = self._sessions[sid]
             except KeyError:
                 self._bad_stm('Invalid SMP packet session id')
-            if wnd < session._high_water_for_send:
+            if wnd < session.high_water_for_send:
                 self._bad_stm('Invalid WNDW in packet from server')
-            if seq_num > session._high_water_for_recv:
+            if seq_num > session.high_water_for_recv:
                 self._bad_stm('Invalid SEQNUM in packet from server')
             session._last_recv_seq_num = seq_num
             if flags == self._ACK:
-                if session._state in ('FIN RECEIVED', 'CLOSED'):
+                if session.state in ('FIN RECEIVED', 'CLOSED'):
                     self._bad_stm('Unexpected SMP ACK packet from server')
                 if seq_num != session._seq_num_for_recv:
                     self._bad_stm('Invalid SEQNUM in ACK packet from server')
-                session._high_water_for_send = wnd
-                self._send_queued_packets(session)
+                session.high_water_for_send = wnd
+                self.send_queued_packets(session)
             elif flags == self._DATA:
-                if session._state == 'SESSION ESTABLISHED':
+                if session.state == 'SESSION ESTABLISHED':
                     if seq_num != self._add_one_wrap(session._seq_num_for_recv):
                         self._bad_stm('Invalid SEQNUM in ACK packet from server')
                     session._seq_num_for_recv = seq_num
                     data = readall(self._transport, l - self._smp_header.size)
-                    session._recv_queue.append(data)
-                    if wnd > session._high_water_for_send:
-                        session._high_water_for_send = wnd
-                        self._send_queued_packets(session)
+                    session.recv_queue.append(data)
+                    if wnd > session.high_water_for_send:
+                        session.high_water_for_send = wnd
+                        self.send_queued_packets(session)
 
-                elif session._state == 'FIN SENT':
+                elif session.state == 'FIN SENT':
                     skipall(self._transport, l - self._smp_header.size)
                 else:
                     self._bad_stm('Unexpected DATA packet from server')
             elif flags == self._FIN:
-                if session._state == 'SESSION ESTABLISHED':
-                    session._state = 'FIN RECEIVED'
-                elif session._state == 'FIN SENT':
-                    session._state = 'CLOSED'
-                    del self._sessions[session._session_id]
-                    self._used_ids_ba[session._session_id] = False
-                elif session._state == 'FIN RECEIVED':
+                if session.state == 'SESSION ESTABLISHED':
+                    session.state = 'FIN RECEIVED'
+                elif session.state == 'FIN SENT':
+                    session.state = 'CLOSED'
+                    del self._sessions[session.session_id]
+                    self._used_ids_ba[session.session_id] = False
+                elif session.state == 'FIN RECEIVED':
                     self._bad_stm('Unexpected SMP FIN packet from server')
                 else:
-                    self._bad_stm('Invalid state: ' + session._state)
+                    self._bad_stm('Invalid state: ' + session.state)
             elif flags == self._SYN:
                 self._bad_stm('Unexpected SMP SYN packet from server')
             else:
@@ -253,4 +253,4 @@ class SmpManager(object):
 
     def _transport_closed(self):
         for session in self._sessions.values():
-            session._state = 'CLOSED'
+            session.state = 'CLOSED'
