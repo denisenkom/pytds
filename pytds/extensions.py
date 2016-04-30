@@ -16,11 +16,3 @@ ISOLATION_LEVEL_SERIALIZABLE = 4
 #: Allows non-blocking consistent reads on a snapshot for transaction without
 #: blocking other transactions changes
 ISOLATION_LEVEL_SNAPSHOT = 5
-
-
-def register_adapter(cls, adaptor):
-    pass
-
-
-def register_type(type_descriptor):
-    pass

@@ -126,7 +126,7 @@ def lcid2charset(lcid):
     if lcid in (0x405,
                 0x40e,  # 0x1040e
                 0x415, 0x418, 0x41a, 0x41b, 0x41c, 0x424,
-                #0x81a, seem wrong in XP table TODO check
+                # 0x81a, seem wrong in XP table TODO check
                 0x104e):
                     return 'CP1250'
     elif lcid in (0x402, 0x419, 0x422, 0x423, 0x42f, 0x43f,
@@ -146,7 +146,7 @@ def lcid2charset(lcid):
                   0x436,
                   0x437,  # 0x10437
                   0x438,
-                  #0x439,  ??? Unicode only
+                  # 0x439,  ??? Unicode only
                   0x43e, 0x440a, 0x441, 0x456, 0x480a,
                   0x4c0a, 0x500a, 0x807, 0x809, 0x80a,
                   0x80c, 0x810, 0x813, 0x814, 0x816,
@@ -207,7 +207,9 @@ class Collation(object):
         self.version = version
 
     def __repr__(self):
-        return 'Collation(lcid={0}, sort_id={1}, ignore_case={2}, ignore_accent={3}, ignore_width={4}, ignore_kana={5}, binary={6}, binary2={7}, version={8})'.format(
+        fmt = 'Collation(lcid={0}, sort_id={1}, ignore_case={2}, ignore_accent={3}, ignore_width={4},' \
+               ' ignore_kana={5}, binary={6}, binary2={7}, version={8})'
+        return fmt.format(
             self.lcid,
             self.sort_id,
             self.ignore_case,
@@ -216,7 +218,8 @@ class Collation(object):
             self.ignore_kana,
             self.binary,
             self.binary2,
-            self.version)
+            self.version
+        )
 
     @classmethod
     def unpack(cls, b):
@@ -266,7 +269,7 @@ class Collation(object):
     def get_codec(self):
         return codecs.lookup(self.get_charset())
 
-    #TODO: define __repr__ and __unicode__
+    # TODO: define __repr__ and __unicode__
 
 
 raw_collation = Collation(0, 0, 0, 0, 0, 0, 0, 0, 0)

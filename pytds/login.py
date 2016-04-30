@@ -58,6 +58,7 @@ class SspiAuth(object):
             identity=self._identity)
 
         self._flags = sspi.ISC_REQ_CONFIDENTIALITY | sspi.ISC_REQ_REPLAY_DETECT | sspi.ISC_REQ_CONNECTION
+        self._ctx = None
 
     def create_packet(self):
         from . import sspi
