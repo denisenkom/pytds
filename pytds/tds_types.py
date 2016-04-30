@@ -1,5 +1,6 @@
-from datetime import datetime, date, time, timedelta
-from decimal import Decimal, localcontext
+import itertools
+import datetime
+import decimal
 import struct
 import re
 import uuid
@@ -7,7 +8,7 @@ import uuid
 from six.moves import reduce
 
 from .tds_base import *
-from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
+from .collate import ucs2_codec, raw_collation
 from . import tz
 
 
@@ -1090,7 +1091,7 @@ class Image72Serializer(Image70Serializer):
         return Image72Serializer(size, parts)
 
 
-_datetime_base_date = datetime(1900, 1, 1)
+_datetime_base_date = datetime.datetime(1900, 1, 1)
 
 
 class SmallDateTimeType(SqlTypeMetaclass):
@@ -1123,7 +1124,7 @@ class SmallDateTime(SqlValueMetaclass):
         return self._minutes
 
     def to_pydatetime(self):
-        return _datetime_base_date + timedelta(days=self._days, minutes=self._minutes)
+        return _datetime_base_date + datetime.timedelta(days=self._days, minutes=self._minutes)
 
     @classmethod
     def from_pydatetime(cls, dt):
@@ -1163,8 +1164,8 @@ SmallDateTimeSerializer.instance = SmallDateTimeSerializer()
 
 class DateTime(SqlValueMetaclass):
     """Corresponds to MSSQL datetime"""
-    MIN_PYDATETIME = datetime(1753, 1, 1, 0, 0, 0)
-    MAX_PYDATETIME = datetime(9999, 12, 31, 23, 59, 59, 997000)
+    MIN_PYDATETIME = datetime.datetime(1753, 1, 1, 0, 0, 0)
+    MAX_PYDATETIME = datetime.datetime(9999, 12, 31, 23, 59, 59, 997000)
 
     def __init__(self, days, time_part):
         """
@@ -1186,7 +1187,7 @@ class DateTime(SqlValueMetaclass):
     def to_pydatetime(self):
         ms = int(round(self._time_part % 300 * 10 / 3.0))
         secs = self._time_part // 300
-        return _datetime_base_date + timedelta(days=self._days, seconds=secs, milliseconds=ms)
+        return _datetime_base_date + datetime.timedelta(days=self._days, seconds=secs, milliseconds=ms)
 
     @classmethod
     def from_pydatetime(cls, dt):
@@ -1220,8 +1221,8 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
 
     @classmethod
     def encode(cls, value):
-        if type(value) == date:
-            value = datetime.combine(value, time(0, 0, 0))
+        if type(value) == datetime.date:
+            value = datetime.combine(value, datetime.time(0, 0, 0))
         dt = DateTime.from_pydatetime(value)
         return cls._struct.pack(dt.days, dt.time_part)
 
@@ -1241,7 +1242,7 @@ class DateTimeNSerializer(BaseTypeSerializerN, BaseDateTimeSerializer):
     }
 
 
-_datetime2_base_date = datetime(1, 1, 1)
+_datetime2_base_date = datetime.datetime(1, 1, 1)
 
 
 class DateType(SqlTypeMetaclass):
@@ -1252,8 +1253,8 @@ class DateType(SqlTypeMetaclass):
 
 
 class Date(SqlValueMetaclass):
-    MIN_PYDATE = date(1, 1, 1)
-    MAX_PYDATE = date(9999, 12, 31)
+    MIN_PYDATE = datetime.date(1, 1, 1)
+    MAX_PYDATE = datetime.date(9999, 12, 31)
 
     def __init__(self, days):
         """
@@ -1271,7 +1272,7 @@ class Date(SqlValueMetaclass):
         Converts sql date to Python date
         @return: Python date
         """
-        return (_datetime2_base_date + timedelta(days=self._days)).date()
+        return (_datetime2_base_date + datetime.timedelta(days=self._days)).date()
 
     @classmethod
     def from_pydate(cls, pydate):
@@ -1280,7 +1281,7 @@ class Date(SqlValueMetaclass):
         @param pydate: Python date
         @return: sql date
         """
-        return cls(days=(datetime.combine(pydate, time(0, 0, 0)) - _datetime2_base_date).days)
+        return cls(days=(datetime.datetime.combine(pydate, datetime.time(0, 0, 0)) - _datetime2_base_date).days)
 
 
 class TimeType(SqlTypeMetaclass):
@@ -1324,7 +1325,7 @@ class Time(SqlValueMetaclass):
         nanoseconds -= minutes * 60 * 1000000000
         seconds = nanoseconds // 1000000000
         nanoseconds -= seconds * 1000000000
-        return time(hours, minutes, seconds, nanoseconds // 1000)
+        return datetime.time(hours, minutes, seconds, nanoseconds // 1000)
 
     @classmethod
     def from_pytime(cls, pytime):
@@ -1378,7 +1379,7 @@ class DateTime2(SqlValueMetaclass):
         Converts datetime2 object into Python's datetime.datetime object
         @return: naive datetime.datetime
         """
-        return datetime.combine(self._date.to_pydate(), self._time.to_pytime())
+        return datetime.datetime.combine(self._date.to_pydate(), self._time.to_pytime())
 
     @classmethod
     def from_pydatetime(cls, pydatetime):
@@ -1423,7 +1424,7 @@ class DateTimeOffset(SqlValueMetaclass):
         Converts datetimeoffset object into Python's datetime.datetime object
         @return: time zone aware datetime.datetime
         """
-        dt = datetime.combine(self._date.to_pydate(), self._time.to_pytime())
+        dt = datetime.datetime.combine(self._date.to_pydate(), self._time.to_pytime())
         from .tz import FixedOffsetTimezone
         return dt.replace(tzinfo=_utc).astimezone(FixedOffsetTimezone(self._offset))
 
@@ -1452,12 +1453,14 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
         nanoseconds = val * 100
         return Time(nsec=nanoseconds)
 
-    def _write_date(self, w, value):
+    @staticmethod
+    def _write_date(w, value):
         days = value.days
         buf = struct.pack('<l', days)[:3]
         w.write(buf)
 
-    def _read_date(self, r):
+    @staticmethod
+    def _read_date(r):
         days = _decode_num(readall(r, 3))
         return Date(days=days)
 
@@ -1673,8 +1676,8 @@ class MsDecimalSerializer(BaseTypeSerializer):
         if value is None:
             w.put_byte(0)
             return
-        if not isinstance(value, Decimal):
-            value = Decimal(value)
+        if not isinstance(value, decimal.Decimal):
+            value = decimal.Decimal(value)
         value = value.normalize()
         scale = self._scale
         size = self._size
@@ -1682,7 +1685,7 @@ class MsDecimalSerializer(BaseTypeSerializer):
         val = value
         positive = 1 if val > 0 else 0
         w.put_byte(positive)  # sign
-        with localcontext() as ctx:
+        with decimal.localcontext() as ctx:
             ctx.prec = 38
             if not positive:
                 val *= -1
@@ -1695,8 +1698,8 @@ class MsDecimalSerializer(BaseTypeSerializer):
 
     def _decode(self, positive, buf):
         val = _decode_num(buf)
-        val = Decimal(val)
-        with localcontext() as ctx:
+        val = decimal.Decimal(val)
+        with decimal.localcontext() as ctx:
             ctx.prec = 38
             if not positive:
                 val *= -1
@@ -1720,7 +1723,7 @@ class Money4Serializer(BasePrimitiveTypeSerializer):
     declaration = 'SMALLMONEY'
 
     def read(self, r):
-        return Decimal(r.get_int()) / 10000
+        return decimal.Decimal(r.get_int()) / 10000
 
     def write(self, w, val):
         val = int(val * 10000)
@@ -1738,7 +1741,7 @@ class Money8Serializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         hi, lo = r.unpack(self._struct)
         val = hi * (2 ** 32) + lo
-        return Decimal(val) / 10000
+        return decimal.Decimal(val) / 10000
 
     def write(self, w, val):
         val *= 10000
@@ -2438,16 +2441,16 @@ class TdsTypeInferrer(object):
                 return type_factory.long_varchar_type()
         elif issubclass(value_type, six.string_types):
             return type_factory.long_string_type()
-        elif issubclass(value_type, datetime):
+        elif issubclass(value_type, datetime.datetime):
             if value and value.tzinfo and allow_tz:
                 return type_factory.datetime_with_tz(precision=6)
             else:
                 return type_factory.datetime(precision=6)
-        elif issubclass(value_type, date):
+        elif issubclass(value_type, datetime.date):
             return type_factory.date()
-        elif issubclass(value_type, time):
+        elif issubclass(value_type, datetime.time):
             return type_factory.time(precision=6)
-        elif issubclass(value_type, Decimal):
+        elif issubclass(value_type, decimal.Decimal):
             if value is None:
                 return DecimalType()
             else:

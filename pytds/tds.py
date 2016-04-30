@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import logging
 import socket
 import sys
-from datetime import datetime, date, time, timedelta
+import datetime
 from decimal import Decimal, localcontext
 from . import tz
 import re
@@ -1427,7 +1427,7 @@ class _TdsSession(object):
         w.put_byte(type_flags)
         option_flag3 = TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if IS_TDS73_PLUS(self) else 0)
-        mins_fix = int(total_seconds(login.client_tz.utcoffset(datetime.now()))) // 60
+        mins_fix = int(total_seconds(login.client_tz.utcoffset(datetime.datetime.now()))) // 60
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)

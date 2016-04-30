@@ -4,8 +4,6 @@ import sys
 import six
 
 # tds protocol versions
-import itertools
-
 TDS70 = 0x70000000
 TDS71 = 0x71000000
 TDS71rev1 = 0x71000001
