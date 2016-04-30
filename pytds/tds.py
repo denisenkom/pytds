@@ -515,6 +515,7 @@ class _TdsSession(object):
         self.return_value_index = 0
         self._out_params_indexes = []
         self.row = None
+        self.end_marker = 0
 
     def __repr__(self):
         fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={} in_cancel={}>"
@@ -757,6 +758,7 @@ class _TdsSession(object):
 
         :param marker: Can be TDS_DONE_TOKEN or TDS_DONEINPROC_TOKEN or TDS_DONEPROC_TOKEN
         """
+        self.end_marker = marker
         self.more_rows = False
         r = self._reader
         status = r.get_usmallint()
@@ -794,7 +796,7 @@ class _TdsSession(object):
             skipall(r, r.get_byte())
         elif type_id == tds_base.TDS_ENV_BEGINTRANS:
             size = r.get_byte()
-            # TODO: parse transaction
+            assert size == 8
             self.conn.tds72_transaction = r.get_uint8()
             skipall(r, r.get_byte())
         elif type_id == tds_base.TDS_ENV_COMMITTRANS or type_id == tds_base.TDS_ENV_ROLLBACKTRANS:
