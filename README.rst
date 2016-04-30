@@ -21,6 +21,8 @@ Features
 
 * Fully supports new MSSQL 2008 date types: datetime2, date, time, datetimeoffset
 * MARS
+* Bulk insert
+* Table-valued parameters
 
 Missing Features
 ----------------
