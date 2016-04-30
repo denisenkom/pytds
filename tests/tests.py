@@ -440,10 +440,10 @@ class DbTests(DbTestCase):
         #self._test_bulk_type(NTextType(), None)
         #self._test_bulk_type(TextType(), None)
         #self._test_bulk_type(ImageType(), b'')
-        #self._test_bulk_type(self.conn._conn._type_factory.long_binary_type(), b'testtest12')
-        self._test_bulk_type(self.conn._conn._type_factory.long_string_type(), None)
-        self._test_bulk_type(self.conn._conn._type_factory.long_varchar_type(), None)
-        #self._test_bulk_type(self.conn._conn._type_factory.long_string_type(), 'test')
+        #self._test_bulk_type(self.conn._conn.type_factory.long_binary_type(), b'testtest12')
+        self._test_bulk_type(self.conn._conn.type_factory.long_string_type(), None)
+        self._test_bulk_type(self.conn._conn.type_factory.long_varchar_type(), None)
+        #self._test_bulk_type(self.conn._conn.type_factory.long_string_type(), 'test')
         #self._test_bulk_type(ImageType(), None)
         #self._test_bulk_type(ImageType(), None)
         #self._test_bulk_type(ImageType(), b'test')
@@ -1346,13 +1346,13 @@ class TransactionsTests(DbTestCase):
             for i in xrange(10):
                 cur.execute(sql)
 
-        self.conn._conn._sock.settimeout(0.00001)
+        self.conn._conn.sock.settimeout(0.00001)
         try:
             self.conn.rollback()
         except:
             pass
 
-        self.conn._conn._sock.settimeout(10)
+        self.conn._conn.sock.settimeout(10)
         cur = self.conn.cursor()
         cur.execute('select 1')
         cur.fetchall()
@@ -1367,13 +1367,13 @@ class TransactionsTests(DbTestCase):
             for i in xrange(10):
                 cur.execute(sql)
 
-        self.conn._conn._sock.settimeout(0.00001)
+        self.conn._conn.sock.settimeout(0.00001)
         try:
             self.conn.commit()
         except:
             pass
 
-        self.conn._conn._sock.settimeout(10)
+        self.conn._conn.sock.settimeout(10)
         cur = self.conn.cursor()
         cur.execute('select 1')
         cur.fetchall()
@@ -1429,7 +1429,7 @@ def _params_tests(self):
     test_val(UniqueIdentifierType(), uuid.uuid4())
     if pytds.tds.IS_TDS71_PLUS(self.conn._conn):
         test_val(VariantType(), None)
-        #test_val(self.conn._conn._type_factory.SqlVariant(10), 100)
+        #test_val(self.conn._conn.type_factory.SqlVariant(10), 100)
     test_val(VarBinaryType(size=10), b'')
     test_val(VarBinaryType(size=10), b'testtest12')
     test_val(VarBinaryType(size=10), None)

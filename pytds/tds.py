@@ -289,6 +289,7 @@ class _TdsWriter(object):
         self._pos = 0
         self._buf = bytearray(bufsize)
         self._packet_no = 0
+        self._type = 0
 
     @property
     def session(self):
@@ -549,7 +550,7 @@ class _TdsSession(object):
         curcol.column_writeable = (curcol.flags & Column.fReadWrite) > 0
         curcol.column_identity = (curcol.flags & Column.fIdentity) > 0
         type_id = r.get_byte()
-        serializer_class = self._tds._type_factory.get_type_serializer(type_id)
+        serializer_class = self._tds.type_factory.get_type_serializer(type_id)
         curcol.serializer = serializer_class
         curcol.type = serializer_class.from_stream(r)
 
@@ -968,7 +969,7 @@ class _TdsSession(object):
         if isinstance(value, output):
             column.flags |= fByRefValue
             if isinstance(value.type, six.string_types):
-                column.type = self.conn._type_factory.sql_type_by_declaration(declaration=value.type)
+                column.type = self.conn.type_factory.sql_type_by_declaration(declaration=value.type)
             elif value.type:
                 column.type = self.conn._type_inferrer.from_class(value.type)
             value = value.value
@@ -1058,7 +1059,7 @@ class _TdsSession(object):
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
                 serializer = param.choose_serializer(
-                    type_factory=self._tds._type_factory,
+                    type_factory=self._tds.type_factory,
                     collation=self._tds.collation or raw_collation
                 )
                 type_id = serializer.type
@@ -1109,7 +1110,7 @@ class _TdsSession(object):
                     w.put_usmallint(col.column_usertype)
                 w.put_usmallint(col.flags)
                 serializer = col.choose_serializer(
-                    type_factory=self._tds._type_factory,
+                    type_factory=self._tds.type_factory,
                     collation=self._tds.collation,
                 )
                 type_id = serializer.type
@@ -1168,12 +1169,12 @@ class _TdsSession(object):
 
     def rollback(self, cont, isolation_level=0):
         self.submit_rollback(cont, isolation_level=isolation_level)
-        prev_timeout = self._tds._sock.gettimeout()
-        self._tds._sock.settimeout(None)
+        prev_timeout = self._tds.sock.gettimeout()
+        self._tds.sock.settimeout(None)
         try:
             self.process_simple_request()
         finally:
-            self._tds._sock.settimeout(prev_timeout)
+            self._tds.sock.settimeout(prev_timeout)
 
     def submit_rollback(self, cont, isolation_level=0):
         if IS_TDS72_PLUS(self):
@@ -1203,12 +1204,12 @@ class _TdsSession(object):
 
     def commit(self, cont, isolation_level=0):
         self.submit_commit(cont, isolation_level=isolation_level)
-        prev_timeout = self._tds._sock.gettimeout()
-        self._tds._sock.settimeout(None)
+        prev_timeout = self._tds.sock.gettimeout()
+        self._tds.sock.settimeout(None)
         try:
             self.process_simple_request()
         finally:
-            self._tds._sock.settimeout(prev_timeout)
+            self._tds.sock.settimeout(prev_timeout)
 
     def submit_commit(self, cont, isolation_level=0):
         if IS_TDS72_PLUS(self):
@@ -1335,21 +1336,21 @@ class _TdsSession(object):
         while True:
             if i >= size:
                 self.bad_stream('Invalid size of PRELOGIN structure')
-            type, = byte_struct.unpack_from(p, i)
-            if type == 0xff:
+            type_id, = byte_struct.unpack_from(p, i)
+            if type_id == 0xff:
                 break
             if i + 4 > size:
                 self.bad_stream('Invalid size of PRELOGIN structure')
             off, l = off_len_struct.unpack_from(p, i + 1)
             if off > size or off + l > size:
                 self.bad_stream('Invalid offset in PRELOGIN structure')
-            if type == self.VERSION:
+            if type_id == self.VERSION:
                 self.conn.server_library_version = prod_version_struct.unpack_from(p, off)
-            elif type == self.ENCRYPTION and l >= 1:
+            elif type_id == self.ENCRYPTION and l >= 1:
                 crypt_flag, = byte_struct.unpack_from(p, off)
-            elif type == self.MARS:
+            elif type_id == self.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
-            elif type == self.INSTOPT:
+            elif type_id == self.INSTOPT:
                 # ignore instance name mismatch
                 pass
             i += 5
@@ -1358,7 +1359,7 @@ class _TdsSession(object):
             if login.encryption_level >= TDS_ENCRYPTION_REQUIRE:
                 raise Error('Server required encryption but it is not supported')
             return
-        self._sock = ssl.wrap_socket(self._sock, ssl_version=ssl.PROTOCOL_SSLv3)
+        self.sock = ssl.wrap_socket(self.sock, ssl_version=ssl.PROTOCOL_SSLv3)
 
     def tds7_send_login(self, login):
         option_flag2 = login.option_flag2
@@ -1672,11 +1673,11 @@ class _TdsSocket(object):
         self.authentication = None
         self._mars_enabled = False
         self.chunk_handler = MemoryChunkedHandler()
-        self._sock = None
+        self.sock = None
         self._bufsize = 4096
         self.tds_version = TDS74
         self.use_tz = use_tz
-        self._type_factory = SerializerFactory(self.tds_version)
+        self.type_factory = SerializerFactory(self.tds_version)
         self._type_inferrer = None
 
     def __repr__(self):
@@ -1689,7 +1690,7 @@ class _TdsSocket(object):
         self._bufsize = login.blocksize
         self.query_timeout = login.query_timeout
         self._main_session = _TdsSession(self, self, tzinfo_factory)
-        self._sock = sock
+        self.sock = sock
         self.tds_version = login.tds_version
         if IS_TDS71_PLUS(self):
             self._main_session._send_prelogin(login)
@@ -1700,9 +1701,9 @@ class _TdsSocket(object):
             raise ValueError('This TDS version is not supported')
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
-        self._type_factory = SerializerFactory(self.tds_version)
+        self.type_factory = SerializerFactory(self.tds_version)
         self._type_inferrer = TdsTypeInferrer(
-            type_factory=self._type_factory,
+            type_factory=self.type_factory,
             collation=self.collation,
             bytes_to_unicode=self.login.bytes_to_unicode,
             allow_tz=not self.use_tz
@@ -1739,7 +1740,7 @@ class _TdsSocket(object):
             tzinfo_factory)
 
     def read(self, size):
-        buf = self._sock.recv(size)
+        buf = self.sock.recv(size)
         if len(buf) == 0:
             self.close()
             raise ClosedConnectionError()
@@ -1753,10 +1754,10 @@ class _TdsSocket(object):
             if not final:
                 if hasattr(socket, 'MSG_MORE'):
                     flags |= socket.MSG_MORE
-            self._sock.sendall(data, flags)
+            self.sock.sendall(data, flags)
             if final and USE_CORK:
-                self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
-                self._sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
+                self.sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 0)
+                self.sock.setsockopt(socket.SOL_TCP, socket.TCP_CORK, 1)
         except:
             self.close()
             raise
@@ -1768,8 +1769,8 @@ class _TdsSocket(object):
 
     def close(self):
         self._is_connected = False
-        if self._sock is not None:
-            self._sock.close()
+        if self.sock is not None:
+            self.sock.close()
         if hasattr(self, '_smp_manager'):
             self._smp_manager._transport_closed()
         self._main_session.state = TDS_DEAD

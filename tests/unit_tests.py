@@ -124,7 +124,7 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         login = _TdsLogin()
         login.encryption_level = TDS_ENCRYPTION_OFF
         tds._main_session._process_prelogin(login)
@@ -137,7 +137,7 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
             tds._main_session._process_prelogin(login)
@@ -148,7 +148,7 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
             tds._main_session._process_prelogin(login)
@@ -159,7 +159,7 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
             tds._main_session._process_prelogin(login)
@@ -168,7 +168,7 @@ class TestMessages(unittest.TestCase):
         sock = _FakeSock('')
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         login = _TdsLogin()
         login.instance_name = 'MSSQLServer'
         login.encryption_level = TDS_ENCRYPTION_OFF
@@ -203,7 +203,7 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         tds._main_session.process_login_tokens()
 
         # test invalid tds version
@@ -212,7 +212,7 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             tds._main_session.process_login_tokens()
 
@@ -222,14 +222,14 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         tds._main_session.process_login_tokens()
 
     def test_login_generation(self):
         sock = _FakeSock(b'')
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         login = _TdsLogin()
         login.option_flag2 = 0
         login.user_name = 'test'
@@ -351,7 +351,7 @@ class TestMessages(unittest.TestCase):
         tds.tds_version = TDS72
         tds._main_session = _TdsSession(tds, tds, None)
         sock = _FakeSock(b'')
-        tds._sock = sock
+        tds.sock = sock
         tds._main_session.submit_plain_query('select 5*6')
         self.assertEqual(
             sock._sent,
@@ -363,7 +363,7 @@ class TestMessages(unittest.TestCase):
         tds = _TdsSocket()
         tds.tds_version = TDS71
         tds._main_session = _TdsSession(tds, tds, None)
-        tds._sock = sock
+        tds.sock = sock
         tds._main_session.submit_plain_query('select 5*6')
         self.assertEqual(
             sock._sent,
@@ -375,7 +375,7 @@ class TestMessages(unittest.TestCase):
         tds.tds_version = TDS72
         tds._main_session = _TdsSession(tds, tds, None)
         sock = _FakeSock(b'')
-        tds._sock = sock
+        tds.sock = sock
         col1 = Column()
         col1.column_name = 'c1'
         col1.type = BitType()
@@ -414,7 +414,7 @@ class TestMessages(unittest.TestCase):
         tds.tds_version = TDS72
         tds._main_session = _TdsSession(tds, tds, None)
         sock = _FakeSock(b'')
-        tds._sock = sock
+        tds.sock = sock
         w = tds._main_session._writer
 
         t = pytds.tds.NVarCharMaxSerializer(
