@@ -580,6 +580,7 @@ class Column(CommonEqualityMixin):
         self.flags = flags
         self.type = type
         self.value = value
+        self.serializer = None
 
     def __repr__(self):
         return '<Column(name={},value={},type={},flags={},user_type={},codec={})>'.format(

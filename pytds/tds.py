@@ -551,13 +551,9 @@ class _TdsSession(object):
         # User defined data type of the column
         curcol.column_usertype = r.get_uint() if tds_base.IS_TDS72_PLUS(self) else r.get_usmallint()
         curcol.flags = r.get_usmallint()  # Flags
-        curcol.column_nullable = curcol.flags & tds_base.Column.fNullable
-        curcol.column_writeable = (curcol.flags & tds_base.Column.fReadWrite) > 0
-        curcol.column_identity = (curcol.flags & tds_base.Column.fIdentity) > 0
         type_id = r.get_byte()
         serializer_class = self._tds.type_factory.get_type_serializer(type_id)
-        curcol.serializer = serializer_class
-        curcol.type = serializer_class.from_stream(r)
+        curcol.serializer = serializer_class.from_stream(r)
 
     def tds7_process_result(self):
         """ Reads and processes COLMETADATA stream
@@ -595,16 +591,18 @@ class _TdsSession(object):
             info.columns.append(curcol)
             self.get_type_info(curcol)
 
-            #
-            # under 7.0 lengths are number of characters not
-            # number of bytes... read_ucs2 handles this
-            #
             curcol.column_name = r.read_ucs2(r.get_byte())
-            precision = curcol.type.precision if hasattr(curcol.type, 'precision') else None
-            scale = curcol.type.scale if hasattr(curcol.type, 'scale') else None
-            size = curcol.type._size if hasattr(curcol.type, '_size') else None
+            precision = curcol.serializer.precision if hasattr(curcol.serializer, 'precision') else None
+            scale = curcol.serializer.scale if hasattr(curcol.serializer, 'scale') else None
+            size = curcol.serializer._size if hasattr(curcol.serializer, '_size') else None
             header_tuple.append(
-                (curcol.column_name, curcol.type.get_typeid(), None, size, precision, scale, curcol.column_nullable))
+                (curcol.column_name,
+                 curcol.serializer.get_typeid(),
+                 None,
+                 size,
+                 precision,
+                 scale,
+                 curcol.flags & tds_base.Column.fNullable))
         info.description = tuple(header_tuple)
         return info
 
@@ -625,7 +623,7 @@ class _TdsSession(object):
         param = tds_base.Column()
         param.column_name = name
         self.get_type_info(param)
-        param.value = param.type.read(r)
+        param.value = param.serializer.read(r)
         self.output_params[ordinal] = param
         self.return_value_index += 1
 
@@ -709,7 +707,7 @@ class _TdsSession(object):
         info = self.res_info
         info.row_count += 1
         for i, curcol in enumerate(info.columns):
-            curcol.value = self.row[i] = curcol.type.read(r)
+            curcol.value = self.row[i] = curcol.serializer.read(r)
 
     def process_nbcrow(self):
         """ Reads and handles NBCROW stream.
@@ -732,7 +730,7 @@ class _TdsSession(object):
             if tds_base.ord(nbc[i // 8]) & (1 << (i % 8)):
                 value = None
             else:
-                value = curcol.type.read(r)
+                value = curcol.serializer.read(r)
             self.row[i] = value
 
     def process_orderby(self):
