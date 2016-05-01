@@ -32,7 +32,11 @@ from .tds_base import (
 )
 
 from .tds_types import (
-    ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML, TableValuedParam, Binary
+    TableValuedParam, Binary
+)
+
+from .tds_base import (
+    ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML
 )
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'

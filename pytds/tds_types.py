@@ -4,10 +4,10 @@ import decimal
 import struct
 import re
 import uuid
+import six
 
 from six.moves import reduce
 
-from .tds_base import *
 from . import tds_base
 from .collate import ucs2_codec, raw_collation
 from . import tz
@@ -50,13 +50,13 @@ class PlpReader(object):
         """
         :return: True if stored value is NULL
         """
-        return self._size == PLP_NULL
+        return self._size == tds_base.PLP_NULL
 
     def is_unknown_len(self):
         """
         :return: True if total size is unknown upfront
         """
-        return self._size == PLP_UNKNOWN
+        return self._size == tds_base.PLP_UNKNOWN
 
     def size(self):
         """
@@ -87,7 +87,7 @@ class PlpReader(object):
                 left -= len(buf)
 
 
-class SqlTypeMetaclass(CommonEqualityMixin):
+class SqlTypeMetaclass(tds_base.CommonEqualityMixin):
     def __repr__(self):
         return '<sqltype:{}>'.format(self.get_declaration())
 
@@ -220,7 +220,7 @@ class DecimalType(SqlTypeMetaclass):
     @classmethod
     def from_value(cls, value):
         if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
-            raise DataError('Decimal value is out of range')
+            raise tds_base.DataError('Decimal value is out of range')
         value = value.normalize()
         _, digits, exp = value.as_tuple()
         if exp > 0:
@@ -253,11 +253,11 @@ class VariantType(SqlTypeMetaclass):
         return 'SQL_VARIANT'
 
 
-class SqlValueMetaclass(CommonEqualityMixin):
+class SqlValueMetaclass(tds_base.CommonEqualityMixin):
     pass
 
 
-class BaseTypeSerializer(CommonEqualityMixin):
+class BaseTypeSerializer(tds_base.CommonEqualityMixin):
     """ Base type for TDS data types.
 
     All TDS types should derive from it.
@@ -365,7 +365,7 @@ class BaseTypeSerializerN(BaseTypeSerializer):
     def from_stream(cls, r):
         size = r.get_byte()
         if size not in cls.subtypes:
-            raise InterfaceError('Invalid %s size' % cls.type, size)
+            raise tds_base.InterfaceError('Invalid %s size' % cls.type, size)
         return cls(size)
 
     def write_info(self, w):
@@ -388,14 +388,14 @@ class BaseTypeSerializerN(BaseTypeSerializer):
 
 
 class BitType(SqlTypeMetaclass):
-    type = SYBBITN
+    type = tds_base.SYBBITN
 
     def get_declaration(self):
         return 'BIT'
 
 
 class TinyIntType(SqlTypeMetaclass):
-    type = SYBINTN
+    type = tds_base.SYBINTN
     size = 1
 
     def get_declaration(self):
@@ -403,7 +403,7 @@ class TinyIntType(SqlTypeMetaclass):
 
 
 class SmallIntType(SqlTypeMetaclass):
-    type = SYBINTN
+    type = tds_base.SYBINTN
     size = 2
 
     def get_declaration(self):
@@ -411,7 +411,7 @@ class SmallIntType(SqlTypeMetaclass):
 
 
 class IntType(SqlTypeMetaclass):
-    type = SYBINTN
+    type = tds_base.SYBINTN
     size = 4
 
     def get_declaration(self):
@@ -419,7 +419,7 @@ class IntType(SqlTypeMetaclass):
 
 
 class BigIntType(SqlTypeMetaclass):
-    type = SYBINTN
+    type = tds_base.SYBINTN
     size = 8
 
     def get_declaration(self):
@@ -437,7 +437,7 @@ class FloatType(SqlTypeMetaclass):
 
 
 class BitSerializer(BasePrimitiveTypeSerializer):
-    type = SYBBIT
+    type = tds_base.SYBBIT
     declaration = 'BIT'
 
     def write(self, w, value):
@@ -450,7 +450,7 @@ BitSerializer.instance = BitSerializer()
 
 
 class BitNSerializer(BaseTypeSerializerN):
-    type = SYBBITN
+    type = tds_base.SYBBITN
     subtypes = {1: BitSerializer.instance}
 
     def __init__(self, typ):
@@ -465,7 +465,7 @@ BitNSerializer.instance = BitNSerializer(BitType())
 
 
 class TinyIntSerializer(BasePrimitiveTypeSerializer):
-    type = SYBINT1
+    type = tds_base.SYBINT1
     declaration = 'TINYINT'
 
     def write(self, w, val):
@@ -478,7 +478,7 @@ TinyIntSerializer.instance = TinyIntSerializer()
 
 
 class SmallIntSerializer(BasePrimitiveTypeSerializer):
-    type = SYBINT2
+    type = tds_base.SYBINT2
     declaration = 'SMALLINT'
 
     def write(self, w, val):
@@ -491,7 +491,7 @@ SmallIntSerializer.instance = SmallIntSerializer()
 
 
 class IntSerializer(BasePrimitiveTypeSerializer):
-    type = SYBINT4
+    type = tds_base.SYBINT4
     declaration = 'INT'
 
     def write(self, w, val):
@@ -504,7 +504,7 @@ IntSerializer.instance = IntSerializer()
 
 
 class BigIntSerializer(BasePrimitiveTypeSerializer):
-    type = SYBINT8
+    type = tds_base.SYBINT8
     declaration = 'BIGINT'
 
     def write(self, w, val):
@@ -517,7 +517,7 @@ BigIntSerializer.instance = BigIntSerializer()
 
 
 class IntNSerializer(BaseTypeSerializerN):
-    type = SYBINTN
+    type = tds_base.SYBINTN
 
     subtypes = {
         1: TinyIntSerializer.instance,
@@ -541,7 +541,7 @@ class IntNSerializer(BaseTypeSerializerN):
     def from_stream(cls, r):
         size = r.get_byte()
         if size not in cls.subtypes:
-            raise InterfaceError('Invalid %s size' % cls.type, size)
+            raise tds_base.InterfaceError('Invalid %s size' % cls.type, size)
         return cls(cls.type_by_size[size])
 
     def __repr__(self):
@@ -549,7 +549,7 @@ class IntNSerializer(BaseTypeSerializerN):
 
 
 class RealSerializer(BasePrimitiveTypeSerializer):
-    type = SYBREAL
+    type = tds_base.SYBREAL
     declaration = 'REAL'
 
     def write(self, w, val):
@@ -562,7 +562,7 @@ RealSerializer.instance = RealSerializer()
 
 
 class FloatSerializer(BasePrimitiveTypeSerializer):
-    type = SYBFLT8
+    type = tds_base.SYBFLT8
     declaration = 'FLOAT'
 
     def write(self, w, val):
@@ -575,7 +575,7 @@ FloatSerializer.instance = FloatSerializer()
 
 
 class FloatNSerializer(BaseTypeSerializerN):
-    type = SYBFLTN
+    type = tds_base.SYBFLTN
 
     subtypes = {
         4: RealSerializer.instance,
@@ -601,7 +601,7 @@ class VarChar(SqlValueMetaclass):
 
 
 class VarChar70Serializer(BaseTypeSerializer):
-    type = XSYBVARCHAR
+    type = tds_base.XSYBVARCHAR
 
     def __init__(self, size, collation=raw_collation, codec=None):
         super(VarChar70Serializer, self).__init__()
@@ -624,7 +624,7 @@ class VarChar70Serializer(BaseTypeSerializer):
         if val is None:
             w.put_smallint(-1)
         else:
-            val = force_unicode(val)
+            val = tds_base.force_unicode(val)
             val, _ = self._codec.encode(val)
             w.put_smallint(len(val))
             w.write(val)
@@ -663,14 +663,14 @@ class VarCharMaxSerializer(VarChar72Serializer):
         super(VarChar72Serializer, self).__init__(0, collation)
 
     def write_info(self, w):
-        w.put_usmallint(PLP_MARKER)
+        w.put_usmallint(tds_base.PLP_MARKER)
         w.put_collation(self._collation)
 
     def write(self, w, val):
         if val is None:
-            w.put_uint8(PLP_NULL)
+            w.put_uint8(tds_base.PLP_NULL)
         else:
-            val = force_unicode(val)
+            val = tds_base.force_unicode(val)
             val, _ = self._codec.encode(val)
             w.put_int8(len(val))
             if len(val) > 0:
@@ -682,11 +682,11 @@ class VarCharMaxSerializer(VarChar72Serializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        return ''.join(iterdecode(r.chunks(), self._codec))
+        return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
 
 
 class NVarChar70Serializer(BaseTypeSerializer):
-    type = XSYBNVARCHAR
+    type = tds_base.XSYBNVARCHAR
 
     def __init__(self, size, collation=raw_collation):
         super(NVarChar70Serializer, self).__init__()
@@ -706,7 +706,7 @@ class NVarChar70Serializer(BaseTypeSerializer):
             w.put_usmallint(0xffff)
         else:
             if isinstance(val, bytes):
-                val = force_unicode(val)
+                val = tds_base.force_unicode(val)
             buf, _ = ucs2_codec.encode(val)
             l = len(buf)
             w.put_usmallint(l)
@@ -749,18 +749,18 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
         return 'NVarCharMax(s={},c={})'.format(self._size, repr(self._collation))
 
     def get_typeid(self):
-        return SYBNTEXT
+        return tds_base.SYBNTEXT
 
     def write_info(self, w):
-        w.put_usmallint(PLP_MARKER)
+        w.put_usmallint(tds_base.PLP_MARKER)
         w.put_collation(self._collation)
 
     def write(self, w, val):
         if val is None:
-            w.put_uint8(PLP_NULL)
+            w.put_uint8(tds_base.PLP_NULL)
         else:
             if isinstance(val, bytes):
-                val = force_unicode(val)
+                val = tds_base.force_unicode(val)
             val, _ = ucs2_codec.encode(val)
             w.put_uint8(len(val))
             if len(val) > 0:
@@ -772,12 +772,12 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        res = ''.join(iterdecode(r.chunks(), ucs2_codec))
+        res = ''.join(tds_base.iterdecode(r.chunks(), ucs2_codec))
         return res
 
 
 class XmlSerializer(NVarCharMaxSerializer):
-    type = SYBMSXML
+    type = tds_base.SYBMSXML
     declaration = 'XML'
 
     def __init__(self, schema=None):
@@ -814,7 +814,7 @@ class XmlSerializer(NVarCharMaxSerializer):
 
 
 class Text70Serializer(BaseTypeSerializer):
-    type = SYBTEXT
+    type = tds_base.SYBTEXT
     declaration = 'TEXT'
 
     def __init__(self, size=0, table_name='', collation=raw_collation, codec=None):
@@ -843,7 +843,7 @@ class Text70Serializer(BaseTypeSerializer):
         if val is None:
             w.put_int(-1)
         else:
-            val = force_unicode(val)
+            val = tds_base.force_unicode(val)
             val, _ = self._codec.encode(val)
             w.put_int(len(val))
             w.write(val)
@@ -852,8 +852,8 @@ class Text70Serializer(BaseTypeSerializer):
         size = r.get_byte()
         if size == 0:
             return None
-        readall(r, size)  # textptr
-        readall(r, 8)  # timestamp
+        tds_base.readall(r, size)  # textptr
+        tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
         return r.read_str(colsize, self._codec)
 
@@ -893,7 +893,7 @@ class Text72Serializer(Text71Serializer):
 
 
 class NText70Serializer(BaseTypeSerializer):
-    type = SYBNTEXT
+    type = tds_base.SYBNTEXT
     declaration = 'NTEXT'
 
     def __init__(self, size=0, table_name='', collation=raw_collation):
@@ -915,8 +915,8 @@ class NText70Serializer(BaseTypeSerializer):
         textptr_size = r.get_byte()
         if textptr_size == 0:
             return None
-        readall(r, textptr_size)  # textptr
-        readall(r, 8)  # timestamp
+        tds_base.readall(r, textptr_size)  # textptr
+        tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
         return r.read_str(colsize, ucs2_codec)
 
@@ -952,8 +952,8 @@ class NText71Serializer(NText70Serializer):
         textptr_size = r.get_byte()
         if textptr_size == 0:
             return None
-        readall(r, textptr_size)  # textptr
-        readall(r, 8)  # timestamp
+        tds_base.readall(r, textptr_size)  # textptr
+        tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
         return r.read_str(colsize, ucs2_codec)
 
@@ -984,7 +984,7 @@ class Binary(bytes, SqlValueMetaclass):
 
 
 class VarBinarySerializer(BaseTypeSerializer):
-    type = XSYBVARBINARY
+    type = tds_base.XSYBVARBINARY
 
     def __init__(self, size):
         super(VarBinarySerializer, self).__init__()
@@ -1012,7 +1012,7 @@ class VarBinarySerializer(BaseTypeSerializer):
         size = r.get_usmallint()
         if size == 0xffff:
             return None
-        return readall(r, size)
+        return tds_base.readall(r, size)
 
 
 class VarBinarySerializer72(VarBinarySerializer):
@@ -1035,11 +1035,11 @@ class VarBinarySerializerMax(VarBinarySerializer):
         return 'VarBinaryMax()'
 
     def write_info(self, w):
-        w.put_usmallint(PLP_MARKER)
+        w.put_usmallint(tds_base.PLP_MARKER)
 
     def write(self, w, val):
         if val is None:
-            w.put_uint8(PLP_NULL)
+            w.put_uint8(tds_base.PLP_NULL)
         else:
             w.put_uint8(len(val))
             if val:
@@ -1055,7 +1055,7 @@ class VarBinarySerializerMax(VarBinarySerializer):
 
 
 class Image70Serializer(BaseTypeSerializer):
-    type = SYBIMAGE
+    type = tds_base.SYBIMAGE
     declaration = 'IMAGE'
 
     def __init__(self, size=0, table_name=''):
@@ -1075,10 +1075,10 @@ class Image70Serializer(BaseTypeSerializer):
     def read(self, r):
         size = r.get_byte()
         if size == 16:  # Jeff's hack
-            readall(r, 16)  # textptr
-            readall(r, 8)  # timestamp
+            tds_base.readall(r, 16)  # textptr
+            tds_base.readall(r, 8)  # timestamp
             colsize = r.get_int()
-            return readall(r, colsize)
+            return tds_base.readall(r, colsize)
         else:
             return None
 
@@ -1158,7 +1158,7 @@ class BaseDateTimeSerializer(BaseTypeSerializer):
 
 
 class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
-    type = SYBDATETIME4
+    type = tds_base.SYBDATETIME4
     declaration = 'SMALLDATETIME'
 
     _struct = struct.Struct('<HH')
@@ -1166,7 +1166,7 @@ class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerialize
     def write(self, w, val):
         if val.tzinfo:
             if not w.session.use_tz:
-                raise DataError('Timezone-aware datetime is used without specifying use_tz')
+                raise tds_base.DataError('Timezone-aware datetime is used without specifying use_tz')
             val = val.astimezone(w.session.use_tz).replace(tzinfo=None)
         dt = SmallDateTime.from_pydatetime(val)
         w.pack(self._struct, dt.days, dt.minutes)
@@ -1212,7 +1212,7 @@ class DateTime(SqlValueMetaclass):
     @classmethod
     def from_pydatetime(cls, dt):
         if not (cls.MIN_PYDATETIME <= dt <= cls.MAX_PYDATETIME):
-            raise DataError('Datetime is out of range')
+            raise tds_base.DataError('Datetime is out of range')
         days = (dt - _datetime_base_date).days
         ms = dt.microsecond // 1000
         tm = (dt.hour * 60 * 60 + dt.minute * 60 + dt.second) * 300 + int(round(ms * 3 / 10.0))
@@ -1220,7 +1220,7 @@ class DateTime(SqlValueMetaclass):
 
 
 class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
-    type = SYBDATETIME
+    type = tds_base.SYBDATETIME
     declaration = 'DATETIME'
 
     _struct = struct.Struct('<ll')
@@ -1228,7 +1228,7 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
     def write(self, w, val):
         if val.tzinfo:
             if not w.session.use_tz:
-                raise DataError('Timezone-aware datetime is used without specifying use_tz')
+                raise tds_base.DataError('Timezone-aware datetime is used without specifying use_tz')
             val = val.astimezone(w.session.use_tz).replace(tzinfo=None)
         w.write(self.encode(val))
 
@@ -1255,7 +1255,7 @@ DateTimeSerializer.instance = DateTimeSerializer()
 
 
 class DateTimeNSerializer(BaseTypeSerializerN, BaseDateTimeSerializer):
-    type = SYBDATETIMN
+    type = tds_base.SYBDATETIMN
     subtypes = {
         4: SmallDateTimeSerializer.instance,
         8: DateTimeSerializer.instance,
@@ -1266,7 +1266,7 @@ _datetime2_base_date = datetime.datetime(1, 1, 1)
 
 
 class DateType(SqlTypeMetaclass):
-    type = SYBMSDATE
+    type = tds_base.SYBMSDATE
 
     def get_declaration(self):
         return "DATE"
@@ -1305,7 +1305,7 @@ class Date(SqlValueMetaclass):
 
 
 class TimeType(SqlTypeMetaclass):
-    type = SYBMSTIME
+    type = tds_base.SYBMSTIME
 
     def __init__(self, precision=7):
         self._precision = precision
@@ -1361,7 +1361,7 @@ class Time(SqlValueMetaclass):
 
 
 class DateTime2Type(SqlTypeMetaclass):
-    type = SYBMSDATETIME2
+    type = tds_base.SYBMSDATETIME2
 
     def __init__(self, precision=7):
         self._precision = precision
@@ -1375,7 +1375,7 @@ class DateTime2Type(SqlTypeMetaclass):
 
 
 class DateTime2(SqlValueMetaclass):
-    type = SYBMSDATETIME2
+    type = tds_base.SYBMSDATETIME2
 
     def __init__(self, date, time):
         """
@@ -1414,7 +1414,7 @@ class DateTime2(SqlValueMetaclass):
 
 
 class DateTimeOffsetType(SqlTypeMetaclass):
-    type = SYBMSDATETIMEOFFSET
+    type = tds_base.SYBMSDATETIMEOFFSET
 
     def __init__(self, precision=7):
         self._precision = precision
@@ -1467,7 +1467,7 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
 
     @staticmethod
     def _read_time(r, size, prec):
-        time_buf = readall(r, size)
+        time_buf = tds_base.readall(r, size)
         val = _decode_num(time_buf)
         val *= 10 ** (7 - prec)
         nanoseconds = val * 100
@@ -1481,12 +1481,12 @@ class BaseDateTime73Serializer(BaseTypeSerializer):
 
     @staticmethod
     def _read_date(r):
-        days = _decode_num(readall(r, 3))
+        days = _decode_num(tds_base.readall(r, 3))
         return Date(days=days)
 
 
 class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
-    type = SYBMSDATE
+    type = tds_base.SYBMSDATE
     declaration = 'DATE'
 
     def __init__(self, typ):
@@ -1515,7 +1515,7 @@ class MsDateSerializer(BasePrimitiveTypeSerializer, BaseDateTime73Serializer):
 
 
 class MsTimeSerializer(BaseDateTime73Serializer):
-    type = SYBMSTIME
+    type = tds_base.SYBMSTIME
 
     def __init__(self, typ):
         super(MsTimeSerializer, self).__init__(precision=typ.precision)
@@ -1540,7 +1540,7 @@ class MsTimeSerializer(BaseDateTime73Serializer):
         else:
             if value.tzinfo:
                 if not w.session.use_tz:
-                    raise DataError('Timezone-aware datetime is used without specifying use_tz')
+                    raise tds_base.DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
             self._write_time(w, Time.from_pytime(value), self._typ.precision)
@@ -1560,7 +1560,7 @@ class MsTimeSerializer(BaseDateTime73Serializer):
 
 
 class DateTime2Serializer(BaseDateTime73Serializer):
-    type = SYBMSDATETIME2
+    type = tds_base.SYBMSDATETIME2
 
     def __init__(self, typ):
         super(DateTime2Serializer, self).__init__(precision=typ.precision)
@@ -1581,7 +1581,7 @@ class DateTime2Serializer(BaseDateTime73Serializer):
         else:
             if value.tzinfo:
                 if not w.session.use_tz:
-                    raise DataError('Timezone-aware datetime is used without specifying use_tz')
+                    raise tds_base.DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
             w.put_byte(self._size)
             self._write_time(w, Time.from_pytime(value), self._typ.precision)
@@ -1605,7 +1605,7 @@ class DateTime2Serializer(BaseDateTime73Serializer):
 
 
 class DateTimeOffsetSerializer(BaseDateTime73Serializer):
-    type = SYBMSDATETIMEOFFSET
+    type = tds_base.SYBMSDATETIMEOFFSET
 
     def __init__(self, typ):
         super(DateTimeOffsetSerializer, self).__init__(precision=typ.precision)
@@ -1630,7 +1630,7 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
             w.put_byte(self._size)
             self._write_time(w, Time.from_pytime(value), self._typ.precision)
             self._write_date(w, Date.from_pydate(value))
-            w.put_smallint(int(total_seconds(utcoffset)) // 60)
+            w.put_smallint(int(tds_base.total_seconds(utcoffset)) // 60)
 
     def read_fixed(self, r, size):
         time = self._read_time(r, size - 5, self._typ.precision)
@@ -1647,7 +1647,7 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
 
 
 class MsDecimalSerializer(BaseTypeSerializer):
-    type = SYBDECIMAL
+    type = tds_base.SYBDECIMAL
 
     _max_size = 17
 
@@ -1668,7 +1668,7 @@ class MsDecimalSerializer(BaseTypeSerializer):
     def __init__(self, precision=18, scale=0):
         super(MsDecimalSerializer, self).__init__(precision=precision, scale=scale)
         if precision > 38:
-            raise DataError('Precision of decimal value is out of range')
+            raise tds_base.DataError('Precision of decimal value is out of range')
         self._size = self._bytes_per_prec[precision]
 
     def __repr__(self):
@@ -1723,7 +1723,7 @@ class MsDecimalSerializer(BaseTypeSerializer):
 
     def read_fixed(self, r, size):
         positive = r.get_byte()
-        buf = readall(r, size - 1)
+        buf = tds_base.readall(r, size - 1)
         return self._decode(positive, buf)
 
     def read(self, r):
@@ -1734,7 +1734,7 @@ class MsDecimalSerializer(BaseTypeSerializer):
 
 
 class Money4Serializer(BasePrimitiveTypeSerializer):
-    type = SYBMONEY4
+    type = tds_base.SYBMONEY4
     declaration = 'SMALLMONEY'
 
     def read(self, r):
@@ -1748,7 +1748,7 @@ Money4Serializer.instance = Money4Serializer()
 
 
 class Money8Serializer(BasePrimitiveTypeSerializer):
-    type = SYBMONEY
+    type = tds_base.SYBMONEY
     declaration = 'MONEY'
 
     _struct = struct.Struct('<lL')
@@ -1768,7 +1768,7 @@ Money8Serializer.instance = Money8Serializer()
 
 
 class MoneyNSerializer(BaseTypeSerializerN):
-    type = SYBMONEYN
+    type = tds_base.SYBMONEYN
 
     subtypes = {
         4: Money4Serializer.instance,
@@ -1777,7 +1777,7 @@ class MoneyNSerializer(BaseTypeSerializerN):
 
 
 class MsUniqueSerializer(BaseTypeSerializer):
-    type = SYBUNIQUE
+    type = tds_base.SYBUNIQUE
     declaration = 'UNIQUEIDENTIFIER'
 
     def __repr__(self):
@@ -1787,7 +1787,7 @@ class MsUniqueSerializer(BaseTypeSerializer):
     def from_stream(cls, r):
         size = r.get_byte()
         if size != 16:
-            raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
+            raise tds_base.InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return cls.instance
 
     def write_info(self, w):
@@ -1801,14 +1801,14 @@ class MsUniqueSerializer(BaseTypeSerializer):
             w.write(value.bytes_le)
 
     def read_fixed(self, r, size):
-        return uuid.UUID(bytes_le=readall(r, size))
+        return uuid.UUID(bytes_le=tds_base.readall(r, size))
 
     def read(self, r):
         size = r.get_byte()
         if size == 0:
             return None
         if size != 16:
-            raise InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
+            raise tds_base.InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return self.read_fixed(r, size)
 MsUniqueSerializer.instance = MsUniqueSerializer()
 
@@ -1832,45 +1832,45 @@ def _variant_read_decimal(r, size):
 
 def _variant_read_binary(r, size):
     r.get_usmallint()
-    return readall(r, size)
+    return tds_base.readall(r, size)
 
 
 class VariantSerializer(BaseTypeSerializer):
-    type = SYBVARIANT
+    type = tds_base.SYBVARIANT
     declaration = 'SQL_VARIANT'
 
     _decimal_info_struct = struct.Struct('BB')
 
     _type_map = {
-        GUIDTYPE: lambda r, size: MsUniqueSerializer.instance.read_fixed(r, size),
-        BITTYPE: lambda r, size: BitSerializer.instance.read(r),
-        INT1TYPE: lambda r, size: TinyIntSerializer.instance.read(r),
-        INT2TYPE: lambda r, size: SmallIntSerializer.instance.read(r),
-        INT4TYPE: lambda r, size: IntSerializer.instance.read(r),
-        INT8TYPE: lambda r, size: BigIntSerializer.instance.read(r),
-        DATETIMETYPE: lambda r, size: DateTimeSerializer.instance.read(r),
-        DATETIM4TYPE: lambda r, size: SmallDateTimeSerializer.instance.read(r),
-        FLT4TYPE: lambda r, size: RealSerializer.instance.read(r),
-        FLT8TYPE: lambda r, size: FloatSerializer.instance.read(r),
-        MONEYTYPE: lambda r, size: Money8Serializer.instance.read(r),
-        MONEY4TYPE: lambda r, size: Money4Serializer.instance.read(r),
-        DATENTYPE: lambda r, size: MsDateSerializer(DateType()).read_fixed(r),
+        tds_base.GUIDTYPE: lambda r, size: MsUniqueSerializer.instance.read_fixed(r, size),
+        tds_base.BITTYPE: lambda r, size: BitSerializer.instance.read(r),
+        tds_base.INT1TYPE: lambda r, size: TinyIntSerializer.instance.read(r),
+        tds_base.INT2TYPE: lambda r, size: SmallIntSerializer.instance.read(r),
+        tds_base.INT4TYPE: lambda r, size: IntSerializer.instance.read(r),
+        tds_base.INT8TYPE: lambda r, size: BigIntSerializer.instance.read(r),
+        tds_base.DATETIMETYPE: lambda r, size: DateTimeSerializer.instance.read(r),
+        tds_base.DATETIM4TYPE: lambda r, size: SmallDateTimeSerializer.instance.read(r),
+        tds_base.FLT4TYPE: lambda r, size: RealSerializer.instance.read(r),
+        tds_base.FLT8TYPE: lambda r, size: FloatSerializer.instance.read(r),
+        tds_base.MONEYTYPE: lambda r, size: Money8Serializer.instance.read(r),
+        tds_base.MONEY4TYPE: lambda r, size: Money4Serializer.instance.read(r),
+        tds_base.DATENTYPE: lambda r, size: MsDateSerializer(DateType()).read_fixed(r),
 
-        TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),
-        DATETIME2NTYPE: lambda r, size: DateTime2Serializer(DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
-        DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(
+        tds_base.TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),
+        tds_base.DATETIME2NTYPE: lambda r, size: DateTime2Serializer(DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
+        tds_base.DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(
             DateTimeOffsetType(precision=r.get_byte())).read_fixed(r, size),
 
-        BIGVARBINTYPE: _variant_read_binary,
-        BIGBINARYTYPE: _variant_read_binary,
+        tds_base.BIGVARBINTYPE: _variant_read_binary,
+        tds_base.BIGBINARYTYPE: _variant_read_binary,
 
-        NUMERICNTYPE: _variant_read_decimal,
-        DECIMALNTYPE: _variant_read_decimal,
+        tds_base.NUMERICNTYPE: _variant_read_decimal,
+        tds_base.DECIMALNTYPE: _variant_read_decimal,
 
-        BIGVARCHRTYPE: _variant_read_str,
-        BIGCHARTYPE: _variant_read_str,
-        NVARCHARTYPE: _variant_read_nstr,
-        NCHARTYPE: _variant_read_nstr,
+        tds_base.BIGVARCHRTYPE: _variant_read_str,
+        tds_base.BIGCHARTYPE: _variant_read_str,
+        tds_base.NVARCHARTYPE: _variant_read_nstr,
+        tds_base.NCHARTYPE: _variant_read_nstr,
 
     }
 
@@ -1999,13 +1999,13 @@ class TableValuedParam(SqlValueMetaclass):
         try:
             rows = iter(self._rows)
         except TypeError:
-            raise DataError('rows should be iterable')
+            raise tds_base.DataError('rows should be iterable')
 
         try:
             row = next(rows)
         except StopIteration:
             # no rows
-            raise DataError("Cannot infer columns from rows for TVP because there are no rows")
+            raise tds_base.DataError("Cannot infer columns from rows for TVP because there are no rows")
         else:
             # put row back
             self._rows = itertools.chain([row], rows)
@@ -2019,7 +2019,7 @@ class TableSerializer(BaseTypeSerializer):
     spec: https://msdn.microsoft.com/en-us/library/dd304813.aspx
     """
 
-    type = TVPTYPE
+    type = tds_base.TVPTYPE
 
     def read(self, r):
         """ According to spec TDS does not support output TVP values """
@@ -2070,7 +2070,7 @@ class TableSerializer(BaseTypeSerializer):
         @return:
         """
         if val.is_null():
-            w.put_usmallint(TVP_NULL_TOKEN)
+            w.put_usmallint(tds_base.TVP_NULL_TOKEN)
         else:
             columns = self._table_type.columns
             w.put_usmallint(len(columns))
@@ -2092,84 +2092,84 @@ class TableSerializer(BaseTypeSerializer):
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
 
         # terminating optional metadata
-        w.put_byte(TVP_END_TOKEN)
+        w.put_byte(tds_base.TVP_END_TOKEN)
 
         # now sending rows using TVP_ROW
         # https://msdn.microsoft.com/en-us/library/dd305261.aspx
         if val.rows:
             for row in val.rows:
-                w.put_byte(TVP_ROW_TOKEN)
+                w.put_byte(tds_base.TVP_ROW_TOKEN)
                 for i, col in enumerate(self._table_type.columns):
-                    if not col.flags & TVP_COLUMN_DEFAULT_FLAG:
+                    if not col.flags & tds_base.TVP_COLUMN_DEFAULT_FLAG:
                         self._columns_serializers[i].write(w, row[i])
 
         # terminating rows
-        w.put_byte(TVP_END_TOKEN)
+        w.put_byte(tds_base.TVP_END_TOKEN)
 
 
 _type_map = {
-    SYBINT1: TinyIntSerializer,
-    SYBINT2: SmallIntSerializer,
-    SYBINT4: IntSerializer,
-    SYBINT8: BigIntSerializer,
-    SYBINTN: IntNSerializer,
-    SYBBIT: BitSerializer,
-    SYBBITN: BitNSerializer,
-    SYBREAL: RealSerializer,
-    SYBFLT8: FloatSerializer,
-    SYBFLTN: FloatNSerializer,
-    SYBMONEY4: Money4Serializer,
-    SYBMONEY: Money8Serializer,
-    SYBMONEYN: MoneyNSerializer,
-    XSYBCHAR: VarChar70Serializer,
-    XSYBVARCHAR: VarChar70Serializer,
-    XSYBNCHAR: NVarChar70Serializer,
-    XSYBNVARCHAR: NVarChar70Serializer,
-    SYBTEXT: Text70Serializer,
-    SYBNTEXT: NText70Serializer,
-    SYBMSXML: XmlSerializer,
-    XSYBBINARY: VarBinarySerializer,
-    XSYBVARBINARY: VarBinarySerializer,
-    SYBIMAGE: Image70Serializer,
-    SYBNUMERIC: MsDecimalSerializer,
-    SYBDECIMAL: MsDecimalSerializer,
-    SYBVARIANT: VariantSerializer,
-    SYBMSDATE: MsDateSerializer,
-    SYBMSTIME: MsTimeSerializer,
-    SYBMSDATETIME2: DateTime2Serializer,
-    SYBMSDATETIMEOFFSET: DateTimeOffsetSerializer,
-    SYBDATETIME4: SmallDateTimeSerializer,
-    SYBDATETIME: DateTimeSerializer,
-    SYBDATETIMN: DateTimeNSerializer,
-    SYBUNIQUE: MsUniqueSerializer,
+    tds_base.SYBINT1: TinyIntSerializer,
+    tds_base.SYBINT2: SmallIntSerializer,
+    tds_base.SYBINT4: IntSerializer,
+    tds_base.SYBINT8: BigIntSerializer,
+    tds_base.SYBINTN: IntNSerializer,
+    tds_base.SYBBIT: BitSerializer,
+    tds_base.SYBBITN: BitNSerializer,
+    tds_base.SYBREAL: RealSerializer,
+    tds_base.SYBFLT8: FloatSerializer,
+    tds_base.SYBFLTN: FloatNSerializer,
+    tds_base.SYBMONEY4: Money4Serializer,
+    tds_base.SYBMONEY: Money8Serializer,
+    tds_base.SYBMONEYN: MoneyNSerializer,
+    tds_base.XSYBCHAR: VarChar70Serializer,
+    tds_base.XSYBVARCHAR: VarChar70Serializer,
+    tds_base.XSYBNCHAR: NVarChar70Serializer,
+    tds_base.XSYBNVARCHAR: NVarChar70Serializer,
+    tds_base.SYBTEXT: Text70Serializer,
+    tds_base.SYBNTEXT: NText70Serializer,
+    tds_base.SYBMSXML: XmlSerializer,
+    tds_base.XSYBBINARY: VarBinarySerializer,
+    tds_base.XSYBVARBINARY: VarBinarySerializer,
+    tds_base.SYBIMAGE: Image70Serializer,
+    tds_base.SYBNUMERIC: MsDecimalSerializer,
+    tds_base.SYBDECIMAL: MsDecimalSerializer,
+    tds_base.SYBVARIANT: VariantSerializer,
+    tds_base.SYBMSDATE: MsDateSerializer,
+    tds_base.SYBMSTIME: MsTimeSerializer,
+    tds_base.SYBMSDATETIME2: DateTime2Serializer,
+    tds_base.SYBMSDATETIMEOFFSET: DateTimeOffsetSerializer,
+    tds_base.SYBDATETIME4: SmallDateTimeSerializer,
+    tds_base.SYBDATETIME: DateTimeSerializer,
+    tds_base.SYBDATETIMN: DateTimeNSerializer,
+    tds_base.SYBUNIQUE: MsUniqueSerializer,
 }
 
 _type_map71 = _type_map.copy()
 _type_map71.update({
-    XSYBCHAR: VarChar71Serializer,
-    XSYBNCHAR: NVarChar71Serializer,
-    XSYBVARCHAR: VarChar71Serializer,
-    XSYBNVARCHAR: NVarChar71Serializer,
-    SYBTEXT: Text71Serializer,
-    SYBNTEXT: NText71Serializer,
+    tds_base.XSYBCHAR: VarChar71Serializer,
+    tds_base.XSYBNCHAR: NVarChar71Serializer,
+    tds_base.XSYBVARCHAR: VarChar71Serializer,
+    tds_base.XSYBNVARCHAR: NVarChar71Serializer,
+    tds_base.SYBTEXT: Text71Serializer,
+    tds_base.SYBNTEXT: NText71Serializer,
 })
 
 _type_map72 = _type_map.copy()
 _type_map72.update({
-    XSYBCHAR: VarChar72Serializer,
-    XSYBNCHAR: NVarChar72Serializer,
-    XSYBVARCHAR: VarChar72Serializer,
-    XSYBNVARCHAR: NVarChar72Serializer,
-    SYBTEXT: Text72Serializer,
-    SYBNTEXT: NText72Serializer,
-    XSYBBINARY: VarBinarySerializer72,
-    XSYBVARBINARY: VarBinarySerializer72,
-    SYBIMAGE: Image72Serializer,
+    tds_base.XSYBCHAR: VarChar72Serializer,
+    tds_base.XSYBNCHAR: NVarChar72Serializer,
+    tds_base.XSYBVARCHAR: VarChar72Serializer,
+    tds_base.XSYBNVARCHAR: NVarChar72Serializer,
+    tds_base.SYBTEXT: Text72Serializer,
+    tds_base.SYBNTEXT: NText72Serializer,
+    tds_base.XSYBBINARY: VarBinarySerializer72,
+    tds_base.XSYBVARBINARY: VarBinarySerializer72,
+    tds_base.SYBIMAGE: Image72Serializer,
 })
 
 _type_map73 = _type_map72.copy()
 _type_map73.update({
-    TVPTYPE: TableSerializer,
+    tds_base.TVPTYPE: TableSerializer,
 })
 
 
@@ -2179,11 +2179,11 @@ class SerializerFactory(object):
     """
     def __init__(self, tds_ver):
         self._tds_ver = tds_ver
-        if self._tds_ver >= TDS73:
+        if self._tds_ver >= tds_base.TDS73:
             self._type_map = _type_map73
-        elif self._tds_ver >= TDS72:
+        elif self._tds_ver >= tds_base.TDS72:
             self._type_map = _type_map72
-        elif self._tds_ver >= TDS71:
+        elif self._tds_ver >= tds_base.TDS71:
             self._type_map = _type_map71
         else:
             self._type_map = _type_map
@@ -2191,53 +2191,53 @@ class SerializerFactory(object):
     def get_type_serializer(self, tds_type_id):
         type_class = self._type_map.get(tds_type_id)
         if not type_class:
-            raise InterfaceError('Invalid type id {}'.format(tds_type_id))
+            raise tds_base.InterfaceError('Invalid type id {}'.format(tds_type_id))
         return type_class
 
     def long_binary_type(self):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return VarBinaryMaxType()
         else:
             return ImageType()
 
     def long_varchar_type(self):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return VarCharMaxType()
         else:
             return TextType()
 
     def long_string_type(self):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return NVarCharMaxType()
         else:
             return NTextType()
 
     def datetime(self, precision):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return DateTime2Type(precision=precision)
         else:
             return DateTimeType()
 
     def has_datetime_with_tz(self):
-        return self._tds_ver >= TDS72
+        return self._tds_ver >= tds_base.TDS72
 
     def datetime_with_tz(self, precision):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return DateTimeOffsetType(precision=precision)
         else:
-            raise DataError('Given TDS version does not support DATETIMEOFFSET type')
+            raise tds_base.DataError('Given TDS version does not support DATETIMEOFFSET type')
 
     def date(self):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return DateType()
         else:
             return DateTimeType()
 
     def time(self, precision):
-        if self._tds_ver >= TDS72:
+        if self._tds_ver >= tds_base.TDS72:
             return TimeType(precision=precision)
         else:
-            raise DataError('Given TDS version does not support TIME type')
+            raise tds_base.DataError('Given TDS version does not support TIME type')
 
     def sql_type_by_declaration(self, declaration):
         return _declarations_parser.parse(declaration)
@@ -2263,53 +2263,53 @@ class SerializerFactory(object):
         elif isinstance(typ, FloatType):
             return FloatNSerializer(size=8)
         elif isinstance(typ, SmallMoneyType):
-            return self._type_map[SYBMONEYN](size=4)
+            return self._type_map[tds_base.SYBMONEYN](size=4)
         elif isinstance(typ, MoneyType):
-            return self._type_map[SYBMONEYN](size=8)
+            return self._type_map[tds_base.SYBMONEYN](size=8)
         elif isinstance(typ, CharType):
-            return self._type_map[XSYBCHAR](size=typ.size, collation=collation)
+            return self._type_map[tds_base.XSYBCHAR](size=typ.size, collation=collation)
         elif isinstance(typ, VarCharType):
-            return self._type_map[XSYBVARCHAR](size=typ.size, collation=collation)
+            return self._type_map[tds_base.XSYBVARCHAR](size=typ.size, collation=collation)
         elif isinstance(typ, VarCharMaxType):
             return VarCharMaxSerializer(collation=collation)
         elif isinstance(typ, NCharType):
-            return self._type_map[XSYBNCHAR](size=typ.size, collation=collation)
+            return self._type_map[tds_base.XSYBNCHAR](size=typ.size, collation=collation)
         elif isinstance(typ, NVarCharType):
-            return self._type_map[XSYBNVARCHAR](size=typ.size, collation=collation)
+            return self._type_map[tds_base.XSYBNVARCHAR](size=typ.size, collation=collation)
         elif isinstance(typ, NVarCharMaxType):
             return NVarCharMaxSerializer(collation=collation)
         elif isinstance(typ, TextType):
-            return self._type_map[SYBTEXT](collation=collation)
+            return self._type_map[tds_base.SYBTEXT](collation=collation)
         elif isinstance(typ, NTextType):
-            return self._type_map[SYBNTEXT](collation=collation)
+            return self._type_map[tds_base.SYBNTEXT](collation=collation)
         elif isinstance(typ, XmlType):
-            return self._type_map[SYBMSXML]()
+            return self._type_map[tds_base.SYBMSXML]()
         elif isinstance(typ, BinaryType):
-            return self._type_map[XSYBBINARY]()
+            return self._type_map[tds_base.XSYBBINARY]()
         elif isinstance(typ, VarBinaryType):
-            return self._type_map[XSYBVARBINARY](size=typ.size)
+            return self._type_map[tds_base.XSYBVARBINARY](size=typ.size)
         elif isinstance(typ, VarBinaryMaxType):
             return VarBinarySerializerMax()
         elif isinstance(typ, ImageType):
-            return self._type_map[SYBIMAGE]()
+            return self._type_map[tds_base.SYBIMAGE]()
         elif isinstance(typ, DecimalType):
-            return self._type_map[SYBDECIMAL](scale=typ.scale, precision=typ.precision)
+            return self._type_map[tds_base.SYBDECIMAL](scale=typ.scale, precision=typ.precision)
         elif isinstance(typ, VariantType):
-            return self._type_map[SYBVARIANT](size=0)
+            return self._type_map[tds_base.SYBVARIANT](size=0)
         elif isinstance(typ, SmallDateTimeType):
-            return self._type_map[SYBDATETIMN](size=4)
+            return self._type_map[tds_base.SYBDATETIMN](size=4)
         elif isinstance(typ, DateTimeType):
-            return self._type_map[SYBDATETIMN](size=8)
+            return self._type_map[tds_base.SYBDATETIMN](size=8)
         elif isinstance(typ, DateType):
-            return self._type_map[SYBMSDATE](typ)
+            return self._type_map[tds_base.SYBMSDATE](typ)
         elif isinstance(typ, TimeType):
-            return self._type_map[SYBMSTIME](typ)
+            return self._type_map[tds_base.SYBMSTIME](typ)
         elif isinstance(typ, DateTime2Type):
-            return self._type_map[SYBMSDATETIME2](typ)
+            return self._type_map[tds_base.SYBMSDATETIME2](typ)
         elif isinstance(typ, DateTimeOffsetType):
-            return self._type_map[SYBMSDATETIMEOFFSET](typ)
+            return self._type_map[tds_base.SYBMSDATETIMEOFFSET](typ)
         elif isinstance(typ, UniqueIdentifierType):
-            return self._type_map[SYBUNIQUE]()
+            return self._type_map[tds_base.SYBUNIQUE]()
         elif isinstance(typ, TableType):
             columns_serializers = None
             if typ.columns is not None:
@@ -2490,14 +2490,14 @@ class TdsTypeInferrer(object):
                     try:
                         cell_iter = iter(row)
                     except TypeError:
-                        raise DataError('Each row in table should be an iterable')
+                        raise tds_base.DataError('Each row in table should be an iterable')
                     for cell in cell_iter:
                         if isinstance(cell, TableValuedParam):
-                            raise DataError('TVP type cannot have nested TVP types')
+                            raise tds_base.DataError('TVP type cannot have nested TVP types')
                         col_type = self.from_value(cell)
-                        col = Column(type=col_type)
+                        col = tds_base.Column(type=col_type)
                         columns.append(col)
 
             return TableType(typ_schema=value.typ_schema, typ_name=value.typ_name, columns=columns)
         else:
-            raise DataError('Cannot infer TDS type from Python value: {!r}'.format(value))
+            raise tds_base.DataError('Cannot infer TDS type from Python value: {!r}'.format(value))
