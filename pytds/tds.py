@@ -728,7 +728,7 @@ class _TdsSession(object):
         # corresponding fields
         nbc = readall(r, (len(info.columns) + 7) // 8)
         for i, curcol in enumerate(info.columns):
-            if tds_base.ord(nbc[i // 8]) & (1 << (i % 8)):
+            if tds_base.my_ord(nbc[i // 8]) & (1 << (i % 8)):
                 value = None
             else:
                 value = curcol.serializer.read(r)
@@ -1792,7 +1792,7 @@ class _Results(object):
 
 def _parse_instances(msg):
     name = None
-    if len(msg) > 3 and tds_base.ord(msg[0]) == 5:
+    if len(msg) > 3 and tds_base.my_ord(msg[0]) == 5:
         tokens = msg[3:].decode('ascii').split(';')
         results = {}
         instdict = {}

@@ -8,6 +8,7 @@ import uuid
 from six.moves import reduce
 
 from .tds_base import *
+from . import tds_base
 from .collate import ucs2_codec, raw_collation
 from . import tz
 
@@ -29,7 +30,7 @@ def _decode_num(buf):
 
     Buffer can be of any size
     """
-    return reduce(lambda acc, val: acc * 256 + ord(val), reversed(buf), 0)
+    return reduce(lambda acc, val: acc * 256 + tds_base.my_ord(val), reversed(buf), 0)
 
 
 class PlpReader(object):

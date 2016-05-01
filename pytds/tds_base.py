@@ -351,11 +351,12 @@ integrity_errors = (
 if sys.version_info[0] >= 3:
     exc_base_class = Exception
 
-    def ord(val):
+    def my_ord(val):
         return val
 
 else:
     exc_base_class = StandardError
+    my_ord = ord
 
 
 # exception hierarchy
