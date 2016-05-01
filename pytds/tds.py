@@ -3,12 +3,12 @@ import contextlib
 import logging
 import datetime
 import six
-from six.moves import xrange
 import socket
 import struct
 try:
     import ssl
 except ImportError:
+    ssl = None
     encryption_supported = False
 else:
     encryption_supported = True
@@ -395,7 +395,7 @@ class _TdsWriter(object):
 
     def write_string(self, s, codec):
         """ Write string encoding it with codec into stream """
-        for i in xrange(0, len(s), self.bufsize):
+        for i in range(0, len(s), self.bufsize):
             chunk = s[i:i + self.bufsize]
             buf, consumed = codec.encode(chunk)
             assert consumed == len(chunk)
