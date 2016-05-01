@@ -5,8 +5,7 @@ import struct
 import re
 import uuid
 import six
-
-from six.moves import reduce
+import functools
 
 from . import tds_base
 from .collate import ucs2_codec, raw_collation
@@ -18,10 +17,10 @@ _flt8_struct = struct.Struct('d')
 _utc = tz.utc
 
 
-def _applytz(dt, tz):
-    if not tz:
+def _applytz(dt, tzinfo):
+    if not tzinfo:
         return dt
-    dt = dt.replace(tzinfo=tz)
+    dt = dt.replace(tzinfo=tzinfo)
     return dt
 
 
@@ -30,7 +29,7 @@ def _decode_num(buf):
 
     Buffer can be of any size
     """
-    return reduce(lambda acc, val: acc * 256 + tds_base.my_ord(val), reversed(buf), 0)
+    return functools.reduce(lambda acc, val: acc * 256 + tds_base.my_ord(val), reversed(buf), 0)
 
 
 class PlpReader(object):
@@ -265,6 +264,8 @@ class BaseTypeSerializer(tds_base.CommonEqualityMixin):
 
     - type - class variable storing type identifier
     """
+    type = 0
+
     def __init__(self, precision=None, scale=None):
         self._precision = precision
         self._scale = scale
@@ -334,6 +335,14 @@ class BasePrimitiveTypeSerializer(BaseTypeSerializer):
     - isntance - class variable storing instance of class
     """
 
+    def write(self, w, value):
+        raise NotImplementedError
+
+    def read(self, r):
+        raise NotImplementedError
+
+    instance = None
+
     @classmethod
     def from_stream(cls, r):
         return cls.instance
@@ -351,6 +360,7 @@ class BaseTypeSerializerN(BaseTypeSerializer):
     - type - class variable storing type identifier
     - subtypes - class variable storing dict {subtype_size: subtype_instance}
     """
+    subtypes = {}
 
     def __init__(self, size):
         super(BaseTypeSerializerN, self).__init__()
@@ -1154,7 +1164,18 @@ class SmallDateTime(SqlValueMetaclass):
 
 
 class BaseDateTimeSerializer(BaseTypeSerializer):
-    pass
+    def write(self, w, value):
+        raise NotImplementedError
+
+    def write_info(self, w):
+        raise NotImplementedError
+
+    def read(self, r):
+        raise NotImplementedError
+
+    @classmethod
+    def from_stream(cls, r):
+        raise NotImplementedError
 
 
 class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
@@ -1450,6 +1471,19 @@ class DateTimeOffset(SqlValueMetaclass):
 
 
 class BaseDateTime73Serializer(BaseTypeSerializer):
+    def write(self, w, value):
+        raise NotImplementedError
+
+    def write_info(self, w):
+        raise NotImplementedError
+
+    def read(self, r):
+        raise NotImplementedError
+
+    @classmethod
+    def from_stream(cls, r):
+        raise NotImplementedError
+
     _precision_to_len = {
         0: 3,
         1: 3,
@@ -1779,6 +1813,7 @@ class MoneyNSerializer(BaseTypeSerializerN):
 class MsUniqueSerializer(BaseTypeSerializer):
     type = tds_base.SYBUNIQUE
     declaration = 'UNIQUEIDENTIFIER'
+    instance = None
 
     def __repr__(self):
         return 'MsUniqueSerializer()'
@@ -1857,7 +1892,8 @@ class VariantSerializer(BaseTypeSerializer):
         tds_base.DATENTYPE: lambda r, size: MsDateSerializer(DateType()).read_fixed(r),
 
         tds_base.TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),
-        tds_base.DATETIME2NTYPE: lambda r, size: DateTime2Serializer(DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
+        tds_base.DATETIME2NTYPE: lambda r, size: DateTime2Serializer(
+            DateTime2Type(precision=r.get_byte())).read_fixed(r, size),
         tds_base.DATETIMEOFFSETNTYPE: lambda r, size: DateTimeOffsetSerializer(
             DateTimeOffsetType(precision=r.get_byte())).read_fixed(r, size),
 
