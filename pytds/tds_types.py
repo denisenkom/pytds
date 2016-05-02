@@ -266,9 +266,10 @@ class BaseTypeSerializer(tds_base.CommonEqualityMixin):
     """
     type = 0
 
-    def __init__(self, precision=None, scale=None):
+    def __init__(self, precision=None, scale=None, size=None):
         self._precision = precision
         self._scale = scale
+        self._size = size
 
     @property
     def precision(self):
@@ -277,6 +278,10 @@ class BaseTypeSerializer(tds_base.CommonEqualityMixin):
     @property
     def scale(self):
         return self._scale
+
+    @property
+    def size(self):
+        return self._size
 
     def get_typeid(self):
         """ Returns type identifier of type. """
@@ -363,9 +368,8 @@ class BaseTypeSerializerN(BaseTypeSerializer):
     subtypes = {}
 
     def __init__(self, size):
-        super(BaseTypeSerializerN, self).__init__()
+        super(BaseTypeSerializerN, self).__init__(size=size)
         assert size in self.subtypes
-        self._size = size
         self._current_subtype = self.subtypes[size]
 
     def get_typeid(self):
@@ -379,7 +383,7 @@ class BaseTypeSerializerN(BaseTypeSerializer):
         return cls(size)
 
     def write_info(self, w):
-        w.put_byte(self._size)
+        w.put_byte(self.size)
 
     def read(self, r):
         size = r.get_byte()
@@ -393,7 +397,7 @@ class BaseTypeSerializerN(BaseTypeSerializer):
         if val is None:
             w.put_byte(0)
             return
-        w.put_byte(self._size)
+        w.put_byte(self.size)
         self._current_subtype.write(w, val)
 
 
@@ -555,7 +559,7 @@ class IntNSerializer(BaseTypeSerializerN):
         return cls(cls.type_by_size[size])
 
     def __repr__(self):
-        return 'IntN({})'.format(self._size)
+        return 'IntN({})'.format(self.size)
 
 
 class RealSerializer(BasePrimitiveTypeSerializer):
@@ -614,8 +618,7 @@ class VarChar70Serializer(BaseTypeSerializer):
     type = tds_base.XSYBVARCHAR
 
     def __init__(self, size, collation=raw_collation, codec=None):
-        super(VarChar70Serializer, self).__init__()
-        self._size = size
+        super(VarChar70Serializer, self).__init__(size=size)
         self._collation = collation
         if codec:
             self._codec = codec
@@ -628,7 +631,7 @@ class VarChar70Serializer(BaseTypeSerializer):
         return cls(size, codec=r.session.conn.server_codec)
 
     def write_info(self, w):
-        w.put_smallint(self._size)
+        w.put_smallint(self.size)
 
     def write(self, w, val):
         if val is None:
@@ -699,8 +702,7 @@ class NVarChar70Serializer(BaseTypeSerializer):
     type = tds_base.XSYBNVARCHAR
 
     def __init__(self, size, collation=raw_collation):
-        super(NVarChar70Serializer, self).__init__()
-        self._size = size
+        super(NVarChar70Serializer, self).__init__(size=size)
         self._collation = collation
 
     @classmethod
@@ -709,7 +711,7 @@ class NVarChar70Serializer(BaseTypeSerializer):
         return cls(size / 2)
 
     def write_info(self, w):
-        w.put_usmallint(self._size * 2)
+        w.put_usmallint(self.size * 2)
 
     def write(self, w, val):
         if val is None:
@@ -756,7 +758,7 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
         super(NVarCharMaxSerializer, self).__init__(size=-1, collation=collation)
 
     def __repr__(self):
-        return 'NVarCharMax(s={},c={})'.format(self._size, repr(self._collation))
+        return 'NVarCharMax(s={},c={})'.format(self.size, repr(self._collation))
 
     def get_typeid(self):
         return tds_base.SYBNTEXT
@@ -828,8 +830,7 @@ class Text70Serializer(BaseTypeSerializer):
     declaration = 'TEXT'
 
     def __init__(self, size=0, table_name='', collation=raw_collation, codec=None):
-        super(Text70Serializer, self).__init__()
-        self._size = size
+        super(Text70Serializer, self).__init__(size=size)
         self._table_name = table_name
         self._collation = collation
         if codec:
@@ -838,7 +839,7 @@ class Text70Serializer(BaseTypeSerializer):
             self._codec = collation.get_codec()
 
     def __repr__(self):
-        return 'Text70(size={},table_name={},codec={})'.format(self._size, self._table_name, self._codec)
+        return 'Text70(size={},table_name={},codec={})'.format(self.size, self._table_name, self._codec)
 
     @classmethod
     def from_stream(cls, r):
@@ -847,7 +848,7 @@ class Text70Serializer(BaseTypeSerializer):
         return cls(size, table_name, codec=r.session.conn.server_codec)
 
     def write_info(self, w):
-        w.put_int(self._size)
+        w.put_int(self.size)
 
     def write(self, w, val):
         if val is None:
@@ -871,7 +872,7 @@ class Text70Serializer(BaseTypeSerializer):
 class Text71Serializer(Text70Serializer):
     def __repr__(self):
         return 'Text71(size={}, table_name={}, collation={})'.format(
-            self._size, self._table_name, repr(self._collation)
+            self.size, self._table_name, repr(self._collation)
         )
 
     @classmethod
@@ -882,7 +883,7 @@ class Text71Serializer(Text70Serializer):
         return cls(size, table_name, collation)
 
     def write_info(self, w):
-        w.put_int(self._size)
+        w.put_int(self.size)
         w.put_collation(self._collation)
 
 
@@ -907,13 +908,12 @@ class NText70Serializer(BaseTypeSerializer):
     declaration = 'NTEXT'
 
     def __init__(self, size=0, table_name='', collation=raw_collation):
-        super(NText70Serializer, self).__init__()
-        self._size = size
+        super(NText70Serializer, self).__init__(size=size)
         self._collation = collation
         self._table_name = table_name
 
     def __repr__(self):
-        return 'NText70(size={}, table_name={})'.format(self._size, self._table_name)
+        return 'NText70(size={}, table_name={})'.format(self.size, self._table_name)
 
     @classmethod
     def from_stream(cls, r):
@@ -931,7 +931,7 @@ class NText70Serializer(BaseTypeSerializer):
         return r.read_str(colsize, ucs2_codec)
 
     def write_info(self, w):
-        w.put_int(self._size * 2)
+        w.put_int(self.size * 2)
 
     def write(self, w, val):
         if val is None:
@@ -943,7 +943,7 @@ class NText70Serializer(BaseTypeSerializer):
 
 class NText71Serializer(NText70Serializer):
     def __repr__(self):
-        return 'NText71(size={}, table_name={}, collation={})'.format(self._size,
+        return 'NText71(size={}, table_name={}, collation={})'.format(self.size,
                                                                       self._table_name,
                                                                       repr(self._collation))
 
@@ -955,7 +955,7 @@ class NText71Serializer(NText70Serializer):
         return cls(size, table_name, collation)
 
     def write_info(self, w):
-        w.put_int(self._size)
+        w.put_int(self.size)
         w.put_collation(self._collation)
 
     def read(self, r):
@@ -975,7 +975,7 @@ class NText72Serializer(NText71Serializer):
 
     def __repr__(self):
         return 'NText72Serializer(s={},table_name={},coll={})'.format(
-            self._size, self._table_name_parts, self._collation)
+            self.size, self._table_name_parts, self._collation)
 
     @classmethod
     def from_stream(cls, r):
@@ -997,11 +997,10 @@ class VarBinarySerializer(BaseTypeSerializer):
     type = tds_base.XSYBVARBINARY
 
     def __init__(self, size):
-        super(VarBinarySerializer, self).__init__()
-        self._size = size
+        super(VarBinarySerializer, self).__init__(size=size)
 
     def __repr__(self):
-        return 'VarBinary({})'.format(self._size)
+        return 'VarBinary({})'.format(self.size)
 
     @classmethod
     def from_stream(cls, r):
@@ -1009,7 +1008,7 @@ class VarBinarySerializer(BaseTypeSerializer):
         return cls(size)
 
     def write_info(self, w):
-        w.put_usmallint(self._size)
+        w.put_usmallint(self.size)
 
     def write(self, w, val):
         if val is None:
@@ -1027,7 +1026,7 @@ class VarBinarySerializer(BaseTypeSerializer):
 
 class VarBinarySerializer72(VarBinarySerializer):
     def __repr__(self):
-        return 'VarBinary72({})'.format(self._size)
+        return 'VarBinary72({})'.format(self.size)
 
     @classmethod
     def from_stream(cls, r):
@@ -1069,12 +1068,11 @@ class Image70Serializer(BaseTypeSerializer):
     declaration = 'IMAGE'
 
     def __init__(self, size=0, table_name=''):
-        super(Image70Serializer, self).__init__()
+        super(Image70Serializer, self).__init__(size=size)
         self._table_name = table_name
-        self._size = size
 
     def __repr__(self):
-        return 'Image70(tn={},s={})'.format(repr(self._table_name), self._size)
+        return 'Image70(tn={},s={})'.format(repr(self._table_name), self.size)
 
     @classmethod
     def from_stream(cls, r):
@@ -1100,7 +1098,7 @@ class Image70Serializer(BaseTypeSerializer):
         w.write(val)
 
     def write_info(self, w):
-        w.put_int(self._size)
+        w.put_int(self.size)
 
 
 class Image72Serializer(Image70Serializer):
@@ -1109,7 +1107,7 @@ class Image72Serializer(Image70Serializer):
         self._parts = parts
 
     def __repr__(self):
-        return 'Image72(p={},s={})'.format(self._parts, self._size)
+        return 'Image72(p={},s={})'.format(self._parts, self.size)
 
     @classmethod
     def from_stream(cls, r):
@@ -1552,9 +1550,8 @@ class MsTimeSerializer(BaseDateTime73Serializer):
     type = tds_base.SYBMSTIME
 
     def __init__(self, typ):
-        super(MsTimeSerializer, self).__init__(precision=typ.precision)
+        super(MsTimeSerializer, self).__init__(precision=typ.precision, size=self._precision_to_len[typ.precision])
         self._typ = typ
-        self._size = self._precision_to_len[typ.precision]
 
     @classmethod
     def read_type(cls, r):
@@ -1576,7 +1573,7 @@ class MsTimeSerializer(BaseDateTime73Serializer):
                 if not w.session.use_tz:
                     raise tds_base.DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
-            w.put_byte(self._size)
+            w.put_byte(self.size)
             self._write_time(w, Time.from_pytime(value), self._typ.precision)
 
     def read_fixed(self, r, size):
@@ -1597,9 +1594,9 @@ class DateTime2Serializer(BaseDateTime73Serializer):
     type = tds_base.SYBMSDATETIME2
 
     def __init__(self, typ):
-        super(DateTime2Serializer, self).__init__(precision=typ.precision)
+        super(DateTime2Serializer, self).__init__(precision=typ.precision,
+                                                  size=self._precision_to_len[typ.precision] + 3)
         self._typ = typ
-        self._size = self._precision_to_len[typ.precision] + 3
 
     @classmethod
     def from_stream(cls, r):
@@ -1617,7 +1614,7 @@ class DateTime2Serializer(BaseDateTime73Serializer):
                 if not w.session.use_tz:
                     raise tds_base.DataError('Timezone-aware datetime is used without specifying use_tz')
                 value = value.astimezone(w.session.use_tz).replace(tzinfo=None)
-            w.put_byte(self._size)
+            w.put_byte(self.size)
             self._write_time(w, Time.from_pytime(value), self._typ.precision)
             self._write_date(w, Date.from_pydate(value))
 
@@ -1642,9 +1639,9 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
     type = tds_base.SYBMSDATETIMEOFFSET
 
     def __init__(self, typ):
-        super(DateTimeOffsetSerializer, self).__init__(precision=typ.precision)
+        super(DateTimeOffsetSerializer, self).__init__(precision=typ.precision,
+                                                       size=self._precision_to_len[typ.precision] + 5)
         self._typ = typ
-        self._size = self._precision_to_len[typ.precision] + 5
 
     @classmethod
     def from_stream(cls, r):
@@ -1661,7 +1658,7 @@ class DateTimeOffsetSerializer(BaseDateTime73Serializer):
             utcoffset = value.utcoffset()
             value = value.astimezone(_utc).replace(tzinfo=None)
 
-            w.put_byte(self._size)
+            w.put_byte(self.size)
             self._write_time(w, Time.from_pytime(value), self._typ.precision)
             self._write_date(w, Date.from_pydate(value))
             w.put_smallint(int(tds_base.total_seconds(utcoffset)) // 60)
@@ -1700,10 +1697,11 @@ class MsDecimalSerializer(BaseTypeSerializer):
     _info_struct = struct.Struct('BBB')
 
     def __init__(self, precision=18, scale=0):
-        super(MsDecimalSerializer, self).__init__(precision=precision, scale=scale)
+        super(MsDecimalSerializer, self).__init__(precision=precision,
+                                                  scale=scale,
+                                                  size=self._bytes_per_prec[precision])
         if precision > 38:
             raise tds_base.DataError('Precision of decimal value is out of range')
-        self._size = self._bytes_per_prec[precision]
 
     def __repr__(self):
         return 'MsDecimal(scale={}, prec={})'.format(self.scale, self.precision)
@@ -1719,7 +1717,7 @@ class MsDecimalSerializer(BaseTypeSerializer):
         return cls(scale=scale, precision=prec)
 
     def write_info(self, w):
-        w.pack(self._info_struct, self._size, self.precision, self.scale)
+        w.pack(self._info_struct, self.size, self.precision, self.scale)
 
     def write(self, w, value):
         if value is None:
@@ -1728,8 +1726,8 @@ class MsDecimalSerializer(BaseTypeSerializer):
         if not isinstance(value, decimal.Decimal):
             value = decimal.Decimal(value)
         value = value.normalize()
-        scale = self._scale
-        size = self._size
+        scale = self.scale
+        size = self.size
         w.put_byte(size)
         val = value
         positive = 1 if val > 0 else 0
@@ -1911,17 +1909,13 @@ class VariantSerializer(BaseTypeSerializer):
 
     }
 
-    def __init__(self, size):
-        super(VariantSerializer, self).__init__()
-        self._size = size
-
     @classmethod
     def from_stream(cls, r):
         size = r.get_int()
         return VariantSerializer(size)
 
     def write_info(self, w):
-        w.put_int(self._size)
+        w.put_int(self.size)
 
     def read(self, r):
         size = r.get_int()

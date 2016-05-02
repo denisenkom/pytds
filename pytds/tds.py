@@ -254,7 +254,7 @@ class _TdsReader(object):
         """
         try:
             header = readall(self._transport, _header.size)
-        except TimeoutError:
+        except tds_base.TimeoutError:
             self._session.put_cancel()
             raise
         self._pos = 0
@@ -595,7 +595,7 @@ class _TdsSession(object):
             curcol.column_name = r.read_ucs2(r.get_byte())
             precision = curcol.serializer.precision
             scale = curcol.serializer.scale
-            size = curcol.serializer._size if hasattr(curcol.serializer, '_size') else None
+            size = curcol.serializer.size
             header_tuple.append(
                 (curcol.column_name,
                  curcol.serializer.get_typeid(),
@@ -1548,7 +1548,7 @@ class _TdsSession(object):
         self.set_state(tds_base.TDS_READING)
         try:
             marker = self._reader.get_byte()
-        except TimeoutError:
+        except tds_base.TimeoutError:
             self.set_state(tds_base.TDS_PENDING)
             raise
         except:
