@@ -12,6 +12,9 @@ from pytds.tds import (
     _TdsSocket, _TdsSession, Collation,
     )
 from pytds import _TdsLogin
+from pytds.tds_base import (
+    TDS_ENCRYPTION_REQUIRE, Column, TDS70, TDS73, TDS71, TDS72, TDS73, TDS74,
+    TDS_ENCRYPTION_OFF)
 from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateType, TimeType, DateTimeOffsetType, IntType, \
     BigIntType, TinyIntType, SmallIntType, VarChar72Serializer, XmlSerializer, Text72Serializer, NText72Serializer, \
     Image72Serializer, MoneyNSerializer, VariantSerializer, BitType, DeclarationsParser, SmallDateTimeType, DateTimeType, \
@@ -19,10 +22,9 @@ from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateTyp
     VariantType, BinaryType, RealType, FloatType, CharType, VarCharType, VarCharMaxType, NCharType, NVarCharType, \
     NVarCharMaxType, TextType, NTextType
 from pytds.tds_types import (
-    TDS_ENCRYPTION_REQUIRE, Column, BitNSerializer, TDS73, TDS71, TDS72, TDS73, TDS74,
-    TDS_ENCRYPTION_OFF,
+    BitNSerializer,
     TdsTypeInferrer, SerializerFactory, NVarChar72Serializer, IntNSerializer, MsDecimalSerializer, FloatNSerializer, VarBinarySerializerMax, NVarCharMaxSerializer, VarCharMaxSerializer, DateTime2Serializer,
-    DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, TDS70, NVarChar70Serializer,
+    DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, NVarChar70Serializer,
     NText70Serializer, Text70Serializer, VarBinarySerializer, VarBinarySerializer72,
     )
 
