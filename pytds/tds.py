@@ -974,7 +974,7 @@ class _TdsSession(object):
         if isinstance(value, output):
             column.flags |= tds_base.fByRefValue
             if isinstance(value.type, six.string_types):
-                column.type = self.conn.type_factory.sql_type_by_declaration(declaration=value.type)
+                column.type = tds_types.sql_type_by_declaration(value.type)
             elif value.type:
                 column.type = self.conn.type_inferrer.from_class(value.type)
             value = value.value

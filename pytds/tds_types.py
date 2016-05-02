@@ -625,7 +625,7 @@ class VarChar70Serializer(BaseTypeSerializer):
     @classmethod
     def from_stream(cls, r):
         size = r.get_smallint()
-        return cls(size, codec=r._session.conn.server_codec)
+        return cls(size, codec=r.session.conn.server_codec)
 
     def write_info(self, w):
         w.put_smallint(self._size)
@@ -1835,7 +1835,8 @@ class MsUniqueSerializer(BaseTypeSerializer):
             w.put_byte(16)
             w.write(value.bytes_le)
 
-    def read_fixed(self, r, size):
+    @staticmethod
+    def read_fixed(r, size):
         return uuid.UUID(bytes_le=tds_base.readall(r, size))
 
     def read(self, r):
@@ -1861,7 +1862,7 @@ def _variant_read_nstr(r, size):
 
 
 def _variant_read_decimal(r, size):
-    prec, scale = r.unpack(VariantSerializer._decimal_info_struct)
+    prec, scale = r.unpack(VariantSerializer.decimal_info_struct)
     return MsDecimalSerializer(precision=prec, scale=scale).read_fixed(r, size)
 
 
@@ -1874,7 +1875,7 @@ class VariantSerializer(BaseTypeSerializer):
     type = tds_base.SYBVARIANT
     declaration = 'SQL_VARIANT'
 
-    _decimal_info_struct = struct.Struct('BB')
+    decimal_info_struct = struct.Struct('BB')
 
     _type_map = {
         tds_base.GUIDTYPE: lambda r, size: MsUniqueSerializer.instance.read_fixed(r, size),
@@ -2209,6 +2210,10 @@ _type_map73.update({
 })
 
 
+def sql_type_by_declaration(declaration):
+    return _declarations_parser.parse(declaration)
+
+
 class SerializerFactory(object):
     """
     Factory class for TDS data types
@@ -2275,11 +2280,8 @@ class SerializerFactory(object):
         else:
             raise tds_base.DataError('Given TDS version does not support TIME type')
 
-    def sql_type_by_declaration(self, declaration):
-        return _declarations_parser.parse(declaration)
-
     def serializer_by_declaration(self, declaration, connection):
-        sql_type = self.sql_type_by_declaration(declaration)
+        sql_type = sql_type_by_declaration(declaration)
         return self.serializer_by_type(sql_type=sql_type, collation=connection.collation)
 
     def serializer_by_type(self, sql_type, collation=raw_collation):
