@@ -465,7 +465,7 @@ class DbTests(DbTestCase):
 
     def test_bulk_insert_with_special_chars_no_columns(self):
         with self.conn.cursor() as cur:
-            cur.execute('create table [test]] table](num int, data varchar(100))')
+            cur.execute('create table [test]] table](num int not null, data varchar(100))')
             f = StringIO("42\tfoo\n74\tbar\n")
             cur.copy_to(f, 'test] table')
             cur.execute('select num, data from [test]] table]')
