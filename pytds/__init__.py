@@ -806,7 +806,7 @@ class Cursor(six.Iterator):
 
     def copy_to(self, file, table_or_view, sep='\t', columns=None,
                 check_constraints=False, fire_triggers=False, keep_nulls=False,
-                kb_per_batch=None, rows_per_batch=None, order=None, tablock=False):
+                kb_per_batch=None, rows_per_batch=None, order=None, tablock=False, schema=None):
         """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
 
         :param file: Source file-like object, should be in csv format
@@ -838,12 +838,16 @@ class Cursor(six.Iterator):
           Can be used to optimize performance, see MSSQL server documentation for details
         :type order: list
         :keyword tablock: Enable or disable table lock for the duration of bulk load
+        :keyword schema: Name of schema for table or view, if not specified default schema will be used
         """
         conn = self._conn()
         import csv
         reader = csv.reader(file, delimiter=sep)
+        obj_name = tds_base.tds_quote_id(table_or_view)
+        if schema:
+            obj_name = '{0}.{1}'.format(tds_base.tds_quote_id(schema), obj_name)
         if not columns:
-            self.execute('select top 1 * from [{}] where 1<>1'.format(table_or_view))
+            self.execute('select top 1 * from {} where 1<>1'.format(obj_name))
             columns = [col[0] for col in self.description]
         metadata = [Column(name=col, type=NVarCharType(size=4000), flags=Column.fNullable) for col in columns]
         col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
@@ -866,7 +870,7 @@ class Cursor(six.Iterator):
         with_part = ''
         if with_opts:
             with_part = 'WITH ({0})'.format(','.join(with_opts))
-        operation = 'INSERT BULK [{0}]({1}) {2}'.format(table_or_view, col_defs, with_part)
+        operation = 'INSERT BULK {0}({1}) {2}'.format(obj_name, col_defs, with_part)
         self.execute(operation)
         self._session.submit_bulk(metadata, reader)
         self._session.process_simple_request()

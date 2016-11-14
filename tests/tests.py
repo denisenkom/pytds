@@ -448,10 +448,27 @@ class DbTests(DbTestCase):
 
     def test_bulk_insert(self):
         with self.conn.cursor() as cur:
-            cur.execute('create table bulk_insert_table(num int, data varchar(100))')
+            cur.execute('create schema myschema')
+            cur.execute('create table myschema.bulk_insert_table(num int, data varchar(100))')
             f = StringIO("42\tfoo\n74\tbar\n")
-            cur.copy_to(f, 'bulk_insert_table', columns=('num', 'data'))
-            cur.execute('select num, data from bulk_insert_table')
+            cur.copy_to(f, 'bulk_insert_table', schema='myschema', columns=('num', 'data'))
+            cur.execute('select num, data from myschema.bulk_insert_table')
+            self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
+
+    def test_bulk_insert_with_special_chars(self):
+        with self.conn.cursor() as cur:
+            cur.execute('create table [test]] table](num int, data varchar(100))')
+            f = StringIO("42\tfoo\n74\tbar\n")
+            cur.copy_to(f, 'test] table', columns=('num', 'data'))
+            cur.execute('select num, data from [test]] table]')
+            self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
+
+    def test_bulk_insert_with_special_chars_no_columns(self):
+        with self.conn.cursor() as cur:
+            cur.execute('create table [test]] table](num int, data varchar(100))')
+            f = StringIO("42\tfoo\n74\tbar\n")
+            cur.copy_to(f, 'test] table')
+            cur.execute('select num, data from [test]] table]')
             self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
 
     def test_table_valued_type_autodetect(self):
