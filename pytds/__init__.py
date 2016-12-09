@@ -286,6 +286,11 @@ class Connection(object):
                     last_error = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
                 else:
                     sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+
+                    # default keep alive should be 30 seconds according to spec:
+                    # https://msdn.microsoft.com/en-us/library/dd341108.aspx
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
+
                     sock.settimeout(retry_time)
                     conn = _TdsSocket(self._use_tz)
                     try:
