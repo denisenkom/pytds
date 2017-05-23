@@ -115,10 +115,13 @@ def recordtype_row_strategy(column_names):
     Column names that are not valid Python identifiers will be replaced
     with col<number>_
     """
-    import recordtype  # optional dependency
+    try:
+        from namedlist import namedlist as recordtype  # optional dependency
+    except ImportError:
+        from recordtype import recordtype  # optional dependency
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
-    recordtype_row_class = recordtype.recordtype('Row', column_names)
+    recordtype_row_class = recordtype('Row', column_names)
 
     # custom extension class that supports indexing
     class Row(recordtype_row_class):
