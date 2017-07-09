@@ -40,4 +40,4 @@ before_test:
 
 
 test_script:
-  - pytest
+  - pytest -v
