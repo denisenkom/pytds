@@ -1,0 +1,50 @@
+version: 1.0.{build}
+
+os: Windows Server 2012 R2
+
+environment:
+  HOST: localhost
+  SQLUSER: sa
+  SQLPASSWORD: Password12!
+  DATABASE: test
+  matrix:
+    - PYTHON: "C:\\Python36"
+      SQLINSTANCE: SQL2016
+    - PYTHON: "C:\\Python35"
+      SQLINSTANCE: SQL2016
+    - PYTHON: "C:\\Python27"
+      SQLINSTANCE: SQL2016
+    - PYTHON: "C:\\Python36"
+      SQLINSTANCE: SQL2014
+    - PYTHON: "C:\\Python36"
+      SQLINSTANCE: SQL2012SP1
+    - PYTHON: "C:\\Python36"
+      SQLINSTANCE: SQL2008R2SP2
+
+install:
+  - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
+  - python --version
+  - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
+  - pip install pytest
+  - pip install -e .
+
+build_script:
+  - python setup.py sdist
+
+before_test:
+  # setup SQL Server
+  - ps: |
+      $instanceName = $env:SQLINSTANCE
+      Start-Service "MSSQL`$$instanceName"
+      Start-Service "SQLBrowser"
+  - sqlcmd -S "(local)\%SQLINSTANCE%" -Q "Use [master]; CREATE DATABASE test;"
+  - sqlcmd -S "(local)\%SQLINSTANCE%" -h -1 -Q "set nocount on; Select @@version"
+
+
+test_script:
+  - pytest -v --junitxml=junit-results.xml
+  - ps: |
+      $wc = New-Object 'System.Net.WebClient'
+      $url = "https://ci.appveyor.com/api/testresults/junit/$env:APPVEYOR_JOB_ID"
+      $wc.UploadFile($url, (Resolve-Path .\junit-results.xml));
+      Write-Output $url
