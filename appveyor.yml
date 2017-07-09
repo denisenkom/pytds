@@ -43,4 +43,5 @@ test_script:
   - pytest -v --junitxml=junit-results.xml
   - ps: |
       $wc = New-Object 'System.Net.WebClient'
-      $wc.UploadFile("https://ci.appveyor.com/api/testresults/junit/$env:APPVEYOR_JOB_ID", (Resolve-Path .\junit-results.xml))
+      $url = "https://ci.appveyor.com/api/testresults/junit/$env:APPVEYOR_JOB_ID"
+      $wc.UploadFile($url, (Resolve-Path .\junit-results.xml))
