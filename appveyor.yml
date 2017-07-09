@@ -18,6 +18,10 @@ environment:
       SQLINSTANCE: SQL2014
     - PYTHON: "C:\\Python36"
       SQLINSTANCE: SQL2012SP1
+    - PYTHON: "C:\\Python36"
+      SQLINSTANCE: SQL2008SP4
+    - PYTHON: "C:\\Python36"
+      SQLINSTANCE: SQL2005SP4
 
 install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
