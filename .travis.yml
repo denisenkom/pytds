@@ -1,10 +1,13 @@
 language: python
 python:
   - "2.7"
-  - "3.3"
-  - "3.4"
   - "3.5"
+  - "3.6"
 install:
+  - python --version
+  - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
   - "pip install -r requirements.txt"
   - "pip install -r test_requirements.txt"
-script: nosetests
+script:
+  - pytest -v --junitxml=junit-results.xml --cov=./
+  - codecov
