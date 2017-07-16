@@ -25,7 +25,7 @@ install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
-  - pip install pytest pytest-cov
+  - pip install pytest pytest-cov codecov
   - pip install -e .
 
 build_script:
