@@ -6,8 +6,8 @@ python:
 install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
-  - "pip install -r requirements.txt"
-  - "pip install -r test_requirements.txt"
+  - pip install -e .
+  - pip install -r test_requirements.txt
 script:
   - pytest -v --junitxml=junit-results.xml --cov=./
   - codecov
