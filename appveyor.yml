@@ -25,7 +25,7 @@ install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
-  - pip install pytest
+  - pip install pytest pytest-cov
   - pip install -e .
 
 build_script:
@@ -42,9 +42,10 @@ before_test:
 
 
 test_script:
-  - pytest -v --junitxml=junit-results.xml
+  - pytest -v --junitxml=junit-results.xml --cov=./
   - ps: |
       $wc = New-Object 'System.Net.WebClient'
       $url = "https://ci.appveyor.com/api/testresults/junit/$env:APPVEYOR_JOB_ID"
       $wc.UploadFile($url, (Resolve-Path .\junit-results.xml));
       Write-Output $url
+  - codecov
