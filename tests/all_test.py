@@ -1551,6 +1551,7 @@ class TestRawBytes(unittest.TestCase):
 
         self.assertIsInstance(cur.execute_scalar("select cast('abc' as nvarchar(max))"), six.text_type)
         self.assertIsInstance(cur.execute_scalar("select cast('abc' as varchar(max))"), six.binary_type)
+        self.assertIsInstance(cur.execute_scalar("select cast('abc' as text)"), six.binary_type)
 
         self.assertIsInstance(cur.execute_scalar("select %s", [six.u('abc')]), six.text_type)
         self.assertIsInstance(cur.execute_scalar("select %s", [six.b('abc')]), six.binary_type)
