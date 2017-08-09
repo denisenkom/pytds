@@ -24,7 +24,7 @@ import pytds.login
 tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
 import pytds.extensions
-from six import text_type
+import six
 from six.moves import xrange
 from pytds import (
     connect, ProgrammingError, TimeoutError, Time,
@@ -195,7 +195,7 @@ class TestCase2(TestCase):
 
     def test_strs(self):
         cur = self.conn.cursor()
-        self.assertIsInstance(cur.execute_scalar("select 'test'"), text_type)
+        self.assertIsInstance(cur.execute_scalar("select 'test'"), six.text_type)
 
     #def test_mars_sessions_recycle_ids(self):
     #    if not self.conn.mars_enabled:
@@ -1174,11 +1174,11 @@ END
             self.assertEqual(len(cur.description), 1, "Unexpected resultset.")
             self.assertEqual(cur.description[0][0], 'a', "Unexpected resultset.")
             self.assertEqual(cur.fetchall(), [('a',)], 'Unexpected resultset.')
-            
+
             self.assertTrue(cur.nextset(), 'No second resultset found.')
             self.assertEqual(len(cur.description), 1, "Unexpected resultset.")
             self.assertEqual(cur.description[0][0], 'b', "Unexpected resultset.")
-            
+
             self.assertEqual(cur.return_value, 2, "Invalid return value: %s" % (cur.return_value,))
             with self.assertRaises(Error):
                 cur.fetchall()
@@ -1252,10 +1252,10 @@ select 'value'
 """)
             self.assertFalse(cur.description)
             self.assertTrue(cur.nextset())
-            
+
             self.assertFalse(cur.description)
             self.assertTrue(cur.nextset())
-            
+
             self.assertTrue(cur.description)
             self.assertEqual([(u'value',)], cur.fetchall())
             self.assertFalse(cur.nextset())
@@ -1315,7 +1315,7 @@ end
         with self._connect() as con:
             cur = con.cursor()
             cur.execute("""
-select cast(0 as varchar), 
+select cast(0 as varchar),
        cast(1 as binary),
        cast(2 as int),
        cast(3 as real),
@@ -1538,3 +1538,22 @@ class TestTds73B(unittest.TestCase):
 
     def test_parsing(self):
         _params_tests(self)
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class TestRawBytes(unittest.TestCase):
+    def setUp(self):
+        kwargs = settings.CONNECT_KWARGS.copy()
+        kwargs['bytes_to_unicode'] = False
+        self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+
+    def test_fetch(self):
+        cur = self.conn.cursor()
+
+        self.assertIsInstance(cur.execute_scalar("select cast('abc' as nvarchar(max))"), six.text_type)
+        self.assertIsInstance(cur.execute_scalar("select cast('abc' as varchar(max))"), six.binary_type)
+
+        self.assertIsInstance(cur.execute_scalar("select %s", [six.u('abc')]), six.text_type)
+        self.assertIsInstance(cur.execute_scalar("select %s", [six.b('abc')]), six.binary_type)
+
+        self.assertEquals(six.b('\x01\x02\x03'), cur.execute_scalar("select cast(0x010203 as varchar(max))"))
+        self.assertEquals(six.b('\x01\x02\x03'), cur.execute_scalar("select %s", [six.b('\x01\x02\x03')]))
