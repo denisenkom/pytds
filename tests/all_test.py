@@ -1555,5 +1555,9 @@ class TestRawBytes(unittest.TestCase):
         self.assertIsInstance(cur.execute_scalar("select %s", [six.u('abc')]), six.text_type)
         self.assertIsInstance(cur.execute_scalar("select %s", [six.b('abc')]), six.binary_type)
 
-        self.assertEquals(six.b('\x01\x02\x03'), cur.execute_scalar("select cast(0x010203 as varchar(max))"))
-        self.assertEquals(six.b('\x01\x02\x03'), cur.execute_scalar("select %s", [six.b('\x01\x02\x03')]))
+        rawBytes = six.b('\x01\x02\x03')
+        self.assertEquals(rawBytes, cur.execute_scalar("select cast(0x010203 as varchar(max))"))
+        self.assertEquals(rawBytes, cur.execute_scalar("select %s", [rawBytes]))
+
+        utf8char = six.b('\xee\xb4\xba')
+        self.assertEquals(utf8char, cur.execute_scalar("select %s", [utf8char]))
