@@ -1544,6 +1544,7 @@ class TestRawBytes(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['bytes_to_unicode'] = False
+        kwargs['database'] = 'master'
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def test_fetch(self):
