@@ -706,7 +706,7 @@ class VarCharMaxSerializer(VarChar72Serializer):
         if login.bytes_to_unicode:
             return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
         else:
-            return ''.join(r.chunks())
+            return six.b('').join(r.chunks())
 
 
 class NVarChar70Serializer(BaseTypeSerializer):
