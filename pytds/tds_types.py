@@ -637,8 +637,10 @@ class VarChar70Serializer(BaseTypeSerializer):
         if val is None:
             w.put_smallint(-1)
         else:
-            val = tds_base.force_unicode(val)
-            val, _ = self._codec.encode(val)
+            if w._tds._tds._login.bytes_to_unicode:
+                val = tds_base.force_unicode(val)
+            if isinstance(val, six.text_type):
+                val, _ = self._codec.encode(val)
             w.put_smallint(len(val))
             w.write(val)
 
@@ -646,7 +648,10 @@ class VarChar70Serializer(BaseTypeSerializer):
         size = r.get_smallint()
         if size < 0:
             return None
-        return r.read_str(size, self._codec)
+        if r._session._tds._login.bytes_to_unicode:
+            return r.read_str(size, self._codec)
+        else:
+            return tds_base.readall(r, size)
 
 
 class VarChar71Serializer(VarChar70Serializer):
@@ -683,8 +688,10 @@ class VarCharMaxSerializer(VarChar72Serializer):
         if val is None:
             w.put_uint8(tds_base.PLP_NULL)
         else:
-            val = tds_base.force_unicode(val)
-            val, _ = self._codec.encode(val)
+            if w._tds._tds._login.bytes_to_unicode:
+                val = tds_base.force_unicode(val)
+            if isinstance(val, six.text_type):
+                val, _ = self._codec.encode(val)
             w.put_int8(len(val))
             if len(val) > 0:
                 w.put_int(len(val))
@@ -692,10 +699,14 @@ class VarCharMaxSerializer(VarChar72Serializer):
             w.put_int(0)
 
     def read(self, r):
+        login = r._session._tds._login
         r = PlpReader(r)
         if r.is_null():
             return None
-        return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
+        if login.bytes_to_unicode:
+            return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
+        else:
+            return six.b('').join(r.chunks())
 
 
 class NVarChar70Serializer(BaseTypeSerializer):
@@ -854,8 +865,10 @@ class Text70Serializer(BaseTypeSerializer):
         if val is None:
             w.put_int(-1)
         else:
-            val = tds_base.force_unicode(val)
-            val, _ = self._codec.encode(val)
+            if w._tds._tds._login.bytes_to_unicode:
+                val = tds_base.force_unicode(val)
+            if isinstance(val, six.text_type):
+                val, _ = self._codec.encode(val)
             w.put_int(len(val))
             w.write(val)
 
@@ -866,7 +879,10 @@ class Text70Serializer(BaseTypeSerializer):
         tds_base.readall(r, size)  # textptr
         tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
-        return r.read_str(colsize, self._codec)
+        if r._session._tds._login.bytes_to_unicode:
+            return r.read_str(colsize, self._codec)
+        else:
+            return tds_base.readall(r, colsize)
 
 
 class Text71Serializer(Text70Serializer):
