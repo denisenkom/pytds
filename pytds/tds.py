@@ -1366,6 +1366,7 @@ class _TdsSession(object):
         # self.sock = ssl.wrap_socket(self.sock, ssl_version=ssl.PROTOCOL_SSLv3)
 
     def tds7_send_login(self, login):
+        # https://msdn.microsoft.com/en-us/library/dd304019.aspx
         option_flag2 = login.option_flag2
         user_name = login.user_name
         if len(user_name) > 128:

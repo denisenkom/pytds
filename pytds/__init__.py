@@ -15,7 +15,7 @@ from six.moves import xrange
 
 from pytds.tds_types import NVarCharType
 from . import lcid
-from . import tz
+import pytds.tz
 from .tds import (
     SimpleLoadBalancer,
     _TdsSocket, tds7_get_instances,
@@ -1106,7 +1106,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     if use_tz:
         login.client_tz = use_tz
     else:
-        login.client_tz = tz.local
+        login.client_tz = pytds.tz.local
 
     # that will set:
     # ANSI_DEFAULTS to ON,
