@@ -16,7 +16,7 @@ else:
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 from . import tds_base
 from . import tds_types
-from .tds_base import readall, readall_fast, skipall
+from .tds_base import readall, readall_fast, skipall, PreLoginEnc
 
 logger = logging.getLogger()
 
@@ -1314,10 +1314,10 @@ class _TdsSession(object):
         w.put_usmallint_be(0)  # build number
         # encryption
         if tds_base.ENCRYPTION_ENABLED and encryption_supported:
-            w.put_byte(1 if encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE else 0)
+            w.put_byte(PreLoginEnc.ENCRYPT_ON if encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE else PreLoginEnc.ENCRYPT_OFF)
         else:
             # not supported
-            w.put_byte(2)
+            w.put_byte(PreLoginEnc.ENCRYPT_NOT_SUP)
         w.write(instance_name)
         w.put_byte(0)  # zero terminate instance_name
         w.put_int(0)  # TODO: change this to thread id
@@ -1359,7 +1359,7 @@ class _TdsSession(object):
                 pass
             i += 5
         # if server do not has certificate do normal login
-        if crypt_flag == 2:
+        if crypt_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
             if login.encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE:
                 raise tds_base.Error('Server required encryption but it is not supported')
             return

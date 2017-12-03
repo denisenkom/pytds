@@ -269,11 +269,17 @@ TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
+class PreLoginEnc:
+    ENCRYPT_OFF = 0  # Encryption available but off
+    ENCRYPT_ON = 1  # Encryption available and on
+    ENCRYPT_NOT_SUP = 2  # Encryption not available
+    ENCRYPT_REQ = 3  # Encryption required
+
 PLP_MARKER = 0xffff
 PLP_NULL = 0xffffffffffffffff
 PLP_UNKNOWN = 0xfffffffffffffffe
 
-ENCRYPTION_ENABLED = False
+ENCRYPTION_ENABLED = True
 
 TDS_NO_COUNT = -1
 
