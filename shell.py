@@ -4,7 +4,11 @@ import os
 
 
 def main():
-    conn = pytds.connect(dsn=os.getenv("HOST", "localhost"), user=os.getenv("SQLUSER", "sa"), password=os.getenv("SQLPASSWORD"))
+    conn = pytds.connect(dsn=os.getenv("HOST", "localhost"),
+                         user=os.getenv("SQLUSER", "sa"),
+                         password=os.getenv("SQLPASSWORD"),
+                         cafile="/Users/denisenk/opensource/pytds/ca.pem",
+                         enc_login_only=True)
     while True:
         try:
             sql = input("sql> ")

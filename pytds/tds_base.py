@@ -279,8 +279,6 @@ PLP_MARKER = 0xffff
 PLP_NULL = 0xffffffffffffffff
 PLP_UNKNOWN = 0xfffffffffffffffe
 
-ENCRYPTION_ENABLED = True
-
 TDS_NO_COUNT = -1
 
 TVP_NULL_TOKEN = 0xffff

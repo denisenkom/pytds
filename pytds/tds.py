@@ -5,17 +5,11 @@ import datetime
 import six
 import socket
 import struct
-try:
-    import ssl
-except ImportError:
-    ssl = None
-    encryption_supported = False
-else:
-    encryption_supported = True
 
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 from . import tds_base
 from . import tds_types
+from . import tls
 from .tds_base import readall, readall_fast, skipall, PreLoginEnc
 
 logger = logging.getLogger()
@@ -1266,13 +1260,11 @@ class _TdsSession(object):
     TERMINATOR = 0xff
 
     def send_prelogin(self, login):
+        # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
         instance_name = instance_name.encode('ascii')
-        encryption_level = login.encryption_level
         if len(instance_name) > 65490:
             raise ValueError('Instance name is too long')
-        if encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE:
-            raise tds_base.NotSupportedError('Client requested encryption but it is not supported')
         if tds_base.IS_TDS72_PLUS(self):
             start_pos = 26
             buf = struct.pack(
@@ -1312,12 +1304,8 @@ class _TdsSession(object):
         from . import intversion
         w.put_uint_be(intversion)
         w.put_usmallint_be(0)  # build number
-        # encryption
-        if tds_base.ENCRYPTION_ENABLED and encryption_supported:
-            w.put_byte(PreLoginEnc.ENCRYPT_ON if encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE else PreLoginEnc.ENCRYPT_OFF)
-        else:
-            # not supported
-            w.put_byte(PreLoginEnc.ENCRYPT_NOT_SUP)
+        # encryption flag
+        w.put_byte(login.enc_flag)
         w.write(instance_name)
         w.put_byte(0)  # zero terminate instance_name
         w.put_int(0)  # TODO: change this to thread id
@@ -1327,6 +1315,7 @@ class _TdsSession(object):
         w.flush()
 
     def process_prelogin(self, login):
+        # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         p = self._reader.read_whole_packet()
         size = len(p)
         if size <= 0 or self._reader.packet_type != 4:
@@ -1359,11 +1348,27 @@ class _TdsSession(object):
                 pass
             i += 5
         # if server do not has certificate do normal login
-        if crypt_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
-            if login.encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE:
-                raise tds_base.Error('Server required encryption but it is not supported')
-            return
-        # self.sock = ssl.wrap_socket(self.sock, ssl_version=ssl.PROTOCOL_SSLv3)
+        login.server_enc_flag = crypt_flag
+        if crypt_flag == PreLoginEnc.ENCRYPT_OFF:
+            if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
+                raise tds_base.Error('Server returned unexpected ENCRYPT_ON value')
+            else:
+                # encrypt login packet only
+                tls.establish_channel(self)
+        elif crypt_flag == PreLoginEnc.ENCRYPT_ON:
+            # encrypt entire connection
+            tls.establish_channel(self)
+        elif crypt_flag == PreLoginEnc.ENCRYPT_REQ:
+            if login.enc_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
+                raise tds_base.Error('Client does not have encryption enabled but it is required by server, '
+                                     'enable encryption and try connecting again')
+            else:
+                # encrypt entire connection
+                tls.establish_channel(self)
+        elif crypt_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
+            if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
+                raise tds_base.Error('You requested encryption but it is not supported by server')
+            # do not encrypt anything
 
     def tds7_send_login(self, login):
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
@@ -1708,6 +1713,8 @@ class _TdsSocket(object):
             self._main_session.tds7_send_login(login)
         else:
             raise ValueError('This TDS version is not supported')
+        if login.server_enc_flag == PreLoginEnc.ENCRYPT_OFF:
+            tls.revert_to_clear(self._main_session)
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
         self.type_factory = tds_types.SerializerFactory(self.tds_version)

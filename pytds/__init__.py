@@ -28,8 +28,8 @@ from .tds_base import (
     IntegrityError, DataError, InternalError,
     InterfaceError, TimeoutError, OperationalError,
     NotSupportedError, Warning, ClosedConnectionError,
-    Column
-)
+    Column,
+    PreLoginEnc)
 
 from .tds_types import (
     TableValuedParam, Binary
@@ -38,6 +38,8 @@ from .tds_types import (
 from .tds_base import (
     ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML
 )
+
+from . import tls
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = '1.8.2'
@@ -1032,10 +1034,12 @@ def _parse_connection_string(connstr):
 def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             login_timeout=15, as_dict=None,
             appname=None, port=None, tds_version=tds_base.TDS74,
-            encryption_level=tds_base.TDS_ENCRYPTION_OFF, autocommit=False,
+            autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
-            row_strategy=None, failover_partner=None, server=None):
+            row_strategy=None, failover_partner=None, server=None,
+            cafile=None, validate_host=True, enc_login_only=False,
+            ):
     """
     Opens connection to the database
 
@@ -1061,7 +1065,6 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     :type port: int
     :keyword tds_version: Maximum TDS version to use, should only be used for testing
     :type tds_version: int
-    :keyword encryption_level: Encryption level to use, not supported
     :keyword autocommit: Enable or disable database level autocommit
     :type autocommit: bool
     :keyword blocksize: Size of block for the TDS protocol, usually should not be used
@@ -1087,7 +1090,6 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login = _TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
-    login.encryption_level = encryption_level
     login.user_name = user or ''
     login.password = password or ''
     login.app_name = appname or 'pytds'
@@ -1103,6 +1105,22 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login.pid = os.getpid()
     login.change_password = ''
     login.client_id = uuid.getnode()  # client mac address
+    login.cafile = cafile
+    login.validate_host = validate_host
+    login.enc_login_only = enc_login_only
+    if cafile:
+        if not tls.OPENSSL_AVAILABLE:
+            raise ValueError("You are trying to use encryption but pyOpenSSL does not work, you probably "
+                             "need to install it first")
+        login.tls_ctx = tls.create_context(cafile)
+        if login.enc_login_only:
+            login.enc_flag = PreLoginEnc.ENCRYPT_OFF
+        else:
+            login.enc_flag = PreLoginEnc.ENCRYPT_ON
+    else:
+        login.tls_ctx = None
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
+
     if use_tz:
         login.client_tz = use_tz
     else:
