@@ -1085,6 +1085,15 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
       :func:`tuple_row_strategy`, :func:`list_row_strategy`, :func:`dict_row_strategy`,
       :func:`namedtuple_row_strategy`, :func:`recordtype_row_strategy`
     :type row_strategy: function of list of column names returning row factory
+    :keyword cafile: Name of the file containing trusted CAs in PEM format, if provided will enable TLS
+    :type cafile: str
+    :keyword validate_host: Host name validation during TLS connection is enabled by default, if you disable it you
+      will be vulnerable to MitM type of attack.
+    :type validate_host: bool
+    :keyword enc_login_only: Allows you to scope TLS encryption only to an authentication portion.  This means that
+      anyone who can observe traffic on your network will be able to see all your SQL requests and potentially modify
+      them.
+    :type enc_login_only: bool
     :returns: An instance of :class:`Connection`
     """
     login = _TdsLogin()

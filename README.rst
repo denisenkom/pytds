@@ -29,11 +29,7 @@ Features
 * MARS
 * Bulk insert
 * Table-valued parameters
-
-Missing Features
-----------------
-
-* SSL encryption
+* TLS connection encryption
 
 Installation
 ------------
@@ -43,6 +39,12 @@ To install run this command:
 .. code-block:: bash
 
     $ pip install python-tds
+
+If you want to use TLS you should also install pyOpenSSL package:
+
+.. code-block:: bash
+
+   $ pip install pyOpenSSL
 
 For a better performance install bitarray package too:
 
@@ -68,4 +70,10 @@ To connect to database do
             cur.fetchall()
 
 
+To enable TLS you should also provide cafile parameter which should be a file name containing trusted CAs in PEM format.
+
+For detailed documentation of connection parameters see: `pytds.connect`_
+
+
 .. _Python DBAPI: http://legacy.python.org/dev/peps/pep-0249/
+.. _pytds.connect: https://python-tds.readthedocs.io/en/latest/pytds.html#pytds.connect
