@@ -7,9 +7,6 @@ pytds
 .. image:: https://ci.appveyor.com/api/projects/status/a5h4y29063crqtet?svg=true
    :target: https://ci.appveyor.com/project/denisenkom/pytds
 
-.. image:: http://img.shields.io/pypi/dm/python-tds.svg
-   :target: https://pypi.python.org/pypi/python-tds/
-
 .. image:: http://img.shields.io/pypi/v/python-tds.svg
    :target: https://pypi.python.org/pypi/python-tds/
 
