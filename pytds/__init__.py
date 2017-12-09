@@ -42,7 +42,7 @@ from .tds_base import (
 from . import tls
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.8.2'
+__version__ = '1.9.0'
 
 
 def _ver_to_int(ver):
