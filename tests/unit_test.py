@@ -14,7 +14,7 @@ from pytds.tds import (
 from pytds import _TdsLogin
 from pytds.tds_base import (
     TDS_ENCRYPTION_REQUIRE, Column, TDS70, TDS73, TDS71, TDS72, TDS73, TDS74,
-    TDS_ENCRYPTION_OFF)
+    TDS_ENCRYPTION_OFF, PreLoginEnc)
 from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateType, TimeType, DateTimeOffsetType, IntType, \
     BigIntType, TinyIntType, SmallIntType, VarChar72Serializer, XmlSerializer, Text72Serializer, NText72Serializer, \
     Image72Serializer, MoneyNSerializer, VariantSerializer, BitType, DeclarationsParser, SmallDateTimeType, DateTimeType, \
@@ -65,7 +65,7 @@ class TestMessages(unittest.TestCase):
         login.query_timeout = login.connect_timeout = 60
         login.tds_version = TDS74
         login.instance_name = None
-        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         login.use_mars = False
         login.option_flag2 = 0
         login.user_name = 'testname'
@@ -130,7 +130,7 @@ class TestMessages(unittest.TestCase):
         tds._main_session = _TdsSession(tds, tds, None)
         tds.sock = sock
         login = _TdsLogin()
-        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         tds._main_session.process_prelogin(login)
         self.assertFalse(tds._mars_enabled)
         self.assertTupleEqual(tds.server_library_version, (0xa001588, 0))
@@ -175,7 +175,7 @@ class TestMessages(unittest.TestCase):
         tds.sock = sock
         login = _TdsLogin()
         login.instance_name = 'MSSQLServer'
-        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         login.use_mars = False
         tds._main_session.send_prelogin(login)
         template = (b'\x12\x01\x00:\x00\x00\x00\x00\x00\x00' +
@@ -192,12 +192,6 @@ class TestMessages(unittest.TestCase):
 
         login.instance_name = u'тест'
         with self.assertRaises(UnicodeEncodeError):
-            tds._main_session.send_prelogin(login)
-        self.assertEqual(sock._sent, b'')
-
-        login.instance_name = 'x'
-        login.encryption_level = TDS_ENCRYPTION_REQUIRE
-        with self.assertRaisesRegexp(pytds.NotSupportedError, 'Client requested encryption but it is not supported'):
             tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b'')
 

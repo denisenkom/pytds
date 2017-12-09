@@ -1706,6 +1706,7 @@ class _TdsSocket(object):
         self._main_session = _TdsSession(self, self, tzinfo_factory)
         self.sock = sock
         self.tds_version = login.tds_version
+        login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         if tds_base.IS_TDS71_PLUS(self):
             self._main_session.send_prelogin(login)
             self._main_session.process_prelogin(login)
