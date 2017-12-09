@@ -40,9 +40,10 @@ from .tds_base import (
 )
 
 from . import tls
+import pkg_resources
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.9.0'
+__version__ = pkg_resources.get_distribution('python-tds').version
 
 
 def _ver_to_int(ver):
