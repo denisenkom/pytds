@@ -47,8 +47,8 @@ __version__ = pkg_resources.get_distribution('python-tds').version
 
 
 def _ver_to_int(ver):
-    maj, minor, rev = ver.split('.')
-    return (int(maj) << 24) + (int(minor) << 16) + (int(rev) << 8)
+    maj, minor, _ = ver.split('.')
+    return (int(maj) << 24) + (int(minor) << 16)
 
 
 intversion = _ver_to_int(__version__)
