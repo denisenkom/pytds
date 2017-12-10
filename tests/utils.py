@@ -36,7 +36,7 @@ class TestCA:
                 key = serialization.load_pem_private_key(bin, password=None, backend=backend)
             else:
                 key = generate_rsa_key()
-                bin = self._root_key.private_bytes(
+                bin = key.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.PKCS8,
                     encryption_algorithm=serialization.NoEncryption(),
