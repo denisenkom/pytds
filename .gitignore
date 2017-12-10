@@ -17,3 +17,5 @@ RELEASE-VERSION
 .idea/
 docs/_build
 .tox/
+/.test-cache/
+/.cache/

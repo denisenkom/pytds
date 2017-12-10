@@ -38,6 +38,13 @@ class EncryptedSocket(object):
     def recv(self, bufsize):
         while True:
             try:
+                buf = self._tls_conn.bio_read(bufsize)
+            except OpenSSL.SSL.WantReadError:
+                pass
+            else:
+                self._transport.sendall(buf)
+
+            try:
                 return self._tls_conn.recv(bufsize)
             except OpenSSL.SSL.WantReadError:
                 buf = self._transport.recv(BUFSIZE)
@@ -102,7 +109,7 @@ def establish_channel(tds_sock):
             conn.do_handshake()
         except OpenSSL.SSL.WantReadError:
             req = conn.bio_read(BUFSIZE)
-            w.begin_packet(tds_base.TDS71_PRELOGIN)
+            w.begin_packet(tds_base.PacketType.PRELOGIN)
             w.write(req)
             w.flush()
             resp = r.read_whole_packet()

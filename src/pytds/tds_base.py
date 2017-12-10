@@ -18,18 +18,21 @@ IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
 IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
 IS_TDS73_PLUS = lambda x: x.tds_version >= TDS73A
 
-# packet types
-TDS_QUERY = 1
-TDS_LOGIN = 2
-TDS_RPC = 3
-TDS_REPLY = 4
-TDS_CANCEL = 6
-TDS_BULK = 7
-TDS7_TRANS = 14  # transaction management
-TDS_NORMAL = 15
-TDS7_LOGIN = 16
-TDS7_AUTH = 17
-TDS71_PRELOGIN = 18
+
+# https://msdn.microsoft.com/en-us/library/dd304214.aspx
+class PacketType:
+    QUERY = 1
+    OLDLOGIN = 2
+    RPC = 3
+    REPLY = 4
+    CANCEL = 6
+    BULK = 7
+    FEDAUTHTOKEN = 8
+    TRANS = 14  # transaction management
+    LOGIN = 16
+    AUTH = 17
+    PRELOGIN = 18
+
 
 # mssql login options flags
 # option_flag1_values
@@ -268,6 +271,17 @@ state_names = ['IDLE', 'QUERYING', 'PENDING', 'READING', 'DEAD']
 TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
+
+class PreLoginToken:
+    VERSION = 0
+    ENCRYPTION = 1
+    INSTOPT = 2
+    THREADID = 3
+    MARS = 4
+    TRACEID = 5
+    FEDAUTHREQUIRED = 6
+    NONCEOPT = 7
+    TERMINATOR = 0xff
 
 class PreLoginEnc:
     ENCRYPT_OFF = 0  # Encryption available but off

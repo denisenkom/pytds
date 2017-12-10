@@ -10,7 +10,7 @@ from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 from . import tds_base
 from . import tds_types
 from . import tls
-from .tds_base import readall, readall_fast, skipall, PreLoginEnc
+from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
 
 logger = logging.getLogger()
 
@@ -1027,7 +1027,7 @@ class _TdsSession(object):
         self.cancel_if_pending()
         self.res_info = None
         w = self._writer
-        with self.querying_context(tds_base.TDS_RPC):
+        with self.querying_context(tds_base.PacketType.RPC):
             if tds_base.IS_TDS72_PLUS(self):
                 self._start_query()
             if tds_base.IS_TDS71_PLUS(self) and isinstance(rpc_name, tds_base.InternalProc):
@@ -1083,7 +1083,7 @@ class _TdsSession(object):
         self.cancel_if_pending()
         self.res_info = None
         w = self._writer
-        with self.querying_context(tds_base.TDS_QUERY):
+        with self.querying_context(tds_base.PacketType.QUERY):
             if tds_base.IS_TDS72_PLUS(self):
                 self._start_query()
             w.write_ucs2(operation)
@@ -1100,7 +1100,7 @@ class _TdsSession(object):
         num_cols = len(metadata)
         w = self._writer
         serializers = []
-        with self.querying_context(tds_base.TDS_BULK):
+        with self.querying_context(tds_base.PacketType.BULK):
             w.put_byte(tds_base.TDS7_RESULT_TOKEN)
             w.put_usmallint(num_cols)
             for col in metadata:
@@ -1137,7 +1137,7 @@ class _TdsSession(object):
 
         Switches connection to IN_CANCEL state.
         """
-        self._writer.begin_packet(tds_base.TDS_CANCEL)
+        self._writer.begin_packet(tds_base.PacketType.CANCEL)
         self._writer.flush()
         self.in_cancel = 1
 
@@ -1152,7 +1152,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.querying_context(tds_base.TDS7_TRANS):
+            with self.querying_context(tds_base.PacketType.TRANS):
                 self._start_query()
                 w.pack(
                     self._begin_tran_struct_72,
@@ -1181,7 +1181,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.querying_context(tds_base.TDS7_TRANS):
+            with self.querying_context(tds_base.PacketType.TRANS):
                 self._start_query()
                 flags = 0
                 if cont:
@@ -1217,7 +1217,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.querying_context(tds_base.TDS7_TRANS):
+            with self.querying_context(tds_base.PacketType.TRANS):
                 self._start_query()
                 flags = 0
                 if cont:
@@ -1251,14 +1251,6 @@ class _TdsSession(object):
                1,  # request count
                )
 
-    VERSION = 0
-    ENCRYPTION = 1
-    INSTOPT = 2
-    THREADID = 3
-    MARS = 4
-    TRACEID = 5
-    TERMINATOR = 0xff
-
     def send_prelogin(self, login):
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
@@ -1270,36 +1262,36 @@ class _TdsSession(object):
             buf = struct.pack(
                 b'>BHHBHHBHHBHHBHHB',
                 # netlib version
-                self.VERSION, start_pos, 6,
+                PreLoginToken.VERSION, start_pos, 6,
                 # encryption
-                self.ENCRYPTION, start_pos + 6, 1,
+                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
                 # instance
-                self.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
                 # thread id
-                self.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
                 # MARS enabled
-                self.MARS, start_pos + 6 + 1 + len(instance_name) + 1 + 4, 1,
+                PreLoginToken.MARS, start_pos + 6 + 1 + len(instance_name) + 1 + 4, 1,
                 # end
-                self.TERMINATOR
+                PreLoginToken.TERMINATOR
                 )
         else:
             start_pos = 21
             buf = struct.pack(
                 b'>BHHBHHBHHBHHB',
                 # netlib version
-                self.VERSION, start_pos, 6,
+                PreLoginToken.VERSION, start_pos, 6,
                 # encryption
-                self.ENCRYPTION, start_pos + 6, 1,
+                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
                 # instance
-                self.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
                 # thread id
-                self.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
                 # end
-                self.TERMINATOR
+                PreLoginToken.TERMINATOR
                 )
         assert start_pos == len(buf)
         w = self._writer
-        w.begin_packet(tds_base.TDS71_PRELOGIN)
+        w.begin_packet(tds_base.PacketType.PRELOGIN)
         w.write(buf)
         from . import intversion
         w.put_uint_be(intversion)
@@ -1318,7 +1310,7 @@ class _TdsSession(object):
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         p = self._reader.read_whole_packet()
         size = len(p)
-        if size <= 0 or self._reader.packet_type != 4:
+        if size <= 0 or self._reader.packet_type != tds_base.PacketType.REPLY:
             self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
         # default 2, no certificate, no encryptption
         crypt_flag = 2
@@ -1330,20 +1322,20 @@ class _TdsSession(object):
             if i >= size:
                 self.bad_stream('Invalid size of PRELOGIN structure')
             type_id, = byte_struct.unpack_from(p, i)
-            if type_id == 0xff:
+            if type_id == PreLoginToken.TERMINATOR:
                 break
             if i + 4 > size:
                 self.bad_stream('Invalid size of PRELOGIN structure')
             off, l = off_len_struct.unpack_from(p, i + 1)
             if off > size or off + l > size:
                 self.bad_stream('Invalid offset in PRELOGIN structure')
-            if type_id == self.VERSION:
+            if type_id == PreLoginToken.VERSION:
                 self.conn.server_library_version = prod_version_struct.unpack_from(p, off)
-            elif type_id == self.ENCRYPTION and l >= 1:
+            elif type_id == PreLoginToken.ENCRYPTION and l >= 1:
                 crypt_flag, = byte_struct.unpack_from(p, off)
-            elif type_id == self.MARS:
+            elif type_id == PreLoginToken.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
-            elif type_id == self.INSTOPT:
+            elif type_id == PreLoginToken.INSTOPT:
                 # ignore instance name mismatch
                 pass
             i += 5
@@ -1393,7 +1385,7 @@ class _TdsSession(object):
         if len(login.attach_db_file) > 260:
             raise ValueError('File path should be not longer than 260 characters')
         w = self._writer
-        w.begin_packet(tds_base.TDS7_LOGIN)
+        w.begin_packet(tds_base.PacketType.LOGIN)
         self.authentication = None
         current_pos = 86 + 8 if tds_base.IS_TDS72_PLUS(self) else 86
         client_host_name = login.client_host_name

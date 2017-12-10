@@ -261,6 +261,51 @@ class Connection(object):
         """
         return self._conn.mars_enabled
 
+    def _try_open(self, timeout):
+        login = self._login
+        host, port, instance = login.servers[0]
+
+        login.server_name = host
+        login.instance_name = instance
+        port = _resolve_instance_port(
+            host,
+            port,
+            instance,
+            timeout=timeout)
+        sock = socket.create_connection(
+            (host, port),
+            timeout)
+
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+
+        # default keep alive should be 30 seconds according to spec:
+        # https://msdn.microsoft.com/en-us/library/dd341108.aspx
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
+
+        sock.settimeout(timeout)
+        conn = _TdsSocket(self._use_tz)
+        self._conn = conn
+        try:
+            conn.login(login, sock, self._tzinfo_factory)
+            if conn.mars_enabled:
+                cursor = _MarsCursor(
+                    self,
+                    conn.create_session(self._tzinfo_factory),
+                    self._tzinfo_factory)
+            else:
+                cursor = Cursor(
+                    self,
+                    conn.main_session,
+                    self._tzinfo_factory)
+
+            self._active_cursor = self._main_cursor = cursor
+            if not self._autocommit:
+                cursor._session.begin_tran(isolation_level=self._isolation_level)
+            sock.settimeout(login.query_timeout)
+        except:
+            sock.close()
+            raise
+
     def _open(self):
         import time
         self._conn = None
@@ -276,79 +321,36 @@ class Connection(object):
         end_time = time.time() + connect_timeout
         while True:
             for _ in xrange(len(login.servers)):
-                host, port, instance = login.servers[0]
                 try:
-                    login.server_name = host
-                    login.instance_name = instance
-                    port = _resolve_instance_port(
-                        host,
-                        port,
-                        instance,
-                        timeout=retry_time)
-                    sock = socket.create_connection(
-                        (host, port),
-                        retry_time)
+                    self._try_open(timeout=retry_time)
+                    return
+                except OperationalError as e:
+                    last_error = e
+                    # if there are more than one message this means
+                    # that the login was successful, like in the
+                    # case when database is not accessible
+                    # mssql returns 2 messages:
+                    # 1) Cannot open database "<dbname>" requested by the login. The login failed.
+                    # 2) Login failed for user '<username>'
+                    # in this case we want to retry
+                    if self._conn is not None and len(self._conn.main_session.messages) <= 1:
+                        # for the following error messages we don't retry
+                        # because if the password is incorrect and we
+                        # retry multiple times this can cause account
+                        # to be locked
+                        if e.msg_no in (
+                                18456,  # login failed
+                                18486,  # account is locked
+                                18487,  # password expired
+                                18488,  # password should be changed
+                                18452,  # login from untrusted domain
+                        ):
+                            raise
                 except Exception as e:
-                    last_error = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
-                else:
-                    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-
-                    # default keep alive should be 30 seconds according to spec:
-                    # https://msdn.microsoft.com/en-us/library/dd341108.aspx
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
-
-                    sock.settimeout(retry_time)
-                    conn = _TdsSocket(self._use_tz)
-                    try:
-                        conn.login(login, sock, self._tzinfo_factory)
-                        if conn.mars_enabled:
-                            cursor = _MarsCursor(
-                                self,
-                                conn.create_session(self._tzinfo_factory),
-                                self._tzinfo_factory)
-                        else:
-                            cursor = Cursor(
-                                self,
-                                conn.main_session,
-                                self._tzinfo_factory)
-
-                        self._active_cursor = self._main_cursor = cursor
-                        if not self._autocommit:
-                            cursor._session.begin_tran(isolation_level=self._isolation_level)
-                        sock.settimeout(login.query_timeout)
-                    except OperationalError as e:
-                        sock.close()
-                        last_error = e
-                        # if there are more than one message this means
-                        # that the login was successful, like in the
-                        # case when database is not accessible
-                        # mssql returns 2 messages:
-                        # 1) Cannot open database "<dbname>" requested by the login. The login failed.
-                        # 2) Login failed for user '<username>'
-                        # in this case we want to retry
-                        if len(conn.main_session.messages) <= 1:
-                            # for the following error messages we don't retry
-                            # because if the password is incorrect and we
-                            # retry multiple times this can cause account
-                            # to be locked
-                            if e.msg_no in (
-                                    18456,  # login failed
-                                    18486,  # account is locked
-                                    18487,  # password expired
-                                    18488,  # password should be changed
-                                    18452,  # login from untrusted domain
-                                    ):
-                                raise
-                    except Exception as e:
-                        sock.close()
-                        last_error = e
-                    else:
-                        self._conn = conn
-                        return
+                    last_error = e
 
                 if time.time() > end_time:
                     raise last_error
-
                 login.servers.rotate(-1)
 
             time.sleep(retry_delay)
@@ -1040,6 +1042,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
             row_strategy=None, failover_partner=None, server=None,
             cafile=None, validate_host=True, enc_login_only=False,
+            disable_connect_retry=False,
             ):
     """
     Opens connection to the database
@@ -1194,7 +1197,10 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     conn._dirty = False
     from .tz import FixedOffsetTimezone
     conn._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
-    conn._open()
+    if disable_connect_retry:
+        conn._try_open(timeout=login.connect_timeout)
+    else:
+        conn._open()
     return conn
 
 

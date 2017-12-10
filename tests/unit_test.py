@@ -5,6 +5,9 @@ import decimal
 import struct
 import unittest
 import uuid
+import pytest
+
+import OpenSSL.crypto
 
 import pytds
 from pytds.collate import raw_collation
@@ -1015,3 +1018,60 @@ class MiscTestCase(unittest.TestCase):
         self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTimeSerializer.encode(
             pytds.Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
         self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTime.MAX_PYDATETIME))
+
+
+def test_with_simple_server():
+    import simple_server
+    import utils
+    import threading
+    from cryptography import x509
+    address = ('localhost', 1433)
+    test_ca = utils.TestCA()
+    server_key = test_ca.key('server')
+    subject = x509.Name(
+        [x509.NameAttribute(
+            x509.oid.NameOID.COMMON_NAME, address[0]
+        )]
+    )
+    builder = x509.CertificateBuilder()
+    server_cert = test_ca.sign(name='server', cb=builder.subject_name(subject)
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+        .serial_number(x509.random_serial_number())
+        .public_key(server_key.public_key()))
+    root_ca_path = test_ca.cert_path('root')
+    server = simple_server.SimpleServer(
+        address,
+        enc=PreLoginEnc.ENCRYPT_ON,
+        cert=OpenSSL.crypto.X509.from_cryptography(server_cert),
+        pkey=OpenSSL.crypto.PKey.from_cryptography_key(server_key)
+    )
+    server_thread = threading.Thread(target=lambda: server.serve_forever())
+    server_thread.start()
+    try:
+        # test with both server and client configured for encryption
+        #with pytds.connect(
+        #        dsn=address[0],
+        #        port=address[1],
+        #        user="sa",
+        #        password='password',
+        #        cafile=root_ca_path,
+        #        disable_connect_retry=True,
+        #) as conn:
+        #    pass
+
+        # test with server having encrypt on but client has it off
+        # should throw exception in this case
+        with pytest.raises(pytds.Error) as excinfo:
+            pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+                )
+        assert 'not have encryption enabled but it is required by server' in str(excinfo.value)
+    finally:
+        server.shutdown()
+        server_thread.join()
+
