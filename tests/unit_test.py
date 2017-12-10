@@ -1021,11 +1021,16 @@ class MiscTestCase(unittest.TestCase):
 
 
 def test_with_simple_server():
+    import sys
+    if sys.version_info[0:2] < (3, 6):
+        # only works on Python 3.6 and newer
+        return
+
     import simple_server
     import utils
     import threading
     from cryptography import x509
-    address = ('localhost', 1433)
+    address = ('127.0.0.1', 1433)
     test_ca = utils.TestCA()
     server_key = test_ca.key('server')
     subject = x509.Name(
