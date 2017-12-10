@@ -1022,8 +1022,13 @@ class MiscTestCase(unittest.TestCase):
 
 def test_with_simple_server():
     import sys
+    import os
     if sys.version_info[0:2] < (3, 6):
         # only works on Python 3.6 and newer
+        return
+
+    if os.environ.get('INAPPVEYOR', '') == '1':
+        # Appveyor does not allow server sockets even on localhost
         return
 
     import simple_server

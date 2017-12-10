@@ -3,6 +3,7 @@ version: 1.0.{build}
 os: Windows Server 2012 R2
 
 environment:
+  INAPPVEYOR: 1
   HOST: localhost
   SQLUSER: sa
   SQLPASSWORD: Password12!
