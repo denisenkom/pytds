@@ -21,6 +21,7 @@ from datetime import datetime, date, time
 import uuid
 import pytds.tz
 import pytds.login
+import pytds.smp
 tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
 import pytds.extensions
@@ -208,9 +209,9 @@ class TestCase2(TestCase):
         if not self.conn.mars_enabled:
             self.skipTest('Only relevant to mars')
         sess = self.conn._conn._smp_manager.create_session()
-        self.assertEqual(sess.state, 'SESSION ESTABLISHED')
+        self.assertEqual(sess.state, pytds.smp.SessionState.SESSION_ESTABLISHED)
         sess.close()
-        self.assertEqual(sess.state, 'CLOSED')
+        self.assertEqual(sess.state, pytds.smp.SessionState.CLOSED)
 
     def test_cursor_env(self):
         with self.conn.cursor() as cur:
