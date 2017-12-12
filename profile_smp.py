@@ -45,6 +45,3 @@ pr.disable()
 sortby = 'tottime'
 ps = pstats.Stats(pr).sort_stats(sortby)
 ps.print_stats()
-
-# original 0.7 sec
-# not using readall  0.6 sec
