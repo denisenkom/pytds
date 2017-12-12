@@ -84,13 +84,10 @@ class Sock():
     def __init__(self, req):
         self._req = req
 
-    def read(self, size):
+    def recv(self, size):
         return self._req.recv(size)
 
-    def send(self, data, final):
-        flags = 0
-        if not final:
-            flags |= socket.MSG_MORE
+    def sendall(self, data, flags=0):
         return self._req.sendall(data, flags)
 
 
@@ -104,7 +101,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
         self._transport = Sock(self.request)
 
         r = pytds.tds._TdsReader(self)
-        w = pytds.tds._TdsWriter(self._transport, bufsize=bufsize)
+        w = pytds.tds._TdsWriter(self, bufsize=bufsize)
 
         buf = r.read_whole_packet()
         if r.packet_type != pytds.tds_base.PacketType.PRELOGIN:
