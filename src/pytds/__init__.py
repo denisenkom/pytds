@@ -383,9 +383,13 @@ class Connection(object):
         if self.mars_enabled:
             in_tran = self._conn.tds72_transaction
             if in_tran and self._dirty:
-                return _MarsCursor(self,
-                                   self._conn.create_session(self._tzinfo_factory),
-                                   self._tzinfo_factory)
+                try:
+                    return _MarsCursor(self,
+                                       self._conn.create_session(self._tzinfo_factory),
+                                       self._tzinfo_factory)
+                except (socket.error, OSError) as e:
+                    self._conn.close()
+                    raise
             else:
                 try:
                     return _MarsCursor(self,
@@ -394,6 +398,7 @@ class Connection(object):
                 except (socket.error, OSError) as e:
                     if e.errno not in (errno.EPIPE, errno.ECONNRESET):
                         raise
+                    self._conn.close()
                 except ClosedConnectionError:
                     pass
                 self._assert_open()
@@ -424,6 +429,7 @@ class Connection(object):
         except socket.error as e:
             if e.errno in (errno.ENETRESET, errno.ECONNRESET):
                 return
+            self._conn.close()
             raise
         except ClosedConnectionError:
             pass
@@ -583,7 +589,12 @@ class Cursor(six.Iterator):
         in_tran = conn._conn.tds72_transaction
         if in_tran and conn._dirty:
             conn._dirty = True
-            return fun()
+            try:
+                return fun()
+            except socket.error as e:
+                if e.errno not in (errno.ECONNRESET, errno.EPIPE):
+                    raise
+                conn._conn.close()
         else:
             conn._dirty = True
             try:
@@ -591,6 +602,7 @@ class Cursor(six.Iterator):
             except socket.error as e:
                 if e.errno not in (errno.ECONNRESET, errno.EPIPE):
                     raise
+                conn._conn.close()
             except ClosedConnectionError:
                 pass
             # in case of connection reset try again

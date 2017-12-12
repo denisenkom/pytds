@@ -46,10 +46,10 @@ class _SmpSession(object):
     def close(self):
         self._mgr.close_smp_session(self)
 
-    def send(self, data, final):
+    def sendall(self, data):
         self._mgr.send_packet(self, data)
 
-    def read(self, size):
+    def recv(self, size):
         if not self._curr_buf[self._curr_buf_pos:]:
             self._curr_buf = self._mgr.recv_packet(self)
             self._curr_buf_pos = 0
@@ -98,7 +98,7 @@ class SmpManager(object):
                 0,
                 session.high_water_for_recv,
                 )
-            self._transport.send(hdr, True)
+            self._transport.sendall(hdr)
             session.state = 'SESSION ESTABLISHED'
         return session
 
@@ -107,26 +107,23 @@ class SmpManager(object):
             return
         elif session.state == 'SESSION ESTABLISHED':
             with self._lock:
-                if self._transport.is_connected():
-                    hdr = self._smp_header.pack(
-                        self._smid,
-                        self._FIN,
-                        session.session_id,
-                        self._smp_header.size,
-                        session.seq_num_for_send,
-                        session.high_water_for_recv,
-                        )
-                    session.state = 'FIN SENT'
-                    try:
-                        self._transport.send(hdr, True)
-                        self.recv_packet(session)
-                    except (socket.error, OSError) as ex:
-                        if ex.errno in (errno.ECONNRESET, errno.EPIPE):
-                            session.state = 'CLOSED'
-                        else:
-                            raise ex
-                else:
-                    session.state = 'CLOSED'
+                hdr = self._smp_header.pack(
+                    self._smid,
+                    self._FIN,
+                    session.session_id,
+                    self._smp_header.size,
+                    session.seq_num_for_send,
+                    session.high_water_for_recv,
+                    )
+                session.state = 'FIN SENT'
+                try:
+                    self._transport.sendall(hdr)
+                    self.recv_packet(session)
+                except (socket.error, OSError) as ex:
+                    if ex.errno in (errno.ECONNRESET, errno.EPIPE):
+                        session.state = 'CLOSED'
+                    else:
+                        raise ex
 
     def send_queued_packets(self, session):
         with self._lock:
@@ -152,7 +149,7 @@ class SmpManager(object):
                     session.high_water_for_recv,
                     )
                 session._last_high_water_for_recv = session.high_water_for_recv
-                self._transport.send(hdr + data, True)
+                self._transport.sendall(hdr + data)
                 session.seq_num_for_send = self._add_one_wrap(session.seq_num_for_send)
             else:
                 session.send_queue.append(data)
@@ -176,7 +173,7 @@ class SmpManager(object):
                     session.seq_num_for_send,
                     session.high_water_for_recv,
                     )
-                self._transport.send(hdr, True)
+                self._transport.sendall(hdr)
                 session._last_high_water_for_recv = session.high_water_for_recv
             return session.recv_queue.pop(0)
 
@@ -197,7 +194,8 @@ class SmpManager(object):
 
     def _read_smp_message(self):
         with self._lock:
-            smid, flags, sid, l, seq_num, wnd = self._smp_header.unpack(readall(self._transport, self._smp_header.size))
+            hdf_buf = self._transport.recv(self._smp_header.size)
+            smid, flags, sid, l, seq_num, wnd = self._smp_header.unpack(hdf_buf)
             if smid != self._smid:
                 self._bad_stm('Invalid SMP packet signature')
             try:

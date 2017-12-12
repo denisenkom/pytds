@@ -144,7 +144,7 @@ class _TdsReader(object):
             if self._have >= self._size:
                 self._read_packet()
             else:
-                self._buf = self._transport.read(self._size - self._have)
+                self._buf = self._transport.recv(self._size - self._have)
                 self._pos = 0
                 self._have += len(self._buf)
         offset = self._pos
@@ -238,6 +238,8 @@ class _TdsReader(object):
         buf, offset = self.read_fast(size)
         return buf[offset:offset + size]
 
+    recv = read
+
     def _read_packet(self):
         """ Reads next TDS packet from the underlying transport
 
@@ -255,7 +257,7 @@ class _TdsReader(object):
         self._type, self._status, self._size, self._session._spid, _ = _header.unpack(header)
         self._have = _header.size
         assert self._size > self._have, 'Empty packet doesn make any sense'
-        self._buf = self._transport.read(self._size - self._have)
+        self._buf = self._transport.recv(self._size - self._have)
         self._have += len(self._buf)
 
     def read_whole_packet(self):
@@ -277,7 +279,7 @@ class _TdsWriter(object):
     def __init__(self, session, bufsize):
         self._session = session
         self._tds = session
-        self._transport = session
+        self._transport = session._transport
         self._pos = 0
         self._buf = bytearray(bufsize)
         self._packet_no = 0
@@ -409,7 +411,7 @@ class _TdsWriter(object):
         status = 1 if final else 0
         _header.pack_into(self._buf, 0, self._type, status, self._pos, 0, self._packet_no)
         self._packet_no = (self._packet_no + 1) % 256
-        self._transport.send(self._buf[:self._pos], final)
+        self._transport.sendall(self._buf[:self._pos])
         self._pos = 8
 
 
@@ -1666,6 +1668,9 @@ _token_map = {
     }
 
 
+# this class represents root TDS connection
+# if MARS is used it can have multiple sessions represented by _TdsSession class
+# if MARS is not used it would have single _TdsSession instance
 class _TdsSocket(object):
     def __init__(self, use_tz=None):
         self._is_connected = False
@@ -1695,7 +1700,7 @@ class _TdsSocket(object):
         self._login = login
         self.bufsize = login.blocksize
         self.query_timeout = login.query_timeout
-        self._main_session = _TdsSession(self, self, tzinfo_factory)
+        self._main_session = _TdsSession(self, sock, tzinfo_factory)
         self.sock = sock
         self.tds_version = login.tds_version
         login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
@@ -1720,7 +1725,7 @@ class _TdsSocket(object):
         text_size = login.text_size
         if self._mars_enabled:
             from .smp import SmpManager
-            self._smp_manager = SmpManager(self)
+            self._smp_manager = SmpManager(self.sock)
             self._main_session = _TdsSession(
                 self,
                 self._smp_manager.create_session(),
@@ -1747,28 +1752,6 @@ class _TdsSocket(object):
         return _TdsSession(
             self, self._smp_manager.create_session(),
             tzinfo_factory)
-
-    def read(self, size):
-        buf = self.sock.recv(size)
-        if len(buf) == 0:
-            self.close()
-            raise tds_base.ClosedConnectionError()
-        return buf
-
-    def _write(self, data, final):
-        try:
-            flags = 0
-            if hasattr(socket, 'MSG_NOSIGNAL'):
-                flags |= socket.MSG_NOSIGNAL
-            if not final:
-                if hasattr(socket, 'MSG_MORE'):
-                    flags |= socket.MSG_MORE
-            self.sock.sendall(data, flags)
-        except:
-            self.close()
-            raise
-
-    send = _write
 
     def is_connected(self):
         return self._is_connected

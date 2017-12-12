@@ -527,13 +527,13 @@ def read_chunks(stm, size):
         yield b''
         return
 
-    res = stm.read(size)
+    res = stm.recv(size)
     if len(res) == 0:
         raise ClosedConnectionError()
     yield res
     left = size - len(res)
     while left:
-        buf = stm.read(left)
+        buf = stm.recv(left)
         if len(buf) == 0:
             raise ClosedConnectionError()
         yield buf
