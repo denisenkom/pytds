@@ -265,16 +265,20 @@ class Connection(object):
         login = self._login
         host, port, instance = login.servers[0]
 
-        login.server_name = host
-        login.instance_name = instance
-        port = _resolve_instance_port(
-            host,
-            port,
-            instance,
-            timeout=timeout)
-        sock = socket.create_connection(
-            (host, port),
-            timeout)
+        try:
+
+            login.server_name = host
+            login.instance_name = instance
+            port = _resolve_instance_port(
+                host,
+                port,
+                instance,
+                timeout=timeout)
+            sock = socket.create_connection(
+                (host, port),
+                timeout)
+        except Exception as e:
+            raise LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
 
         sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 
