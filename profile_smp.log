@@ -1,7 +1,15 @@
-This file is a log of runs of profile_smp.py
+This file is a log of runs of profile_*.py
+
+
+SMP Profiling:
 
 It is used to measure performance improvements in SMP subsystem.
 
 Dec 11 2017 duration 0.7 sec at commit c1659058eb5ca35ed86ee366f7508a035d280ca4
 Dec 12 2017 duration 0.6 sec at commit d6a3859d3ebcbafcf9335a0f4c6ee47673af2461
 Dec 13 2017 duration 0.66 sec at commit 21297d4
+
+
+TDS Reader profiling:
+
+Dec 13 2017 duration 0.64 sec at commit d255ce4
