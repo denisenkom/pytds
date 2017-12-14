@@ -98,11 +98,11 @@ class NtlmAuth(object):
     :param password: User password
     :type password: str
     """
-    def __init__(self, user_name, password):
+    def __init__(self, user_name, password, domain='workspace'):
         if '\\' in user_name:
             self._domain, self._user = user_name.split('\\', 1)
         else:
-            self._domain = 'workspace'
+            self._domain = domain
             self._user = user_name
         self._password = password
 
