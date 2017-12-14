@@ -1,6 +1,8 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
 import os
+import random
+import string
 import codecs
 from six import StringIO
 
@@ -646,7 +648,7 @@ class DbTests(DbTestCase):
 
     def test_big_request(self):
         with self.conn.cursor() as cur:
-            param = 'x' * 5000
+            param = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(5000))
             params = (10, datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
             cur.execute('select %s, %s, %s, %s', params)
             self.assertEqual([params], cur.fetchall())

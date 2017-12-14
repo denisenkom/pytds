@@ -21,6 +21,13 @@ class Sock:
     def sendall(self, data, flags=0):
         pass
 
+    def recv_into(self, buffer, size=0):
+        if size == 0:
+            size = len(buffer)
+        res = self.recv(size)
+        buffer[:len(res)] = res[:]
+        return len(res)
+
     def recv(self, size):
         if self._read_pos >= len(self._buf):
             self._seq += 1
