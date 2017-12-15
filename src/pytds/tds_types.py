@@ -81,7 +81,7 @@ class PlpReader(object):
             total += chunk_len
             left = chunk_len
             while left:
-                buf = self._rdr.read(left)
+                buf = self._rdr.recv(left)
                 yield buf
                 left -= len(buf)
 

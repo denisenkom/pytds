@@ -21,9 +21,13 @@ class Sock:
     def recv_into(self, buffer, size=0):
         if size == 0:
             size = len(buffer)
-        res = self.recv(size)
-        buffer[:len(res)] = res[:]
-        return len(res)
+        if self._read_pos >= len(self._buf):
+            self._seq += 1
+            HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
+            self._read_pos = 0
+        to_read = min(size, len(self._buf) - self._read_pos)
+        buffer[:to_read] = self._buf[self._read_pos:self._read_pos+to_read]
+        return to_read
 
     def recv(self, size):
         if self._read_pos >= len(self._buf):
@@ -49,7 +53,7 @@ rdr = pytds.tds._TdsReader(sess)
 pr = cProfile.Profile()
 pr.enable()
 for _ in range(50000):
-    rdr.read_whole_packet()
+    rdr.recv(BUFSIZE)
 pr.disable()
 sortby = 'tottime'
 ps = pstats.Stats(pr).sort_stats(sortby)

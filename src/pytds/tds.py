@@ -108,14 +108,22 @@ class _TdsReader(object):
     different kinds of integers etc.
     """
     def __init__(self, session):
-        self._buf = ''
-        self._pos = 0  # position in the buffer
+        self._buf = bytearray(b'\x00' * 4096)
+        self._bufview = memoryview(self._buf)
+        self._pos = len(self._buf)  # position in the buffer
         self._have = 0  # number of bytes read from packet
         self._size = 0  # size of current packet
         self._session = session
         self._transport = session._transport
         self._type = None
         self._status = None
+
+    def set_block_size(self, size):
+        self._buf = bytearray(b'\x00' * size)
+        self._bufview = memoryview(self._buf)
+
+    def get_block_size(self):
+        return len(self._buf)
 
     @property
     def session(self):
@@ -140,16 +148,20 @@ class _TdsReader(object):
         :param size: Number of bytes to read
         :returns: Tuple of bytes buffer, and offset in this buffer
         """
-        if self._pos >= len(self._buf):
-            if self._have >= self._size:
-                self._read_packet()
-            else:
-                self._buf = self._transport.recv(self._size - self._have)
-                self._pos = 0
-                self._have += len(self._buf)
+        if self._pos >= self._size:
+            self._read_packet()
         offset = self._pos
-        self._pos += size
+        to_read = min(size, self._size - self._pos)
+        self._pos += to_read
         return self._buf, offset
+
+    def recv(self, size):
+        if self._pos >= self._size:
+            self._read_packet()
+        offset = self._pos
+        to_read = min(size, self._size - self._pos)
+        self._pos += to_read
+        return self._buf[offset:offset+to_read]
 
     def unpack(self, struc):
         """ Unpacks given structure from stream
@@ -227,19 +239,6 @@ class _TdsReader(object):
         self.unget_byte()
         return res
 
-    def read(self, size):
-        """ Reads size bytes from buffer
-
-        May return fewer bytes than requested
-        :param size: Number of bytes to read
-        :returns: Bytes buffer, possibly shorter than requested,
-                  returns empty buffer in case of EOF
-        """
-        buf, offset = self.read_fast(size)
-        return buf[offset:offset + size]
-
-    recv = read
-
     def _read_packet(self):
         """ Reads next TDS packet from the underlying transport
 
@@ -249,16 +248,20 @@ class _TdsReader(object):
         of the packet.
         """
         try:
-            header = readall(self._transport, _header.size)
+            pos = 0
+            while pos < _header.size:
+                received = self._transport.recv_into(self._bufview[pos:])
+                pos += received
         except tds_base.TimeoutError:
             self._session.put_cancel()
             raise
-        self._pos = 0
-        self._type, self._status, self._size, self._session._spid, _ = _header.unpack(header)
-        self._have = _header.size
-        assert self._size > self._have, 'Empty packet doesn make any sense'
-        self._buf = self._transport.recv(self._size - self._have)
-        self._have += len(self._buf)
+        self._pos = _header.size
+        self._type, self._status, self._size, self._session._spid, _ = _header.unpack_from(self._bufview, 0)
+        self._have = pos
+        while pos < self._size:
+            received = self._transport.recv_into(self._bufview[pos:], self._size - pos)
+            pos += received
+            self._have += received
 
     def read_whole_packet(self):
         """ Reads single packet and returns bytes payload of the packet
@@ -1715,6 +1718,11 @@ class _TdsSocket(object):
             tls.revert_to_clear(self._main_session)
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
+
+        # update block size if server returned different one
+        if self._main_session._writer.bufsize != self._main_session._reader.get_block_size():
+            self._main_session._reader.set_block_size(self._main_session._writer.bufsize)
+
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
         self.type_inferrer = tds_types.TdsTypeInferrer(
             type_factory=self.type_factory,

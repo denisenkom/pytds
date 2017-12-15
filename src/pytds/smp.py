@@ -55,15 +55,28 @@ class _SmpSession(object):
     def sendall(self, data):
         self._mgr.send_packet(self, data)
 
-    def recv(self, size):
+    def _recv_internal(self, size):
         if not self._curr_buf[self._curr_buf_pos:]:
             self._curr_buf = self._mgr.recv_packet(self)
             self._curr_buf_pos = 0
             if not self._curr_buf:
                 return b''
-        res = self._curr_buf[self._curr_buf_pos:self._curr_buf_pos + size]
-        self._curr_buf_pos += len(res)
-        return res
+        to_read = min(size, len(self._curr_buf) - self._curr_buf_pos)
+        offset = self._curr_buf_pos
+        self._curr_buf_pos += to_read
+        return (offset, to_read)
+
+    def recv_into(self, buffer, size=0):
+        if size == 0:
+            size = len(buffer)
+
+        offset, to_read = self._recv_internal(size)
+        buffer[:to_read] = self._curr_buf[offset:offset + to_read]
+        return to_read
+
+    def recv(self, size):
+        offset, to_read = self._recv_internal(size)
+        return self._curr_buf[offset:offset + to_read]
 
     def is_connected(self):
         return self.state == SessionState.SESSION_ESTABLISHED

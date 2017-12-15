@@ -46,8 +46,9 @@ mgr = pytds.smp.SmpManager(transport=sock)
 sess = mgr.create_session()
 pr = cProfile.Profile()
 pr.enable()
+buf = bytearray(b'\x00' * bufsize)
 for _ in range(50000):
-    sess.recv(bufsize)
+    sess.recv_into(buf)
 pr.disable()
 sortby = 'tottime'
 ps = pstats.Stats(pr).sort_stats(sortby)

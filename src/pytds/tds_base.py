@@ -497,14 +497,14 @@ def skipall(stm, size):
                 number of bytes.
     :param size: Number of bytes to skip.
     """
-    res = stm.read(size)
+    res = stm.recv(size)
     if len(res) == size:
         return
     elif len(res) == 0:
         raise ClosedConnectionError()
     left = size - len(res)
     while left:
-        buf = stm.read(left)
+        buf = stm.recv(left)
         if len(buf) == 0:
             raise ClosedConnectionError()
         left -= len(buf)
