@@ -17,7 +17,7 @@ class Sock:
     def sendall(self, data, flags=0):
         pass
 
-    def recv_into(self, buffer: bytearray, size=0):
+    def recv_into(self, buffer, size=0):
         if size == 0:
             size = len(buffer)
         if self._read_pos >= BUFSIZE:

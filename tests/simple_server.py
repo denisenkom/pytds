@@ -87,6 +87,9 @@ class Sock():
     def recv(self, size):
         return self._req.recv(size)
 
+    def recv_into(self, buffer, size=0):
+        return self._req.recv_into(buffer, size)
+
     def sendall(self, data, flags=0):
         return self._req.sendall(data, flags)
 

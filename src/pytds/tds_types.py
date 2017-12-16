@@ -706,7 +706,7 @@ class VarCharMaxSerializer(VarChar72Serializer):
         if login.bytes_to_unicode:
             return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
         else:
-            return six.b('').join(r.chunks())
+            return tds_base.join_bytearrays(r.chunks())
 
 
 class NVarChar70Serializer(BaseTypeSerializer):
@@ -1076,7 +1076,7 @@ class VarBinarySerializerMax(VarBinarySerializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        return b''.join(r.chunks())
+        return tds_base.join_bytearrays(r.chunks())
 
 class UDT72Serializer(BaseTypeSerializer):
     # Data type definition stream used for UDT_INFO in TYPE_INFO
