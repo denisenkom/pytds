@@ -35,15 +35,29 @@ tzoffset = pytds.tz.FixedOffsetTimezone
 
 
 class _FakeSock(object):
-    def __init__(self, messages):
-        self._stream = b''.join(messages)
+    def __init__(self, packets):
+        self._packets = packets
+        self._curr_packet = 0
+        self._packet_pos = 0
 
     def recv(self, size):
-        if not self._stream:
+        if self._curr_packet >= len(self._packets):
             return b''
-        res = self._stream[:size]
-        self._stream = self._stream[size:]
+        if self._packet_pos >= len(self._packets[self._curr_packet]):
+            self._curr_packet += 1
+            self._packet_pos = 0
+        if self._curr_packet >= len(self._packets):
+            return b''
+        res = self._packets[self._curr_packet][self._packet_pos:self._packet_pos+size]
+        self._packet_pos += len(res)
         return res
+
+    def recv_into(self, buffer, size=0):
+        if size == 0:
+            size = len(buffer)
+        res = self.recv(size)
+        buffer[0:len(res)] = res
+        return len(res)
 
     def send(self, buf, flags=0):
         self._sent = buf

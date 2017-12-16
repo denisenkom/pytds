@@ -11,27 +11,24 @@ HEADER = struct.Struct('>BBHHBx')
 class Sock:
     def __init__(self):
         self._read_pos = 0
-        self._seq = 1
         self._buf = bytearray(b'\x00' * BUFSIZE)
         HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
 
     def sendall(self, data, flags=0):
         pass
 
-    def recv_into(self, buffer, size=0):
+    def recv_into(self, buffer: bytearray, size=0):
         if size == 0:
             size = len(buffer)
-        if self._read_pos >= len(self._buf):
-            self._seq += 1
+        if self._read_pos >= BUFSIZE:
             HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
             self._read_pos = 0
-        to_read = min(size, len(self._buf) - self._read_pos)
+        to_read = min(size, BUFSIZE - self._read_pos)
         buffer[:to_read] = self._buf[self._read_pos:self._read_pos+to_read]
         return to_read
 
     def recv(self, size):
         if self._read_pos >= len(self._buf):
-            self._seq += 1
             HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
             self._read_pos = 0
         res = self._buf[self._read_pos:self._read_pos + size]

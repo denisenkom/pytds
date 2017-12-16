@@ -251,6 +251,8 @@ class _TdsReader(object):
             pos = 0
             while pos < _header.size:
                 received = self._transport.recv_into(self._bufview[pos:])
+                if received == 0:
+                    raise tds_base.ClosedConnectionError()
                 pos += received
         except tds_base.TimeoutError:
             self._session.put_cancel()
@@ -260,6 +262,8 @@ class _TdsReader(object):
         self._have = pos
         while pos < self._size:
             received = self._transport.recv_into(self._bufview[pos:], self._size - pos)
+            if received == 0:
+                raise tds_base.ClosedConnectionError()
             pos += received
             self._have += received
 
