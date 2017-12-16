@@ -372,10 +372,15 @@ if sys.version_info[0] >= 3:
     def my_ord(val):
         return val
 
+    def join_bytearrays(ba):
+        return b''.join(ba)
+
 else:
     exc_base_class = StandardError
     my_ord = ord
 
+    def join_bytearrays(bas):
+        return b''.join(bytes(ba) for ba in bas)
 
 # exception hierarchy
 class Warning(exc_base_class):
@@ -554,7 +559,7 @@ def readall(stm, size):
     :param size: Number of bytes to read.
     :returns: Bytes buffer of exactly given size.
     """
-    return b''.join(read_chunks(stm, size))
+    return join_bytearrays(read_chunks(stm, size))
 
 
 def readall_fast(stm, size):
