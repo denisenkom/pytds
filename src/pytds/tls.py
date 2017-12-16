@@ -35,6 +35,13 @@ class EncryptedSocket(object):
                 buf = self._tls_conn.bio_read(BUFSIZE)
                 self._transport.sendall(buf)
 
+    def recv_into(self, buffer, size=0):
+        if size == 0:
+            size = len(buffer)
+        res = self.recv(size)
+        buffer[0:len(res)] = res
+        return len(res)
+
     def recv(self, bufsize):
         while True:
             try:
@@ -120,7 +127,10 @@ def establish_channel(tds_sock):
                 if not validate_host(cert=conn.get_peer_certificate(), name=bhost):
                     # TODO throw correct exception class
                     raise Exception("Certificate does not match host name '{}'".format(login.server_name))
-            tds_sock.conn.sock = EncryptedSocket(transport=tds_sock.conn.sock, tls_conn=conn)
+            enc_sock = EncryptedSocket(transport=tds_sock.conn.sock, tls_conn=conn)
+            tds_sock.conn.sock = enc_sock
+            tds_sock._writer._transport = enc_sock
+            tds_sock._reader._transport = enc_sock
             return
 
 
@@ -135,3 +145,5 @@ def revert_to_clear(tds_sock):
     clear_conn = enc_conn._transport
     enc_conn.shutdown()
     tds_sock.conn.sock = clear_conn
+    tds_sock._writer._transport = clear_conn
+    tds_sock._reader._transport = clear_conn
