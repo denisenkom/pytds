@@ -1074,15 +1074,16 @@ def test_with_simple_server():
     server_thread.start()
     try:
         # test with both server and client configured for encryption
-        #with pytds.connect(
-        #        dsn=address[0],
-        #        port=address[1],
-        #        user="sa",
-        #        password='password',
-        #        cafile=root_ca_path,
-        #        disable_connect_retry=True,
-        #) as conn:
-        #    pass
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                cafile=root_ca_path,
+                disable_connect_retry=True,
+                autocommit=True,
+        ) as conn:
+            pass
 
         # test with server having encrypt on but client has it off
         # should throw exception in this case

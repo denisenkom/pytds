@@ -1516,6 +1516,7 @@ class _TdsSession(object):
         while True:
             marker = r.get_byte()
             if marker == tds_base.TDS_LOGINACK_TOKEN:
+                # https://msdn.microsoft.com/en-us/library/dd340651.aspx
                 succeed = True
                 size = r.get_smallint()
                 r.get_byte()  # interface

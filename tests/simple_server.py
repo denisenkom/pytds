@@ -188,7 +188,35 @@ class RequestHandler(socketserver.StreamRequestHandler):
             w._transport = wrapped_socket
 
         buf = r.read_whole_packet()
-        print(f"should be a login packet {buf}")
+        print(f"received login packet from client {buf}")
+
+        srv_name = 'Simple TDS Server'
+        srv_ver = (1, 0, 0, 0)
+        tds_version = pytds.tds_base.TDS74
+
+        w.begin_packet(pytds.tds_base.PacketType.REPLY)
+        # https://msdn.microsoft.com/en-us/library/dd340651.aspx
+        srv_name_coded, _ = pytds.tds.ucs2_codec.encode(srv_name)
+        srv_name_size = len(srv_name_coded)
+        w.put_byte(pytds.tds_base.TDS_LOGINACK_TOKEN)
+        size = 1 + 4 + 1 + srv_name_size + 4
+        w.put_usmallint(size)
+        w.put_byte(1)  # interface
+        w.put_uint_be(tds_version)
+        w.put_byte(len(srv_name))
+        w.write(srv_name_coded)
+        w.put_byte(srv_ver[0])
+        w.put_byte(srv_ver[1])
+        w.put_byte(srv_ver[2])
+        w.put_byte(srv_ver[3])
+
+        # https://msdn.microsoft.com/en-us/library/dd340421.aspx
+        w.put_byte(pytds.tds_base.TDS_DONE_TOKEN)
+        w.put_usmallint(0)  # status
+        w.put_usmallint(0)  # curcmd
+        w.put_uint8(0)   # done row count
+
+        w.flush()
 
     def bad_stream(self, msg):
         raise Exception(msg)
