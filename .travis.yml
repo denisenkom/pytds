@@ -3,6 +3,8 @@ python:
   - "2.7"
   - "3.5"
   - "3.6"
+  - "3.7-dev"
+  - "pypy3"
 install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
@@ -11,3 +13,5 @@ install:
 script:
   - pytest -v --junitxml=junit-results.xml --cov=./
   - codecov
+  - python profile_smp.py
+  - python profile_reader.py
