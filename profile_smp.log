@@ -15,3 +15,4 @@ TDS Reader profiling:
 
 Dec 13 2017 duration 0.64 sec at commit d255ce4
 Dec 14 2017 duration 0.3 sec after commit 9257a6b
+Dec 17 2017 duration 0.35 sec after commit 24d3f97 (fix timeout test)
