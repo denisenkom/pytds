@@ -1021,7 +1021,7 @@ class NewDateTimeTest(TestCase):
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class Auth(unittest.TestCase):
-    @unittest.skipUnless(os.getenv('NTLM_USER') and os.getenv('NTLM_PASSWORD'), "requires HOST variable to be set")
+    @unittest.skipUnless(os.getenv('NTLM_USER') and os.getenv('NTLM_PASSWORD'), "requires NTLM_USER and NTLM_PASSWORD environment variables to be set")
     def test_ntlm(self):
         conn = connect(settings.HOST, auth=pytds.login.NtlmAuth(user_name=os.getenv('NTLM_USER'), password=os.getenv('NTLM_PASSWORD')))
         with conn.cursor() as cursor:
