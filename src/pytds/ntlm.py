@@ -21,7 +21,10 @@ import re
 import binascii
 from socket import gethostname
 from six import print_, int2byte
-from . import pyDes
+try:
+    import pyDes
+except ImportError:
+    raise ImportError("If you want to use NTLM you need to install pyDes")
 
 NTLM_NegotiateUnicode                = 0x00000001
 NTLM_NegotiateOEM                    = 0x00000002
