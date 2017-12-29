@@ -99,21 +99,49 @@ class NtlmAuth(object):
     :type password: str
     """
     def __init__(self, user_name, password):
+        self._user_name = user_name
         if '\\' in user_name:
-            self._domain, self._user = user_name.split('\\', 1)
+            domain, self._user = user_name.split('\\', 1)
+            self._domain = domain.upper()
         else:
-            self._domain = 'workspace'
+            self._domain = 'WORKSPACE'
             self._user = user_name
         self._password = password
+        try:
+            from ntlm_auth.ntlm import NegotiateFlags
+        except ImportError:
+            raise ImportError("To use NTLM authentication you need to install ntlm-auth module")
+        self._nego_flags = NegotiateFlags.NTLMSSP_NEGOTIATE_128 | \
+                           NegotiateFlags.NTLMSSP_NEGOTIATE_56 | \
+                           NegotiateFlags.NTLMSSP_NEGOTIATE_UNICODE | \
+                           NegotiateFlags.NTLMSSP_NEGOTIATE_VERSION | \
+                           NegotiateFlags.NTLMSSP_REQUEST_TARGET | \
+                           NegotiateFlags.NTLMSSP_NEGOTIATE_NTLM | \
+                           NegotiateFlags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY | \
+                           NegotiateFlags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN
+        self._ntlm_compat = 2
+        self._workstation = socket.gethostname().upper()
 
     def create_packet(self):
-        from . import ntlm
-        return ntlm.create_NTLM_NEGOTIATE_MESSAGE_raw(socket.gethostname(), self._domain)
+        import ntlm_auth.ntlm
+        return ntlm_auth.ntlm.NegotiateMessage(
+            negotiate_flags=self._nego_flags,
+            domain_name=self._domain,
+            workstation=self._workstation,
+        ).get_data()
 
     def handle_next(self, packet):
-        from . import ntlm
-        nonce, flags = ntlm.parse_NTLM_CHALLENGE_MESSAGE_raw(packet)
-        return ntlm.create_NTLM_AUTHENTICATE_MESSAGE_raw(nonce, self._user, self._domain, self._password, flags)
+        import ntlm_auth.ntlm
+        challenge = ntlm_auth.ntlm.ChallengeMessage(packet)
+        return ntlm_auth.ntlm.AuthenticateMessage(
+            user_name=self._user,
+            password=self._password,
+            domain_name=self._domain,
+            workstation=self._workstation,
+            challenge_message=challenge,
+            ntlm_compatibility=self._ntlm_compat,
+            server_certificate_hash=None,
+        ).get_data()
 
     def close(self):
         pass
