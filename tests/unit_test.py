@@ -1087,6 +1087,7 @@ def test_with_simple_server():
         .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
         .serial_number(x509.random_serial_number())
         .public_key(server_key.public_key()))
+
     # make a certificate with incorrect host name in the subject
     bad_server_cert = test_ca.sign(name='badname', cb=builder.subject_name(x509.Name([
         x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, 'badname')]))
@@ -1094,6 +1095,17 @@ def test_with_simple_server():
                                .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
                                .serial_number(x509.random_serial_number())
                                .public_key(server_key.public_key()))
+
+    # make certificate with matching SAN
+    server_cert_with_san = test_ca.sign(name='badname', cb=builder.subject_name(x509.Name([
+        x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, 'badname')]))
+                                   .not_valid_before(datetime.datetime.utcnow())
+                                   .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                                   .serial_number(x509.random_serial_number())
+                                   .public_key(server_key.public_key())
+                                   .add_extension(x509.SubjectAlternativeName([x509.DNSName(address[0])]), critical=False)
+                                   )
+
     root_ca_path = test_ca.cert_path('root')
 
     with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
@@ -1146,3 +1158,14 @@ def test_with_simple_server():
                 cafile=root_ca_path,
             )
         assert 'Certificate does not match host name' in str(excinfo.value)
+
+    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert_with_san, key=server_key):
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+                autocommit=True,
+                cafile=root_ca_path):
+            pass

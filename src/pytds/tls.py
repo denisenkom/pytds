@@ -83,9 +83,21 @@ def validate_host(cert, name):
             cn = v
             break
 
-    # TODO check SAN extensions
+    if cn == name:
+        return True
+
+    # checking SAN
+    s_name = name.decode('ascii')
+    for i in range(cert.get_extension_count()):
+        ext = cert.get_extension(i)
+        if ext.get_short_name() == b'subjectAltName':
+            s = str(ext)
+            # SANs are usually have form like: DNS:hostname
+            if s.startswith('DNS:') and s[4:] == s_name:
+                return True
+
     # TODO handle wildcards
-    return cn == name
+    return False
 
 
 def create_context(cafile):
