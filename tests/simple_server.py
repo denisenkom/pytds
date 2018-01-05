@@ -229,6 +229,8 @@ class RequestHandler(socketserver.StreamRequestHandler):
 
 
 class SimpleServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
     def __init__(self, address, enc, cert=None, pkey=None):
         self._enc = enc
         super().__init__(address, RequestHandler)

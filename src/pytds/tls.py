@@ -27,13 +27,13 @@ class EncryptedSocket(object):
         self._transport.sendall(buf)
         return res
 
-    def send(self, data):
-        while True:
-            try:
-                return self._tls_conn.send(data)
-            except OpenSSL.SSL.WantWriteError:
-                buf = self._tls_conn.bio_read(BUFSIZE)
-                self._transport.sendall(buf)
+ #   def send(self, data):
+ #       while True:
+ #           try:
+ #               return self._tls_conn.send(data)
+ #           except OpenSSL.SSL.WantWriteError:
+ #               buf = self._tls_conn.bio_read(BUFSIZE)
+ #               self._transport.sendall(buf)
 
     def recv_into(self, buffer, size=0):
         if size == 0:

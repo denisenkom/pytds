@@ -1034,6 +1034,30 @@ class MiscTestCase(unittest.TestCase):
         self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTime.MAX_PYDATETIME))
 
 
+class TestServer(object):
+    def __init__(self, address, enc, cert, key):
+        import simple_server
+        import threading
+        self._server = simple_server.SimpleServer(
+            address,
+            enc=enc,
+            cert=OpenSSL.crypto.X509.from_cryptography(cert),
+            pkey=OpenSSL.crypto.PKey.from_cryptography_key(key)
+        )
+        self._server_thread = threading.Thread(target=lambda: self._server.serve_forever())
+
+    def __enter__(self):
+        self._server.__enter__()
+        self._server_thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._server.shutdown()
+        self._server.server_close()
+        self._server_thread.join()
+
+
+
 def test_with_simple_server():
     import sys
     import os
@@ -1071,15 +1095,8 @@ def test_with_simple_server():
                                .serial_number(x509.random_serial_number())
                                .public_key(server_key.public_key()))
     root_ca_path = test_ca.cert_path('root')
-    server = simple_server.SimpleServer(
-        address,
-        enc=PreLoginEnc.ENCRYPT_ON,
-        cert=OpenSSL.crypto.X509.from_cryptography(server_cert),
-        pkey=OpenSSL.crypto.PKey.from_cryptography_key(server_key)
-    )
-    server_thread = threading.Thread(target=lambda: server.serve_forever())
-    server_thread.start()
-    try:
+
+    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
         # test with both server and client configured for encryption
         with pytds.connect(
                 dsn=address[0],
@@ -1089,7 +1106,7 @@ def test_with_simple_server():
                 cafile=root_ca_path,
                 disable_connect_retry=True,
                 autocommit=True,
-        ) as conn:
+        ) as _:
             pass
 
         # test with server having encrypt on but client has it off
@@ -1101,11 +1118,11 @@ def test_with_simple_server():
                 user="sa",
                 password='password',
                 disable_connect_retry=True,
-                )
+            )
         assert 'not have encryption enabled but it is required by server' in str(excinfo.value)
 
-        # test login where only login is encrypted
-        server.set_enc(PreLoginEnc.ENCRYPT_OFF)
+    # test login where only login is encrypted
+    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=server_cert, key=server_key):
         with pytds.connect(
                 dsn=address[0],
                 port=address[1],
@@ -1118,13 +1135,7 @@ def test_with_simple_server():
         ) as conn:
             pass
 
-
-        # test with certificate with invalid host name in it
-        ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
-        ctx.use_certificate(OpenSSL.crypto.X509.from_cryptography(bad_server_cert))
-        ctx.use_privatekey(OpenSSL.crypto.PKey.from_cryptography_key(server_key))
-        server.set_ssl_context(ctx)
-
+    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=bad_server_cert, key=server_key):
         with pytest.raises(pytds.Error) as excinfo:
             pytds.connect(
                 dsn=address[0],
@@ -1135,7 +1146,3 @@ def test_with_simple_server():
                 cafile=root_ca_path,
             )
         assert 'Certificate does not match host name' in str(excinfo.value)
-    finally:
-        server.shutdown()
-        server_thread.join()
-
