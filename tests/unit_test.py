@@ -30,6 +30,7 @@ from pytds.tds_types import (
     DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, NVarChar70Serializer,
     NText70Serializer, Text70Serializer, VarBinarySerializer, VarBinarySerializer72,
     )
+import pytds.login
 
 tzoffset = pytds.tz.FixedOffsetTimezone
 
@@ -1169,3 +1170,17 @@ def test_with_simple_server():
                 autocommit=True,
                 cafile=root_ca_path):
             pass
+
+
+def test_ntlm():
+    # test NTLM packet generation without actual server
+    auth = pytds.login.NtlmAuth(user_name='testuser', password='password')
+    auth.create_packet()
+    # real packet from server
+    packet = b'NTLMSSP\x00\x02\x00\x00\x00\x07\x00\x07\x008\x00\x00\x00\x06\x82\x8a\xa2K@\xca\xe8' \
+             b'9H6:\x00\x00\x00\x00\x00\x00\x00\x00X\x00X\x00?\x00\x00\x00\n\x00\xab?\x00\x00\x00' \
+             b'\x0fMISHAPC\x02\x00\x0e\x00M\x00I\x00S\x00H\x00A\x00P\x00C\x00\x01\x00\x0e\x00M\x00' \
+             b'I\x00S\x00H\x00A\x00P\x00C\x00\x04\x00\x0e\x00m\x00i\x00s\x00h\x00a\x00p\x00c\x00' \
+             b'\x03\x00\x0e\x00m\x00i\x00s\x00h\x00a\x00p\x00c\x00\x07\x00\x08\x00\x8b\x08Y\xad' \
+             b'\xd3\x85\xd3\x01\x00\x00\x00\x00'
+    auth.handle_next(packet)
