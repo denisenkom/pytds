@@ -125,8 +125,7 @@ def establish_channel(tds_sock):
         else:
             if login.validate_host:
                 if not validate_host(cert=conn.get_peer_certificate(), name=bhost):
-                    # TODO throw correct exception class
-                    raise Exception("Certificate does not match host name '{}'".format(login.server_name))
+                    raise tds_base.Error("Certificate does not match host name '{}'".format(login.server_name))
             enc_sock = EncryptedSocket(transport=tds_sock.conn.sock, tls_conn=conn)
             tds_sock.conn.sock = enc_sock
             tds_sock._writer._transport = enc_sock

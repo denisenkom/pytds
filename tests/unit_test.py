@@ -1063,6 +1063,13 @@ def test_with_simple_server():
         .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
         .serial_number(x509.random_serial_number())
         .public_key(server_key.public_key()))
+    # make a certificate with incorrect host name in the subject
+    bad_server_cert = test_ca.sign(name='badname', cb=builder.subject_name(x509.Name([
+        x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, 'badname')]))
+                               .not_valid_before(datetime.datetime.utcnow())
+                               .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                               .serial_number(x509.random_serial_number())
+                               .public_key(server_key.public_key()))
     root_ca_path = test_ca.cert_path('root')
     server = simple_server.SimpleServer(
         address,
@@ -1096,6 +1103,23 @@ def test_with_simple_server():
                 disable_connect_retry=True,
                 )
         assert 'not have encryption enabled but it is required by server' in str(excinfo.value)
+
+        # test with certificate with invalid host name in it
+        ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
+        ctx.use_certificate(OpenSSL.crypto.X509.from_cryptography(bad_server_cert))
+        ctx.use_privatekey(OpenSSL.crypto.PKey.from_cryptography_key(server_key))
+        server.set_ssl_context(ctx)
+
+        with pytest.raises(pytds.Error) as excinfo:
+            pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+                cafile=root_ca_path,
+            )
+        assert 'Certificate does not match host name' in str(excinfo.value)
     finally:
         server.shutdown()
         server_thread.join()

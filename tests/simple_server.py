@@ -233,6 +233,9 @@ class SimpleServer(socketserver.TCPServer):
         ctx.use_privatekey(pkey)
         self._tls_ctx = ctx
 
+    def set_ssl_context(self, ctx):
+        self._tls_ctx = ctx
+
 
 def run(address):
     print('Starting server...')
