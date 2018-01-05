@@ -1104,6 +1104,21 @@ def test_with_simple_server():
                 )
         assert 'not have encryption enabled but it is required by server' in str(excinfo.value)
 
+        # test login where only login is encrypted
+        server.set_enc(PreLoginEnc.ENCRYPT_OFF)
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                cafile=root_ca_path,
+                disable_connect_retry=True,
+                enc_login_only=True,
+                autocommit=True,
+        ) as conn:
+            pass
+
+
         # test with certificate with invalid host name in it
         ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
         ctx.use_certificate(OpenSSL.crypto.X509.from_cryptography(bad_server_cert))

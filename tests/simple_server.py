@@ -152,6 +152,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
         if close_conn:
             return
 
+        wrapped_socket = None
         if res_enc != pytds.PreLoginEnc.ENCRYPT_NOT_SUP:
             # setup TLS connection
             tlsconn = OpenSSL.SSL.Connection(self.server._tls_ctx)
@@ -183,12 +184,17 @@ class RequestHandler(socketserver.StreamRequestHandler):
                         w.write(buf)
                         w.flush()
 
-            wrapped_socket = Sock(pytds.tls.EncryptedSocket(transport=self.request, tls_conn=tlsconn))
+            wrapped_socket = pytds.tls.EncryptedSocket(transport=self.request, tls_conn=tlsconn)
             r._transport = wrapped_socket
             w._transport = wrapped_socket
 
         buf = r.read_whole_packet()
         print(f"received login packet from client {buf}")
+
+        if res_enc == pytds.PreLoginEnc.ENCRYPT_OFF:
+            wrapped_socket.shutdown()
+            r._transport = self._transport
+            w._transport = self._transport
 
         srv_name = 'Simple TDS Server'
         srv_ver = (1, 0, 0, 0)
@@ -235,6 +241,9 @@ class SimpleServer(socketserver.TCPServer):
 
     def set_ssl_context(self, ctx):
         self._tls_ctx = ctx
+
+    def set_enc(self, enc):
+        self._enc = enc
 
 
 def run(address):
