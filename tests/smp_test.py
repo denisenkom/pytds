@@ -62,6 +62,12 @@ class SmpSessionsTests(unittest.TestCase):
         assert self.sess.get_state() == SessionState.CLOSED
         assert self.sess.recv_into(self.buf) == 0
 
+    def test_close_twice(self):
+        # this test is optional, maybe it does not behave like that
+        self.sock.set_input([smp_hdr.pack(0x53, 4, 0, 16, 1, 10)])
+        self.sess.close()
+        self.sess.close()
+
     def test_ack_after_fin(self):
         sess2 = self.mgr.create_session()
         self.sock.set_input([smp_hdr.pack(0x53, 4, 0, 16, 1, 10) + smp_hdr.pack(0x53, 2, 0, 16, 2, 10)])
@@ -114,3 +120,27 @@ class SmpSessionsTests(unittest.TestCase):
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
         assert 'Invalid SEQNUM' in str(excinfo)
+
+    def test_invalid_seqnum_in_ack_packet(self):
+        self.sock.set_input([smp_hdr.pack(0x53, 2, 0, 16, 1, 10)])
+        with pytest.raises(pytds.Error) as excinfo:
+            self.sess.recv_into(self.buf)
+        assert 'Invalid SEQNUM' in str(excinfo)
+
+
+def test_misc():
+    sock = MockSock()
+    mgr = SmpManager(sock)
+    sess = mgr.create_session()
+    repr(mgr)
+
+    SessionState.to_str(SessionState.SESSION_ESTABLISHED)
+    SessionState.to_str(SessionState.CLOSED)
+    SessionState.to_str(SessionState.FIN_RECEIVED)
+    SessionState.to_str(SessionState.FIN_SENT)
+
+    mgr = SmpManager(sock, max_sessions=5)
+    with pytest.raises(pytds.Error) as excinfo:
+        for _ in range(10):
+            mgr.create_session()
+    assert "Can't create more MARS sessions" in str(excinfo)

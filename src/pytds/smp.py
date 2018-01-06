@@ -46,7 +46,7 @@ class _SmpSession(object):
 
     def __repr__(self):
         fmt = "<_SmpSession sid={} state={} recv_queue={} send_queue={} seq_num_for_send={}>"
-        return fmt.format(self.session_id, self._state, self.recv_queue, self.send_queue,
+        return fmt.format(self.session_id, SessionState.to_str(self._state), self.recv_queue, self.send_queue,
                           self.seq_num_for_send)
 
     def get_state(self):
@@ -91,16 +91,16 @@ class PacketTypes:
     FIN = 0x4
     DATA = 0x8
 
-    @staticmethod
-    def type_to_str(t):
-        if t == PacketTypes.SYN:
-            return 'SYN'
-        elif t == PacketTypes.ACK:
-            return 'ACK'
-        elif t == PacketTypes.DATA:
-            return 'DATA'
-        elif t == PacketTypes.FIN:
-            return 'FIN'
+    #@staticmethod
+    #def type_to_str(t):
+    #    if t == PacketTypes.SYN:
+    #        return 'SYN'
+    #    elif t == PacketTypes.ACK:
+    #        return 'ACK'
+    #    elif t == PacketTypes.DATA:
+    #        return 'DATA'
+    #    elif t == PacketTypes.FIN:
+    #        return 'FIN'
 
 
 class SessionState:
@@ -122,10 +122,10 @@ class SessionState:
 
 
 class SmpManager(object):
-    def __init__(self, transport):
+    def __init__(self, transport, max_sessions=2 ** 16):
         self._transport = transport
         self._sessions = {}
-        self._used_ids_ba = bitarray(2 ** 16)
+        self._used_ids_ba = bitarray(max_sessions)
         self._used_ids_ba.setall(False)
         self._lock = threading.RLock()
         self._hdr_buf = memoryview(bytearray(b'\x00' * SMP_HEADER.size))
@@ -258,7 +258,7 @@ class SmpManager(object):
         if flags == PacketTypes.DATA:
             if session._state == SessionState.SESSION_ESTABLISHED:
                 if seq_num != self._add_one_wrap(session._seq_num_for_recv):
-                    self._bad_stm('Invalid SEQNUM in ACK packet from server')
+                    self._bad_stm('Invalid SEQNUM in DATA packet from server')
                 session._seq_num_for_recv = seq_num
                 remains = l - SMP_HEADER.size
                 while remains:
