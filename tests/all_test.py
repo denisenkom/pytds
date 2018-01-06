@@ -104,13 +104,27 @@ def test_connection_timeout_no_mars():
     kwargs['login_timeout'] = 1
     kwargs['timeout'] = 1
     kwargs['use_mars'] = False
-    conn = connect(*settings.CONNECT_ARGS, **kwargs)
-    with conn.cursor() as cur:
-        with pytest.raises(TimeoutError):
-            cur.execute("waitfor delay '00:00:05'")
-    with conn.cursor() as cur:
-        cur.execute("select 1")
-        cur.fetchall()
+    with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
+        with conn.cursor() as cur:
+            with pytest.raises(TimeoutError):
+                cur.execute("waitfor delay '00:00:05'")
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.fetchall()
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_connection_no_mars_no_pooling():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update({
+        'database': 'master',
+        'use_mars': False,
+        'pooling': False,
+    })
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            assert cur.fetchall() == [(1,)]
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
