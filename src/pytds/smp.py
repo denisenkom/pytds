@@ -40,14 +40,17 @@ class _SmpSession(object):
         self._mgr = mgr
         self.recv_queue = []
         self.send_queue = []
-        self.state = None
+        self._state = None
         self._curr_buf_pos = 0
         self._curr_buf = b''
 
     def __repr__(self):
         fmt = "<_SmpSession sid={} state={} recv_queue={} send_queue={} seq_num_for_send={}>"
-        return fmt.format(self.session_id, self.state, self.recv_queue, self.send_queue,
+        return fmt.format(self.session_id, self._state, self.recv_queue, self.send_queue,
                           self.seq_num_for_send)
+
+    def get_state(self):
+        return self._state
 
     def close(self):
         self._mgr.close_smp_session(self)
@@ -60,11 +63,11 @@ class _SmpSession(object):
             self._curr_buf = self._mgr.recv_packet(self)
             self._curr_buf_pos = 0
             if not self._curr_buf:
-                return b''
+                return 0, 0
         to_read = min(size, len(self._curr_buf) - self._curr_buf_pos)
         offset = self._curr_buf_pos
         self._curr_buf_pos += to_read
-        return (offset, to_read)
+        return offset, to_read
 
     def recv_into(self, buffer, size=0):
         if size == 0:
@@ -74,12 +77,12 @@ class _SmpSession(object):
         buffer[:to_read] = self._curr_buf[offset:offset + to_read]
         return to_read
 
-    def recv(self, size):
-        offset, to_read = self._recv_internal(size)
-        return self._curr_buf[offset:offset + to_read]
+    #def recv(self, size):
+    #    offset, to_read = self._recv_internal(size)
+    #    return self._curr_buf[offset:offset + to_read]
 
     def is_connected(self):
-        return self.state == SessionState.SESSION_ESTABLISHED
+        return self._state == SessionState.SESSION_ESTABLISHED
 
 
 class PacketTypes:
@@ -148,13 +151,13 @@ class SmpManager(object):
                 session.high_water_for_recv,
                 )
             self._transport.sendall(hdr)
-            session.state = SessionState.SESSION_ESTABLISHED
+            session._state = SessionState.SESSION_ESTABLISHED
         return session
 
     def close_smp_session(self, session):
-        if session.state in (SessionState.CLOSED, SessionState.FIN_SENT):
+        if session._state in (SessionState.CLOSED, SessionState.FIN_SENT):
             return
-        elif session.state == SessionState.SESSION_ESTABLISHED:
+        elif session._state == SessionState.SESSION_ESTABLISHED:
             with self._lock:
                 hdr = SMP_HEADER.pack(
                     SMP_ID,
@@ -164,13 +167,13 @@ class SmpManager(object):
                     session.seq_num_for_send,
                     session.high_water_for_recv,
                     )
-                session.state = SessionState.FIN_SENT
+                session._state = SessionState.FIN_SENT
                 try:
                     self._transport.sendall(hdr)
                     self.recv_packet(session)
                 except (socket.error, OSError) as ex:
                     if ex.errno in (errno.ECONNRESET, errno.EPIPE):
-                        session.state = SessionState.CLOSED
+                        session._state = SessionState.CLOSED
                     else:
                         raise ex
 
@@ -206,11 +209,11 @@ class SmpManager(object):
 
     def recv_packet(self, session):
         with self._lock:
-            if session.state == SessionState.CLOSED:
+            if session._state == SessionState.CLOSED:
                 return b''
             while not session.recv_queue:
                 self._read_smp_message()
-                if session.state in (SessionState.CLOSED, SessionState.FIN_RECEIVED):
+                if session._state in (SessionState.CLOSED, SessionState.FIN_RECEIVED):
                     return b''
             session.high_water_for_recv = self._add_one_wrap(session.high_water_for_recv)
             if session.high_water_for_recv - session._last_high_water_for_recv >= 2:
@@ -234,7 +237,10 @@ class SmpManager(object):
         # caller should acquire lock before calling this function
         buf_pos = 0
         while buf_pos < SMP_HEADER.size:
-            buf_pos += self._transport.recv_into(self._hdr_buf[buf_pos:])
+            read = self._transport.recv_into(self._hdr_buf[buf_pos:])
+            buf_pos += read
+            if read == 0:
+                self._bad_stm('Unexpected EOF while reading SMP header')
         smid, flags, sid, l, seq_num, wnd = SMP_HEADER.unpack(self._hdr_buf)
         if smid != SMP_ID:
             self._bad_stm('Invalid SMP packet signature')
@@ -246,9 +252,11 @@ class SmpManager(object):
             self._bad_stm('Invalid WNDW in packet from server')
         if seq_num > session.high_water_for_recv:
             self._bad_stm('Invalid SEQNUM in packet from server')
+        if l < SMP_HEADER.size:
+            self._bad_stm('Invalid LENGTH in packet from server')
         session._last_recv_seq_num = seq_num
         if flags == PacketTypes.DATA:
-            if session.state == SessionState.SESSION_ESTABLISHED:
+            if session._state == SessionState.SESSION_ESTABLISHED:
                 if seq_num != self._add_one_wrap(session._seq_num_for_recv):
                     self._bad_stm('Invalid SEQNUM in ACK packet from server')
                 session._seq_num_for_recv = seq_num
@@ -261,36 +269,35 @@ class SmpManager(object):
                     session.high_water_for_send = wnd
                     self.send_queued_packets(session)
 
-            elif session.state == SessionState.FIN_SENT:
+            elif session._state == SessionState.FIN_SENT:
                 skipall(self._transport, l - SMP_HEADER.size)
             else:
                 self._bad_stm('Unexpected DATA packet from server')
         elif flags == PacketTypes.ACK:
-            if session.state in (SessionState.FIN_RECEIVED, SessionState.CLOSED):
-                self._bad_stm('Unexpected SMP ACK packet from server')
+            if session._state in (SessionState.FIN_RECEIVED, SessionState.CLOSED):
+                self._bad_stm('Unexpected ACK packet from server')
             if seq_num != session._seq_num_for_recv:
                 self._bad_stm('Invalid SEQNUM in ACK packet from server')
             session.high_water_for_send = wnd
             self.send_queued_packets(session)
         elif flags == PacketTypes.FIN:
-            if session.state == SessionState.SESSION_ESTABLISHED:
-                session.state = SessionState.FIN_RECEIVED
-            elif session.state == SessionState.FIN_SENT:
-                session.state = SessionState.CLOSED
+            assert session._state in (SessionState.SESSION_ESTABLISHED, SessionState.FIN_SENT, SessionState.FIN_RECEIVED)
+            if session._state == SessionState.SESSION_ESTABLISHED:
+                session._state = SessionState.FIN_RECEIVED
+            elif session._state == SessionState.FIN_SENT:
+                session._state = SessionState.CLOSED
                 del self._sessions[session.session_id]
                 self._used_ids_ba[session.session_id] = False
-            elif session.state == SessionState.FIN_RECEIVED:
-                self._bad_stm('Unexpected SMP FIN packet from server')
-            else:
-                self._bad_stm('Invalid state: ' + SessionState.to_str(session.state))
+            elif session._state == SessionState.FIN_RECEIVED:
+                self._bad_stm('Unexpected FIN packet from server')
         elif flags == PacketTypes.SYN:
-            self._bad_stm('Unexpected SMP SYN packet from server')
+            self._bad_stm('Unexpected SYN packet from server')
         else:
-            self._bad_stm('Unexpected SMP flags in packet from server')
+            self._bad_stm('Unexpected FLAGS in packet from server')
 
     def close(self):
         self._transport.close()
 
     def transport_closed(self):
         for session in self._sessions.values():
-            session.state = SessionState.CLOSED
+            session._state = SessionState.CLOSED

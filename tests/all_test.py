@@ -207,14 +207,6 @@ class TestCase2(TestCase):
     #        cur = self.conn.cursor()
     #        cur.close()
 
-    def test_smp(self):
-        if not self.conn.mars_enabled:
-            self.skipTest('Only relevant to mars')
-        sess = self.conn._conn._smp_manager.create_session()
-        self.assertEqual(sess.state, pytds.smp.SessionState.SESSION_ESTABLISHED)
-        sess.close()
-        self.assertEqual(sess.state, pytds.smp.SessionState.CLOSED)
-
     def test_cursor_env(self):
         with self.conn.cursor() as cur:
             cur.execute('use master')
