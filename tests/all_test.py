@@ -6,6 +6,7 @@ import random
 import string
 import codecs
 from six import StringIO
+import logging
 
 from pytds.tds_types import TimeType, DateTime2Type, DateType, DateTimeOffsetType, BitType, TinyIntType, SmallIntType, \
     IntType, BigIntType, RealType, FloatType, NVarCharType, VarBinaryType, SmallDateTimeType, DateTimeType, DecimalType, \
@@ -22,6 +23,7 @@ import logging
 from time import sleep
 from datetime import datetime, date, time
 import uuid
+import pytest
 import pytds.tz
 import pytds.login
 import pytds.smp
@@ -45,6 +47,9 @@ import pytds
 import settings
 
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(format="%(asctime)-15s %(message)s")
+
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
 
@@ -55,8 +60,68 @@ logging.basicConfig()
 
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
 
+
+def create_test_database():
+    if not LIVE_TEST:
+        return
+    logger.info('in setup class')
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs['database'] = 'master'
+    kwargs['autocommit'] = True
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            try:
+                cur.execute('drop database [{0}]'.format(settings.DATABASE))
+            except:
+                pass
+            try:
+                cur.execute('create database [{0}]'.format(settings.DATABASE))
+            except:
+                pass
+
+
+create_test_database()
+
+
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class TestCase(unittest.TestCase):
+def test_connection_timeout_with_mars():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs['database'] = 'master'
+    kwargs['login_timeout'] = 1
+    kwargs['timeout'] = 1
+    kwargs['use_mars'] = True
+    with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
+        cur = conn.cursor()
+        with pytest.raises(TimeoutError):
+            cur.execute("waitfor delay '00:00:05'")
+        cur.execute('select 1')
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_connection_timeout_no_mars():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs['database'] = 'master'
+    kwargs['login_timeout'] = 1
+    kwargs['timeout'] = 1
+    kwargs['use_mars'] = False
+    conn = connect(*settings.CONNECT_ARGS, **kwargs)
+    with conn.cursor() as cur:
+        with pytest.raises(TimeoutError):
+            cur.execute("waitfor delay '00:00:05'")
+    with conn.cursor() as cur:
+        cur.execute("select 1")
+        cur.fetchall()
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_get_instances():
+    if not hasattr(settings, 'BROWSER_ADDRESS'):
+        return unittest.skip('BROWSER_ADDRESS setting is not defined')
+    pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class ConnectionTestCase(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
@@ -84,301 +149,67 @@ class NoMarsTestCase(unittest.TestCase):
         self.conn.commit()
 
 
-class DbTestCase(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        if not LIVE_TEST:
-            return
-        kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
-        kwargs['autocommit'] = True
-        with connect(**kwargs) as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute('drop database [{0}]'.format(settings.DATABASE))
-                except:
-                    pass
-                cur.execute('create database [{0}]'.format(settings.DATABASE))
+class DbTestCase(ConnectionTestCase):
+    def test_primary_key(self):
+        cursor = self.conn.cursor()
+        cursor.execute('create table testtable_pk(pk int primary key)')
+        cursor.execute('insert into testtable_pk values (1)')
+        with self.assertRaises(IntegrityError):
+            cursor.execute('insert into testtable_pk values (1)')
 
-    @classmethod
-    def tearDownClass(cls):
-        if not LIVE_TEST:
-            return
-        kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['server'] = settings.HOST
-        kwargs['database'] = 'master'
-        kwargs['autocommit'] = True
-        with connect(**kwargs) as conn:
-            with conn.cursor() as cur:
-                cur.execute('drop database [{0}]'.format(settings.DATABASE))
-
-    def setUp(self):
-        self.conn = pytds.connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS)
-
-    def tearDown(self):
-        self.conn.close()
-
-
-class TestCase2(TestCase):
-    def setUp(self):
-        super(TestCase2, self).setUp()
-        self.cursor = self.conn.cursor()
-
-    def test_all(self):
-        cur = self.conn.cursor()
-        with self.assertRaises(ProgrammingError):
-            cur.execute(u'select ')
-        self.assertEqual('abc', cur.execute_scalar("select cast('abc' as varchar(max)) as fieldname"))
-        assert 'abc' == cur.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
-        assert b'abc' == cur.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
-        #assert 12 == cur.execute_scalar('select cast(12 as bigint) as fieldname')
-        assert 12 == cur.execute_scalar('select cast(12 as smallint) as fieldname')
-        assert -12 == cur.execute_scalar('select -12 as fieldname')
-        assert 12 == cur.execute_scalar('select cast(12 as tinyint) as fieldname')
-        assert True == cur.execute_scalar('select cast(1 as bit) as fieldname')
-        assert 5.1 == cur.execute_scalar('select cast(5.1 as float) as fieldname')
-        cur.execute("select 'test', 20")
-        assert ('test', 20) == cur.fetchone()
-        assert 'test' == cur.execute_scalar("select 'test' as fieldname")
-        assert 'test' == cur.execute_scalar("select N'test' as fieldname")
-        assert 'test' == cur.execute_scalar("select cast(N'test' as ntext) as fieldname")
-        assert 'test' == cur.execute_scalar("select cast(N'test' as text) as fieldname")
-        self.assertEqual('test ', cur.execute_scalar("select cast(N'test' as char(5)) as fieldname"))
-        self.assertEqual('test ', cur.execute_scalar("select cast(N'test' as nchar(5)) as fieldname"))
-        assert b'test' == cur.execute_scalar("select cast('test' as varbinary(4)) as fieldname")
-        assert b'test' == cur.execute_scalar("select cast('test' as image) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as image) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as varbinary(10)) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as ntext) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as nvarchar(max)) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as xml)")
-        self.assertEqual(None, cur.execute_scalar("select cast(NULL as varchar(max)) as fieldname"))
-        assert None == cur.execute_scalar("select cast(NULL as nvarchar(10)) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as varchar(10)) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as nchar(10)) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
-        assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
-        assert 5 == cur.execute_scalar('select 5 as fieldname')
-
-    def test_decimals(self):
-        cur = self.conn.cursor()
-        assert Decimal(12) == cur.execute_scalar('select cast(12 as decimal) as fieldname')
-        assert Decimal(-12) == cur.execute_scalar('select cast(-12 as decimal) as fieldname')
-        assert Decimal('123456.12345') == cur.execute_scalar("select cast('123456.12345'as decimal(20,5)) as fieldname")
-        assert Decimal('-123456.12345') == cur.execute_scalar("select cast('-123456.12345'as decimal(20,5)) as fieldname")
-
-    def test_money(self):
-        cur = self.conn.cursor()
-        assert Decimal('0') == cur.execute_scalar("select cast('0' as money) as fieldname")
-        assert Decimal('1') == cur.execute_scalar("select cast('1' as money) as fieldname")
-        self.assertEqual(Decimal('1.5555'), cur.execute_scalar("select cast('1.5555' as money) as fieldname"))
-        assert Decimal('1234567.5555') == cur.execute_scalar("select cast('1234567.5555' as money) as fieldname")
-        assert Decimal('-1234567.5555') == cur.execute_scalar("select cast('-1234567.5555' as money) as fieldname")
-        assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
-
-    def test_timeout(self):
-        kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
-        kwargs['login_timeout'] = 1
-        kwargs['timeout'] = 1
-        with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
-            cur = conn.cursor()
-            with self.assertRaises(TimeoutError):
-                cur.execute("waitfor delay '00:00:05'")
-            cur.execute('select 1')
-
-    def test_timeout_no_mars(self):
-        kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
-        kwargs['login_timeout'] = 1
-        kwargs['timeout'] = 1
-        kwargs['use_mars'] = False
-        conn = connect(*settings.CONNECT_ARGS, **kwargs)
-        with conn.cursor() as cur:
-            with self.assertRaises(TimeoutError):
-                cur.execute("waitfor delay '00:00:05'")
-        with conn.cursor() as cur:
-            cur.execute("select 1")
-            cur.fetchall()
-
-    def test_strs(self):
-        cur = self.conn.cursor()
-        self.assertIsInstance(cur.execute_scalar("select 'test'"), six.text_type)
-
-    #def test_mars_sessions_recycle_ids(self):
-    #    if not self.conn.mars_enabled:
-    #        self.skipTest('Only relevant to mars')
-    #    for _ in xrange(2 ** 16 + 1):
-    #        cur = self.conn.cursor()
-    #        cur.close()
-
-    def test_cursor_env(self):
-        with self.conn.cursor() as cur:
-            cur.execute('use master')
-            self.assertEqual(cur.execute_scalar('select DB_NAME()'), 'master')
-
-    def test_empty_query(self):
-        with self.conn.cursor() as cur:
-            cur.execute('')
-            self.assertIs(None, cur.description)
-
-    def test_parameters_ll(self):
-        _params_tests(self)
-
-    def _test_val(self, val):
-        with self.conn.cursor() as cur:
-            cur.execute('select %s', (val,))
-            self.assertTupleEqual(cur.fetchone(), (val,))
-            self.assertIs(cur.fetchone(), None)
-
-    def test_parameters(self):
-        test_val = self._test_val
-
-        test_val(u'hello')
-        test_val(u'x' * 5000)
-        test_val(123)
-        test_val(-123)
-        test_val(123.12)
-        test_val(-123.12)
-        test_val(10 ** 20)
-        test_val(10 ** 38 - 1)
-        test_val(-10 ** 38 + 1)
-        test_val(datetime(2011, 2, 3, 10, 11, 12, 3000))
-        test_val(Decimal('1234.567'))
-        test_val(Decimal('1234000'))
-        test_val(Decimal('9' * 38))
-        test_val(Decimal('0.' + '9' * 38))
-        test_val(-Decimal('9' * 38))
-        test_val(Decimal('1E10'))
-        test_val(Decimal('1E-10'))
-        test_val(Decimal('0.{0}1'.format('0' * 37)))
-        test_val(None)
-        test_val('hello')
-        test_val('')
-        test_val(Binary(b''))
-        test_val(Binary(b'\x00\x01\x02'))
-        test_val(Binary(b'x' * 9000))
-        test_val(2 ** 63 - 1)
-        test_val(False)
-        test_val(True)
-        test_val(uuid.uuid4())
-        test_val(u'Iñtërnâtiônàlizætiøn1')
-        test_val(u'\U0001d6fc')
-
-    def test_varcharmax(self):
-        self._test_val('x' * 9000)
-
-    def test_overlimit(self):
-        def test_val(val):
-            with self.conn.cursor() as cur:
-                cur.execute('select %s', (val,))
-                self.assertTupleEqual(cur.fetchone(), (val,))
-                self.assertIs(cur.fetchone(), None)
-
-        ##cur.execute('select %s', '\x00'*(2**31))
-        with self.assertRaises(DataError):
-            test_val(Decimal('1' + '0' * 38))
-        with self.assertRaises(DataError):
-            test_val(Decimal('-1' + '0' * 38))
-        with self.assertRaises(DataError):
-            test_val(Decimal('1E38'))
-        with self.conn.cursor() as cur:
-            val = -10 ** 38
-            cur.execute('select %s', (val,))
-            self.assertTupleEqual(cur.fetchone(), (str(val),))
-            self.assertIs(cur.fetchone(), None)
-
-    def test_description(self):
-        with self.conn.cursor() as cur:
-            cur.execute('select cast(12.65 as decimal(4,2)) as testname')
-            self.assertEqual(cur.description[0][0], 'testname')
-            self.assertEqual(cur.description[0][1], DECIMAL)
-            self.assertEqual(cur.description[0][4], 4)
-            self.assertEqual(cur.description[0][5], 2)
-
-    def test_bug4(self):
-        with self.conn.cursor() as cur:
-            cur.execute('''
-            set transaction isolation level read committed
-            select 1
-            ''')
-            self.assertEqual(cur.fetchall(), [(1,)])
-
-    def test_bad_collation(self):
-        with self.conn.cursor() as cur:
-            try:
-                cur.execute_scalar('select cast(0x90 as varchar)')
-            except:
-                pass
-            self.assertEqual(1, cur.execute_scalar('select 1'))
-
-    def test_get_instances(self):
-        if not hasattr(settings, 'BROWSER_ADDRESS'):
-            return unittest.skip('BROWSER_ADDRESS setting is not defined')
-        pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
-
-    def test_isolation_level(self):
-        # enable autocommit and then reenable to force new transaction to be started
-        self.conn.autocommit = True
-        self.conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE
+    def test_rollback_timeout_recovery(self):
         self.conn.autocommit = False
         with self.conn.cursor() as cur:
-            cur.execute('select transaction_isolation_level '
-                        'from sys.dm_exec_sessions where session_id = @@SPID')
-            lvl, = cur.fetchone()
-        self.assertEqual(pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE, lvl)
+            cur.execute('''
+            create table testtable_rollback (field int)
+            ''')
+            sql = 'insert into testtable_rollback values ' + ','.join(['(1)'] * 1000)
+            for i in xrange(10):
+                cur.execute(sql)
 
-    def test_fetch_on_empty_dataset(self):
+        self.conn._conn.sock.settimeout(0.00001)
+        try:
+            self.conn.rollback()
+        except:
+            pass
+
+        self.conn._conn.sock.settimeout(10)
+        cur = self.conn.cursor()
+        cur.execute('select 1')
+        cur.fetchall()
+
+    def test_commit_timeout_recovery(self):
+        self.conn.autocommit = False
         with self.conn.cursor() as cur:
-            cur.execute('declare @x int')
-            with self.assertRaises(ProgrammingError):
-                cur.fetchall()
+            try:
+                cur.execute('drop table testtable_commit_rec')
+            except:
+                pass
+            cur.execute('''
+            create table testtable_commit_rec (field int)
+            ''')
+            sql = 'insert into testtable_commit_rec values ' + ','.join(['(1)'] * 1000)
+            for i in xrange(10):
+                cur.execute(sql)
 
-    def test_collations(self):
-        self.cursor.execute("SELECT Name, Description, COLLATIONPROPERTY(Name, 'LCID') FROM ::fn_helpcollations()")
-        collations_list = self.cursor.fetchall()
-        coll_name_set = set(coll_name for coll_name, _, _ in collations_list)
+        self.conn._conn.sock.settimeout(0.00001)
+        try:
+            self.conn.commit()
+        except:
+            pass
 
-        tests = [
-            ('Привет', 'Cyrillic_General_BIN'),
-            ('Привет', 'Cyrillic_General_BIN2'),
-            ('สวัสดี', 'Thai_CI_AI'),
-            ('你好', 'Chinese_PRC_CI_AI'),
-            ('こんにちは', 'Japanese_CI_AI'),
-            ('안녕하세요.', 'Korean_90_CI_AI'),
-            ('你好', 'Chinese_Hong_Kong_Stroke_90_CI_AI'),
-            ('cześć', 'Polish_CI_AI'),
-            ('Bonjour', 'French_CI_AI'),
-            ('Γεια σας', 'Greek_CI_AI'),
-            ('Merhaba', 'Turkish_CI_AI'),
-            ('שלום', 'Hebrew_CI_AI'),
-            ('مرحبا', 'Arabic_CI_AI'),
-            ('Sveiki', 'Lithuanian_CI_AI'),
-            ('chào', 'Vietnamese_CI_AI'),
-            ('ÄÅÆ', 'SQL_Latin1_General_CP437_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_CP850_BIN'),
-            ('ŠşĂ', 'SQL_Slovak_CP1250_CS_AS_KI_WI'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1251_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_Cp1_CS_AS_KI_WI'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1253_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1254_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1255_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1256_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1257_BIN'),
-            ('ÁÂÀÃ', 'Latin1_General_100_BIN'),
-        ]
-        for s, coll in tests:
-            if coll not in coll_name_set:
-                print('Skipping {}, not supported by current server'.format(coll))
-                continue
-            assert self.cursor.execute_scalar("select cast(N'{}' collate {} as varchar(100))".format(s, coll)) == s
+        self.conn._conn.sock.settimeout(10)
+        cur = self.conn.cursor()
+        cur.execute('select 1')
+        cur.fetchall()
 
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class DbTests(DbTestCase):
     def test_autocommit(self):
         self.assertFalse(self.conn.autocommit)
         with self.conn.cursor() as cur:
+            try:
+                cur.execute('drop table test_autocommit')
+            except:
+                pass
             cur.execute('create table test_autocommit(field int)')
             self.conn.commit()
             self.assertEqual(self.conn._trancount(), 1)
@@ -597,6 +428,250 @@ class DbTests(DbTestCase):
         self.assertEqual(val + 2, values[2])
         self.assertEqual(val + 2, cur.get_proc_return_status())
 
+    def test_bug2(self):
+        with self.conn.cursor() as cur:
+            cur.execute('''
+            create procedure testproc (@param int)
+            as
+            begin
+                set transaction isolation level read uncommitted -- that will produce very empty result (even no rowcount)
+                select @param
+                return @param + 1
+            end
+            ''')
+            val = 45
+            cur.execute('exec testproc @param = 45')
+            self.assertEqual(cur.fetchall(), [(val,)])
+            self.assertEqual(val + 1, cur.get_proc_return_status())
+
+
+class TestCaseWithCursor(ConnectionTestCase):
+    def setUp(self):
+        super(TestCaseWithCursor, self).setUp()
+        self.cursor = self.conn.cursor()
+
+    def test_all(self):
+        cur = self.cursor
+        with self.assertRaises(ProgrammingError):
+            cur.execute(u'select ')
+        self.assertEqual('abc', cur.execute_scalar("select cast('abc' as varchar(max)) as fieldname"))
+        assert 'abc' == cur.execute_scalar("select cast('abc' as nvarchar(max)) as fieldname")
+        assert b'abc' == cur.execute_scalar("select cast('abc' as varbinary(max)) as fieldname")
+        #assert 12 == cur.execute_scalar('select cast(12 as bigint) as fieldname')
+        assert 12 == cur.execute_scalar('select cast(12 as smallint) as fieldname')
+        assert -12 == cur.execute_scalar('select -12 as fieldname')
+        assert 12 == cur.execute_scalar('select cast(12 as tinyint) as fieldname')
+        assert True == cur.execute_scalar('select cast(1 as bit) as fieldname')
+        assert 5.1 == cur.execute_scalar('select cast(5.1 as float) as fieldname')
+        cur.execute("select 'test', 20")
+        assert ('test', 20) == cur.fetchone()
+        assert 'test' == cur.execute_scalar("select 'test' as fieldname")
+        assert 'test' == cur.execute_scalar("select N'test' as fieldname")
+        assert 'test' == cur.execute_scalar("select cast(N'test' as ntext) as fieldname")
+        assert 'test' == cur.execute_scalar("select cast(N'test' as text) as fieldname")
+        self.assertEqual('test ', cur.execute_scalar("select cast(N'test' as char(5)) as fieldname"))
+        self.assertEqual('test ', cur.execute_scalar("select cast(N'test' as nchar(5)) as fieldname"))
+        assert b'test' == cur.execute_scalar("select cast('test' as varbinary(4)) as fieldname")
+        assert b'test' == cur.execute_scalar("select cast('test' as image) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as image) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as varbinary(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as ntext) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as nvarchar(max)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as xml)")
+        self.assertEqual(None, cur.execute_scalar("select cast(NULL as varchar(max)) as fieldname"))
+        assert None == cur.execute_scalar("select cast(NULL as nvarchar(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as varchar(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as nchar(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
+        assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
+        assert 5 == cur.execute_scalar('select 5 as fieldname')
+
+    def test_decimals(self):
+        cur = self.cursor
+        assert Decimal(12) == cur.execute_scalar('select cast(12 as decimal) as fieldname')
+        assert Decimal(-12) == cur.execute_scalar('select cast(-12 as decimal) as fieldname')
+        assert Decimal('123456.12345') == cur.execute_scalar("select cast('123456.12345'as decimal(20,5)) as fieldname")
+        assert Decimal('-123456.12345') == cur.execute_scalar("select cast('-123456.12345'as decimal(20,5)) as fieldname")
+
+    def test_money(self):
+        cur = self.cursor
+        assert Decimal('0') == cur.execute_scalar("select cast('0' as money) as fieldname")
+        assert Decimal('1') == cur.execute_scalar("select cast('1' as money) as fieldname")
+        self.assertEqual(Decimal('1.5555'), cur.execute_scalar("select cast('1.5555' as money) as fieldname"))
+        assert Decimal('1234567.5555') == cur.execute_scalar("select cast('1234567.5555' as money) as fieldname")
+        assert Decimal('-1234567.5555') == cur.execute_scalar("select cast('-1234567.5555' as money) as fieldname")
+        assert Decimal('12345.55') == cur.execute_scalar("select cast('12345.55' as smallmoney) as fieldname")
+
+    def test_strs(self):
+        cur = self.cursor
+        self.assertIsInstance(cur.execute_scalar("select 'test'"), six.text_type)
+
+    #def test_mars_sessions_recycle_ids(self):
+    #    if not self.conn.mars_enabled:
+    #        self.skipTest('Only relevant to mars')
+    #    for _ in xrange(2 ** 16 + 1):
+    #        cur = self.conn.cursor()
+    #        cur.close()
+
+    def test_cursor_env(self):
+        with self.conn.cursor() as cur:
+            cur.execute('use master')
+            self.assertEqual(cur.execute_scalar('select DB_NAME()'), 'master')
+
+    def test_empty_query(self):
+        with self.conn.cursor() as cur:
+            cur.execute('')
+            self.assertIs(None, cur.description)
+
+    def test_parameters_ll(self):
+        _params_tests(self)
+
+    def _test_val(self, val):
+        with self.conn.cursor() as cur:
+            cur.execute('select %s', (val,))
+            self.assertTupleEqual(cur.fetchone(), (val,))
+            self.assertIs(cur.fetchone(), None)
+
+    def test_parameters(self):
+        test_val = self._test_val
+
+        test_val(u'hello')
+        test_val(u'x' * 5000)
+        test_val(123)
+        test_val(-123)
+        test_val(123.12)
+        test_val(-123.12)
+        test_val(10 ** 20)
+        test_val(10 ** 38 - 1)
+        test_val(-10 ** 38 + 1)
+        test_val(datetime(2011, 2, 3, 10, 11, 12, 3000))
+        test_val(Decimal('1234.567'))
+        test_val(Decimal('1234000'))
+        test_val(Decimal('9' * 38))
+        test_val(Decimal('0.' + '9' * 38))
+        test_val(-Decimal('9' * 38))
+        test_val(Decimal('1E10'))
+        test_val(Decimal('1E-10'))
+        test_val(Decimal('0.{0}1'.format('0' * 37)))
+        test_val(None)
+        test_val('hello')
+        test_val('')
+        test_val(Binary(b''))
+        test_val(Binary(b'\x00\x01\x02'))
+        test_val(Binary(b'x' * 9000))
+        test_val(2 ** 63 - 1)
+        test_val(False)
+        test_val(True)
+        test_val(uuid.uuid4())
+        test_val(u'Iñtërnâtiônàlizætiøn1')
+        test_val(u'\U0001d6fc')
+
+    def test_varcharmax(self):
+        self._test_val('x' * 9000)
+
+    def test_overlimit(self):
+        def test_val(val):
+            with self.conn.cursor() as cur:
+                cur.execute('select %s', (val,))
+                self.assertTupleEqual(cur.fetchone(), (val,))
+                self.assertIs(cur.fetchone(), None)
+
+        ##cur.execute('select %s', '\x00'*(2**31))
+        with self.assertRaises(DataError):
+            test_val(Decimal('1' + '0' * 38))
+        with self.assertRaises(DataError):
+            test_val(Decimal('-1' + '0' * 38))
+        with self.assertRaises(DataError):
+            test_val(Decimal('1E38'))
+        with self.conn.cursor() as cur:
+            val = -10 ** 38
+            cur.execute('select %s', (val,))
+            self.assertTupleEqual(cur.fetchone(), (str(val),))
+            self.assertIs(cur.fetchone(), None)
+
+    def test_description(self):
+        with self.conn.cursor() as cur:
+            cur.execute('select cast(12.65 as decimal(4,2)) as testname')
+            self.assertEqual(cur.description[0][0], 'testname')
+            self.assertEqual(cur.description[0][1], DECIMAL)
+            self.assertEqual(cur.description[0][4], 4)
+            self.assertEqual(cur.description[0][5], 2)
+
+    def test_bug4(self):
+        with self.conn.cursor() as cur:
+            cur.execute('''
+            set transaction isolation level read committed
+            select 1
+            ''')
+            self.assertEqual(cur.fetchall(), [(1,)])
+
+    def test_bad_collation(self):
+        with self.conn.cursor() as cur:
+            try:
+                cur.execute_scalar('select cast(0x90 as varchar)')
+            except:
+                pass
+            self.assertEqual(1, cur.execute_scalar('select 1'))
+
+    def test_isolation_level(self):
+        # enable autocommit and then reenable to force new transaction to be started
+        self.conn.autocommit = True
+        self.conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE
+        self.conn.autocommit = False
+        with self.conn.cursor() as cur:
+            cur.execute('select transaction_isolation_level '
+                        'from sys.dm_exec_sessions where session_id = @@SPID')
+            lvl, = cur.fetchone()
+        self.assertEqual(pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE, lvl)
+
+    def test_fetch_on_empty_dataset(self):
+        with self.conn.cursor() as cur:
+            cur.execute('declare @x int')
+            with self.assertRaises(ProgrammingError):
+                cur.fetchall()
+
+    def test_collations(self):
+        self.cursor.execute("SELECT Name, Description, COLLATIONPROPERTY(Name, 'LCID') FROM ::fn_helpcollations()")
+        collations_list = self.cursor.fetchall()
+        coll_name_set = set(coll_name for coll_name, _, _ in collations_list)
+
+        tests = [
+            ('Привет', 'Cyrillic_General_BIN'),
+            ('Привет', 'Cyrillic_General_BIN2'),
+            ('สวัสดี', 'Thai_CI_AI'),
+            ('你好', 'Chinese_PRC_CI_AI'),
+            ('こんにちは', 'Japanese_CI_AI'),
+            ('안녕하세요.', 'Korean_90_CI_AI'),
+            ('你好', 'Chinese_Hong_Kong_Stroke_90_CI_AI'),
+            ('cześć', 'Polish_CI_AI'),
+            ('Bonjour', 'French_CI_AI'),
+            ('Γεια σας', 'Greek_CI_AI'),
+            ('Merhaba', 'Turkish_CI_AI'),
+            ('שלום', 'Hebrew_CI_AI'),
+            ('مرحبا', 'Arabic_CI_AI'),
+            ('Sveiki', 'Lithuanian_CI_AI'),
+            ('chào', 'Vietnamese_CI_AI'),
+            ('ÄÅÆ', 'SQL_Latin1_General_CP437_BIN'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_CP850_BIN'),
+            ('ŠşĂ', 'SQL_Slovak_CP1250_CS_AS_KI_WI'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_1251_BIN'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_Cp1_CS_AS_KI_WI'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_1253_BIN'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_1254_BIN'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_1255_BIN'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_1256_BIN'),
+            ('ÁÂÀÃ', 'SQL_Latin1_General_1257_BIN'),
+            ('ÁÂÀÃ', 'Latin1_General_100_BIN'),
+        ]
+        for s, coll in tests:
+            if coll not in coll_name_set:
+                logger.info('Skipping {}, not supported by current server'.format(coll))
+                continue
+            assert self.cursor.execute_scalar("select cast(N'{}' collate {} as varchar(100))".format(s, coll)) == s
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+class DbTests(ConnectionTestCase):
     def test_fetchone(self):
         with self.conn.cursor() as cur:
             cur.execute('select 10; select 12')
@@ -625,9 +700,9 @@ class DbTests(DbTestCase):
         self.conn.autocommit = False
         with self.conn.cursor() as cur:
             cur.execute('''
-            create table testtable (field datetime)
+            create table testtable_trans (field datetime)
             ''')
-            cur.execute("select object_id('testtable')")
+            cur.execute("select object_id('testtable_trans')")
             self.assertNotEqual((None,), cur.fetchone())
 
             self.assertEqual(1, self.conn._trancount())
@@ -636,22 +711,22 @@ class DbTests(DbTestCase):
 
             self.assertEqual(1, self.conn._trancount())
 
-            cur.execute("select object_id('testtable')")
+            cur.execute("select object_id('testtable_trans')")
             self.assertEqual((None,), cur.fetchone())
 
             cur.execute('''
-            create table testtable (field datetime)
+            create table testtable_trans (field datetime)
             ''')
 
             self.conn.commit()
 
-            cur.execute("select object_id('testtable')")
+            cur.execute("select object_id('testtable_trans')")
             self.assertNotEqual((None,), cur.fetchone())
 
         with self.conn.cursor() as cur:
             cur.execute('''
-            if object_id('testtable') is not null
-                drop table testtable
+            if object_id('testtable_trans') is not null
+                drop table testtable_trans
             ''')
         self.conn.commit()
 
@@ -692,35 +767,35 @@ class DbTests(DbTestCase):
     def test_row_count(self):
         cur = self.conn.cursor()
         cur.execute('''
-        create table testtable (field int)
+        create table testtable_row_cnt (field int)
         ''')
-        cur.execute('insert into testtable (field) values (1)')
+        cur.execute('insert into testtable_row_cnt (field) values (1)')
         self.assertEqual(cur.rowcount, 1)
-        cur.execute('insert into testtable (field) values (2)')
+        cur.execute('insert into testtable_row_cnt (field) values (2)')
         self.assertEqual(cur.rowcount, 1)
-        cur.execute('select * from testtable')
+        cur.execute('select * from testtable_row_cnt')
         cur.fetchall()
         self.assertEqual(cur.rowcount, 2)
 
     def test_no_rows(self):
         cur = self.conn.cursor()
         cur.execute('''
-        create table testtable (field int)
+        create table testtable_no_rows (field int)
         ''')
-        cur.execute('select * from testtable')
+        cur.execute('select * from testtable_no_rows')
         self.assertEqual([], cur.fetchall())
 
     def test_fixed_size_data(self):
         with self.conn.cursor() as cur:
             cur.execute('''
-            create table testtable (chr char(5), nchr nchar(5), bfld binary(5))
-            insert into testtable values ('1', '2', cast('3' as binary(5)))
+            create table testtable_fixed_size_dt (chr char(5), nchr nchar(5), bfld binary(5))
+            insert into testtable_fixed_size_dt values ('1', '2', cast('3' as binary(5)))
             ''')
-            cur.execute('select * from testtable')
+            cur.execute('select * from testtable_fixed_size_dt')
             self.assertEqual(cur.fetchall(), [('1    ', '2    ', b'3\x00\x00\x00\x00')])
 
 
-class TestVariant(TestCase):
+class TestVariant(ConnectionTestCase):
     def _t(self, result, sql):
         with self.conn.cursor() as cur:
             cur.execute("select cast({0} as sql_variant)".format(sql))
@@ -874,32 +949,13 @@ class ConnectionClosing(unittest.TestCase):
 #        cur.execute('select 1')
 
 
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class Bug2(DbTestCase):
-    def runTest(self):
-        with self.conn.cursor() as cur:
-            cur.execute('''
-            create procedure testproc (@param int)
-            as
-            begin
-                set transaction isolation level read uncommitted -- that will produce very empty result (even no rowcount)
-                select @param
-                return @param + 1
-            end
-            ''')
-            val = 45
-            cur.execute('exec testproc @param = 45')
-            self.assertEqual(cur.fetchall(), [(val,)])
-            self.assertEqual(val + 1, cur.get_proc_return_status())
-
-
-class Bug3(TestCase):
+class Bug3(ConnectionTestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
             cur.close()
 
 
-class DateAndTimeParams(TestCase):
+class DateAndTimeParams(ConnectionTestCase):
     def test_date(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
@@ -923,14 +979,14 @@ class DateAndTimeParams(TestCase):
             self.assertEqual(cur.fetchall(), [(time,)])
 
 
-class Extensions(TestCase):
+class Extensions(ConnectionTestCase):
     def runTest(self):
         with self.conn.cursor() as cur:
             self.assertEqual(cur.connection, self.conn)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class SmallDateTimeTest(TestCase):
+class SmallDateTimeTest(ConnectionTestCase):
     def _testval(self, val):
         with self.conn.cursor() as cur:
             cur.execute('select cast(%s as smalldatetime)', (val,))
@@ -947,7 +1003,7 @@ class SmallDateTimeTest(TestCase):
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class DateTimeTest(DbTestCase):
+class DateTimeTest(ConnectionTestCase):
     def _testencdec(self, val):
         self.assertEqual(val, DateTimeSerializer.decode(*DateTimeSerializer._struct.unpack(DateTimeSerializer.encode(val))))
 
@@ -983,7 +1039,7 @@ class DateTimeTest(DbTestCase):
             self.assertEqual(cur.fetchone(), (dt,))
 
 
-class NewDateTimeTest(TestCase):
+class NewDateTimeTest(ConnectionTestCase):
     def test_datetimeoffset(self):
         if not IS_TDS73_PLUS(self.conn):
             self.skipTest('Requires TDS7.3+')
@@ -1080,26 +1136,16 @@ class Auth(unittest.TestCase):
                 cursor.fetchall()
 
 
-class CloseCursorTwice(TestCase):
+class CloseCursorTwice(ConnectionTestCase):
     def runTest(self):
         cursor = self.conn.cursor()
         cursor.close()
         cursor.close()
 
 
-class RegressionSuite(TestCase):
+class RegressionSuite(ConnectionTestCase):
     def test_cancel(self):
         self.conn.cursor().cancel()
-
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class TestIntegrityError(DbTestCase):
-    def test_primary_key(self):
-        cursor = self.conn.cursor()
-        cursor.execute('create table testtable(pk int primary key)')
-        cursor.execute('insert into testtable values (1)')
-        with self.assertRaises(IntegrityError):
-            cursor.execute('insert into testtable values (1)')
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
@@ -1130,7 +1176,7 @@ class TimezoneTests(unittest.TestCase):
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class DbapiTestSuite(dbapi20.DatabaseAPI20Test, DbTestCase):
+class DbapiTestSuite(dbapi20.DatabaseAPI20Test, ConnectionTestCase):
     driver = pytds
     connect_args = settings.CONNECT_ARGS
     connect_kw_args = settings.CONNECT_KWARGS
@@ -1388,55 +1434,11 @@ class TestBug4(unittest.TestCase):
                 self.assertDictEqual({'a': 1, 'b': 2}, cur.fetchone())
 
 
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class TransactionsTests(DbTestCase):
-    def test_rollback_timeout_recovery(self):
-        self.conn.autocommit = False
-        with self.conn.cursor() as cur:
-            cur.execute('''
-            create table testtable_rollback (field int)
-            ''')
-            sql = 'insert into testtable_rollback values ' + ','.join(['(1)'] * 1000)
-            for i in xrange(10):
-                cur.execute(sql)
-
-        self.conn._conn.sock.settimeout(0.00001)
-        try:
-            self.conn.rollback()
-        except:
-            pass
-
-        self.conn._conn.sock.settimeout(10)
-        cur = self.conn.cursor()
-        cur.execute('select 1')
-        cur.fetchall()
-
-    def test_commit_timeout_recovery(self):
-        self.conn.autocommit = False
-        with self.conn.cursor() as cur:
-            cur.execute('''
-            create table testtable (field int)
-            ''')
-            sql = 'insert into testtable values ' + ','.join(['(1)'] * 1000)
-            for i in xrange(10):
-                cur.execute(sql)
-
-        self.conn._conn.sock.settimeout(0.00001)
-        try:
-            self.conn.commit()
-        except:
-            pass
-
-        self.conn._conn.sock.settimeout(10)
-        cur = self.conn.cursor()
-        cur.execute('select 1')
-        cur.fetchall()
-
-
 def _params_tests(self):
     def test_val(typ, val):
         with self.conn.cursor() as cur:
             param = Column(type=typ, value=val)
+            logger.info("Testing with %s", repr(param))
             cur.execute('select %s', [param])
             self.assertTupleEqual(cur.fetchone(), (val,))
             self.assertIs(cur.fetchone(), None)

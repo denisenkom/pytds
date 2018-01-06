@@ -607,10 +607,15 @@ class Column(CommonEqualityMixin):
         self.serializer = None
 
     def __repr__(self):
-        return '<Column(name={},value={},type={},flags={},user_type={},codec={})>'.format(
+        val = self.value
+        if isinstance(val, bytes) and len(self.value) > 100:
+            val = self.value[:100] + b'... len is ' + str(len(val)).encode('ascii')
+        if isinstance(val, six.text_type) and len(self.value) > 100:
+            val = self.value[:100] + '... len is ' + str(len(val))
+        return '<Column(name={},type={},value={},flags={},user_type={},codec={})>'.format(
             repr(self.column_name),
-            repr(self.value),
             repr(self.type),
+            repr(val),
             repr(self.flags),
             repr(self.column_usertype),
             repr(self.char_codec),

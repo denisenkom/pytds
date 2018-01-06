@@ -10,6 +10,7 @@ import socket
 import uuid
 import warnings
 import weakref
+import logging
 
 from six.moves import xrange
 
@@ -44,6 +45,8 @@ import pkg_resources
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 __version__ = pkg_resources.get_distribution('python-tds').version
+
+logger = logging.getLogger(__name__)
 
 
 def _ver_to_int(ver):
@@ -142,6 +145,25 @@ def recordtype_row_strategy(column_names):
     return row_factory
 
 
+class _ConnectionPool(object):
+    def __init__(self, max_pool_size=100, min_pool_size=0):
+        self._max_pool_size = max_pool_size
+        self._pool = {}
+
+    def add(self, key, conn):
+        l = self._pool.setdefault(key, []).append(conn)
+
+    def take(self, key):
+        l = self._pool.get(key, [])
+        if len(l) > 0:
+            return l.pop()
+        else:
+            return None
+
+
+_connection_pool = _ConnectionPool()
+
+
 class Connection(object):
     """Connection object, this object should be created by calling :func:`connect`"""
 
@@ -154,6 +176,8 @@ class Connection(object):
         self._login = None
         self._use_tz = None
         self._tzinfo_factory = None
+        self._key = None
+        self._pooling = False
 
     @property
     def as_dict(self):
@@ -262,11 +286,28 @@ class Connection(object):
         return self._conn.mars_enabled
 
     def _try_open(self, timeout):
+        if self._pooling:
+            res = _connection_pool.take(self._key)
+            if res is not None:
+                self._conn, sess = res
+                if self._conn.mars_enabled:
+                    cursor = _MarsCursor(
+                        self,
+                        sess,
+                        self._tzinfo_factory)
+                else:
+                    cursor = Cursor(
+                        self,
+                        sess,
+                        self._tzinfo_factory)
+                self._active_cursor = self._main_cursor = cursor
+                cursor.callproc('sp_reset_connection')
+                return
+
         login = self._login
         host, port, instance = login.servers[0]
 
         try:
-
             login.server_name = host
             login.instance_name = instance
             port = _resolve_instance_port(
@@ -274,9 +315,8 @@ class Connection(object):
                 port,
                 instance,
                 timeout=timeout)
-            sock = socket.create_connection(
-                (host, port),
-                timeout)
+            logger.info('Opening socket to %s:%d', host, port)
+            sock = socket.create_connection((host, port), timeout)
         except Exception as e:
             raise LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
 
@@ -451,7 +491,10 @@ class Connection(object):
         this case.
         """
         if self._conn:
-            self._conn.close()
+            if self._pooling:
+                _connection_pool.add(self._key, (self._conn, self._main_cursor._session))
+            else:
+                self._conn.close()
             self._active_cursor = None
             self._main_cursor = None
             self._conn = None
@@ -1059,6 +1102,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             row_strategy=None, failover_partner=None, server=None,
             cafile=None, validate_host=True, enc_login_only=False,
             disable_connect_retry=False,
+            pooling=False,
             ):
     """
     Opens connection to the database
@@ -1195,10 +1239,30 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
 
     login.servers = _get_servers_deque(tuple(parsed_servers), database)
 
+    # unique connection identifier used to pool connection
+    key = (
+        dsn,
+        login.user_name,
+        login.app_name,
+        login.tds_version,
+        login.database,
+        login.client_lcid,
+        login.use_mars,
+        login.cafile,
+        login.blocksize,
+        login.readonly,
+        login.bytes_to_unicode,
+        login.auth,
+        login.client_tz,
+        autocommit,
+    )
+
     conn = Connection()
     conn._use_tz = use_tz
     conn._autocommit = autocommit
     conn._login = login
+    conn._pooling = pooling
+    conn._key = key
 
     assert row_strategy is None or as_dict is None,\
         'Both row_startegy and as_dict were specified, you should use either one or another'
