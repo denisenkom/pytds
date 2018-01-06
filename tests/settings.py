@@ -21,6 +21,7 @@ if LIVE_TEST:
         'password': PASSWORD,
         'use_mars': USE_MARS,
         'bytes_to_unicode': True,
+        'pooling': True,
     }
 
     if 'tds_version' in os.environ:
