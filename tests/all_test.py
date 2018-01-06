@@ -669,6 +669,18 @@ class TestCaseWithCursor(ConnectionTestCase):
                 continue
             assert self.cursor.execute_scalar("select cast(N'{}' collate {} as varchar(100))".format(s, coll)) == s
 
+    def test_properties(self):
+        # this property is provided for compatibility with pymssql
+        assert self.conn.autocommit_state == self.conn.autocommit
+        # test set_autocommit which is provided for compatibility with ADO dbapi
+        self.conn.set_autocommit(self.conn.autocommit)
+        # test isolation_level property read/write
+        self.conn.isolation_level = self.conn.isolation_level
+        # test chunk handler property read/write
+        self.conn.chunk_handler = self.conn.chunk_handler
+        # test product_version property read
+        logger.info("Product version %s", self.conn.product_version)
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DbTests(ConnectionTestCase):
