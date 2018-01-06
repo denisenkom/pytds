@@ -1,5 +1,6 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
+from __future__ import unicode_literals
 import os
 import random
 import string
@@ -1592,8 +1593,8 @@ class TestRawBytes(unittest.TestCase):
         self.assertIsInstance(cur.execute_scalar("select cast('abc' as varchar(max))"), six.binary_type)
         self.assertIsInstance(cur.execute_scalar("select cast('abc' as text)"), six.binary_type)
 
-        self.assertIsInstance(cur.execute_scalar("select %s", [six.u('abc')]), six.text_type)
-        self.assertIsInstance(cur.execute_scalar("select %s", [six.b('abc')]), six.binary_type)
+        self.assertIsInstance(cur.execute_scalar("select %s", ['abc']), six.text_type)
+        self.assertIsInstance(cur.execute_scalar("select %s", [b'abc']), six.binary_type)
 
         rawBytes = six.b('\x01\x02\x03')
         self.assertEquals(rawBytes, cur.execute_scalar("select cast(0x010203 as varchar(max))"))
