@@ -1071,7 +1071,7 @@ def test_with_simple_server():
         return
 
     import simple_server
-    import utils
+    import utils_35 as utils
     import threading
     from cryptography import x509
     address = ('127.0.0.1', 1433)
