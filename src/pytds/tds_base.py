@@ -576,7 +576,7 @@ def readall_fast(stm, size):
     if len(buf) - offset < size:
         # slow case
         buf = buf[offset:]
-        buf += stm.read(size - len(buf))
+        buf += stm.recv(size - len(buf))
         return buf, 0
     return buf, offset
 
