@@ -100,11 +100,12 @@ def test_connection_timeout_with_mars():
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_timeout_no_mars():
     kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs['database'] = 'master'
-    kwargs['login_timeout'] = 1
-    kwargs['timeout'] = 1
-    kwargs['use_mars'] = False
-    with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
+    kwargs.update({
+        'use_mars': False,
+        'timeout': 1,
+        'login_timeout': 1,
+    })
+    with connect(**kwargs) as conn:
         with conn.cursor() as cur:
             with pytest.raises(TimeoutError):
                 cur.execute("waitfor delay '00:00:05'")
@@ -112,12 +113,22 @@ def test_connection_timeout_no_mars():
             cur.execute("select 1")
             cur.fetchall()
 
+        # test cancelling
+        with conn.cursor() as cur:
+            cur.execute('select 1')
+            cur.cancel()
+            assert cur.fetchall() == []
+            cur.execute('select 2')
+            assert cur.fetchall() == [(2,)]
+
+        # test rollback
+        conn.rollback()
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_no_mars_no_pooling():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update({
-        'database': 'master',
         'use_mars': False,
         'pooling': False,
     })
@@ -464,7 +475,7 @@ class TestCaseWithCursor(ConnectionTestCase):
         super(TestCaseWithCursor, self).setUp()
         self.cursor = self.conn.cursor()
 
-    def test_all(self):
+    def test_reading_values(self):
         cur = self.cursor
         with self.assertRaises(ProgrammingError):
             cur.execute(u'select ')
@@ -499,6 +510,14 @@ class TestCaseWithCursor(ConnectionTestCase):
         assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
         assert None == cur.execute_scalar("select cast(NULL as char(10)) as fieldname")
         assert 5 == cur.execute_scalar('select 5 as fieldname')
+        try:
+            cur.execute('drop table exec_scalar_empty')
+        except:
+            pass
+        with pytest.raises(ProgrammingError) as ex:
+            cur.execute_scalar('create table exec_scalar_empty(f int)')
+        # message does not have to be exact match
+        assert "Previous statement didn't produce any results" in str(ex.value)
 
     def test_decimals(self):
         cur = self.cursor
@@ -694,6 +713,10 @@ class TestCaseWithCursor(ConnectionTestCase):
         self.conn.chunk_handler = self.conn.chunk_handler
         # test product_version property read
         logger.info("Product version %s", self.conn.product_version)
+
+    def test_dictionary_params(self):
+        assert self.cursor.execute_scalar('select %(param)s', {'param': None}) == None
+        assert self.cursor.execute_scalar('select %(param)s', {'param': 1}) == 1
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
