@@ -1184,3 +1184,8 @@ def test_ntlm():
              b'\x03\x00\x0e\x00m\x00i\x00s\x00h\x00a\x00p\x00c\x00\x07\x00\x08\x00\x8b\x08Y\xad' \
              b'\xd3\x85\xd3\x01\x00\x00\x00\x00'
     auth.handle_next(packet)
+
+
+def test_parse_server():
+    assert pytds._parse_server('.') == ('localhost', '')
+    assert pytds._parse_server('(local)') == ('localhost', '')

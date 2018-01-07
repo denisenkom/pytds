@@ -124,6 +124,10 @@ def test_connection_timeout_no_mars():
         # test rollback
         conn.rollback()
 
+        # test callproc on non-mars connection
+        with conn.cursor() as cur:
+            cur.callproc('sp_reset_connection')
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_no_mars_no_pooling():
