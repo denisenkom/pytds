@@ -717,10 +717,22 @@ class TestCaseWithCursor(ConnectionTestCase):
         self.conn.chunk_handler = self.conn.chunk_handler
         # test product_version property read
         logger.info("Product version %s", self.conn.product_version)
+        self.conn.as_dict = self.conn.as_dict
 
     def test_dictionary_params(self):
         assert self.cursor.execute_scalar('select %(param)s', {'param': None}) == None
         assert self.cursor.execute_scalar('select %(param)s', {'param': 1}) == 1
+
+    def test_row_strategies(self):
+        self.conn.as_dict = True
+        with self.conn.cursor() as cur:
+            cur.execute('select 1 as f')
+            assert cur.fetchall() == [{'f': 1}]
+        self.conn.as_dict = False
+        with self.conn.cursor() as cur:
+            cur.execute('select 1 as f')
+            assert cur.fetchall() == [(1,)]
+
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
