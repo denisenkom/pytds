@@ -128,6 +128,10 @@ def test_connection_timeout_no_mars():
         with conn.cursor() as cur:
             cur.callproc('sp_reset_connection')
 
+        # test spid property on non-mars cursor
+        with conn.cursor() as cur:
+            assert cur.spid is not None
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_no_mars_no_pooling():
@@ -165,9 +169,14 @@ def test_row_strategies():
     })
     with connect(**kwargs) as conn:
         with conn.cursor() as cur:
-            cur.execute("select 1 as f")
+            cur.execute("select 1 as e, 2 as f")
             row, = cur.fetchall()
-            assert row.f == 1
+            assert row.e == 1
+            assert row.f == 2
+            assert row[0] == 1
+            assert row[:] == (1, 2)
+            row[0] = 3
+            assert row[:] == (3, 2)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
