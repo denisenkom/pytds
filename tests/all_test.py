@@ -143,6 +143,34 @@ def test_connection_no_mars_no_pooling():
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_row_strategies():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update({
+        'row_strategy': pytds.list_row_strategy,
+    })
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            assert cur.fetchall() == [[1]]
+    kwargs.update({
+        'row_strategy': pytds.namedtuple_row_strategy,
+    })
+    import collections
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1 as f")
+            assert cur.fetchall() == [collections.namedtuple('Row', ['f'])(1)]
+    kwargs.update({
+        'row_strategy': pytds.recordtype_row_strategy,
+    })
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1 as f")
+            row, = cur.fetchall()
+            assert row.f == 1
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_get_instances():
     if not hasattr(settings, 'BROWSER_ADDRESS'):
         return unittest.skip('BROWSER_ADDRESS setting is not defined')

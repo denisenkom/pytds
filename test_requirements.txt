@@ -4,3 +4,4 @@ codecov
 pyOpenSSL
 pyDes
 ntlm-auth
+namedlist
