@@ -52,7 +52,8 @@ logger = logging.getLogger(__name__)
 def _ver_to_int(ver):
     res = ver.split('.')
     if len(res) < 2:
-        raise Exception('Invalid version {}, it should have 2 parts at least separated by "."'.format(ver))
+        logger.warning('Invalid version {}, it should have 2 parts at least separated by "."'.format(ver))
+        return 0
     maj, minor, _ = ver.split('.')
     return (int(maj) << 24) + (int(minor) << 16)
 
