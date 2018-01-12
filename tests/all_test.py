@@ -98,6 +98,28 @@ def test_connection_timeout_with_mars():
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_connection_no_mars_autocommit():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update({
+        'use_mars': False,
+        'timeout': 1,
+        'pooling': True,
+        'autocommit': True,
+    })
+    with connect(**kwargs) as conn:
+        # test cursor usage after close, should raise exception
+        cur = conn.cursor()
+        cur.execute_scalar('select 1')
+        cur.close()
+        with pytest.raises(Error) as ex:
+            cur.execute('select 1')
+        assert 'Cursor is closed' in str(ex)
+        # calling get_proc_return_status on closed cursor works
+        # this test does not have to pass
+        assert cur.get_proc_return_status() is None
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_timeout_no_mars():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update({
@@ -128,9 +150,12 @@ def test_connection_timeout_no_mars():
         with conn.cursor() as cur:
             cur.callproc('sp_reset_connection')
 
-        # test spid property on non-mars cursor
         with conn.cursor() as cur:
+            # test spid property on non-mars cursor
             assert cur.spid is not None
+
+            # test tzinfo_factory property r/w
+            cur.tzinfo_factory = cur.tzinfo_factory
 
     # test non-mars cursor with connection pool enabled
     with connect(**kwargs) as conn:
