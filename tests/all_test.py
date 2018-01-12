@@ -959,11 +959,11 @@ class BadConnection(unittest.TestCase):
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database='doesnotexist', user=settings.USER, password=settings.PASSWORD, login_timeout=1) as conn:
+            with connect(server=settings.HOST, database='doesnotexist', user=settings.USER, password=settings.PASSWORD) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
         with self.assertRaises(Error):
-            with connect(server=settings.HOST, database='master', user='baduser', password=None, login_timeout=1) as conn:
+            with connect(server=settings.HOST, database='master', user='baduser', password=None) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
