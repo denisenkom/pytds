@@ -106,9 +106,22 @@ def test_connection_no_mars_autocommit():
         'autocommit': True,
     })
     with connect(**kwargs) as conn:
-        # test execute scalar with empty response
         with conn.cursor() as cur:
+            # test execute scalar with empty response
             cur.execute_scalar('declare @tbl table(f int); select * from @tbl')
+
+            cur.execute("print 'hello'")
+            messages = cur.messages
+            assert len(messages) == 1
+            assert len(messages[0]) == 2
+            # in following assert exception class does not have to be exactly as specified
+            assert messages[0][0] == pytds.OperationalError
+            assert messages[0][1].text == 'hello'
+            assert messages[0][1].line == 1
+            assert messages[0][1].severity == 0
+            assert messages[0][1].number == 0
+            assert messages[0][1].state == 1
+            assert 'hello' in messages[0][1].message
 
         # test cursor usage after close, should raise exception
         cur = conn.cursor()
@@ -123,6 +136,15 @@ def test_connection_no_mars_autocommit():
         # calling rowcount on closed cursor works
         # this test does not have to pass
         assert cur.rowcount == -1
+        # calling description on closed cursor works
+        # this test does not have to pass
+        assert cur.description is None
+        # calling messages on closed cursor works
+        # this test does not have to pass
+        assert cur.messages is None
+        # calling description on closed cursor works
+        # this test does not have to pass
+        assert cur.native_description is None
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
