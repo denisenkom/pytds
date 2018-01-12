@@ -103,7 +103,6 @@ def test_connection_timeout_no_mars():
     kwargs.update({
         'use_mars': False,
         'timeout': 1,
-        'login_timeout': 1,
         'pooling': True,
     })
     with connect(**kwargs) as conn:
