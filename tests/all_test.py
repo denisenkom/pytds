@@ -104,6 +104,7 @@ def test_connection_timeout_no_mars():
         'use_mars': False,
         'timeout': 1,
         'login_timeout': 1,
+        'pooling': True,
     })
     with connect(**kwargs) as conn:
         with conn.cursor() as cur:
@@ -131,6 +132,12 @@ def test_connection_timeout_no_mars():
         # test spid property on non-mars cursor
         with conn.cursor() as cur:
             assert cur.spid is not None
+
+    # test non-mars cursor with connection pool enabled
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute('select 1')
+            assert cur.fetchall() == [(1,)]
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
@@ -289,6 +296,10 @@ class DbTestCase(ConnectionTestCase):
             self.assertFalse(row)
 
             self.conn.autocommit = True
+            # commit in autocommit mode should be a no-op
+            self.conn.commit()
+            # rollback in autocommit mode should be a no-op
+            self.conn.rollback()
             cur.execute('insert into test_autocommit(field) values(1)')
             self.assertEqual(self.conn._trancount(), 0)
 

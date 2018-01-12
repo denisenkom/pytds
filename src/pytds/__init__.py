@@ -390,8 +390,6 @@ class Connection(object):
                                 18452,  # login from untrusted domain
                         ):
                             raise
-                except Exception as e:
-                    last_error = e
 
                 if time.time() > end_time:
                     raise last_error
