@@ -87,7 +87,6 @@ create_test_database()
 def test_connection_timeout_with_mars():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs['database'] = 'master'
-    kwargs['login_timeout'] = 1
     kwargs['timeout'] = 1
     kwargs['use_mars'] = True
     with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
@@ -107,6 +106,10 @@ def test_connection_no_mars_autocommit():
         'autocommit': True,
     })
     with connect(**kwargs) as conn:
+        # test execute scalar with empty response
+        with conn.cursor() as cur:
+            cur.execute_scalar('declare @tbl table(f int); select * from @tbl')
+
         # test cursor usage after close, should raise exception
         cur = conn.cursor()
         cur.execute_scalar('select 1')
@@ -117,6 +120,9 @@ def test_connection_no_mars_autocommit():
         # calling get_proc_return_status on closed cursor works
         # this test does not have to pass
         assert cur.get_proc_return_status() is None
+        # calling rowcount on closed cursor works
+        # this test does not have to pass
+        assert cur.rowcount == -1
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
