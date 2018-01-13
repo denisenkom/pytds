@@ -1091,7 +1091,7 @@ class ConnectionClosing(unittest.TestCase):
                     cur.execute('select 1')
                 kill(master_conn, get_spid(conn))
                 sleep(0.2)
-                with pytest.raises(BrokenPipeError):
+                with pytest.raises(ConnectionError):
                     with conn.cursor() as cur:
                         cur.execute('select 1')
 
