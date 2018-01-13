@@ -1085,6 +1085,16 @@ class ConnectionClosing(unittest.TestCase):
                 with conn.cursor() as cur:
                     cur.execute('select 1')
 
+                # test cursor opening in a transaction, it should raise exception
+                # make transaction dirty
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+                kill(master_conn, get_spid(conn))
+                sleep(0.2)
+                with pytest.raises(BrokenPipeError):
+                    with conn.cursor() as cur:
+                        cur.execute('select 1')
+
                 # test recovery on transaction
                 with conn.cursor() as cur:
                     cur.execute('create table ##testtable3 (fld int)')
