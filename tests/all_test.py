@@ -7,6 +7,7 @@ import string
 import codecs
 from six import StringIO
 import logging
+import socket
 
 from pytds.tds_types import TimeType, DateTime2Type, DateType, DateTimeOffsetType, BitType, TinyIntType, SmallIntType, \
     IntType, BigIntType, RealType, FloatType, NVarCharType, VarBinaryType, SmallDateTimeType, DateTimeType, DecimalType, \
@@ -1091,7 +1092,8 @@ class ConnectionClosing(unittest.TestCase):
                     cur.execute('select 1')
                 kill(master_conn, get_spid(conn))
                 sleep(0.2)
-                with pytest.raises(ConnectionError):
+                # it does not have to raise this specific exception
+                with pytest.raises(socket.error):
                     with conn.cursor() as cur:
                         cur.execute('select 1')
 
