@@ -1105,6 +1105,14 @@ class ConnectionClosing(unittest.TestCase):
                         cur.fetchall()
                     conn.rollback()
                     cur.execute('select 1')
+
+                # test server closed connection on rollback
+                with conn.cursor() as cur:
+                    cur.execute('select 1')
+                kill(master_conn, get_spid(conn))
+                sleep(0.2)
+                conn.rollback()
+
             #with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD) as conn:
             #    spid = get_spid(conn)
             #    with conn.cursor() as cur:

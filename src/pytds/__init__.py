@@ -473,17 +473,12 @@ class Connection(object):
             self._main_cursor._rollback(cont=True,
                                         isolation_level=self._isolation_level)
         except socket.error as e:
-            if e.errno in (errno.ENETRESET, errno.ECONNRESET):
+            if e.errno in (errno.ENETRESET, errno.ECONNRESET, errno.EPIPE):
                 return
             self._conn.close()
             raise
         except ClosedConnectionError:
             pass
-        except OperationalError as e:
-            # ignore ROLLBACK TRANSACTION without BEGIN TRANSACTION
-            if e.number == 3903:
-                return
-            raise
 
     def close(self):
         """ Close connection to an MS SQL Server.
