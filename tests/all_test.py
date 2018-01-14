@@ -68,9 +68,31 @@ def create_test_database():
             try:
                 cur.execute('drop database [{0}]'.format(settings.DATABASE))
             except:
+                logger.exception('Failed to drop database')
                 pass
             try:
                 cur.execute('create database [{0}]'.format(settings.DATABASE))
+            except:
+                pass
+            try:
+                cur.execute('create schema myschema')
+            except:
+                pass
+            try:
+                cur.execute('create table myschema.bulk_insert_table(num int, data varchar(100))')
+            except:
+                pass
+            try:
+                cur.execute('''
+                create procedure testproc (@param int, @add int = 2, @outparam int output)
+                as
+                begin
+                    set nocount on
+                    --select @param
+                    set @outparam = @param + @add
+                    return @outparam
+                end
+                ''')
             except:
                 pass
 
@@ -442,8 +464,6 @@ class DbTestCase(ConnectionTestCase):
 
     def test_bulk_insert(self):
         with self.conn.cursor() as cur:
-            cur.execute('create schema myschema')
-            cur.execute('create table myschema.bulk_insert_table(num int, data varchar(100))')
             f = StringIO("42\tfoo\n74\tbar\n")
             cur.copy_to(f, 'bulk_insert_table', schema='myschema', columns=('num', 'data'))
             cur.execute('select num, data from myschema.bulk_insert_table')
@@ -535,16 +555,6 @@ class DbTestCase(ConnectionTestCase):
 
     def test_stored_proc(self):
         cur = self.conn.cursor()
-        cur.execute('''
-        create procedure testproc (@param int, @add int = 2, @outparam int output)
-        as
-        begin
-            set nocount on
-            --select @param
-            set @outparam = @param + @add
-            return @outparam
-        end
-        ''')
         val = 45
         #params = {'@param': val, '@outparam': output(None), '@add': 1}
         values = cur.callproc('testproc', (val, default, output(value=1)))
@@ -555,7 +565,7 @@ class DbTestCase(ConnectionTestCase):
     def test_bug2(self):
         with self.conn.cursor() as cur:
             cur.execute('''
-            create procedure testproc (@param int)
+            create procedure testproc_bug2 (@param int)
             as
             begin
                 set transaction isolation level read uncommitted -- that will produce very empty result (even no rowcount)
@@ -564,7 +574,7 @@ class DbTestCase(ConnectionTestCase):
             end
             ''')
             val = 45
-            cur.execute('exec testproc @param = 45')
+            cur.execute('exec testproc_bug2 @param = 45')
             self.assertEqual(cur.fetchall(), [(val,)])
             self.assertEqual(val + 1, cur.get_proc_return_status())
 
@@ -1725,6 +1735,21 @@ class TestTds71(unittest.TestCase):
     def test_transaction(self):
         self.conn.rollback()
         self.conn.commit()
+
+    def test_bulk(self):
+        f = StringIO("42\tfoo\n74\tbar\n")
+        with self.conn.cursor() as cur:
+            cur.copy_to(f, 'bulk_insert_table', schema='myschema', columns=('num', 'data'))
+            cur.execute('select num, data from myschema.bulk_insert_table')
+            self.assertListEqual(cur.fetchall(), [(42, 'foo'), (74, 'bar')])
+
+    def test_call_proc(self):
+        with self.conn.cursor() as cur:
+            val = 45
+            values = cur.callproc('testproc', (val, default, output(value=1)))
+            #self.assertEqual(cur.fetchall(), [(val,)])
+            self.assertEqual(val + 2, values[2])
+            self.assertEqual(val + 2, cur.get_proc_return_status())
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")

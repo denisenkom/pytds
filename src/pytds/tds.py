@@ -746,10 +746,6 @@ class _TdsSession(object):
         r = self._reader
         skipall(r, r.get_smallint())
 
-    def process_orderby2(self):
-        r = self._reader
-        skipall(r, r.get_int())
-
     def process_end(self, marker):
         """ Reads and processes DONE/DONEINPROC/DONEPROC streams
 
@@ -1140,9 +1136,11 @@ class _TdsSession(object):
                 for i, col in enumerate(metadata):
                     serializers[i].write(w, row[i])
 
+            # https://msdn.microsoft.com/en-us/library/dd340421.aspx
             w.put_byte(tds_base.TDS_DONE_TOKEN)
             w.put_usmallint(tds_base.TDS_DONE_FINAL)
             w.put_usmallint(0)  # curcmd
+            # row count
             if tds_base.IS_TDS72_PLUS(self):
                 w.put_int8(0)
             else:
@@ -1678,7 +1676,6 @@ _token_map = {
     tds_base.TDS7_RESULT_TOKEN: lambda self: self.tds7_process_result(),
     tds_base.TDS_ROW_TOKEN: lambda self: self.process_row(),
     tds_base.TDS_NBC_ROW_TOKEN: lambda self: self.process_nbcrow(),
-    tds_base.TDS_ORDERBY2_TOKEN: lambda self: self.process_orderby2(),
     tds_base.TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
     tds_base.TDS_RETURNSTATUS_TOKEN: lambda self: self.process_returnstatus(),
     }
