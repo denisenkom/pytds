@@ -13,5 +13,5 @@ install:
 script:
   - pytest -v --junitxml=junit-results.xml --cov=./
   - codecov
-  - python profile_smp.py
-  - python profile_reader.py
+  - python profiling/profile_smp.py
+  - python profiling/profile_reader.py
