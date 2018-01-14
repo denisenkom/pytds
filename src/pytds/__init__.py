@@ -254,20 +254,6 @@ class Connection(object):
             return cur.fetchone()[0]
 
     @property
-    def chunk_handler(self):
-        """
-        Returns current chunk handler
-        Default is MemoryChunkedHandler()
-        """
-        self._assert_open()
-        return self._conn.chunk_handler
-
-    @chunk_handler.setter
-    def chunk_handler(self, value):
-        self._assert_open()
-        self._conn.chunk_handler = value
-
-    @property
     def tds_version(self):
         """
         Version of tds protocol that is being used by this connection
@@ -798,6 +784,11 @@ class Cursor(six.Iterator):
             return res.description
         else:
             return None
+
+    def set_stream(self, column_idx, stream):
+        if len(self._session.res_info.columns) <= column_idx or column_idx < 0:
+            raise ValueError('Invalid value for column_idx')
+        self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
 
     @property
     def messages(self):

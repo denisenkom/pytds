@@ -422,42 +422,6 @@ class _TdsWriter(object):
         self._pos = 8
 
 
-class MemoryChunkedHandler(object):
-    def __init__(self):
-        self.size = 0
-        self._chunks = []
-        self._column = None
-
-    def begin(self, column, size):
-        self.size = size
-        self._chunks = []
-        self._column = column
-
-    def new_chunk(self, val):
-        self._chunks.append(val)
-
-    def end(self):
-        return b''.join(self._chunks)
-
-
-class MemoryStrChunkedHandler(object):
-    def __init__(self):
-        self.size = 0
-        self._chunks = []
-        self._column = None
-
-    def begin(self, column, size):
-        self.size = size
-        self._chunks = []
-        self._column = column
-
-    def new_chunk(self, val):
-        self._chunks.append(val)
-
-    def end(self):
-        return ''.join(self._chunks)
-
-
 def _create_exception_by_message(msg, custom_error_msg=None):
     msg_no = msg['msgno']
     if custom_error_msg is not None:
@@ -505,7 +469,6 @@ class _TdsSession(object):
         self.state = tds_base.TDS_IDLE
         self._tds = tds
         self.messages = []
-        self.chunk_handler = tds.chunk_handler
         self.rows_affected = -1
         self.use_tz = tds.use_tz
         self._spid = 0
@@ -553,7 +516,11 @@ class _TdsSession(object):
         """
         r = self._reader
         # User defined data type of the column
-        curcol.column_usertype = r.get_uint() if tds_base.IS_TDS72_PLUS(self) else r.get_usmallint()
+        if tds_base.IS_TDS72_PLUS(self):
+            user_type = r.get_uint()
+        else:
+            user_type = r.get_usmallint()
+        curcol.column_usertype = user_type
         curcol.flags = r.get_usmallint()  # Flags
         type_id = r.get_byte()
         serializer_class = self._tds.type_factory.get_type_serializer(type_id)
@@ -1692,7 +1659,6 @@ class _TdsSocket(object):
         self.tds72_transaction = 0
         self.authentication = None
         self._mars_enabled = False
-        self.chunk_handler = MemoryChunkedHandler()
         self.sock = None
         self.bufsize = 4096
         self.tds_version = tds_base.TDS74

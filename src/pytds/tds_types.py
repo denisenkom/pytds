@@ -6,7 +6,9 @@ import re
 import uuid
 import six
 import functools
+from io import StringIO, BytesIO
 
+from pytds.tds_base import read_chunks
 from . import tds_base
 from .collate import ucs2_codec, raw_collation
 from . import tz
@@ -84,6 +86,34 @@ class PlpReader(object):
                 buf = self._rdr.recv(left)
                 yield buf
                 left -= len(buf)
+
+
+class _StreamChunkedHandler(object):
+    def __init__(self, stream):
+        self.stream = stream
+
+    def add_chunk(self, val):
+        self.stream.write(val)
+
+    def end(self):
+        return self.stream
+
+
+class _DefaultChunkedHandler(object):
+    def __init__(self, stream):
+        self.stream = stream
+
+    def add_chunk(self, val):
+        self.stream.write(val)
+
+    def end(self):
+        return self.stream.getvalue()
+
+    def __eq__(self, other):
+        return self.stream.getvalue() == other.stream.getvalue()
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
 
 class SqlTypeMetaclass(tds_base.CommonEqualityMixin):
@@ -326,6 +356,9 @@ class BaseTypeSerializer(tds_base.CommonEqualityMixin):
         Should be implemented in actual types.
         """
         raise NotImplementedError
+
+    def set_chunk_handler(self, chunk_handler):
+        raise ValueError("Column type does not support chunk handler")
 
 
 class BasePrimitiveTypeSerializer(BaseTypeSerializer):
@@ -679,6 +712,7 @@ class VarChar72Serializer(VarChar71Serializer):
 class VarCharMaxSerializer(VarChar72Serializer):
     def __init__(self, collation=raw_collation):
         super(VarChar72Serializer, self).__init__(0, collation)
+        self._chunk_handler = None
 
     def write_info(self, w):
         w.put_usmallint(tds_base.PLP_MARKER)
@@ -703,10 +737,21 @@ class VarCharMaxSerializer(VarChar72Serializer):
         r = PlpReader(r)
         if r.is_null():
             return None
+        if self._chunk_handler is None:
+            if login.bytes_to_unicode:
+                self._chunk_handler = _DefaultChunkedHandler(StringIO())
+            else:
+                self._chunk_handler = _DefaultChunkedHandler(BytesIO())
         if login.bytes_to_unicode:
-            return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
+            for chunk in tds_base.iterdecode(r.chunks(), self._codec):
+                self._chunk_handler.add_chunk(chunk)
         else:
-            return tds_base.join_bytearrays(r.chunks())
+            for chunk in r.chunks():
+                self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class NVarChar70Serializer(BaseTypeSerializer):
@@ -767,6 +812,7 @@ class NVarChar72Serializer(NVarChar71Serializer):
 class NVarCharMaxSerializer(NVarChar72Serializer):
     def __init__(self, collation=raw_collation):
         super(NVarCharMaxSerializer, self).__init__(size=-1, collation=collation)
+        self._chunk_handler = _DefaultChunkedHandler(StringIO())
 
     def __repr__(self):
         return 'NVarCharMax(s={},c={})'.format(self.size, repr(self._collation))
@@ -795,8 +841,12 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        res = ''.join(tds_base.iterdecode(r.chunks(), ucs2_codec))
-        return res
+        for chunk in tds_base.iterdecode(r.chunks(), ucs2_codec):
+            self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class XmlSerializer(NVarCharMaxSerializer):
@@ -848,6 +898,7 @@ class Text70Serializer(BaseTypeSerializer):
             self._codec = codec
         else:
             self._codec = collation.get_codec()
+        self._chunk_handler = None
 
     def __repr__(self):
         return 'Text70(size={},table_name={},codec={})'.format(self.size, self._table_name, self._codec)
@@ -879,10 +930,21 @@ class Text70Serializer(BaseTypeSerializer):
         tds_base.readall(r, size)  # textptr
         tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
+        if self._chunk_handler is None:
+            if r._session._tds._login.bytes_to_unicode:
+                self._chunk_handler = _DefaultChunkedHandler(StringIO())
+            else:
+                self._chunk_handler = _DefaultChunkedHandler(BytesIO())
         if r._session._tds._login.bytes_to_unicode:
-            return r.read_str(colsize, self._codec)
+            for chunk in tds_base.iterdecode(read_chunks(r, colsize), self._codec):
+                self._chunk_handler.add_chunk(chunk)
         else:
-            return tds_base.readall(r, colsize)
+            for chunk in read_chunks(r, colsize):
+                self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class Text71Serializer(Text70Serializer):
@@ -927,6 +989,7 @@ class NText70Serializer(BaseTypeSerializer):
         super(NText70Serializer, self).__init__(size=size)
         self._collation = collation
         self._table_name = table_name
+        self._chunk_handler = _DefaultChunkedHandler(StringIO())
 
     def __repr__(self):
         return 'NText70(size={}, table_name={})'.format(self.size, self._table_name)
@@ -944,7 +1007,9 @@ class NText70Serializer(BaseTypeSerializer):
         tds_base.readall(r, textptr_size)  # textptr
         tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
-        return r.read_str(colsize, ucs2_codec)
+        for chunk in tds_base.iterdecode(read_chunks(r, colsize), ucs2_codec):
+            self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
 
     def write_info(self, w):
         w.put_int(self.size * 2)
@@ -955,6 +1020,9 @@ class NText70Serializer(BaseTypeSerializer):
         else:
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class NText71Serializer(NText70Serializer):
@@ -973,15 +1041,6 @@ class NText71Serializer(NText70Serializer):
     def write_info(self, w):
         w.put_int(self.size)
         w.put_collation(self._collation)
-
-    def read(self, r):
-        textptr_size = r.get_byte()
-        if textptr_size == 0:
-            return None
-        tds_base.readall(r, textptr_size)  # textptr
-        tds_base.readall(r, 8)  # timestamp
-        colsize = r.get_int()
-        return r.read_str(colsize, ucs2_codec)
 
 
 class NText72Serializer(NText71Serializer):
@@ -1055,6 +1114,7 @@ class VarBinarySerializer72(VarBinarySerializer):
 class VarBinarySerializerMax(VarBinarySerializer):
     def __init__(self):
         super(VarBinarySerializerMax, self).__init__(0)
+        self._chunk_handler = _DefaultChunkedHandler(BytesIO())
 
     def __repr__(self):
         return 'VarBinaryMax()'
@@ -1076,7 +1136,13 @@ class VarBinarySerializerMax(VarBinarySerializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        return tds_base.join_bytearrays(r.chunks())
+        for chunk in r.chunks():
+            self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
+
 
 class UDT72Serializer(BaseTypeSerializer):
     # Data type definition stream used for UDT_INFO in TYPE_INFO
@@ -1123,9 +1189,11 @@ class UDT72Serializer(BaseTypeSerializer):
             return None
         return b''.join(r.chunks())
 
+
 class UDT72SerializerMax(UDT72Serializer):
     def __init__(self, *args, **kwargs):
         super(UDT72SerializerMax, self).__init__(0, *args, **kwargs)
+
 
 class Image70Serializer(BaseTypeSerializer):
     type = tds_base.SYBIMAGE
@@ -1134,6 +1202,7 @@ class Image70Serializer(BaseTypeSerializer):
     def __init__(self, size=0, table_name=''):
         super(Image70Serializer, self).__init__(size=size)
         self._table_name = table_name
+        self._chunk_handler = _DefaultChunkedHandler(BytesIO())
 
     def __repr__(self):
         return 'Image70(tn={},s={})'.format(repr(self._table_name), self.size)
@@ -1150,7 +1219,9 @@ class Image70Serializer(BaseTypeSerializer):
             tds_base.readall(r, 16)  # textptr
             tds_base.readall(r, 8)  # timestamp
             colsize = r.get_int()
-            return tds_base.readall(r, colsize)
+            for chunk in read_chunks(r, colsize):
+                self._chunk_handler.add_chunk(chunk)
+            return self._chunk_handler.end()
         else:
             return None
 
@@ -1163,6 +1234,9 @@ class Image70Serializer(BaseTypeSerializer):
 
     def write_info(self, w):
         w.put_int(self.size)
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class Image72Serializer(Image70Serializer):

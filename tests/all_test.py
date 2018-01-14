@@ -5,7 +5,7 @@ import os
 import random
 import string
 import codecs
-from six import StringIO
+from six import StringIO, BytesIO
 import logging
 import socket
 
@@ -708,6 +708,70 @@ class TestCaseWithCursor(ConnectionTestCase):
         test_val(u'Iñtërnâtiônàlizætiøn1')
         test_val(u'\U0001d6fc')
 
+    def test_streaming(self):
+        val = 'x' * 10000
+        # test nvarchar(max)
+        self.cursor.execute("select N'{}', 1".format(val))
+        with pytest.raises(ValueError):
+            self.cursor.set_stream(1, StringIO())
+        with pytest.raises(ValueError):
+            self.cursor.set_stream(2, StringIO())
+        with pytest.raises(ValueError):
+            self.cursor.set_stream(-1, StringIO())
+        self.cursor.set_stream(0, StringIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], StringIO)
+        assert row[0].getvalue() == val
+
+        # test nvarchar(max) with NULL value
+        self.cursor.execute("select cast(NULL as nvarchar(max)), 1".format(val))
+        self.cursor.set_stream(0, StringIO())
+        row = self.cursor.fetchone()
+        assert row[0] is None
+
+        # test varchar(max)
+        self.cursor.execute("select '{}', 1".format(val))
+        self.cursor.set_stream(0, StringIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], StringIO)
+        assert row[0].getvalue() == val
+
+        # test varbinary(max)
+        self.cursor.execute("select cast('{}' as varbinary(max)), 1".format(val))
+        self.cursor.set_stream(0, BytesIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], BytesIO)
+        assert row[0].getvalue().decode('ascii') == val
+
+        # test image type
+        self.cursor.execute("select cast('{}' as image), 1".format(val))
+        self.cursor.set_stream(0, BytesIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], BytesIO)
+        assert row[0].getvalue().decode('ascii') == val
+
+        # test ntext type
+        self.cursor.execute("select cast('{}' as ntext), 1".format(val))
+        self.cursor.set_stream(0, StringIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], StringIO)
+        assert row[0].getvalue() == val
+
+        # test text type
+        self.cursor.execute("select cast('{}' as text), 1".format(val))
+        self.cursor.set_stream(0, StringIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], StringIO)
+        assert row[0].getvalue() == val
+
+        # test xml type
+        xml_val = '<root>{}</root>'.format(val)
+        self.cursor.execute("select cast('{}' as xml), 1".format(xml_val))
+        self.cursor.set_stream(0, StringIO())
+        row = self.cursor.fetchone()
+        assert isinstance(row[0], StringIO)
+        assert row[0].getvalue() == xml_val
+
     def test_varcharmax(self):
         self._test_val('x' * 9000)
 
@@ -818,8 +882,6 @@ class TestCaseWithCursor(ConnectionTestCase):
         self.conn.set_autocommit(self.conn.autocommit)
         # test isolation_level property read/write
         self.conn.isolation_level = self.conn.isolation_level
-        # test chunk handler property read/write
-        self.conn.chunk_handler = self.conn.chunk_handler
         # test product_version property read
         logger.info("Product version %s", self.conn.product_version)
         self.conn.as_dict = self.conn.as_dict
