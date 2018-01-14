@@ -1169,7 +1169,6 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login.tds_version = tds_version
     login.database = database or ''
     login.bulk_copy = False
-    login.text_size = 0
     login.client_lcid = lcid.LANGID_ENGLISH_US
     login.use_mars = use_mars
     login.pid = os.getpid()

@@ -49,15 +49,9 @@ import settings
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(format="%(asctime)-15s %(message)s")
 
 # set decimal precision to match mssql maximum precision
 getcontext().prec = 38
-
-
-#logging.basicConfig(level='DEBUG')
-#logging.basicConfig(level='INFO')
-logging.basicConfig()
 
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
 
@@ -1789,3 +1783,13 @@ class TestRawBytes(unittest.TestCase):
 
         utf8char = six.b('\xee\xb4\xba')
         self.assertEquals(utf8char, cur.execute_scalar("select %s", [utf8char]))
+
+
+def test_invalid_block_size():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update({
+        'blocksize': 4000,
+    })
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute_scalar("select '{}'".format('x' * 8000))

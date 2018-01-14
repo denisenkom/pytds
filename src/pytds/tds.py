@@ -837,6 +837,10 @@ class _TdsSession(object):
             lcid = int(r.read_ucs2(r.get_byte()))
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
+        elif type_id == tds_base.TDS_ENV_UNICODE_DATA_SORT_COMP_FLAGS:
+            old_comp_flags = r.read_ucs2(r.get_byte())
+            comp_flags = r.read_ucs2(r.get_byte())
+            self.conn.comp_flags = comp_flags
         else:
             logger.warning("unknown env type: {0}, skipping".format(type_id))
             # discard byte values, not still supported
@@ -1031,6 +1035,7 @@ class _TdsSession(object):
         :param params: Stored proc parameters, should be a list of :class:`Column` instances.
         :param flags: See spec for possible flags.
         """
+        logger.info('Sending RPC %s', rpc_name)
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()
@@ -1091,6 +1096,7 @@ class _TdsSession(object):
         self.messages = []
         self.cancel_if_pending()
         self.res_info = None
+        logger.info("Sending query %s", operation[:100])
         w = self._writer
         with self.querying_context(tds_base.PacketType.QUERY):
             if tds_base.IS_TDS72_PLUS(self):
@@ -1106,6 +1112,7 @@ class _TdsSession(object):
         :param rows: A collection of rows, each row is a collection of values.
         :return:
         """
+        logger.info('Sending INSERT BULK')
         num_cols = len(metadata)
         w = self._writer
         serializers = []
@@ -1146,6 +1153,7 @@ class _TdsSession(object):
 
         Switches connection to IN_CANCEL state.
         """
+        logger.info('Sending CANCEL')
         self._writer.begin_packet(tds_base.PacketType.CANCEL)
         self._writer.flush()
         self.in_cancel = 1
@@ -1153,6 +1161,7 @@ class _TdsSession(object):
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
     def begin_tran(self, isolation_level=0):
+        logger.info('Sending BEGIN TRAN')
         self.submit_begin_tran(isolation_level=isolation_level)
         self.process_simple_request()
 
@@ -1177,6 +1186,7 @@ class _TdsSession(object):
     _continue_tran_struct72 = struct.Struct('<BB')
 
     def rollback(self, cont, isolation_level=0):
+        logger.info('Sending ROLLBACK TRAN')
         self.submit_rollback(cont, isolation_level=isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
         self._tds.sock.settimeout(None)
@@ -1213,6 +1223,7 @@ class _TdsSession(object):
             self.conn.tds72_transaction = 1 if cont else 0
 
     def commit(self, cont, isolation_level=0):
+        logger.info('Sending COMMIT TRAN')
         self.submit_commit(cont, isolation_level=isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
         self._tds.sock.settimeout(None)
@@ -1261,6 +1272,7 @@ class _TdsSession(object):
                )
 
     def send_prelogin(self, login):
+        logger.info('Sending PRELOGIN')
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
         instance_name = instance_name.encode('ascii')
@@ -1373,6 +1385,7 @@ class _TdsSession(object):
 
     def tds7_send_login(self, login):
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
+        logger.info('Sending LOGIN')
         option_flag2 = login.option_flag2
         user_name = login.user_name
         if len(user_name) > 128:
@@ -1735,7 +1748,6 @@ class _TdsSocket(object):
             bytes_to_unicode=self._login.bytes_to_unicode,
             allow_tz=not self.use_tz
         )
-        text_size = login.text_size
         if self._mars_enabled:
             from .smp import SmpManager
             self._smp_manager = SmpManager(self.sock)
@@ -1745,8 +1757,6 @@ class _TdsSocket(object):
                 tzinfo_factory)
         self._is_connected = True
         q = []
-        if text_size:
-            q.append('set textsize {0}'.format(int(text_size)))
         if login.database and self.env.database != login.database:
             q.append('use ' + tds_base.tds_quote_id(login.database))
         if q:
