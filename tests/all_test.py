@@ -1785,6 +1785,7 @@ class TestRawBytes(unittest.TestCase):
         self.assertEquals(utf8char, cur.execute_scalar("select %s", [utf8char]))
 
 
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_invalid_block_size():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update({
