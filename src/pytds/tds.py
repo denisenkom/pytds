@@ -1582,10 +1582,8 @@ class _TdsSession(object):
             marker = self.get_token_id()
             if marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN, tds_base.TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
-                    # skip results that don't event have rowcount
-                    continue
-                return
+                if not self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
+                    return
             else:
                 self.process_token(marker)
 
@@ -1635,9 +1633,6 @@ class _TdsSession(object):
                 if self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
                     if self.done_flags & tds_base.TDS_DONE_COUNT:
                         return True
-                    else:
-                        # skip results without rowcount
-                        continue
                 else:
                     return False
             else:

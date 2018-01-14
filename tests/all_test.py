@@ -829,7 +829,6 @@ class TestCaseWithCursor(ConnectionTestCase):
             assert cur.fetchall() == [(1,)]
 
 
-
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class DbTests(ConnectionTestCase):
     def test_fetchone(self):
@@ -1723,6 +1722,10 @@ class TestTds71(unittest.TestCase):
     def test_parsing(self):
         _params_tests(self)
 
+    def test_transaction(self):
+        self.conn.rollback()
+        self.conn.commit()
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class TestTds72(unittest.TestCase):
@@ -1794,3 +1797,14 @@ def test_invalid_block_size():
     with connect(**kwargs) as conn:
         with conn.cursor() as cur:
             cur.execute_scalar("select '{}'".format('x' * 8000))
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_readonly_connection():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update({
+        'readonly': True,
+    })
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute_scalar("select 1")
