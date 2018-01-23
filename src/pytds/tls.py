@@ -17,6 +17,12 @@ class EncryptedSocket(object):
         self._transport = transport
         self._tls_conn = tls_conn
 
+    def gettimeout(self):
+        return self._transport.gettimeout()
+
+    def settimeout(self, timeout):
+        self._transport.settimeout(timeout)
+
     def sendall(self, data, flags=0):
         # TLS.Connection does not support bytearrays, need to convert to bytes first
         if isinstance(data, bytearray):
