@@ -920,8 +920,15 @@ class Cursor(six.Iterator):
             metadata = [Column(name=name, type=NVarCharType(size=4000), flags=Column.fNullable) for name in columns]
         else:
             self.execute('select top 1 * from {} where 1<>1'.format(obj_name))
-            metadata = [Column(name=col[0], type=NVarCharType(size=4000), flags=Column.fNullable if col[6] else 0)
-                        for col in self.description]
+            metadata = [
+                Column(name=col[0], type=NVarCharType(size=4000), flags=Column.fNullable if col[6] else Column.fNotNull)
+                for col in self.description]
+        self._do_bulk_insert(obj_name, reader, metadata, check_constraints, fire_triggers, kb_per_batch, keep_nulls,
+                             order, rows_per_batch, tablock)
+
+    def _do_bulk_insert(self, obj_name, data, metadata, check_constraints, fire_triggers, kb_per_batch, keep_nulls,
+                        order,
+                        rows_per_batch, tablock):
         col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
                             for col in metadata)
         with_opts = []
@@ -944,8 +951,52 @@ class Cursor(six.Iterator):
             with_part = 'WITH ({0})'.format(','.join(with_opts))
         operation = 'INSERT BULK {0}({1}) {2}'.format(obj_name, col_defs, with_part)
         self.execute(operation)
-        self._session.submit_bulk(metadata, reader)
+        self._session.submit_bulk(metadata, data)
         self._session.process_simple_request()
+
+    def bulk_insert(self, data, table_or_view, column_definitions,
+                    check_constraints=False, fire_triggers=False, keep_nulls=False,
+                    kb_per_batch=None, rows_per_batch=None, order=None, tablock=False,
+                    schema=None):
+        """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
+
+        :param data: Collection of data that need to be inserted.
+        :type data: iterable
+        :param table_or_view: Destination table or view in the database
+        :type table_or_view: str
+        :param column_definitions: Column definitions for the data. Should be an array of Column types
+        :type column_definitions: list
+
+        Optional parameters:
+
+        :keyword check_constraints: Check table constraints for incoming data
+        :type check_constraints: bool
+        :keyword fire_triggers: Enable or disable triggers for table
+        :type fire_triggers: bool
+        :keyword keep_nulls: If enabled null values inserted as-is, instead of
+          inserting default value for column
+        :type keep_nulls: bool
+        :keyword kb_per_batch: Kilobytes per batch can be used to optimize performance, see MSSQL
+          server documentation for details
+        :type kb_per_batch: int
+        :keyword rows_per_batch: Rows per batch can be used to optimize performance, see MSSQL
+          server documentation for details
+        :type rows_per_batch: int
+        :keyword order: The ordering of the data in source table. List of columns with ASC or DESC suffix.
+          E.g. ``['order_id ASC', 'name DESC']``
+          Can be used to optimize performance, see MSSQL server documentation for details
+        :type order: list
+        :keyword tablock: Enable or disable table lock for the duration of bulk load
+        :keyword schema: Name of schema for table or view, if not specified default schema will be used
+        """
+        conn = self._conn()
+
+        obj_name = tds_base.tds_quote_id(table_or_view)
+        if schema:
+            obj_name = '{0}.{1}'.format(tds_base.tds_quote_id(schema), obj_name)
+
+        self._do_bulk_insert(obj_name, data, column_definitions, check_constraints, fire_triggers, kb_per_batch,
+                             keep_nulls, order, rows_per_batch, tablock)
 
 
 class _MarsCursor(Cursor):

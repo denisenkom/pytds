@@ -592,6 +592,7 @@ def total_seconds(td):
 
 
 class Column(CommonEqualityMixin):
+    fNotNull = 0
     fNullable = 1
     fCaseSen = 2
     fReadWrite = 8
