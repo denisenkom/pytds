@@ -483,6 +483,12 @@ class _TdsSession(object):
         self.row = None
         self.end_marker = 0
 
+    def log_response_message(self, msg):
+        # logging is disabled by default
+        # TODO: allow logging to be enabled via connection string parameter
+        if False:
+            logger.info('[%d] %s', self._spid, msg)
+
     def __repr__(self):
         fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={} in_cancel={}>"
         res = fmt.format(repr(self.state), repr(self._tds), repr(self.messages),
@@ -532,6 +538,7 @@ class _TdsSession(object):
         This stream contains a list of returned columns.
         Stream format link: http://msdn.microsoft.com/en-us/library/dd357363.aspx
         """
+        self.log_response_message('got COLMETADATA')
         r = self._reader
 
         # read number of columns and allocate the columns structure
@@ -583,6 +590,7 @@ class _TdsSession(object):
         This stream is used to send OUTPUT parameters from RPC to client.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd303881.aspx
         """
+        self.log_response_message('got RETURNVALUE message')
         r = self._reader
         if tds_base.IS_TDS72_PLUS(self):
             ordinal = r.get_usmallint()
@@ -606,6 +614,7 @@ class _TdsSession(object):
 
         In case when no cancel request is pending this function does nothing.
         """
+        self.log_response_message('got CANCEL message')
         # silly cases, nothing to do
         if not self.in_cancel:
             return
@@ -626,6 +635,7 @@ class _TdsSession(object):
 
         :param marker: TDS_ERROR_TOKEN or TDS_INFO_TOKEN
         """
+        self.log_response_message('got ERROR/INFO message')
         r = self._reader
         r.get_smallint()  # size
         msg = {'marker': marker, 'msgno': r.get_int(), 'state': r.get_byte(), 'severity': r.get_byte(),
@@ -674,6 +684,7 @@ class _TdsSession(object):
         This stream contains list of values of one returned row.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd357254.aspx
         """
+        self.log_response_message("got ROW message")
         r = self._reader
         info = self.res_info
         info.row_count += 1
@@ -687,6 +698,7 @@ class _TdsSession(object):
         introduced in TDS 7.3.B
         Stream format url: http://msdn.microsoft.com/en-us/library/dd304783.aspx
         """
+        self.log_response_message("got NBCROW message")
         r = self._reader
         info = self.res_info
         if not info:
@@ -724,6 +736,7 @@ class _TdsSession(object):
 
         :param marker: Can be TDS_DONE_TOKEN or TDS_DONEINPROC_TOKEN or TDS_DONEPROC_TOKEN
         """
+        self.log_response_message("got DONE/DONEINPROC/DONEPROC message")
         self.end_marker = marker
         self.more_rows = False
         r = self._reader
@@ -751,6 +764,7 @@ class _TdsSession(object):
 
         Stream info url: http://msdn.microsoft.com/en-us/library/dd303449.aspx
         """
+        self.log_response_message("got ENVCHANGE message")
         r = self._reader
         size = r.get_smallint()
         type_id = r.get_byte()
@@ -1521,6 +1535,7 @@ class _TdsSession(object):
         return succeed
 
     def process_returnstatus(self):
+        self.log_response_message('got RETURNSTATUS message')
         self.ret_status = self._reader.get_int()
         self.has_status = True
 
@@ -1619,6 +1634,11 @@ class _TdsSession(object):
                 return False
             else:
                 self.process_token(marker)
+
+    def complete_rpc(self):
+        # go through all result sets
+        while self.next_set():
+            pass
 
     def find_return_status(self):
         self.skipped_to_status = True

@@ -546,6 +546,19 @@ class Cursor(six.Iterator):
         self._setup_row_factory()
         return results
 
+    def get_proc_outputs(self):
+        """
+        If stored procedure has result sets and OUTPUT parameters use this method
+        after you processed all result sets to get values of OUTPUT parameters.
+        :return: A list of output parameter values.
+        """
+
+        self._session.complete_rpc()
+        results = [None] * len(self._session.output_params.items())
+        for key, param in self._session.output_params.items():
+            results[key] = param.value
+        return results
+
     def callproc(self, procname, parameters=()):
         """
         Call a stored procedure with the given name.
@@ -554,6 +567,10 @@ class Cursor(six.Iterator):
         :type procname: str
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
+
+        Note: If stored procedure has OUTPUT parameters and result sets this
+        method will not return values for OUTPUT parameters, you should
+        call get_proc_outputs to get values for OUTPUT parameters.
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)

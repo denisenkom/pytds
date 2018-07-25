@@ -1546,6 +1546,30 @@ END
             self.assertEqual(values[0], None, 'input parameter should be unchanged')
             self.assertEqual(values[1], None, 'output parameter should get new values')
 
+    def test_outparam_and_result_set(self):
+        """
+        Test stored procedure which has output parameters and also result set
+        """
+        with self._connect() as con:
+            cur = con.cursor()
+            logger.info('creating stored procedure')
+            cur.execute('''
+            CREATE PROCEDURE P_OutParam_ResultSet(@A INT OUTPUT)
+            AS BEGIN
+            SET @A = 3;
+            SELECT 4 AS C;
+            SELECT 5 AS C;
+            END;
+            '''
+            )
+            logger.info('executing stored procedure')
+            cur.callproc('P_OutParam_ResultSet', [output(value=1)])
+            assert [(4,)] == cur.fetchall()
+            assert [3] == cur.get_proc_outputs()
+            logger.info('execurint query after stored procedure')
+            cur.execute('select 5')
+            assert [(5,)] == cur.fetchall()
+
     def test_outparam_null_default(self):
         with self.assertRaises(ValueError):
             output(None, None)
