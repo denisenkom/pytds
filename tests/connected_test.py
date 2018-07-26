@@ -1,9 +1,18 @@
 from decimal import Decimal, getcontext
+import uuid
+import datetime
+import logging
+import random
+import string
 import pytest
 import six
 from six import StringIO, BytesIO
 import pytds
+import pytds.extensions
 import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope='module')
@@ -302,3 +311,431 @@ def test_money(cursor):
 def test_strs(cursor):
     cur = cursor
     assert isinstance(cur.execute_scalar("select 'test'"), six.text_type)
+
+
+def test_cursor_env(cursor):
+    cursor.execute('use master')
+    assert cursor.execute_scalar('select DB_NAME()') == 'master'
+
+
+def test_empty_query(cursor):
+    cursor.execute('')
+    assert cursor.description is None
+
+
+@pytest.mark.parametrize('val', [u'hello',
+                                 u'x' * 5000,
+                                 'x' * 9000,
+                                 123,
+                                 -123,
+                                 123.12,
+                                 -123.12,
+                                 10 ** 20,
+                                 10 ** 38 - 1,
+                                 -10 ** 38 + 1,
+                                 datetime.datetime(2011, 2, 3, 10, 11, 12, 3000),
+                                 Decimal('1234.567'),
+                                 Decimal('1234000'),
+                                 Decimal('9' * 38),
+                                 Decimal('0.' + '9' * 38),
+                                 -Decimal('9' * 38),
+                                 Decimal('1E10'),
+                                 Decimal('1E-10'),
+                                 Decimal('0.{0}1'.format('0' * 37)),
+                                 None,
+                                 'hello',
+                                 '',
+                                 pytds.Binary(b''),
+                                 pytds.Binary(b'\x00\x01\x02'),
+                                 pytds.Binary(b'x' * 9000),
+                                 2 ** 63 - 1,
+                                 False,
+                                 True,
+                                 uuid.uuid4(),
+                                 u'Iñtërnâtiônàlizætiøn1',
+                                 u'\U0001d6fc',
+                                 ])
+def test_select_values(cursor, val):
+    cursor.execute('select %s', (val,))
+    assert cursor.fetchone() == (val,)
+    assert cursor.fetchone() is None
+
+
+@pytest.mark.parametrize(
+    'typ,value',
+    [
+        (pytds.tds_types.BitType(), True),
+        (pytds.tds_types.BitType(), False),
+        (pytds.tds_types.IntType(), 2 ** 31 - 1),
+        (pytds.tds_types.IntType(), -2 ** 31),
+        (pytds.tds_types.SmallIntType(), -2 ** 15),
+        (pytds.tds_types.SmallIntType(), 2 ** 15 - 1),
+        (pytds.tds_types.TinyIntType(), 255),
+        (pytds.tds_types.TinyIntType(), 0),
+        (pytds.tds_types.BigIntType(), 2 ** 63 - 1),
+        (pytds.tds_types.BigIntType(), -2 ** 63),
+        (pytds.tds_types.TinyIntType(), 255),
+        (pytds.tds_types.SmallIntType(), 2 ** 15 - 1),
+        (pytds.tds_types.IntType(), 2 ** 31 - 1),
+        (pytds.tds_types.BigIntType(), 2 ** 63 - 1),
+        (pytds.tds_types.IntType(), None),
+        (pytds.tds_types.RealType(), None),
+        (pytds.tds_types.RealType(), 0.25),
+        (pytds.tds_types.FloatType(), None),
+        (pytds.tds_types.FloatType(), 0.25),
+        (pytds.tds_types.NVarCharType(size=10), u''),
+        (pytds.tds_types.NVarCharType(size=10), u'testtest12'),
+        (pytds.tds_types.NVarCharType(size=10), None),
+        (pytds.tds_types.NVarCharType(size=4000), u'x' * 4000),
+        (pytds.tds_types.VarBinaryType(size=10), b''),
+        (pytds.tds_types.VarBinaryType(size=10), b'testtest12'),
+        (pytds.tds_types.VarBinaryType(size=10), None),
+        (pytds.tds_types.VarBinaryType(size=8000), b'x' * 8000),
+        (pytds.tds_types.SmallDateTimeType(), datetime.datetime(1900, 1, 1, 0, 0, 0)),
+        (pytds.tds_types.SmallDateTimeType(), datetime.datetime(2079, 6, 6, 23, 59, 0)),
+        (pytds.tds_types.DateTimeType(), datetime.datetime(1753, 1, 1, 0, 0, 0)),
+        (pytds.tds_types.DateTimeType(), datetime.datetime(9999, 12, 31, 23, 59, 59, 990000)),
+        (pytds.tds_types.SmallDateTimeType(), datetime.datetime(1900, 1, 1, 0, 0, 0)),
+        (pytds.tds_types.DateTimeType(), datetime.datetime(9999, 12, 31, 23, 59, 59, 990000)),
+        (pytds.tds_types.DateTimeType(), None),
+        (pytds.tds_types.DateType(), datetime.date(1, 1, 1)),
+        (pytds.tds_types.DateType(), datetime.date(9999, 12, 31)),
+        (pytds.tds_types.DateType(), None),
+        (pytds.tds_types.TimeType(precision=0), datetime.time(0, 0, 0)),
+        (pytds.tds_types.TimeType(precision=6), datetime.time(23, 59, 59, 999999)),
+        (pytds.tds_types.TimeType(precision=0), None),
+        (pytds.tds_types.DateTime2Type(precision=0), datetime.datetime(1, 1, 1, 0, 0, 0)),
+        (pytds.tds_types.DateTime2Type(precision=6), datetime.datetime(9999, 12, 31, 23, 59, 59, 999999)),
+        (pytds.tds_types.DateTime2Type(precision=0), None),
+        (pytds.tds_types.DateTimeOffsetType(precision=6), datetime.datetime(9999, 12, 31, 23, 59, 59, 999999, pytds.tz.utc)),
+        (pytds.tds_types.DateTimeOffsetType(precision=6), datetime.datetime(9999, 12, 31, 23, 59, 59, 999999, pytds.tz.FixedOffsetTimezone(14))),
+        (pytds.tds_types.DateTimeOffsetType(precision=0), datetime.datetime(1, 1, 1, 0, 0, 0, tzinfo=pytds.tz.FixedOffsetTimezone(-14))),
+        (pytds.tds_types.DateTimeOffsetType(precision=0), datetime.datetime(1, 1, 1, 0, 14, 0, tzinfo=pytds.tz.FixedOffsetTimezone(14))),
+        (pytds.tds_types.DateTimeOffsetType(precision=6), None),
+        (pytds.tds_types.DecimalType(scale=6, precision=38), Decimal('123.456789')),
+        (pytds.tds_types.DecimalType(scale=6, precision=38), None),
+        (pytds.tds_types.SmallMoneyType(), Decimal('214748.3647')),
+        (pytds.tds_types.SmallMoneyType(), Decimal('-214748.3648')),
+        (pytds.tds_types.MoneyType(), Decimal('922337203685477.5807')),
+        (pytds.tds_types.MoneyType(), Decimal('-922337203685477.5808')),
+        (pytds.tds_types.SmallMoneyType(), Decimal('214748.3647')),
+        (pytds.tds_types.MoneyType(), Decimal('922337203685477.5807')),
+        (pytds.tds_types.MoneyType(), None),
+        (pytds.tds_types.UniqueIdentifierType(), None),
+        (pytds.tds_types.UniqueIdentifierType(), uuid.uuid4()),
+        (pytds.tds_types.VariantType(), None),
+        #(pytds.tds_types.VariantType(), 100),
+        #(pytds.tds_types.ImageType(), None),
+        (pytds.tds_types.VarBinaryMaxType(), None),
+        #(pytds.tds_types.NTextType(), None),
+        #(pytds.tds_types.TextType(), None),
+        #(pytds.tds_types.ImageType(), b''),
+        #(self.conn._conn.type_factory.long_binary_type(), b'testtest12'),
+        #(self.conn._conn.type_factory.long_string_type(), None),
+        #(self.conn._conn.type_factory.long_varchar_type(), None),
+        #(self.conn._conn.type_factory.long_string_type(), 'test'),
+        #(pytds.tds_types.ImageType(), None),
+        #(pytds.tds_types.ImageType(), None),
+        #(pytds.tds_types.ImageType(), b'test'),
+])
+def test_bulk_insert_type(cursor, typ, value):
+    cur = cursor
+    cur.execute('create table bulk_insert_table_ll(c1 {0})'.format(typ.get_declaration()))
+    cur._session.submit_plain_query('insert bulk bulk_insert_table_ll (c1 {0})'.format(typ.get_declaration()))
+    cur._session.process_simple_request()
+    col1 = pytds.Column(name='c1', type=typ, flags=pytds.Column.fNullable)
+    metadata = [col1]
+    cur._session.submit_bulk(metadata, [(value,)])
+    cur._session.process_simple_request()
+    cur.execute('select c1 from bulk_insert_table_ll')
+    assert cur.fetchone() == (value,)
+    assert cur.fetchone() is None
+    #cur.execute('drop table bulk_insert_table_ll')
+
+
+def test_streaming(cursor):
+    val = 'x' * 10000
+    # test nvarchar(max)
+    cursor.execute("select N'{}', 1".format(val))
+    with pytest.raises(ValueError):
+        cursor.set_stream(1, StringIO())
+    with pytest.raises(ValueError):
+        cursor.set_stream(2, StringIO())
+    with pytest.raises(ValueError):
+        cursor.set_stream(-1, StringIO())
+    cursor.set_stream(0, StringIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], StringIO)
+    assert row[0].getvalue() == val
+
+    # test nvarchar(max) with NULL value
+    cursor.execute("select cast(NULL as nvarchar(max)), 1".format(val))
+    cursor.set_stream(0, StringIO())
+    row = cursor.fetchone()
+    assert row[0] is None
+
+    # test varchar(max)
+    cursor.execute("select '{}', 1".format(val))
+    cursor.set_stream(0, StringIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], StringIO)
+    assert row[0].getvalue() == val
+
+    # test varbinary(max)
+    cursor.execute("select cast('{}' as varbinary(max)), 1".format(val))
+    cursor.set_stream(0, BytesIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], BytesIO)
+    assert row[0].getvalue().decode('ascii') == val
+
+    # test image type
+    cursor.execute("select cast('{}' as image), 1".format(val))
+    cursor.set_stream(0, BytesIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], BytesIO)
+    assert row[0].getvalue().decode('ascii') == val
+
+    # test ntext type
+    cursor.execute("select cast('{}' as ntext), 1".format(val))
+    cursor.set_stream(0, StringIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], StringIO)
+    assert row[0].getvalue() == val
+
+    # test text type
+    cursor.execute("select cast('{}' as text), 1".format(val))
+    cursor.set_stream(0, StringIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], StringIO)
+    assert row[0].getvalue() == val
+
+    # test xml type
+    xml_val = '<root>{}</root>'.format(val)
+    cursor.execute("select cast('{}' as xml), 1".format(xml_val))
+    cursor.set_stream(0, StringIO())
+    row = cursor.fetchone()
+    assert isinstance(row[0], StringIO)
+    assert row[0].getvalue() == xml_val
+
+
+def test_dictionary_params(cursor):
+    assert cursor.execute_scalar('select %(param)s', {'param': None}) == None
+    assert cursor.execute_scalar('select %(param)s', {'param': 1}) == 1
+
+
+def test_properties(separate_db_connection):
+    conn = separate_db_connection
+    # this property is provided for compatibility with pymssql
+    assert conn.autocommit_state == conn.autocommit
+    # test set_autocommit which is provided for compatibility with ADO dbapi
+    conn.set_autocommit(conn.autocommit)
+    # test isolation_level property read/write
+    conn.isolation_level = conn.isolation_level
+    # test product_version property read
+    logger.info("Product version %s", conn.product_version)
+    conn.as_dict = conn.as_dict
+
+
+def test_fetch_on_empty_dataset(cursor):
+    cursor.execute('declare @x int')
+    with pytest.raises(pytds.ProgrammingError):
+        cursor.fetchall()
+
+
+def test_isolation_level(separate_db_connection):
+    conn = separate_db_connection
+    # enable autocommit and then reenable to force new transaction to be started
+    conn.autocommit = True
+    conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE
+    conn.autocommit = False
+    with conn.cursor() as cur:
+        cur.execute('select transaction_isolation_level '
+                    'from sys.dm_exec_sessions where session_id = @@SPID')
+        lvl, = cur.fetchone()
+    assert pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE == lvl
+
+
+def test_bad_collation(cursor):
+    # exception can be different
+    with pytest.raises(UnicodeDecodeError):
+        cursor.execute_scalar('select cast(0x90 as varchar)')
+    # check that connection is still usable
+    assert 1 == cursor.execute_scalar('select 1')
+
+
+def test_overlimit(cursor):
+    def test_val(val):
+        cursor.execute('select %s', (val,))
+        assert cursor.fetchone() == (val,)
+        assert cursor.fetchone() is None
+
+    ##cur.execute('select %s', '\x00'*(2**31))
+    with pytest.raises(pytds.DataError):
+        test_val(Decimal('1' + '0' * 38))
+    with pytest.raises(pytds.DataError):
+        test_val(Decimal('-1' + '0' * 38))
+    with pytest.raises(pytds.DataError):
+        test_val(Decimal('1E38'))
+    val = -10 ** 38
+    cursor.execute('select %s', (val,))
+    assert cursor.fetchone() == (str(val),)
+    assert cursor.fetchone() is None
+
+
+def test_description(cursor):
+    cursor.execute('select cast(12.65 as decimal(4,2)) as testname')
+    assert cursor.description[0][0] == 'testname'
+    assert cursor.description[0][1] == pytds.DECIMAL
+    assert cursor.description[0][4] == 4
+    assert cursor.description[0][5] == 2
+
+
+def test_bug4(separate_db_connection):
+    with separate_db_connection.cursor() as cursor:
+        cursor.execute('''
+        set transaction isolation level read committed
+        select 1
+        ''')
+        assert cursor.fetchall() == [(1,)]
+
+
+def test_row_strategies(separate_db_connection):
+    conn = separate_db_connection
+    conn.as_dict = True
+    with conn.cursor() as cur:
+        cur.execute('select 1 as f')
+        assert cur.fetchall() == [{'f': 1}]
+    conn.as_dict = False
+    with conn.cursor() as cur:
+        cur.execute('select 1 as f')
+        assert cur.fetchall() == [(1,)]
+
+
+def test_fetchone(cursor):
+    cur = cursor
+    cur.execute('select 10; select 12')
+    assert (10,) == cur.fetchone()
+    assert cur.nextset()
+    assert (12,) == cur.fetchone()
+    assert not cur.nextset()
+
+
+def test_fetchall(cursor):
+    cur = cursor
+    cur.execute('select 10; select 12')
+    assert [(10,)] == cur.fetchall()
+    assert cur.nextset()
+    assert [(12,)] == cur.fetchall()
+    assert not cur.nextset()
+
+
+def test_cursor_closing(db_connection):
+    with db_connection.cursor() as cur:
+        cur.execute('select 10; select 12')
+        cur.fetchone()
+    with db_connection.cursor() as cur2:
+        cur2.execute('select 20')
+        cur2.fetchone()
+
+
+def test_multi_packet(cursor):
+    cur = cursor
+    param = 'x' * (cursor._conn()._conn.main_session._writer.bufsize * 3)
+    cur.execute('select %s', (param,))
+    assert [(param, )] == cur.fetchall()
+
+
+def test_big_request(cursor):
+    cur = cursor
+    param = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(5000))
+    params = (10, datetime.datetime(2012, 11, 19, 1, 21, 37, 3000), param, 'test')
+    cur.execute('select %s, %s, %s, %s', params)
+    assert [params] == cur.fetchall()
+
+
+def test_row_count(cursor):
+    cur = cursor
+    cur.execute('''
+    create table testtable_row_cnt (field int)
+    ''')
+    cur.execute('insert into testtable_row_cnt (field) values (1)')
+    assert cur.rowcount == 1
+    cur.execute('insert into testtable_row_cnt (field) values (2)')
+    assert cur.rowcount == 1
+    cur.execute('select * from testtable_row_cnt')
+    cur.fetchall()
+    assert cur.rowcount == 2
+
+
+def test_no_rows(cursor):
+    cur = cursor
+    cur.execute('''
+    create table testtable_no_rows (field int)
+    ''')
+    cur.execute('select * from testtable_no_rows')
+    assert [] == cur.fetchall()
+
+
+def test_fixed_size_data(cursor):
+    cur = cursor
+    cur.execute('''
+    create table testtable_fixed_size_dt (chr char(5), nchr nchar(5), bfld binary(5))
+    insert into testtable_fixed_size_dt values ('1', '2', cast('3' as binary(5)))
+    ''')
+    cur.execute('select * from testtable_fixed_size_dt')
+    assert cur.fetchall() == [('1    ', '2    ', b'3\x00\x00\x00\x00')]
+
+
+def test_transactions(separate_db_connection):
+    conn = separate_db_connection
+    conn.autocommit = False
+    with conn.cursor() as cur:
+        cur.execute('''
+        create table testtable_trans (field datetime)
+        ''')
+        cur.execute("select object_id('testtable_trans')")
+        assert (None,) != cur.fetchone()
+        assert 1 == conn._trancount()
+        conn.rollback()
+        assert 1 == conn._trancount()
+        cur.execute("select object_id('testtable_trans')")
+        assert (None,) == cur.fetchone()
+
+        cur.execute('''
+        create table testtable_trans (field datetime)
+        ''')
+
+        conn.commit()
+
+        cur.execute("select object_id('testtable_trans')")
+        assert (None,) != cur.fetchone()
+
+    with conn.cursor() as cur:
+        cur.execute('''
+        if object_id('testtable_trans') is not null
+            drop table testtable_trans
+        ''')
+    conn.commit()
+
+
+def test_manual_commit(separate_db_connection):
+    conn = separate_db_connection
+    conn.autocommit = False
+    cur = conn.cursor()
+    cur.execute("create table tbl(x int)")
+    assert conn._conn.tds72_transaction
+    try:
+        cur.execute("create table tbl(x int)")
+    except:
+        pass
+    trancount = cur.execute_scalar("select @@trancount")
+    assert 1 == trancount, 'Should be in transaction even after errors'
+
+    cur.execute("create table tbl(x int)")
+    try:
+        cur.execute("create table tbl(x int)")
+    except:
+        pass
+    cur.callproc('sp_executesql', ('select @@trancount',))
+    trancount, = cur.fetchone()
+    assert 1 == trancount, 'Should be in transaction even after errors'
