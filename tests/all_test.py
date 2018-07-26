@@ -362,33 +362,6 @@ class TestVariant(ConnectionTestCase):
         self._t(date(2011, 2, 3), "cast('2011-02-03' as date)")
         self._t(datetime(2011, 2, 3, 10, 11, 12, 3000, pytds.tz.FixedOffsetTimezone(3 * 60)), "cast('2011-02-03T10:11:12.003000+03:00' as datetimeoffset)")
 
-    def test_regular(self):
-        if not IS_TDS71_PLUS(self.conn):
-            self.skipTest('Requires TDS7.1+')
-        self._t(None, "cast(NULL as varchar)")
-        self._t('test', "cast('test' as varchar)")
-        self._t('test ', "cast('test' as char(5))")
-        self._t('test', "cast(N'test' as nvarchar)")
-        self._t('test ', "cast(N'test' as nchar(5))")
-        self._t(Decimal('100.55555'), "cast(100.55555 as decimal(8,5))")
-        self._t(Decimal('100.55555'), "cast(100.55555 as numeric(8,5))")
-        self._t(b'test', "cast('test' as varbinary)")
-        self._t(b'test\x00', "cast('test' as binary(5))")
-        self._t(datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003' as datetime)")
-        self._t(datetime(2011, 2, 3, 10, 11, 0), "cast('2011-02-03T10:11:00' as smalldatetime)")
-        val = uuid.uuid4()
-        self._t(val, "cast('{0}' as uniqueidentifier)".format(val))
-        self._t(True, "cast(1 as bit)")
-        self._t(128, "cast(128 as tinyint)")
-        self._t(255, "cast(255 as tinyint)")
-        self._t(-32000, "cast(-32000 as smallint)")
-        self._t(2000000000, "cast(2000000000 as int)")
-        self._t(2000000000000, "cast(2000000000000 as bigint)")
-        self._t(0.12345, "cast(0.12345 as float)")
-        self._t(0.25, "cast(0.25 as real)")
-        self._t(Decimal('922337203685477.5807'), "cast('922,337,203,685,477.5807' as money)")
-        self._t(Decimal('-214748.3648'), "cast('- 214,748.3648' as smallmoney)")
-
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):

@@ -13,10 +13,13 @@ import settings
 
 
 logger = logging.getLogger(__name__)
+LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
 
 
 @pytest.fixture(scope='module')
 def db_connection():
+    if not LIVE_TEST:
+        pytest.skip('LIVE_TEST is not set')
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs['database'] = 'master'
     return pytds.connect(*settings.CONNECT_ARGS, **kwargs)
@@ -32,6 +35,8 @@ def cursor(db_connection):
 
 @pytest.fixture
 def separate_db_connection():
+    if not LIVE_TEST:
+        pytest.skip('LIVE_TEST is not set')
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs['database'] = 'master'
     conn = pytds.connect(*settings.CONNECT_ARGS, **kwargs)
@@ -739,3 +744,38 @@ def test_manual_commit(separate_db_connection):
     cur.callproc('sp_executesql', ('select @@trancount',))
     trancount, = cur.fetchone()
     assert 1 == trancount, 'Should be in transaction even after errors'
+
+
+uuid_val = uuid.uuid4()
+
+
+@pytest.mark.parametrize('result,sql', [
+    (None, "cast(NULL as varchar)"),
+    ('test', "cast('test' as varchar)"),
+    ('test ', "cast('test' as char(5))"),
+    ('test', "cast(N'test' as nvarchar)"),
+    ('test ', "cast(N'test' as nchar(5))"),
+    (Decimal('100.55555'), "cast(100.55555 as decimal(8,5))"),
+    (Decimal('100.55555'), "cast(100.55555 as numeric(8,5))"),
+    (b'test', "cast('test' as varbinary)"),
+    (b'test\x00', "cast('test' as binary(5))"),
+    (datetime.datetime(2011, 2, 3, 10, 11, 12, 3000), "cast('2011-02-03T10:11:12.003' as datetime)"),
+    (datetime.datetime(2011, 2, 3, 10, 11, 0), "cast('2011-02-03T10:11:00' as smalldatetime)"),
+    (uuid_val, "cast('{0}' as uniqueidentifier)".format(uuid_val)),
+    (True, "cast(1 as bit)"),
+    (128, "cast(128 as tinyint)"),
+    (255, "cast(255 as tinyint)"),
+    (-32000, "cast(-32000 as smallint)"),
+    (2000000000, "cast(2000000000 as int)"),
+    (2000000000000, "cast(2000000000000 as bigint)"),
+    (0.12345, "cast(0.12345 as float)"),
+    (0.25, "cast(0.25 as real)"),
+    (Decimal('922337203685477.5807'), "cast('922,337,203,685,477.5807' as money)"),
+    (Decimal('-214748.3648'), "cast('- 214,748.3648' as smallmoney)"),
+])
+def test_sql_variant_round_trip(cursor, result, sql):
+    if not pytds.tds_base.IS_TDS71_PLUS(cursor.connection):
+        pytest.skip('Requires TDS7.1+')
+    cursor.execute("select cast({0} as sql_variant)".format(sql))
+    val, = cursor.fetchone()
+    assert result == val
