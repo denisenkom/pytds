@@ -306,44 +306,6 @@ class TestCaseWithCursor(ConnectionTestCase):
     def test_parameters_ll(self):
         _params_tests(self)
 
-    def test_collations(self):
-        self.cursor.execute("SELECT Name, Description, COLLATIONPROPERTY(Name, 'LCID') FROM ::fn_helpcollations()")
-        collations_list = self.cursor.fetchall()
-        coll_name_set = set(coll_name for coll_name, _, _ in collations_list)
-
-        tests = [
-            ('Привет', 'Cyrillic_General_BIN'),
-            ('Привет', 'Cyrillic_General_BIN2'),
-            ('สวัสดี', 'Thai_CI_AI'),
-            ('你好', 'Chinese_PRC_CI_AI'),
-            ('こんにちは', 'Japanese_CI_AI'),
-            ('안녕하세요.', 'Korean_90_CI_AI'),
-            ('你好', 'Chinese_Hong_Kong_Stroke_90_CI_AI'),
-            ('cześć', 'Polish_CI_AI'),
-            ('Bonjour', 'French_CI_AI'),
-            ('Γεια σας', 'Greek_CI_AI'),
-            ('Merhaba', 'Turkish_CI_AI'),
-            ('שלום', 'Hebrew_CI_AI'),
-            ('مرحبا', 'Arabic_CI_AI'),
-            ('Sveiki', 'Lithuanian_CI_AI'),
-            ('chào', 'Vietnamese_CI_AI'),
-            ('ÄÅÆ', 'SQL_Latin1_General_CP437_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_CP850_BIN'),
-            ('ŠşĂ', 'SQL_Slovak_CP1250_CS_AS_KI_WI'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1251_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_Cp1_CS_AS_KI_WI'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1253_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1254_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1255_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1256_BIN'),
-            ('ÁÂÀÃ', 'SQL_Latin1_General_1257_BIN'),
-            ('ÁÂÀÃ', 'Latin1_General_100_BIN'),
-        ]
-        for s, coll in tests:
-            if coll not in coll_name_set:
-                logger.info('Skipping {}, not supported by current server'.format(coll))
-                continue
-            assert self.cursor.execute_scalar("select cast(N'{}' collate {} as varchar(100))".format(s, coll)) == s
 
 
 class TestVariant(ConnectionTestCase):
