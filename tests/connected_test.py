@@ -784,10 +784,16 @@ def test_sql_variant_round_trip(cursor, result, sql):
     assert result == val
 
 
-def test_collations(cursor):
-    cursor.execute("SELECT Name, Description, COLLATIONPROPERTY(Name, 'LCID') FROM ::fn_helpcollations()")
-    collations_list = cursor.fetchall()
-    coll_name_set = set(coll_name for coll_name, _, _ in collations_list)
+@pytest.fixture(scope='module')
+def collation_set(db_connection):
+    with db_connection.cursor() as cursor:
+        cursor.execute("SELECT Name, Description, COLLATIONPROPERTY(Name, 'LCID') FROM ::fn_helpcollations()")
+        collations_list = cursor.fetchall()
+    return set(coll_name for coll_name, _, _ in collations_list)
+
+
+def test_collations(cursor, collation_set):
+    coll_name_set = collation_set
 
     tests = [
         ('Привет', 'Cyrillic_General_BIN'),
