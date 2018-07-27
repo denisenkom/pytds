@@ -32,6 +32,8 @@ _int8_be = struct.Struct('>q')
 _uint8_le = struct.Struct('<Q')
 _uint8_be = struct.Struct('>Q')
 
+logging_enabled = False
+
 
 class SimpleLoadBalancer(object):
     def __init__(self, hosts):
@@ -485,8 +487,7 @@ class _TdsSession(object):
 
     def log_response_message(self, msg):
         # logging is disabled by default
-        # TODO: allow logging to be enabled via connection string parameter
-        if False:
+        if logging_enabled:
             logger.info('[%d] %s', self._spid, msg)
 
     def __repr__(self):

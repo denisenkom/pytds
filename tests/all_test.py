@@ -454,42 +454,6 @@ class ConnectionClosing(unittest.TestCase):
 #        cur.execute('select 1')
 
 
-class Bug3(ConnectionTestCase):
-    def runTest(self):
-        with self.conn.cursor() as cur:
-            cur.close()
-
-
-class DateAndTimeParams(ConnectionTestCase):
-    def test_date(self):
-        if not IS_TDS73_PLUS(self.conn):
-            self.skipTest('Requires TDS7.3+')
-        with self.conn.cursor() as cur:
-            date = Date(2012, 10, 6)
-            cur.execute('select %s', (date, ))
-            self.assertEqual(cur.fetchall(), [(date,)])
-
-    def test_time(self):
-        if not IS_TDS73_PLUS(self.conn):
-            self.skipTest('Requires TDS7.3+')
-        with self.conn.cursor() as cur:
-            time = Time(8, 7, 4, 123000)
-            cur.execute('select %s', (time, ))
-            self.assertEqual(cur.fetchall(), [(time,)])
-
-    def test_datetime(self):
-        with self.conn.cursor() as cur:
-            time = Timestamp(2013, 7, 9, 8, 7, 4, 123000)
-            cur.execute('select %s', (time, ))
-            self.assertEqual(cur.fetchall(), [(time,)])
-
-
-class Extensions(ConnectionTestCase):
-    def runTest(self):
-        with self.conn.cursor() as cur:
-            self.assertEqual(cur.connection, self.conn)
-
-
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class SmallDateTimeTest(ConnectionTestCase):
     def _testval(self, val):
@@ -800,57 +764,6 @@ END
             self.assertEqual(len(values), 2, 'expected 2 parameters')
             self.assertEqual(values[0], None, 'input parameter should be unchanged')
             self.assertEqual(values[1], None, 'output parameter should get new values')
-
-    def test_outparam_and_result_set(self):
-        """
-        Test stored procedure which has output parameters and also result set
-        """
-        with self._connect() as con:
-            cur = con.cursor()
-            logger.info('creating stored procedure')
-            cur.execute('''
-            CREATE PROCEDURE P_OutParam_ResultSet(@A INT OUTPUT)
-            AS BEGIN
-            SET @A = 3;
-            SELECT 4 AS C;
-            SELECT 5 AS C;
-            END;
-            '''
-            )
-            logger.info('executing stored procedure')
-            cur.callproc('P_OutParam_ResultSet', [output(value=1)])
-            assert [(4,)] == cur.fetchall()
-            assert [3] == cur.get_proc_outputs()
-            logger.info('execurint query after stored procedure')
-            cur.execute('select 5')
-            assert [(5,)] == cur.fetchall()
-
-    def test_outparam_null_default(self):
-        with self.assertRaises(ValueError):
-            output(None, None)
-
-        with self._connect() as con:
-            cur = con.cursor()
-            cur.execute('''
-            create procedure testproc (@inparam int, @outint int = 8 output, @outstr varchar(max) = 'defstr' output)
-            as
-            begin
-                set nocount on
-                set @outint = isnull(@outint, -10) + @inparam
-                set @outstr = isnull(@outstr, 'null') + cast(@inparam as varchar(max))
-                set @inparam = 8
-            end
-            ''')
-            values = cur.callproc('testproc', (1, output(value=4), output(value='str')))
-            self.assertEqual([1, 5, 'str1'], values)
-            values = cur.callproc('testproc', (1, output(value=None, param_type='int'), output(value=None, param_type='varchar(max)')))
-            self.assertEqual([1, -9, 'null1'], values)
-            values = cur.callproc('testproc', (1, output(value=default, param_type='int'), output(value=default, param_type='varchar(max)')))
-            self.assertEqual([1, 9, 'defstr1'], values)
-            values = cur.callproc('testproc', (1, output(value=default, param_type='bit'), output(value=default, param_type='varchar(5)')))
-            self.assertEqual([1, 1, 'defst'], values)
-            values = cur.callproc('testproc', (1, output(value=default, param_type=int), output(value=default, param_type=str)))
-            self.assertEqual([1, 9, 'defstr1'], values)
 
     def test_assigning_select(self):
         # test that assigning select does not interfere with result sets

@@ -15,6 +15,7 @@ import settings
 
 logger = logging.getLogger(__name__)
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
+pytds.tds.logging_enabled = True
 
 
 @pytest.fixture(scope='module')
@@ -28,9 +29,8 @@ def db_connection():
 
 @pytest.fixture
 def cursor(db_connection):
-    cursor = db_connection.cursor()
-    yield cursor
-    cursor.close()
+    with db_connection.cursor() as cursor:
+        yield cursor
     db_connection.rollback()
 
 
@@ -820,3 +820,89 @@ def test_collations(cursor):
             logger.info('Skipping {}, not supported by current server'.format(coll))
             continue
         assert cursor.execute_scalar("select cast(N'{}' collate {} as varchar(100))".format(s, coll)) == s
+
+
+def test_closing_cursor_in_context(db_connection):
+    with db_connection.cursor() as cur:
+        cur.close()
+
+
+def skip_if_new_date_not_supported(conn):
+    if not pytds.tds_base.IS_TDS73_PLUS(conn):
+        pytest.skip('Test requires new date types support, SQL 2008 or newer is required')
+
+
+def test_date(cursor):
+    skip_if_new_date_not_supported(cursor.connection)
+    date = pytds.Date(2012, 10, 6)
+    cursor.execute('select %s', (date, ))
+    assert cursor.fetchall() == [(date,)]
+
+
+def test_time(cursor):
+    skip_if_new_date_not_supported(cursor.connection)
+    time = pytds.Time(8, 7, 4, 123000)
+    cursor.execute('select %s', (time, ))
+    assert cursor.fetchall() == [(time,)]
+
+
+def test_datetime(cursor):
+    time = pytds.Timestamp(2013, 7, 9, 8, 7, 4, 123000)
+    cursor.execute('select %s', (time, ))
+    assert cursor.fetchall() == [(time,)]
+
+
+def test_cursor_connection_property(db_connection):
+    with db_connection.cursor() as cur:
+        assert cur.connection is db_connection
+
+
+def test_outparam_and_result_set(cursor):
+    """
+    Test stored procedure which has output parameters and also result set
+    """
+    cur = cursor
+    logger.info('creating stored procedure')
+    cur.execute('''
+    CREATE PROCEDURE P_OutParam_ResultSet(@A INT OUTPUT)
+    AS BEGIN
+    SET @A = 3;
+    SELECT 4 AS C;
+    SELECT 5 AS C;
+    END;
+    '''
+                )
+    logger.info('executing stored procedure')
+    cur.callproc('P_OutParam_ResultSet', [pytds.output(value=1)])
+    assert [(4,)] == cur.fetchall()
+    assert [3] == cur.get_proc_outputs()
+    logger.info('execurint query after stored procedure')
+    cur.execute('select 5')
+    assert [(5,)] == cur.fetchall()
+
+
+def test_outparam_null_default(cursor):
+    with pytest.raises(ValueError):
+        pytds.output(None, None)
+
+    cur = cursor
+    cur.execute('''
+    create procedure outparam_null_testproc (@inparam int, @outint int = 8 output, @outstr varchar(max) = 'defstr' output)
+    as
+    begin
+        set nocount on
+        set @outint = isnull(@outint, -10) + @inparam
+        set @outstr = isnull(@outstr, 'null') + cast(@inparam as varchar(max))
+        set @inparam = 8
+    end
+    ''')
+    values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=4), pytds.output(value='str')))
+    assert [1, 5, 'str1'] == values
+    values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=None, param_type='int'), pytds.output(value=None, param_type='varchar(max)')))
+    assert [1, -9, 'null1'] == values
+    values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=pytds.default, param_type='int'), pytds.output(value=pytds.default, param_type='varchar(max)')))
+    assert [1, 9, 'defstr1'] == values
+    values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=pytds.default, param_type='bit'), pytds.output(value=pytds.default, param_type='varchar(5)')))
+    assert [1, 1, 'defst'] == values
+    values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=pytds.default, param_type=int), pytds.output(value=pytds.default, param_type=str)))
+    assert [1, 9, 'defstr1'] == values
