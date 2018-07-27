@@ -321,9 +321,15 @@ def test_strs(cursor):
     assert isinstance(cur.execute_scalar("select 'test'"), six.text_type)
 
 
-def test_cursor_env(cursor):
-    cursor.execute('use master')
-    assert cursor.execute_scalar('select DB_NAME()') == 'master'
+def test_cursor_env(separate_db_connection):
+    with separate_db_connection.cursor() as cursor:
+        cursor.execute('use master')
+        assert cursor.execute_scalar('select DB_NAME()') == 'master'
+
+
+def test_minimal(cursor):
+    cursor.execute('select 1')
+    assert [(2,)] == cursor.fetchall()
 
 
 def test_empty_query(cursor):

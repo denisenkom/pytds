@@ -1,3 +1,4 @@
+import logging
 try:
     import OpenSSL.SSL
     import cryptography.hazmat.backends.openssl.backend
@@ -10,6 +11,9 @@ from . import tds_base
 
 
 BUFSIZE = 65536
+
+
+logger = logging.getLogger(__name__)
 
 
 class EncryptedSocket(object):
@@ -128,7 +132,9 @@ def establish_channel(tds_sock):
 
     conn = OpenSSL.SSL.Connection(login.tls_ctx)
     conn.set_tlsext_host_name(bhost)
+    # change connection to client mode
     conn.set_connect_state()
+    logger.info('doing TLS handshake')
     while True:
         try:
             conn.do_handshake()
@@ -141,6 +147,7 @@ def establish_channel(tds_sock):
             # TODO validate r.packet_type
             conn.bio_write(resp)
         else:
+            logger.info('TLS handshake is complete')
             if login.validate_host:
                 if not validate_host(cert=conn.get_peer_certificate(), name=bhost):
                     raise tds_base.Error("Certificate does not match host name '{}'".format(login.server_name))

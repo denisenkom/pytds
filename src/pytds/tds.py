@@ -1141,7 +1141,7 @@ class _TdsSession(object):
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
     def begin_tran(self, isolation_level=0):
-        logger.info('Sending BEGIN TRAN')
+        logger.info('Sending BEGIN TRAN il=%x', isolation_level)
         self.submit_begin_tran(isolation_level=isolation_level)
         self.process_simple_request()
 
@@ -1252,7 +1252,7 @@ class _TdsSession(object):
                )
 
     def send_prelogin(self, login):
-        logger.info('Sending PRELOGIN')
+        from . import intversion
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
         instance_name = instance_name.encode('ascii')
@@ -1294,7 +1294,6 @@ class _TdsSession(object):
         w = self._writer
         w.begin_packet(tds_base.PacketType.PRELOGIN)
         w.write(buf)
-        from . import intversion
         w.put_uint_be(intversion)
         w.put_usmallint_be(0)  # build number
         # encryption flag
@@ -1302,9 +1301,17 @@ class _TdsSession(object):
         w.write(instance_name)
         w.put_byte(0)  # zero terminate instance_name
         w.put_int(0)  # TODO: change this to thread id
+        attribs = {
+            'lib_ver': '%x' % intversion,
+            'enc_flag': '%x' % login.enc_flag,
+            'inst_name': instance_name,
+        }
         if tds_base.IS_TDS72_PLUS(self):
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
+            attribs['mars'] = login.use_mars
+        logger.info('Sending PRELOGIN %s', ' '.join('%s=%s' % (n, v) for n, v in attribs.items()))
+
         w.flush()
 
     def process_prelogin(self, login):
@@ -1365,7 +1372,6 @@ class _TdsSession(object):
 
     def tds7_send_login(self, login):
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
-        logger.info('Sending LOGIN')
         option_flag2 = login.option_flag2
         user_name = login.user_name
         if len(user_name) > 128:
@@ -1422,6 +1428,10 @@ class _TdsSession(object):
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
         mins_fix = int(login.client_tz.utcoffset(datetime.datetime.now()).total_seconds()) // 60
+        logger.info('Sending LOGIN tds_ver=%x bufsz=%d pid=%d opt1=%x opt2=%x opt3=%x cli_tz=%d cli_lcid=%s '
+                    'cli_host=%s lang=%s db=%s',
+                    login.tds_version, w.bufsize, login.pid, option_flag1, option_flag2, option_flag3, mins_fix,
+                    login.client_lcid, client_host_name, login.language, login.database)
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)
