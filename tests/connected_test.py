@@ -1,4 +1,6 @@
 # vim: set fileencoding=utf8 :
+from __future__ import with_statement
+from __future__ import unicode_literals
 from decimal import Decimal, getcontext
 import uuid
 import datetime
