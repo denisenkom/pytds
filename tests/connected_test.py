@@ -329,7 +329,7 @@ def test_cursor_env(separate_db_connection):
 
 def test_minimal(cursor):
     cursor.execute('select 1')
-    assert [(2,)] == cursor.fetchall()
+    assert [(1,)] == cursor.fetchall()
 
 
 def test_empty_query(cursor):
