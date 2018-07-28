@@ -8,6 +8,7 @@ import uuid
 import socket
 import threading
 import logging
+import sys
 
 import pytest
 import OpenSSL.crypto
@@ -1244,6 +1245,7 @@ def do_handshake(tls, transport, bufsize):
     tls_send_all(tls=tls, transport=transport, bufsize=bufsize)
 
 
+@pytest.mark.skipif(sys.version_info[0:2] < (3, 5), reason='requires python 3.5 or newer')
 def test_encrypted_socket(certificate_key):
     certificate, key = certificate_key
     client, server = socket.socketpair()
