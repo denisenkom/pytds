@@ -1079,7 +1079,7 @@ def certificate_key():
     server_cert = test_ca.sign(name='server', cb=builder.subject_name(subject)
                                .not_valid_before(datetime.datetime.utcnow())
                                .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
-                               .serial_number(x509.random_serial_number())
+                               .serial_number(1)
                                .public_key(server_key.public_key()))
     return server_cert, server_key
 

@@ -73,7 +73,7 @@ def generate_root_certificate(private_key: rsa.RSAPrivateKey) -> x509.Certificat
     return builder.subject_name(subject).issuer_name(subject) \
         .not_valid_before(datetime.datetime.utcnow()) \
         .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1)) \
-        .serial_number(x509.random_serial_number()) \
+        .serial_number(1) \
         .public_key(private_key.public_key()) \
         .add_extension(extension=x509.BasicConstraints(ca=True, path_length=1), critical=True) \
         .add_extension(extension=x509.KeyUsage(digital_signature=False,
