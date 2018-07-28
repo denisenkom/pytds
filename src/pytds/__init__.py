@@ -275,27 +275,8 @@ class Connection(object):
         """
         return self._conn.mars_enabled
 
-    def _try_open(self, timeout):
-        if self._pooling:
-            res = _connection_pool.take(self._key)
-            if res is not None:
-                self._conn, sess = res
-                if self._conn.mars_enabled:
-                    cursor = _MarsCursor(
-                        self,
-                        sess,
-                        self._tzinfo_factory)
-                else:
-                    cursor = Cursor(
-                        self,
-                        sess,
-                        self._tzinfo_factory)
-                self._active_cursor = self._main_cursor = cursor
-                cursor.callproc('sp_reset_connection')
-                return
-
+    def _connect(self, host, port, instance, timeout):
         login = self._login
-        host, port, instance = login.servers[0]
 
         try:
             login.server_name = host
@@ -320,7 +301,16 @@ class Connection(object):
         conn = _TdsSocket(self._use_tz)
         self._conn = conn
         try:
-            conn.login(login, sock, self._tzinfo_factory)
+            route = conn.login(login, sock, self._tzinfo_factory)
+            if route is not None:
+                # rerouted to different server
+                sock.close()
+                self._connect(host=route['server'],
+                              port=route['port'],
+                              instance=instance,
+                              timeout=timeout)
+                return
+
             if conn.mars_enabled:
                 cursor = _MarsCursor(
                     self,
@@ -339,6 +329,29 @@ class Connection(object):
         except:
             sock.close()
             raise
+
+    def _try_open(self, timeout):
+        if self._pooling:
+            res = _connection_pool.take(self._key)
+            if res is not None:
+                self._conn, sess = res
+                if self._conn.mars_enabled:
+                    cursor = _MarsCursor(
+                        self,
+                        sess,
+                        self._tzinfo_factory)
+                else:
+                    cursor = Cursor(
+                        self,
+                        sess,
+                        self._tzinfo_factory)
+                self._active_cursor = self._main_cursor = cursor
+                cursor.callproc('sp_reset_connection')
+                return
+
+        login = self._login
+        host, port, instance = login.servers[0]
+        self._connect(host=host, port=port, instance=instance, timeout=timeout)
 
     def _open(self):
         import time
@@ -1035,6 +1048,7 @@ class _MarsCursor(Cursor):
 
 def _resolve_instance_port(server, port, instance, timeout=5):
     if instance and not port:
+        logger.info('querying %s for list of instances', server)
         instances = tds7_get_instances(server, timeout=timeout)
         if instance not in instances:
             raise LoginError("Instance {0} not found on server {1}".format(instance, server))

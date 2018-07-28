@@ -772,6 +772,7 @@ class _TdsSession(object):
         if type_id == tds_base.TDS_ENV_SQLCOLLATION:
             size = r.get_byte()
             self.conn.collation = r.get_collation()
+            logger.info('switched collation to %s', self.conn.collation)
             skipall(r, size - 5)
             # discard old one
             skipall(r, r.get_byte())
@@ -796,29 +797,47 @@ class _TdsSession(object):
                 self._writer.bufsize = new_block_size
         elif type_id == tds_base.TDS_ENV_DATABASE:
             newval = r.read_ucs2(r.get_byte())
+            logger.info('switched to database %s', newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.database = newval
         elif type_id == tds_base.TDS_ENV_LANG:
             newval = r.read_ucs2(r.get_byte())
+            logger.info('switched language to %s', newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.language = newval
         elif type_id == tds_base.TDS_ENV_CHARSET:
             newval = r.read_ucs2(r.get_byte())
+            logger.info('switched charset to %s', newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.charset = newval
             remap = {'iso_1': 'iso8859-1'}
             self.conn.server_codec = codecs.lookup(remap.get(newval, newval))
         elif type_id == tds_base.TDS_ENV_DB_MIRRORING_PARTNER:
-            r.read_ucs2(r.get_byte())
+            newval = r.read_ucs2(r.get_byte())
+            logger.info('got mirroring partner %s', newval)
             r.read_ucs2(r.get_byte())
         elif type_id == tds_base.TDS_ENV_LCID:
             lcid = int(r.read_ucs2(r.get_byte()))
+            logger.info('switched lcid to %s', lcid)
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
         elif type_id == tds_base.TDS_ENV_UNICODE_DATA_SORT_COMP_FLAGS:
             old_comp_flags = r.read_ucs2(r.get_byte())
             comp_flags = r.read_ucs2(r.get_byte())
             self.conn.comp_flags = comp_flags
+        elif type_id == 20:
+            # routing
+            sz = r.get_usmallint()
+            protocol = r.get_byte()
+            protocol_property = r.get_usmallint()
+            alt_server = r.read_ucs2(r.get_usmallint())
+            logger.info('got routing info proto=%d proto_prop=%d alt_srv=%s', protocol, protocol_property, alt_server)
+            self.conn.route = {
+                'server': alt_server,
+                'port': protocol_property,
+            }
+            # OLDVALUE = 0x00, 0x00
+            r.get_usmallint()
         else:
             logger.warning("unknown env type: {0}, skipping".format(type_id))
             # discard byte values, not still supported
@@ -1347,6 +1366,8 @@ class _TdsSession(object):
                 # ignore instance name mismatch
                 pass
             i += 5
+        logger.info("Got PRELOGIN response crypt=%x mars=%d",
+                    crypt_flag, self.conn._mars_enabled)
         # if server do not has certificate do normal login
         login.server_enc_flag = crypt_flag
         if crypt_flag == PreLoginEnc.ENCRYPT_OFF:
@@ -1533,6 +1554,8 @@ class _TdsSession(object):
                 size -= 10
                 self.conn.product_name = r.read_ucs2(size // 2)
                 product_version = r.get_uint_be()
+                logger.info('Got LOGINACK tds_ver=%x srv_name=%s srv_ver=%x',
+                            self.conn.tds_version, self.conn.product_name, product_version)
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
@@ -1700,6 +1723,7 @@ class _TdsSocket(object):
         self._smp_manager = None
         self._main_session = None
         self._login = None
+        self.route = None
 
     def __repr__(self):
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
@@ -1725,6 +1749,8 @@ class _TdsSocket(object):
             tls.revert_to_clear(self._main_session)
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
+        if self.route is not None:
+            return self.route
 
         # update block size if server returned different one
         if self._main_session._writer.bufsize != self._main_session._reader.get_block_size():
@@ -1751,6 +1777,7 @@ class _TdsSocket(object):
         if q:
             self._main_session.submit_plain_query(''.join(q))
             self._main_session.process_simple_request()
+        return None
 
     @property
     def mars_enabled(self):
