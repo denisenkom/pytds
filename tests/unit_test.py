@@ -5,8 +5,11 @@ import decimal
 import struct
 import unittest
 import uuid
-import pytest
+import socket
+import threading
+import logging
 
+import pytest
 import OpenSSL.crypto
 
 import pytds
@@ -33,6 +36,7 @@ from pytds.tds_types import (
 import pytds.login
 
 tzoffset = pytds.tz.FixedOffsetTimezone
+logger = logging.getLogger(__name__)
 
 
 class _FakeSock(object):
@@ -1058,6 +1062,26 @@ class TestServer(object):
         self._server_thread.join()
 
 
+@pytest.fixture(scope='module')
+def certificate_key():
+    import utils_35 as utils
+    from cryptography import x509
+    address = ('127.0.0.1', 1433)
+    test_ca = utils.TestCA()
+    server_key = test_ca.key('server')
+    subject = x509.Name(
+        [x509.NameAttribute(
+            x509.oid.NameOID.COMMON_NAME, address[0]
+        )]
+    )
+    builder = x509.CertificateBuilder()
+    server_cert = test_ca.sign(name='server', cb=builder.subject_name(subject)
+                               .not_valid_before(datetime.datetime.utcnow())
+                               .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                               .serial_number(x509.random_serial_number())
+                               .public_key(server_key.public_key()))
+    return server_cert, server_key
+
 
 def test_with_simple_server():
     import sys
@@ -1189,3 +1213,59 @@ def test_ntlm():
 def test_parse_server():
     assert pytds._parse_server('.') == ('localhost', '')
     assert pytds._parse_server('(local)') == ('localhost', '')
+
+
+def tls_send_all(tls, transport, bufsize):
+    while True:
+        try:
+            buf = tls.bio_read(bufsize)
+        except OpenSSL.SSL.WantReadError:
+            break
+        else:
+            logger.info('sending %d bytes', len(buf))
+            transport.send(buf)
+
+
+def do_handshake(tls, transport, bufsize):
+    handshake_done = False
+    while not handshake_done:
+        try:
+            tls.do_handshake()
+        except OpenSSL.SSL.WantReadError:
+            # first send everything we have
+            tls_send_all(tls=tls, transport=transport, bufsize=bufsize)
+            # now receive one block
+            buf = transport.recv(bufsize)
+            logger.info('received %d bytes', len(buf))
+            tls.bio_write(buf)
+        else:
+            handshake_done = True
+    # send remaining data, if any
+    tls_send_all(tls=tls, transport=transport, bufsize=bufsize)
+
+
+def test_encrypted_socket(certificate_key):
+    certificate, key = certificate_key
+    client, server = socket.socketpair()
+    bufsize = 512
+    client.settimeout(1)
+    server.settimeout(1)
+
+    ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
+    ctx.set_options(OpenSSL.SSL.OP_NO_SSLv2)
+    ctx.set_options(OpenSSL.SSL.OP_NO_SSLv3)
+    ctx.use_certificate(OpenSSL.crypto.X509.from_cryptography(certificate))
+    ctx.use_privatekey(OpenSSL.crypto.PKey.from_cryptography_key(key))
+    serverconn = OpenSSL.SSL.Connection(ctx)
+    serverconn.set_accept_state()
+    clientconn = OpenSSL.SSL.Connection(ctx)
+    clientconn.set_connect_state()
+    def server_handler():
+        do_handshake(tls=serverconn, transport=server, bufsize=bufsize)
+        logger.info('handshake completed on server side')
+    server_thread = threading.Thread(
+        target=lambda: server_handler())
+    server_thread.start()
+    do_handshake(tls=clientconn, transport=client, bufsize=bufsize)
+    logger.info('handshake completed on client side')
+    #encclisocket = pytds.tls.EncryptedSocket(client, clientconn)

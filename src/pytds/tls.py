@@ -65,7 +65,10 @@ class EncryptedSocket(object):
                 return self._tls_conn.recv(bufsize)
             except OpenSSL.SSL.WantReadError:
                 buf = self._transport.recv(BUFSIZE)
-                self._tls_conn.bio_write(buf)
+                if buf:
+                    self._tls_conn.bio_write(buf)
+                else:
+                    return b''
 
     def close(self):
         self._tls_conn.shutdown()

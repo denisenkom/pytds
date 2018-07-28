@@ -920,3 +920,4 @@ def test_outparam_null_default(cursor):
     assert [1, 1, 'defst'] == values
     values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=pytds.default, param_type=int), pytds.output(value=pytds.default, param_type=str)))
     assert [1, 9, 'defstr1'] == values
+
