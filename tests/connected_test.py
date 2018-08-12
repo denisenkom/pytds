@@ -9,9 +9,11 @@ import random
 import string
 import pytest
 import six
+import os
 from six import StringIO, BytesIO
 import pytds
 import pytds.extensions
+import pytds.login
 import settings
 
 
@@ -921,3 +923,7 @@ def test_outparam_null_default(cursor):
     values = cur.callproc('outparam_null_testproc', (1, pytds.output(value=pytds.default, param_type=int), pytds.output(value=pytds.default, param_type=str)))
     assert [1, 9, 'defstr1'] == values
 
+
+def test_invalid_ntlm_creds():
+    with pytest.raises(pytds.OperationalError):
+        pytds.connect(settings.HOST, auth=pytds.login.NtlmAuth(user_name='bad', password='bad'))

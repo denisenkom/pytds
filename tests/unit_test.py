@@ -191,6 +191,30 @@ class TestMessages(unittest.TestCase):
             login = self._make_login()
             tds._main_session.process_prelogin(login)
 
+        # test bad size
+        with self.assertRaisesRegexp(pytds.InterfaceError, 'Invalid size of PRELOGIN structure'):
+            login = self._make_login()
+            tds._main_session.parse_prelogin(login=login, octets=b'\x01')
+
+    def make_tds(self):
+        tds = _TdsSocket()
+        sock = _FakeSock([])
+        tds._main_session = _TdsSession(tds, sock, None)
+        return tds
+
+    def test_prelogin_unexpected_encrypt_on(self):
+        tds = self.make_tds()
+        with self.assertRaisesRegexp(pytds.InterfaceError, 'Server returned unexpected ENCRYPT_ON value'):
+            login = self._make_login()
+            login.enc_flag = PreLoginEnc.ENCRYPT_ON
+            tds._main_session.parse_prelogin(login=login, octets=b'\x01\x00\x06\x00\x01\xff\x00')
+
+    def test_prelogin_unexpected_enc_flag(self):
+        tds = self.make_tds()
+        with self.assertRaisesRegexp(pytds.InterfaceError, 'Unexpected value of enc_flag returned by server: 5'):
+            login = self._make_login()
+            tds._main_session.parse_prelogin(login=login, octets=b'\x01\x00\x06\x00\x01\xff\x05')
+
     def test_prelogin_generation(self):
         sock = _FakeSock('')
         tds = _TdsSocket()

@@ -1339,6 +1339,11 @@ class _TdsSession(object):
         size = len(p)
         if size <= 0 or self._reader.packet_type != tds_base.PacketType.REPLY:
             self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
+        self.parse_prelogin(octets=p, login=login)
+
+    def parse_prelogin(self, octets, login):
+        size = len(octets)
+        p = octets
         # default 2, no certificate, no encryptption
         crypt_flag = 2
         i = 0
@@ -1372,7 +1377,7 @@ class _TdsSession(object):
         login.server_enc_flag = crypt_flag
         if crypt_flag == PreLoginEnc.ENCRYPT_OFF:
             if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
-                raise tds_base.Error('Server returned unexpected ENCRYPT_ON value')
+                raise self.bad_stream('Server returned unexpected ENCRYPT_ON value')
             else:
                 # encrypt login packet only
                 tls.establish_channel(self)
@@ -1390,6 +1395,8 @@ class _TdsSession(object):
             if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
                 raise tds_base.Error('You requested encryption but it is not supported by server')
             # do not encrypt anything
+        else:
+            self.bad_stream('Unexpected value of enc_flag returned by server: {}'.format(crypt_flag))
 
     def tds7_send_login(self, login):
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
