@@ -3,7 +3,8 @@ python:
   - "2.7"
   - "3.5"
   - "3.6"
-  - "3.7"
+  # https://github.com/travis-ci/travis-ci/issues/9815
+  #- "3.7"
   - "pypy3"
 install:
   - python --version
