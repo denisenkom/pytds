@@ -142,6 +142,8 @@ class RequestHandler(socketserver.StreamRequestHandler):
                 close_conn = True
             elif cli_enc == pytds.PreLoginEnc.ENCRYPT_NOT_SUP:
                 res_enc = pytds.PreLoginEnc.ENCRYPT_NOT_SUP
+        elif srv_enc == pytds.PreLoginEnc.ENCRYPT_REQ:
+            res_enc = pytds.PreLoginEnc.ENCRYPT_REQ
 
         # sending reply to client's prelogin packet
         prelogin_resp = gen.generate_prelogin({
@@ -240,11 +242,13 @@ class SimpleServer(socketserver.TCPServer):
     def __init__(self, address, enc, cert=None, pkey=None):
         self._enc = enc
         super().__init__(address, RequestHandler)
-        ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
-        ctx.set_options(OpenSSL.SSL.OP_NO_SSLv2)
-        ctx.set_options(OpenSSL.SSL.OP_NO_SSLv3)
-        ctx.use_certificate(cert)
-        ctx.use_privatekey(pkey)
+        ctx = None
+        if cert and pkey:
+            ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
+            ctx.set_options(OpenSSL.SSL.OP_NO_SSLv2)
+            ctx.set_options(OpenSSL.SSL.OP_NO_SSLv3)
+            ctx.use_certificate(cert)
+            ctx.use_privatekey(pkey)
         self._tls_ctx = ctx
 
     def set_ssl_context(self, ctx):

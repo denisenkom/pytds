@@ -1342,6 +1342,7 @@ class _TdsSession(object):
         self.parse_prelogin(octets=p, login=login)
 
     def parse_prelogin(self, octets, login):
+        # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         size = len(octets)
         p = octets
         # default 2, no certificate, no encryptption
@@ -1386,6 +1387,7 @@ class _TdsSession(object):
             tls.establish_channel(self)
         elif crypt_flag == PreLoginEnc.ENCRYPT_REQ:
             if login.enc_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
+                # connection terminated by server and client
                 raise tds_base.Error('Client does not have encryption enabled but it is required by server, '
                                      'enable encryption and try connecting again')
             else:
@@ -1393,6 +1395,7 @@ class _TdsSession(object):
                 tls.establish_channel(self)
         elif crypt_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
             if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
+                # connection terminated by server and client
                 raise tds_base.Error('You requested encryption but it is not supported by server')
             # do not encrypt anything
         else:
