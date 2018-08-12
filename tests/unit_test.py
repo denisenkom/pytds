@@ -1066,7 +1066,7 @@ class MiscTestCase(unittest.TestCase):
 
 
 class TestServer(object):
-    def __init__(self, address, enc, cert=None, key=None):
+    def __init__(self, address, enc=pytds.PreLoginEnc.ENCRYPT_NOT_SUP, cert=None, key=None, tds_version=pytds.tds_base.TDS74):
         if os.environ.get('INAPPVEYOR', '') == '1':
             pytest.skip("Appveyor does not allow server sockets even on localhost")
         import simple_server
@@ -1081,7 +1081,8 @@ class TestServer(object):
             address,
             enc=enc,
             cert=openssl_cert,
-            pkey=openssl_key
+            pkey=openssl_key,
+            tds_version=tds_version,
         )
         self._server_thread = threading.Thread(target=lambda: self._server.serve_forever())
 
@@ -1229,6 +1230,22 @@ def test_server_encryption_not_supported(address, root_ca_path):
                     cafile=root_ca_path):
                 pass
         assert 'You requested encryption but it is not supported by server' in str(excinfo.value)
+
+
+def test_client_use_old_tds_version(address):
+    with TestServer(address=address, tds_version=0):
+        with pytest.raises(ValueError) as excinfo:
+            with pytds.connect(
+                    dsn=address[0],
+                    port=address[1],
+                    user="sa",
+                    password='password',
+                    disable_connect_retry=True,
+                    autocommit=True,
+                    tds_version=0,
+                    ):
+                pass
+        assert 'This TDS version is not supported' in str(excinfo.value)
 
 
 def test_server_with_bad_name_in_cert(test_ca, server_key, address, root_ca_path):

@@ -1569,9 +1569,9 @@ class _TdsSession(object):
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
-                if self.conn.authentication:
-                    self.conn.authentication.close()
-                    self.conn.authentication = None
+                if self.authentication:
+                    self.authentication.close()
+                    self.authentication = None
             else:
                 self.process_token(marker)
                 if marker == tds_base.TDS_DONE_TOKEN:
@@ -1721,7 +1721,6 @@ class _TdsSocket(object):
         self.env = _TdsEnv()
         self.collation = None
         self.tds72_transaction = 0
-        self.authentication = None
         self._mars_enabled = False
         self.sock = None
         self.bufsize = 4096
@@ -1751,10 +1750,7 @@ class _TdsSocket(object):
         if tds_base.IS_TDS71_PLUS(self):
             self._main_session.send_prelogin(login)
             self._main_session.process_prelogin(login)
-        if tds_base.IS_TDS7_PLUS(self):
-            self._main_session.tds7_send_login(login)
-        else:
-            raise ValueError('This TDS version is not supported')
+        self._main_session.tds7_send_login(login)
         if login.server_enc_flag == PreLoginEnc.ENCRYPT_OFF:
             tls.revert_to_clear(self._main_session)
         if not self._main_session.process_login_tokens():
@@ -1812,9 +1808,9 @@ class _TdsSocket(object):
         if self._smp_manager:
             self._smp_manager.transport_closed()
         self._main_session.state = tds_base.TDS_DEAD
-        if self.authentication:
-            self.authentication.close()
-            self.authentication = None
+        if self._main_session.authentication:
+            self._main_session.authentication.close()
+            self._main_session.authentication = None
 
 
 class _Results(object):

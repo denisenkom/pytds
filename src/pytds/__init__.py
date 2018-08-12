@@ -1189,6 +1189,8 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login.language = ''  # use database default
     login.attach_db_file = ''
     login.tds_version = tds_version
+    if tds_version < tds_base.TDS70:
+        raise ValueError('This TDS version is not supported')
     login.database = database or ''
     login.bulk_copy = False
     login.client_lcid = lcid.LANGID_ENGLISH_US

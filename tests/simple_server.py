@@ -206,7 +206,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
 
         srv_name = 'Simple TDS Server'
         srv_ver = (1, 0, 0, 0)
-        tds_version = pytds.tds_base.TDS74
+        tds_version = self.server._tds_version
 
         w.begin_packet(pytds.tds_base.PacketType.REPLY)
         # https://msdn.microsoft.com/en-us/library/dd340651.aspx
@@ -239,7 +239,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
 class SimpleServer(socketserver.TCPServer):
     allow_reuse_address = True
 
-    def __init__(self, address, enc, cert=None, pkey=None):
+    def __init__(self, address, enc, cert=None, pkey=None, tds_version=pytds.tds_base.TDS74):
         self._enc = enc
         super().__init__(address, RequestHandler)
         ctx = None
@@ -250,6 +250,7 @@ class SimpleServer(socketserver.TCPServer):
             ctx.use_certificate(cert)
             ctx.use_privatekey(pkey)
         self._tls_ctx = ctx
+        self._tds_version = tds_version
 
     def set_ssl_context(self, ctx):
         self._tls_ctx = ctx
