@@ -925,5 +925,7 @@ def test_outparam_null_default(cursor):
 
 
 def test_invalid_ntlm_creds():
+    if not LIVE_TEST:
+        pytest.skip('LIVE_TEST is not set')
     with pytest.raises(pytds.OperationalError):
         pytds.connect(settings.HOST, auth=pytds.login.NtlmAuth(user_name='bad', password='bad'))
