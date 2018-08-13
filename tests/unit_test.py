@@ -1069,6 +1069,8 @@ class TestServer(object):
     def __init__(self, address, enc=pytds.PreLoginEnc.ENCRYPT_NOT_SUP, cert=None, key=None, tds_version=pytds.tds_base.TDS74):
         if os.environ.get('INAPPVEYOR', '') == '1':
             pytest.skip("Appveyor does not allow server sockets even on localhost")
+        if sys.version_info[0:2] < (3, 6):
+            pytest.skip('only works on Python 3.6 and newer')
         import simple_server
         import threading
         openssl_cert = None
