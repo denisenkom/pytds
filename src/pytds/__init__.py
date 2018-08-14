@@ -18,7 +18,6 @@ from pytds.tds_types import NVarCharType
 from . import lcid
 import pytds.tz
 from .tds import (
-    SimpleLoadBalancer,
     _TdsSocket, tds7_get_instances,
     _create_exception_by_message,
     output, default

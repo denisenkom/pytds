@@ -35,15 +35,6 @@ _uint8_be = struct.Struct('>Q')
 logging_enabled = False
 
 
-class SimpleLoadBalancer(object):
-    def __init__(self, hosts):
-        self._hosts = hosts
-
-    def choose(self):
-        for host in self._hosts:
-            yield host
-
-
 # stored procedure output parameter
 class output(object):
     @property
