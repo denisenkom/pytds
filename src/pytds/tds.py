@@ -216,22 +216,6 @@ class _TdsReader(object):
         buf = readall(self, Collation.wire_size)
         return Collation.unpack(buf)
 
-    def unget_byte(self):
-        """ Returns one last read byte to stream
-
-        Can only be called once per read byte.
-        """
-        # this is a one trick pony...don't call it twice
-        assert self._pos > 0
-        self._pos -= 1
-
-    def peek(self):
-        """ Returns next byte from stream without consuming it
-        """
-        res = self.get_byte()
-        self.unget_byte()
-        return res
-
     def _read_packet(self):
         """ Reads next TDS packet from the underlying transport
 
@@ -632,18 +616,7 @@ class _TdsSession(object):
         r.get_smallint()  # size
         msg = {'marker': marker, 'msgno': r.get_int(), 'state': r.get_byte(), 'severity': r.get_byte(),
                'sql_state': None}
-        has_eed = False
-        if marker == tds_base.TDS_EED_TOKEN:
-            if msg['severity'] <= 10:
-                msg['priv_msg_type'] = 0
-            else:
-                msg['priv_msg_type'] = 1
-            len_sqlstate = r.get_byte()
-            msg['sql_state'] = readall(r, len_sqlstate)
-            has_eed = r.get_byte()
-            # junk status and transaction state
-            r.get_smallint()
-        elif marker == tds_base.TDS_INFO_TOKEN:
+        if marker == tds_base.TDS_INFO_TOKEN:
             msg['priv_msg_type'] = 0
         elif marker == tds_base.TDS_ERROR_TOKEN:
             msg['priv_msg_type'] = 1
@@ -656,16 +629,6 @@ class _TdsSession(object):
         msg['proc_name'] = r.read_ucs2(r.get_byte())
         msg['line_number'] = r.get_int() if tds_base.IS_TDS72_PLUS(self) else r.get_smallint()
         # in case extended error data is sent, we just try to discard it
-        if has_eed:
-            while True:
-                next_marker = r.get_byte()
-                if next_marker in (tds_base.TDS5_PARAMFMT_TOKEN,
-                                   tds_base.TDS5_PARAMFMT2_TOKEN,
-                                   tds_base.TDS5_PARAMS_TOKEN):
-                    self.process_token(next_marker)
-                else:
-                    break
-            r.unget_byte()
 
         # special case
         self.messages.append(msg)
@@ -1692,7 +1655,6 @@ _token_map = {
     tds_base.TDS_DONEINPROC_TOKEN: lambda self: self.process_end(tds_base.TDS_DONEINPROC_TOKEN),
     tds_base.TDS_ERROR_TOKEN: lambda self: self.process_msg(tds_base.TDS_ERROR_TOKEN),
     tds_base.TDS_INFO_TOKEN: lambda self: self.process_msg(tds_base.TDS_INFO_TOKEN),
-    tds_base.TDS_EED_TOKEN: lambda self: self.process_msg(tds_base.TDS_EED_TOKEN),
     tds_base.TDS_CAPABILITY_TOKEN: lambda self: self.process_msg(tds_base.TDS_CAPABILITY_TOKEN),
     tds_base.TDS_PARAM_TOKEN: lambda self: self.process_param(),
     tds_base.TDS7_RESULT_TOKEN: lambda self: self.tds7_process_result(),
