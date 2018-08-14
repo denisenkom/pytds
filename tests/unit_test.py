@@ -1375,3 +1375,9 @@ def test_encrypted_socket(certificate_key):
     do_handshake(tls=clientconn, transport=client, bufsize=bufsize)
     logger.info('handshake completed on client side')
     #encclisocket = pytds.tls.EncryptedSocket(client, clientconn)
+
+
+def test_output_param_value_not_match_type():
+    with pytest.raises(ValueError) as ex:
+        pytds.output(param_type=int, value='hello')
+    assert 'value should match param_type, value is \'hello\', param_type is <class \'int\'>' == str(ex.value)

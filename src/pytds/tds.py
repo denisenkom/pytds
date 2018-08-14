@@ -63,7 +63,7 @@ class output(object):
                 raise ValueError('Output type cannot be autodetected')
         elif isinstance(param_type, type) and value is not None:
             if value is not default and not isinstance(value, param_type):
-                raise ValueError('value should match param_type', value, param_type)
+                raise ValueError('value should match param_type, value is {}, param_type is {}'.format(repr(value), param_type))
         self._type = param_type
         self._value = value
 
