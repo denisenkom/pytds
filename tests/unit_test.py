@@ -1380,4 +1380,4 @@ def test_encrypted_socket(certificate_key):
 def test_output_param_value_not_match_type():
     with pytest.raises(ValueError) as ex:
         pytds.output(param_type=int, value='hello')
-    assert 'value should match param_type, value is \'hello\', param_type is <class \'int\'>' == str(ex.value)
+    assert 'value should match param_type, value is \'hello\', param_type is \'int\'' == str(ex.value)
