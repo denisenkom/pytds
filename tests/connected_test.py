@@ -230,6 +230,15 @@ def test_bulk_insert_with_special_chars(cursor):
     assert cur.fetchall() == [(42, 'foo'), (74, 'bar')]
 
 
+def test_bulk_insert_with_keyword_column_name(cursor):
+    cur = cursor
+    cur.execute('create table test_table(num int, [User] varchar(100))')
+    f = StringIO("42\tfoo\n74\tbar\n")
+    cur.copy_to(f, 'test_table')
+    cur.execute('select num, [User] from test_table')
+    assert cur.fetchall() == [(42, 'foo'), (74, 'bar')]
+
+
 def test_table_valued_type_autodetect(separate_db_connection):
     def rows_gen():
         yield (1, 'test1')
