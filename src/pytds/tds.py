@@ -313,10 +313,6 @@ class _TdsWriter(object):
         """ Writes 16-bit unsigned integer into the stream """
         self.pack(_usmallint_le, value)
 
-    def put_smallint_be(self, value):
-        """ Writes 16-bit signed big-endian integer into the stream """
-        self.pack(_smallint_be, value)
-
     def put_usmallint_be(self, value):
         """ Writes 16-bit unsigned big-endian integer into the stream """
         self.pack(_usmallint_be, value)
@@ -328,10 +324,6 @@ class _TdsWriter(object):
     def put_uint(self, value):
         """ Writes 32-bit unsigned integer into the stream """
         self.pack(_uint_le, value)
-
-    def put_int_be(self, value):
-        """ Writes 32-bit signed big-endian integer into the stream """
-        self.pack(_int_be, value)
 
     def put_uint_be(self, value):
         """ Writes 32-bit unsigned big-endian integer into the stream """

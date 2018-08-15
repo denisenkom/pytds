@@ -938,3 +938,15 @@ def test_invalid_ntlm_creds():
         pytest.skip('LIVE_TEST is not set')
     with pytest.raises(pytds.OperationalError):
         pytds.connect(settings.HOST, auth=pytds.login.NtlmAuth(user_name='bad', password='bad'))
+
+
+def test_open_with_different_blocksize():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    # test very small block size
+    kwargs['blocksize'] = 100
+    with pytds.connect(*settings.CONNECT_ARGS, **kwargs):
+        pass
+    # test very large block size
+    kwargs['blocksize'] = 1000000
+    with pytds.connect(*settings.CONNECT_ARGS, **kwargs):
+        pass

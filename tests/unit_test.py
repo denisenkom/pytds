@@ -152,6 +152,9 @@ class TestMessages(unittest.TestCase):
         ])
         tds = _TdsSocket()
         tds._main_session = _TdsSession(tds, sock, None)
+        # test repr on some objects
+        repr(tds._main_session)
+        repr(tds)
         tds.sock = sock
         login = _TdsLogin()
         login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
