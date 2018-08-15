@@ -941,6 +941,8 @@ def test_invalid_ntlm_creds():
 
 
 def test_open_with_different_blocksize():
+    if not LIVE_TEST:
+        pytest.skip('LIVE_TEST is not set')
     kwargs = settings.CONNECT_KWARGS.copy()
     # test very small block size
     kwargs['blocksize'] = 100
