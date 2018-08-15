@@ -951,7 +951,7 @@ class Cursor(six.Iterator):
             self.execute('select top 1 * from {} where 1<>1'.format(obj_name))
             metadata = [Column(name=col[0], type=NVarCharType(size=4000), flags=Column.fNullable if col[6] else 0)
                         for col in self.description]
-        col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
+        col_defs = ','.join('{0} {1}'.format(tds_base.tds_quote_id(col.column_name), col.type.get_declaration())
                             for col in metadata)
         with_opts = []
         if check_constraints:
