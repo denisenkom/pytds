@@ -726,11 +726,23 @@ class VarCharMaxSerializer(VarChar72Serializer):
                 val = tds_base.force_unicode(val)
             if isinstance(val, six.text_type):
                 val, _ = self._codec.encode(val)
-            w.put_int8(len(val))
+
+            # Putting the actual length here causes an error when bulk inserting:
+            #
+            # While reading current row from host, a premature end-of-message
+            # was encountered--an incoming data stream was interrupted when
+            # the server expected to see more data. The host program may have
+            # terminated. Ensure that you are using a supported client
+            # application programming interface (API).
+            #
+            # See https://github.com/tediousjs/tedious/issues/197
+            # It is not known why this happens, but Microsoft's bcp tool
+            # uses PLP_UNKNOWN for varchar(max) as well.
+            w.put_uint8(tds_base.PLP_UNKNOWN)
             if len(val) > 0:
-                w.put_int(len(val))
+                w.put_uint(len(val))
                 w.write(val)
-            w.put_int(0)
+            w.put_uint(0)
 
     def read(self, r):
         login = r._session._tds._login
@@ -831,7 +843,19 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
             if isinstance(val, bytes):
                 val = tds_base.force_unicode(val)
             val, _ = ucs2_codec.encode(val)
-            w.put_uint8(len(val))
+
+            # Putting the actual length here causes an error when bulk inserting:
+            #
+            # While reading current row from host, a premature end-of-message
+            # was encountered--an incoming data stream was interrupted when
+            # the server expected to see more data. The host program may have
+            # terminated. Ensure that you are using a supported client
+            # application programming interface (API).
+            #
+            # See https://github.com/tediousjs/tedious/issues/197
+            # It is not known why this happens, but Microsoft's bcp tool
+            # uses PLP_UNKNOWN for nvarchar(max) as well.
+            w.put_uint8(tds_base.PLP_UNKNOWN)
             if len(val) > 0:
                 w.put_uint(len(val))
                 w.write(val)
