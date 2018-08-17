@@ -1384,3 +1384,11 @@ def test_output_param_value_not_match_type():
     with pytest.raises(ValueError) as ex:
         pytds.output(param_type=int, value='hello')
     assert 'value should match param_type, value is \'hello\', param_type is \'int\'' == str(ex.value)
+
+
+def test_tds_session_raise_db_exception():
+    tds = pytds.tds._TdsSocket()
+    sess = pytds.tds._TdsSession(tds=tds, transport=None, tzinfo_factory=None)
+    with pytest.raises(pytds.Error) as ex:
+        sess.raise_db_exception()
+    assert "Request failed, server didn't send error message" == str(ex.value)
