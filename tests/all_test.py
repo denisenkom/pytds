@@ -50,9 +50,6 @@ import settings
 
 logger = logging.getLogger(__name__)
 
-# set decimal precision to match mssql maximum precision
-getcontext().prec = 38
-
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
 
 
