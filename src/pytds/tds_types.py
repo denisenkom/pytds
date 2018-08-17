@@ -107,7 +107,10 @@ class _DefaultChunkedHandler(object):
         self.stream.write(val)
 
     def end(self):
-        return self.stream.getvalue()
+        value = self.stream.getvalue()
+        self.stream.seek(0)
+        self.stream.truncate()
+        return value
 
     def __eq__(self, other):
         return self.stream.getvalue() == other.stream.getvalue()
