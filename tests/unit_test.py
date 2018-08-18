@@ -1106,7 +1106,7 @@ class TestServer(object):
 def certificate_key():
     import utils_35 as utils
     from cryptography import x509
-    address = ('127.0.0.1', 1433)
+    address = ('127.0.0.1', 1434)
     test_ca = utils.TestCA()
     server_key = test_ca.key('server')
     subject = x509.Name(
@@ -1144,7 +1144,7 @@ def root_ca_path(test_ca):
 
 @pytest.fixture
 def address():
-    return ('127.0.0.1', 1433)
+    return ('127.0.0.1', 1434)
 
 @pytest.fixture
 def server_cert(server_key, address, test_ca):
