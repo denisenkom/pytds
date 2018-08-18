@@ -476,7 +476,7 @@ class TestMessages(unittest.TestCase):
         w._pos = 0
         t.write(w, 'test')
         self.assertEqual(w._buf[:w._pos],
-                         b'\x08\x00\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
+                         b'\xfe\xff\xff\xff\xff\xff\xff\xff\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
 
     def test_get_instances(self):
         data = b'\x05[\x00ServerName;MISHA-PC;InstanceName;SQLEXPRESS;IsClustered;No;Version;10.0.1600.22;tcp;49849;;'
