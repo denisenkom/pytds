@@ -893,14 +893,13 @@ class Cursor(six.Iterator):
         """
         pass
 
-    def copy_to(self, file=None, table_or_view=None, sep='\t', columns=None,
+    def copy_to(self, file, table_or_view, sep='\t', columns=None,
                 check_constraints=False, fire_triggers=False, keep_nulls=False,
                 kb_per_batch=None, rows_per_batch=None, order=None, tablock=False,
-                schema=None, null_string=None, data=None):
+                schema=None, null_string=None):
         """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
 
-        :param file: Source file-like object, should be in csv format. Specify
-          either this or data, not both.
+        :param file: Source file-like object, should be in csv format
         :param table_or_view: Destination table or view in the database
         :type table_or_view: str
 
@@ -908,17 +907,8 @@ class Cursor(six.Iterator):
 
         :keyword sep: Separator used in csv file
         :type sep: str
-        :keyword columns: List of Column objects or column names in target
-          table to insert to. SQL Server will do some conversions, so these
-          may not have to match the actual table definition exactly.
-          If not provided will insert into all columns assuming nvarchar(4000)
-          NULL for all columns.
-          If only the column name is provided, the type is assumed to be
-          nvarchar(4000) NULL.
-          If rows are given with file, you cannot specify non-string data
-          types.
-          If rows are given with data, the values must be a type supported by
-          the serializer for the column in tds_types.
+        :keyword columns: List of column names in target table to insert to,
+          if not provided will insert into all columns
         :type columns: list
         :keyword check_constraints: Check table constraints for incoming data
         :type check_constraints: bool
@@ -939,38 +929,24 @@ class Cursor(six.Iterator):
         :type order: list
         :keyword tablock: Enable or disable table lock for the duration of bulk load
         :keyword schema: Name of schema for table or view, if not specified default schema will be used
-        :keyword null_string: String that should be interpreted as a NULL when
-          reading the CSV file. Has no meaning if using data instead of file.
-        :keyword data: The data to insert as an iterable of rows, which are
-          iterables of values. Specify either this or file, not both.
+        :keyword null_string: String that should be interpreted as a NULL when reading the CSV file.
         """
         conn = self._conn()
-        rows = None
-        if data is None:
-            import csv
-            reader = csv.reader(file, delimiter=sep)
+        import csv
+        reader = csv.reader(file, delimiter=sep)
 
-            if null_string is not None:
-                def _convert_null_strings(csv_reader):
-                    for row in csv_reader:
-                        yield [r if r != null_string else None for r in row]
+        if null_string is not None:
+            def _convert_null_strings(csv_reader):
+                for row in csv_reader:
+                    yield [r if r != null_string else None for r in row]
 
-                reader = _convert_null_strings(reader)
-
-            rows = reader
-        else:
-            rows = data
+            reader = _convert_null_strings(reader)
 
         obj_name = tds_base.tds_quote_id(table_or_view)
         if schema:
             obj_name = '{0}.{1}'.format(tds_base.tds_quote_id(schema), obj_name)
         if columns:
-            metadata = []
-            for column in columns:
-                if isinstance(column, Column):
-                    metadata.append(column)
-                else:
-                    metadata.append(Column(name=column, type=NVarCharType(size=4000), flags=Column.fNullable))
+            metadata = [Column(name=name, type=NVarCharType(size=4000), flags=Column.fNullable) for name in columns]
         else:
             self.execute('select top 1 * from {} where 1<>1'.format(obj_name))
             metadata = [Column(name=col[0], type=NVarCharType(size=4000), flags=Column.fNullable if col[6] else 0)
@@ -997,7 +973,7 @@ class Cursor(six.Iterator):
             with_part = 'WITH ({0})'.format(','.join(with_opts))
         operation = 'INSERT BULK {0}({1}) {2}'.format(obj_name, col_defs, with_part)
         self.execute(operation)
-        self._session.submit_bulk(metadata, rows)
+        self._session.submit_bulk(metadata, reader)
         self._session.process_simple_request()
 
 
