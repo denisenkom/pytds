@@ -239,6 +239,27 @@ def test_bulk_insert_with_keyword_column_name(cursor):
     assert cur.fetchall() == [(42, 'foo'), (74, 'bar')]
 
 
+def test_bulk_insert_with_direct_data(cursor):
+    cur = cursor
+    cur.execute('create table test_table(num int, data nvarchar(max))')
+
+    data = [
+        [42, 'foo'],
+        [57, ''],
+        [66, None],
+        [74, 'bar']
+    ]
+
+    column_types = [
+        pytds.tds_base.Column('num', pytds.tds_types.IntType(), pytds.tds_base.Column.fNullable),
+        pytds.tds_base.Column('data', pytds.tds_types.NVarCharMaxType(), pytds.tds_base.Column.fNullable)
+    ]
+
+    cur.copy_to(data=data, table_or_view='test_table', columns=column_types)
+    cur.execute('select num, data from test_table')
+    assert cur.fetchall() == [(42, 'foo'), (57, ''), (66, None), (74, 'bar')]
+
+
 def test_table_valued_type_autodetect(separate_db_connection):
     def rows_gen():
         yield (1, 'test1')
