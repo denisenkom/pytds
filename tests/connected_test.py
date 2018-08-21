@@ -952,3 +952,15 @@ def test_open_with_different_blocksize():
     kwargs['blocksize'] = 1000000
     with pytds.connect(*settings.CONNECT_ARGS, **kwargs):
         pass
+
+
+def test_nvarchar_multiple_rows(cursor):
+    cursor.execute('''
+    set nocount on
+    declare @tbl table (id int primary key, fld nvarchar(max))
+    insert into @tbl values(1, 'foo')
+    insert into @tbl values(2, 'bar')
+    select fld from @tbl order by id
+    '''
+    )
+    assert cursor.fetchall() == [('foo',), ('bar',)]
