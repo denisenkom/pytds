@@ -1,7 +1,7 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
 from __future__ import unicode_literals
-from decimal import Decimal, getcontext
+from decimal import Decimal, Context
 import uuid
 import datetime
 import logging
@@ -363,7 +363,7 @@ def test_empty_query(cursor):
                                  Decimal('1234000'),
                                  Decimal('9' * 38),
                                  Decimal('0.' + '9' * 38),
-                                 -Decimal('9' * 38),
+                                 Decimal('-' + ('9' * 38), Context(prec=38)),
                                  Decimal('1E10'),
                                  Decimal('1E-10'),
                                  Decimal('0.{0}1'.format('0' * 37)),
