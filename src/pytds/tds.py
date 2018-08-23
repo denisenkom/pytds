@@ -683,7 +683,11 @@ class _TdsSession(object):
 
         :param marker: Can be TDS_DONE_TOKEN or TDS_DONEINPROC_TOKEN or TDS_DONEPROC_TOKEN
         """
-        self.log_response_message("got DONE/DONEINPROC/DONEPROC message")
+        code_to_str = {
+            tds_base.TDS_DONE_TOKEN: 'DONE',
+            tds_base.TDS_DONEINPROC_TOKEN: 'DONEINPROC',
+            tds_base.TDS_DONEPROC_TOKEN: 'DONEPROC',
+        }
         self.end_marker = marker
         self.more_rows = False
         r = self._reader
@@ -695,6 +699,8 @@ class _TdsSession(object):
         if self.res_info:
             self.res_info.more_results = more_results
         rows_affected = r.get_int8() if tds_base.IS_TDS72_PLUS(self) else r.get_int()
+        self.log_response_message("got {} message, more_res={}, cancelled={}, rows_affected={}".format(
+            code_to_str[marker], more_results, was_cancelled, rows_affected))
         if was_cancelled or (not more_results and not self.in_cancel):
             self.in_cancel = False
             self.set_state(tds_base.TDS_IDLE)
@@ -965,7 +971,7 @@ class _TdsSession(object):
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name, params, flags):
+    def submit_rpc(self, rpc_name, params, flags=0):
         """ Sends an RPC request.
 
         This call will transition session into pending state.
@@ -978,7 +984,7 @@ class _TdsSession(object):
         :param params: Stored proc parameters, should be a list of :class:`Column` instances.
         :param flags: See spec for possible flags.
         """
-        logger.info('Sending RPC %s', rpc_name)
+        logger.info('Sending RPC %s flags=%d', rpc_name, flags)
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()

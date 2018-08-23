@@ -964,3 +964,34 @@ def test_nvarchar_multiple_rows(cursor):
     '''
     )
     assert cursor.fetchall() == [('foo',), ('bar',)]
+
+
+def test_no_metadata_request(cursor):
+    cursor._session.submit_rpc(
+        rpc_name=pytds.tds_base.SP_PREPARE,
+        params=cursor._session._convert_params((pytds.output(param_type=int), '@p1 int', 'select @p1')),
+    )
+    cursor._session.process_rpc()
+    while cursor.nextset():
+        pass
+    res = cursor.get_proc_outputs()
+    handle = res[0]
+    logger.info("got handle %s", handle)
+    cursor._session.submit_rpc(
+        rpc_name=pytds.tds_base.SP_EXECUTE,
+        params=cursor._session._convert_params((handle, 1)),
+    )
+    cursor._session.process_rpc()
+    assert cursor.fetchall() == [(1,)]
+    while cursor.nextset():
+        pass
+    cursor._session.submit_rpc(
+        rpc_name=pytds.tds_base.SP_EXECUTE,
+        params=cursor._session._convert_params((handle, 2)),
+        flags=0x02  # no metadata
+    )
+    cursor._session.process_rpc()
+    # for some reason SQL server still sends metadata back
+    assert cursor.fetchall() == [(2,)]
+    while cursor.nextset():
+        pass

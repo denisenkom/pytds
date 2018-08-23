@@ -489,6 +489,8 @@ class InternalProc(object):
         return self.name
 
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
+SP_PREPARE = InternalProc(TDS_SP_PREPARE, 'sp_prepare')
+SP_EXECUTE = InternalProc(TDS_SP_EXECUTE, 'sp_execute')
 
 
 def skipall(stm, size):
