@@ -982,6 +982,7 @@ def test_no_metadata_request(cursor):
         params=cursor._session._convert_params((handle, 1)),
     )
     cursor._session.process_rpc()
+    cursor._setup_row_factory()
     assert cursor.fetchall() == [(1,)]
     while cursor.nextset():
         pass
@@ -991,6 +992,7 @@ def test_no_metadata_request(cursor):
         flags=0x02  # no metadata
     )
     cursor._session.process_rpc()
+    cursor._setup_row_factory()
     # for some reason SQL server still sends metadata back
     assert cursor.fetchall() == [(2,)]
     while cursor.nextset():
