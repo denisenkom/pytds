@@ -729,6 +729,8 @@ class Cursor(six.Iterator):
         conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._execute(operation, params)
+        # for compatibility with pyodbc
+        return self
 
     def _begin_tran(self, isolation_level):
         conn = self._assert_open()
@@ -1041,6 +1043,8 @@ class _MarsCursor(Cursor):
     def execute(self, operation, params=()):
         self._assert_open()
         self._execute(operation, params)
+        # for compatibility with pyodbc
+        return self
 
     def callproc(self, procname, parameters=()):
         """
