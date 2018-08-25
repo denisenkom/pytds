@@ -1068,7 +1068,7 @@ class MiscTestCase(unittest.TestCase):
         self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTime.MAX_PYDATETIME))
 
 
-class TestServer(object):
+class SimpleServer(object):
     def __init__(self, address, enc=pytds.PreLoginEnc.ENCRYPT_NOT_SUP, cert=None, key=None, tds_version=pytds.tds_base.TDS74):
         if os.environ.get('INAPPVEYOR', '') == '1':
             pytest.skip("Appveyor does not allow server sockets even on localhost")
@@ -1164,7 +1164,7 @@ def server_cert(server_key, address, test_ca):
 
 
 def test_with_simple_server_req_encryption(server_cert, server_key, address, root_ca_path):
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_REQ, cert=server_cert, key=server_key):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_REQ, cert=server_cert, key=server_key):
         with pytds.connect(
                 dsn=address[0],
                 port=address[1],
@@ -1177,7 +1177,7 @@ def test_with_simple_server_req_encryption(server_cert, server_key, address, roo
 
 
 def test_both_server_and_client_encryption_on(server_cert, server_key, address, root_ca_path):
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
         # test with both server and client configured for encryption
         with pytds.connect(
                 dsn=address[0],
@@ -1192,7 +1192,7 @@ def test_both_server_and_client_encryption_on(server_cert, server_key, address, 
 
 
 def test_server_has_enc_on_but_client_is_off(server_cert, server_key, address):
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
         # test with server having encrypt on but client has it off
         # should throw exception in this case
         with pytest.raises(pytds.Error) as excinfo:
@@ -1208,7 +1208,7 @@ def test_server_has_enc_on_but_client_is_off(server_cert, server_key, address):
 
 def test_only_login_encrypted(server_cert, server_key, address, root_ca_path):
     # test login where only login is encrypted
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=server_cert, key=server_key):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=server_cert, key=server_key):
         with pytds.connect(
                 dsn=address[0],
                 port=address[1],
@@ -1223,7 +1223,7 @@ def test_only_login_encrypted(server_cert, server_key, address, root_ca_path):
 
 
 def test_server_encryption_not_supported(address, root_ca_path):
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_NOT_SUP):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_NOT_SUP):
         with pytest.raises(pytds.Error) as excinfo:
             with pytds.connect(
                     dsn=address[0],
@@ -1238,7 +1238,7 @@ def test_server_encryption_not_supported(address, root_ca_path):
 
 
 def test_client_use_old_tds_version(address):
-    with TestServer(address=address, tds_version=0):
+    with SimpleServer(address=address, tds_version=0):
         with pytest.raises(ValueError) as excinfo:
             with pytds.connect(
                     dsn=address[0],
@@ -1265,7 +1265,7 @@ def test_server_with_bad_name_in_cert(test_ca, server_key, address, root_ca_path
                                    .serial_number(x509.random_serial_number())
                                    .public_key(server_key.public_key()))
 
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=bad_server_cert, key=server_key):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=bad_server_cert, key=server_key):
         with pytest.raises(pytds.Error) as excinfo:
             pytds.connect(
                 dsn=address[0],
@@ -1292,7 +1292,7 @@ def test_cert_with_san(test_ca, server_key, address, root_ca_path):
                                    .add_extension(x509.SubjectAlternativeName([x509.DNSName(address[0])]), critical=False)
                                    )
 
-    with TestServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert_with_san, key=server_key):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert_with_san, key=server_key):
         with pytds.connect(
                 dsn=address[0],
                 port=address[1],
