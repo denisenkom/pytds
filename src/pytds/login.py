@@ -12,6 +12,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def make_server_principal(host, port):
+    return 'MSSQLSvc/{0}:{1}'.format(host, port)
+
+
 class SspiAuth(object):
     """ SSPI authentication
 
@@ -49,7 +53,7 @@ class SspiAuth(object):
             self._sname = spn
         else:
             primary_host_name, _, _ = socket.gethostbyname_ex(server_name)
-            self._sname = 'MSSQLSvc/{0}:{1}'.format(primary_host_name, port)
+            self._sname = make_server_principal(host=primary_host_name, port=port)
 
         # using Negotiate system will use proper protocol (either NTLM or Kerberos)
         self._cred = sspi.SspiCredentials(
@@ -142,6 +146,45 @@ class NtlmAuth(object):
             ntlm_compatibility=self._ntlm_compat,
             server_certificate_hash=None,
         ).get_data()
+
+    def close(self):
+        pass
+
+
+class KerberosAuth(object):
+    def __init__(self, server_principal):
+        try:
+            import kerberos
+        except ImportError:
+            import winkerberos as kerberos
+        self._kerberos = kerberos
+        res, context = kerberos.authGSSClientInit(server_principal)
+        if res < 0:
+            raise RuntimeError('authGSSClientInit failed with code {}'.format(res))
+        logger.info('Initialized GSS context')
+        self._context = context
+
+    def create_packet(self):
+        import base64
+        res = self._kerberos.authGSSClientStep(self._context, '')
+        if res < 0:
+            raise RuntimeError('authGSSClientStep failed with code {}'.format(res))
+        data = self._kerberos.authGSSClientResponse(self._context)
+        logger.info('created first client GSS packet %s', data)
+        return base64.b64decode(data)
+
+    def handle_next(self, packet):
+        import base64
+        res = self._kerberos.authGSSClientStep(self._context, base64.b64encode(packet))
+        if res < 0:
+            raise RuntimeError('authGSSClientStep failed with code {}'.format(res))
+        if res == self._kerberos.AUTH_GSS_COMPLETE:
+            logger.info('GSS authentication completed')
+            return b''
+        else:
+            data = self._kerberos.authGSSClientResponse(self._context)
+            logger.info('created client GSS packet %s', data)
+            return base64.b64decode(data)
 
     def close(self):
         pass

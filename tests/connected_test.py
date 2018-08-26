@@ -997,3 +997,12 @@ def test_no_metadata_request(cursor):
     assert cursor.fetchall() == [(2,)]
     while cursor.nextset():
         pass
+
+
+def test_kerberos():
+    if not LIVE_TEST:
+        pytest.skip('LIVE_TEST is not set')
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs['auth'] = pytds.login.KerberosAuth("MSSQLSvc/test:4343")
+    with pytds.connect(*settings.CONNECT_ARGS, **kwargs) as conn:
+        pass
