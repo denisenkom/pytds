@@ -1149,6 +1149,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             cafile=None, validate_host=True, enc_login_only=False,
             disable_connect_retry=False,
             pooling=False,
+            use_sso=False,
             ):
     """
     Opens connection to the database
@@ -1204,8 +1205,12 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
       anyone who can observe traffic on your network will be able to see all your SQL requests and potentially modify
       them.
     :type enc_login_only: bool
+    :keyword use_sso: Enables SSO login, e.g. Kerberos using SSPI on Windows and kerberos package on other platforms.
+             Cannot be used together with auth parameter.
     :returns: An instance of :class:`Connection`
     """
+    if use_sso and auth:
+        raise ValueError('use_sso cannot be used with auth parameter defined')
     login = _TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
@@ -1256,7 +1261,6 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login.connect_timeout = login_timeout
     login.query_timeout = timeout
     login.blocksize = blocksize
-    login.auth = auth
     login.readonly = readonly
     login.load_balancer = load_balancer
     login.bytes_to_unicode = bytes_to_unicode
@@ -1283,6 +1287,16 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
         if instance and port:
             raise ValueError("Both instance and port shouldn't be specified")
         parsed_servers.append((host, port, instance))
+
+    if use_sso:
+        spn = "MSSQLSvc@{}:{}".format(parsed_servers[0][0], parsed_servers[0][1])
+        from . import login as pytds_login
+        try:
+            login.auth = pytds_login.SspiAuth(spn=spn)
+        except ImportError:
+            login.auth = pytds_login.KerberosAuth(spn)
+    else:
+        login.auth = auth
 
     login.servers = _get_servers_deque(tuple(parsed_servers), database)
 

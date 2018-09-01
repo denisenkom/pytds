@@ -999,10 +999,10 @@ def test_no_metadata_request(cursor):
         pass
 
 
-def test_kerberos():
+def test_with_sso():
     if not LIVE_TEST:
         pytest.skip('LIVE_TEST is not set')
-    kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs['auth'] = pytds.login.KerberosAuth("MSSQLSvc/test:4343")
-    with pytds.connect(*settings.CONNECT_ARGS, **kwargs) as conn:
-        pass
+    with pytds.connect(settings.HOST, use_sso=True) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('select 1')
+            cursor.fetchall()

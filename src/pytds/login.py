@@ -175,7 +175,7 @@ class KerberosAuth(object):
 
     def handle_next(self, packet):
         import base64
-        res = self._kerberos.authGSSClientStep(self._context, base64.b64encode(packet))
+        res = self._kerberos.authGSSClientStep(self._context, base64.b64encode(packet).decode('ascii'))
         if res < 0:
             raise RuntimeError('authGSSClientStep failed with code {}'.format(res))
         if res == self._kerberos.AUTH_GSS_COMPLETE:
