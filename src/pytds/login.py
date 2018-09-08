@@ -12,10 +12,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def make_server_principal(host, port):
-    return 'MSSQLSvc/{0}:{1}'.format(host, port)
-
-
 class SspiAuth(object):
     """ SSPI authentication
 
@@ -53,7 +49,7 @@ class SspiAuth(object):
             self._sname = spn
         else:
             primary_host_name, _, _ = socket.gethostbyname_ex(server_name)
-            self._sname = make_server_principal(host=primary_host_name, port=port)
+            self._sname = 'MSSQLSvc/{0}:{1}'.format(primary_host_name, port)
 
         # using Negotiate system will use proper protocol (either NTLM or Kerberos)
         self._cred = sspi.SspiCredentials(
