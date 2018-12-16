@@ -8,8 +8,6 @@ the right branch by running:
 
 Verify that Travis CI tests are passing for current branch.
 
-Update version in pytds/__init__.py and commit
-
 Tag current commit by running:
 
  git tag -a <version>

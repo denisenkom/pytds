@@ -5,20 +5,6 @@ ZERO = timedelta(0)
 HOUR = timedelta(hours=1)
 
 
-class UTC(tzinfo):
-    """UTC"""
-
-    def utcoffset(self, dt):
-        return ZERO
-
-    def tzname(self, dt):
-        return "UTC"
-
-    def dst(self, dt):
-        return ZERO
-
-utc = UTC()
-
 # A class building tzinfo objects for fixed-offset time zones.
 # Note that FixedOffset(0, "UTC") is a different way to build a
 # UTC tzinfo object.
@@ -39,6 +25,9 @@ class FixedOffsetTimezone(tzinfo):
 
     def dst(self, dt):
         return ZERO
+
+
+utc = FixedOffsetTimezone(offset=0, name='UTC')
 
 
 STDOFFSET = timedelta(seconds=-_time.timezone)

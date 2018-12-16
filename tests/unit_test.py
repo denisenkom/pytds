@@ -5,6 +5,14 @@ import decimal
 import struct
 import unittest
 import uuid
+import socket
+import threading
+import logging
+import sys
+import os
+
+import pytest
+import OpenSSL.crypto
 
 import pytds
 from pytds.collate import raw_collation
@@ -14,7 +22,7 @@ from pytds.tds import (
 from pytds import _TdsLogin
 from pytds.tds_base import (
     TDS_ENCRYPTION_REQUIRE, Column, TDS70, TDS73, TDS71, TDS72, TDS73, TDS74,
-    TDS_ENCRYPTION_OFF)
+    TDS_ENCRYPTION_OFF, PreLoginEnc)
 from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateType, TimeType, DateTimeOffsetType, IntType, \
     BigIntType, TinyIntType, SmallIntType, VarChar72Serializer, XmlSerializer, Text72Serializer, NText72Serializer, \
     Image72Serializer, MoneyNSerializer, VariantSerializer, BitType, DeclarationsParser, SmallDateTimeType, DateTimeType, \
@@ -27,26 +35,42 @@ from pytds.tds_types import (
     DateTimeOffsetSerializer, MsDateSerializer, MsTimeSerializer, MsUniqueSerializer, NVarChar71Serializer, Image70Serializer, NText71Serializer, Text71Serializer, DateTimeNSerializer, NVarChar70Serializer,
     NText70Serializer, Text70Serializer, VarBinarySerializer, VarBinarySerializer72,
     )
+import pytds.login
 
 tzoffset = pytds.tz.FixedOffsetTimezone
+logger = logging.getLogger(__name__)
 
 
 class _FakeSock(object):
-    def __init__(self, messages):
-        self._stream = b''.join(messages)
+    def __init__(self, packets):
+        self._packets = packets
+        self._curr_packet = 0
+        self._packet_pos = 0
 
     def recv(self, size):
-        if not self._stream:
+        if self._curr_packet >= len(self._packets):
             return b''
-        res = self._stream[:size]
-        self._stream = self._stream[size:]
+        if self._packet_pos >= len(self._packets[self._curr_packet]):
+            self._curr_packet += 1
+            self._packet_pos = 0
+        if self._curr_packet >= len(self._packets):
+            return b''
+        res = self._packets[self._curr_packet][self._packet_pos:self._packet_pos+size]
+        self._packet_pos += len(res)
         return res
 
-    def send(self, buf, flags):
+    def recv_into(self, buffer, size=0):
+        if size == 0:
+            size = len(buffer)
+        res = self.recv(size)
+        buffer[0:len(res)] = res
+        return len(res)
+
+    def send(self, buf, flags=0):
         self._sent = buf
         return len(buf)
 
-    def sendall(self, buf, flags):
+    def sendall(self, buf, flags=0):
         self._sent = buf
 
     def setsockopt(self, *args):
@@ -65,7 +89,7 @@ class TestMessages(unittest.TestCase):
         login.query_timeout = login.connect_timeout = 60
         login.tds_version = TDS74
         login.instance_name = None
-        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         login.use_mars = False
         login.option_flag2 = 0
         login.user_name = 'testname'
@@ -113,13 +137,13 @@ class TestMessages(unittest.TestCase):
             _TdsSocket().login(self._make_login(), sock, None)
 
         # test connection close on third message
-        sock = _FakeSock([
-            b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
-            b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-            b'\x04\x01\x00#\x00Z\x01\x00\xe3\x0b\x00\x08\x08\x01\x00\x00\x00Z\x00\x00\x00\x00\xfd\x00\x00\xfd\x00\x00',
-        ])
-        with self.assertRaises(pytds.Error):
-            _TdsSocket().login(self._make_login(), sock, None)
+        #sock = _FakeSock([
+        #    b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
+        #    b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+        #    b'\x04\x01\x00#\x00Z\x01\x00\xe3\x0b\x00\x08\x08\x01\x00\x00\x00Z\x00\x00\x00\x00\xfd\x00\x00\xfd\x00\x00',
+        #])
+        #with self.assertRaises(pytds.Error):
+        #    _TdsSocket().login(self._make_login(), sock, None)
 
     def test_prelogin_parsing(self):
         # test good packet
@@ -127,10 +151,13 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
+        # test repr on some objects
+        repr(tds._main_session)
+        repr(tds)
         tds.sock = sock
         login = _TdsLogin()
-        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         tds._main_session.process_prelogin(login)
         self.assertFalse(tds._mars_enabled)
         self.assertTupleEqual(tds.server_library_version, (0xa001588, 0))
@@ -140,7 +167,7 @@ class TestMessages(unittest.TestCase):
             b'\x03\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
@@ -151,7 +178,7 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
@@ -162,20 +189,44 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
             tds._main_session.process_prelogin(login)
 
+        # test bad size
+        with self.assertRaisesRegexp(pytds.InterfaceError, 'Invalid size of PRELOGIN structure'):
+            login = self._make_login()
+            tds._main_session.parse_prelogin(login=login, octets=b'\x01')
+
+    def make_tds(self):
+        tds = _TdsSocket()
+        sock = _FakeSock([])
+        tds._main_session = _TdsSession(tds, sock, None)
+        return tds
+
+    def test_prelogin_unexpected_encrypt_on(self):
+        tds = self.make_tds()
+        with self.assertRaisesRegexp(pytds.InterfaceError, 'Server returned unexpected ENCRYPT_ON value'):
+            login = self._make_login()
+            login.enc_flag = PreLoginEnc.ENCRYPT_ON
+            tds._main_session.parse_prelogin(login=login, octets=b'\x01\x00\x06\x00\x01\xff\x00')
+
+    def test_prelogin_unexpected_enc_flag(self):
+        tds = self.make_tds()
+        with self.assertRaisesRegexp(pytds.InterfaceError, 'Unexpected value of enc_flag returned by server: 5'):
+            login = self._make_login()
+            tds._main_session.parse_prelogin(login=login, octets=b'\x01\x00\x06\x00\x01\xff\x05')
+
     def test_prelogin_generation(self):
         sock = _FakeSock('')
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         login = _TdsLogin()
         login.instance_name = 'MSSQLServer'
-        login.encryption_level = TDS_ENCRYPTION_OFF
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         login.use_mars = False
         tds._main_session.send_prelogin(login)
         template = (b'\x12\x01\x00:\x00\x00\x00\x00\x00\x00' +
@@ -195,18 +246,12 @@ class TestMessages(unittest.TestCase):
             tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b'')
 
-        login.instance_name = 'x'
-        login.encryption_level = TDS_ENCRYPTION_REQUIRE
-        with self.assertRaisesRegexp(pytds.NotSupportedError, 'Client requested encryption but it is not supported'):
-            tds._main_session.send_prelogin(login)
-        self.assertEqual(sock._sent, b'')
-
     def test_login_parsing(self):
         sock = _FakeSock([
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         tds._main_session.process_login_tokens()
 
@@ -215,7 +260,7 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01\x65\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             tds._main_session.process_login_tokens()
@@ -225,14 +270,14 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\xab\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         tds._main_session.process_login_tokens()
 
     def test_login_generation(self):
         sock = _FakeSock(b'')
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         login = _TdsLogin()
         login.option_flag2 = 0
@@ -353,8 +398,8 @@ class TestMessages(unittest.TestCase):
     def test_submit_plain_query(self):
         tds = _TdsSocket()
         tds.tds_version = TDS72
-        tds._main_session = _TdsSession(tds, tds, None)
         sock = _FakeSock(b'')
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         tds._main_session.submit_plain_query('select 5*6')
         self.assertEqual(
@@ -366,7 +411,7 @@ class TestMessages(unittest.TestCase):
         # test pre TDS7.2 query
         tds = _TdsSocket()
         tds.tds_version = TDS71
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         tds._main_session.submit_plain_query('select 5*6')
         self.assertEqual(
@@ -377,8 +422,8 @@ class TestMessages(unittest.TestCase):
     def test_bulk_insert(self):
         tds = _TdsSocket()
         tds.tds_version = TDS72
-        tds._main_session = _TdsSession(tds, tds, None)
         sock = _FakeSock(b'')
+        tds._main_session = _TdsSession(tds, sock, None)
         tds.sock = sock
         col1 = Column()
         col1.column_name = 'c1'
@@ -431,7 +476,7 @@ class TestMessages(unittest.TestCase):
         w._pos = 0
         t.write(w, 'test')
         self.assertEqual(w._buf[:w._pos],
-                         b'\x08\x00\x00\x00\x00\x00\x00\x00\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
+                         b'\xfe\xff\xff\xff\xff\xff\xff\xff\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00')
 
     def test_get_instances(self):
         data = b'\x05[\x00ServerName;MISHA-PC;InstanceName;SQLEXPRESS;IsClustered;No;Version;10.0.1600.22;tcp;49849;;'
@@ -1021,3 +1066,329 @@ class MiscTestCase(unittest.TestCase):
         self.assertEqual(b'\xf2\x9c\x00\x00}uO\x01', DateTimeSerializer.encode(
             pytds.Timestamp(2010, 1, 2, 20, 21, 22, 123000)))
         self.assertEqual(b'\x7f$-\x00\xff\x81\x8b\x01', DateTimeSerializer.encode(DateTime.MAX_PYDATETIME))
+
+
+class SimpleServer(object):
+    def __init__(self, address, enc=pytds.PreLoginEnc.ENCRYPT_NOT_SUP, cert=None, key=None, tds_version=pytds.tds_base.TDS74):
+        if os.environ.get('INAPPVEYOR', '') == '1':
+            pytest.skip("Appveyor does not allow server sockets even on localhost")
+        if sys.version_info[0:2] < (3, 6):
+            pytest.skip('only works on Python 3.6 and newer')
+        import simple_server
+        import threading
+        openssl_cert = None
+        openssl_key = None
+        if cert:
+            openssl_cert = OpenSSL.crypto.X509.from_cryptography(cert)
+        if key:
+            openssl_key = OpenSSL.crypto.PKey.from_cryptography_key(key)
+        self._server = simple_server.SimpleServer(
+            address,
+            enc=enc,
+            cert=openssl_cert,
+            pkey=openssl_key,
+            tds_version=tds_version,
+        )
+        self._server_thread = threading.Thread(target=lambda: self._server.serve_forever())
+
+    def __enter__(self):
+        self._server.__enter__()
+        self._server_thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._server.shutdown()
+        self._server.server_close()
+        self._server_thread.join()
+
+
+@pytest.fixture(scope='module')
+def certificate_key():
+    import utils_35 as utils
+    from cryptography import x509
+    address = ('127.0.0.1', 1434)
+    test_ca = utils.TestCA()
+    server_key = test_ca.key('server')
+    subject = x509.Name(
+        [x509.NameAttribute(
+            x509.oid.NameOID.COMMON_NAME, address[0]
+        )]
+    )
+    builder = x509.CertificateBuilder()
+    server_cert = test_ca.sign(name='server', cb=builder.subject_name(subject)
+                               .not_valid_before(datetime.datetime.utcnow())
+                               .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                               .serial_number(1)
+                               .public_key(server_key.public_key()))
+    return server_cert, server_key
+
+
+@pytest.fixture
+def test_ca():
+    if sys.version_info[0:2] < (3, 6):
+        pytest.skip('only works on Python 3.6 and newer')
+    import utils_35 as utils
+    return utils.TestCA()
+
+
+@pytest.fixture
+def server_key(test_ca):
+    server_key = test_ca.key('server')
+    return server_key
+
+
+@pytest.fixture()
+def root_ca_path(test_ca):
+    return test_ca.cert_path('root')
+
+
+@pytest.fixture
+def address():
+    return ('127.0.0.1', 1434)
+
+@pytest.fixture
+def server_cert(server_key, address, test_ca):
+    from cryptography import x509
+    builder = x509.CertificateBuilder()
+    subject = x509.Name(
+        [x509.NameAttribute(
+            x509.oid.NameOID.COMMON_NAME, address[0]
+        )]
+    )
+    server_cert = test_ca.sign(name='server', cb=builder.subject_name(subject)
+                               .not_valid_before(datetime.datetime.utcnow())
+                               .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                               .serial_number(x509.random_serial_number())
+                               .public_key(server_key.public_key()))
+    return server_cert
+
+
+def test_with_simple_server_req_encryption(server_cert, server_key, address, root_ca_path):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_REQ, cert=server_cert, key=server_key):
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+                autocommit=True,
+                cafile=root_ca_path):
+            pass
+
+
+def test_both_server_and_client_encryption_on(server_cert, server_key, address, root_ca_path):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
+        # test with both server and client configured for encryption
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                cafile=root_ca_path,
+                disable_connect_retry=True,
+                autocommit=True,
+        ) as _:
+            pass
+
+
+def test_server_has_enc_on_but_client_is_off(server_cert, server_key, address):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert, key=server_key):
+        # test with server having encrypt on but client has it off
+        # should throw exception in this case
+        with pytest.raises(pytds.Error) as excinfo:
+            pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+            )
+        assert 'not have encryption enabled but it is required by server' in str(excinfo.value)
+
+
+def test_only_login_encrypted(server_cert, server_key, address, root_ca_path):
+    # test login where only login is encrypted
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=server_cert, key=server_key):
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                cafile=root_ca_path,
+                disable_connect_retry=True,
+                enc_login_only=True,
+                autocommit=True,
+        ) as _:
+            pass
+
+
+def test_server_encryption_not_supported(address, root_ca_path):
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_NOT_SUP):
+        with pytest.raises(pytds.Error) as excinfo:
+            with pytds.connect(
+                    dsn=address[0],
+                    port=address[1],
+                    user="sa",
+                    password='password',
+                    disable_connect_retry=True,
+                    autocommit=True,
+                    cafile=root_ca_path):
+                pass
+        assert 'You requested encryption but it is not supported by server' in str(excinfo.value)
+
+
+def test_client_use_old_tds_version(address):
+    with SimpleServer(address=address, tds_version=0):
+        with pytest.raises(ValueError) as excinfo:
+            with pytds.connect(
+                    dsn=address[0],
+                    port=address[1],
+                    user="sa",
+                    password='password',
+                    disable_connect_retry=True,
+                    autocommit=True,
+                    tds_version=0,
+                    ):
+                pass
+        assert 'This TDS version is not supported' in str(excinfo.value)
+
+
+def test_server_with_bad_name_in_cert(test_ca, server_key, address, root_ca_path):
+    from cryptography import x509
+    builder = x509.CertificateBuilder()
+
+    # make a certificate with incorrect host name in the subject
+    bad_server_cert = test_ca.sign(name='badname', cb=builder.subject_name(x509.Name([
+        x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, 'badname')]))
+                                   .not_valid_before(datetime.datetime.utcnow())
+                                   .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                                   .serial_number(x509.random_serial_number())
+                                   .public_key(server_key.public_key()))
+
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=bad_server_cert, key=server_key):
+        with pytest.raises(pytds.Error) as excinfo:
+            pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+                cafile=root_ca_path,
+            )
+        assert 'Certificate does not match host name' in str(excinfo.value)
+
+
+def test_cert_with_san(test_ca, server_key, address, root_ca_path):
+    from cryptography import x509
+    builder = x509.CertificateBuilder()
+
+    # make certificate with matching SAN
+    server_cert_with_san = test_ca.sign(name='badname', cb=builder.subject_name(x509.Name([
+        x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, 'badname')]))
+                                   .not_valid_before(datetime.datetime.utcnow())
+                                   .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+                                   .serial_number(x509.random_serial_number())
+                                   .public_key(server_key.public_key())
+                                   .add_extension(x509.SubjectAlternativeName([x509.DNSName(address[0])]), critical=False)
+                                   )
+
+    with SimpleServer(address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=server_cert_with_san, key=server_key):
+        with pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password='password',
+                disable_connect_retry=True,
+                autocommit=True,
+                cafile=root_ca_path):
+            pass
+
+
+def test_ntlm():
+    # test NTLM packet generation without actual server
+    auth = pytds.login.NtlmAuth(user_name='testuser', password='password')
+    auth.create_packet()
+    # real packet from server
+    packet = b'NTLMSSP\x00\x02\x00\x00\x00\x07\x00\x07\x008\x00\x00\x00\x06\x82\x8a\xa2K@\xca\xe8' \
+             b'9H6:\x00\x00\x00\x00\x00\x00\x00\x00X\x00X\x00?\x00\x00\x00\n\x00\xab?\x00\x00\x00' \
+             b'\x0fMISHAPC\x02\x00\x0e\x00M\x00I\x00S\x00H\x00A\x00P\x00C\x00\x01\x00\x0e\x00M\x00' \
+             b'I\x00S\x00H\x00A\x00P\x00C\x00\x04\x00\x0e\x00m\x00i\x00s\x00h\x00a\x00p\x00c\x00' \
+             b'\x03\x00\x0e\x00m\x00i\x00s\x00h\x00a\x00p\x00c\x00\x07\x00\x08\x00\x8b\x08Y\xad' \
+             b'\xd3\x85\xd3\x01\x00\x00\x00\x00'
+    auth.handle_next(packet)
+
+
+def test_parse_server():
+    assert pytds._parse_server('.') == ('localhost', '')
+    assert pytds._parse_server('(local)') == ('localhost', '')
+
+
+def tls_send_all(tls, transport, bufsize):
+    while True:
+        try:
+            buf = tls.bio_read(bufsize)
+        except OpenSSL.SSL.WantReadError:
+            break
+        else:
+            logger.info('sending %d bytes', len(buf))
+            transport.send(buf)
+
+
+def do_handshake(tls, transport, bufsize):
+    handshake_done = False
+    while not handshake_done:
+        try:
+            tls.do_handshake()
+        except OpenSSL.SSL.WantReadError:
+            # first send everything we have
+            tls_send_all(tls=tls, transport=transport, bufsize=bufsize)
+            # now receive one block
+            buf = transport.recv(bufsize)
+            logger.info('received %d bytes', len(buf))
+            tls.bio_write(buf)
+        else:
+            handshake_done = True
+    # send remaining data, if any
+    tls_send_all(tls=tls, transport=transport, bufsize=bufsize)
+
+
+@pytest.mark.skipif(sys.version_info[0:2] < (3, 5), reason='requires python 3.5 or newer')
+def test_encrypted_socket(certificate_key):
+    certificate, key = certificate_key
+    client, server = socket.socketpair()
+    bufsize = 512
+    client.settimeout(1)
+    server.settimeout(1)
+
+    ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
+    ctx.set_options(OpenSSL.SSL.OP_NO_SSLv2)
+    ctx.set_options(OpenSSL.SSL.OP_NO_SSLv3)
+    ctx.use_certificate(OpenSSL.crypto.X509.from_cryptography(certificate))
+    ctx.use_privatekey(OpenSSL.crypto.PKey.from_cryptography_key(key))
+    serverconn = OpenSSL.SSL.Connection(ctx)
+    serverconn.set_accept_state()
+    clientconn = OpenSSL.SSL.Connection(ctx)
+    clientconn.set_connect_state()
+    def server_handler():
+        do_handshake(tls=serverconn, transport=server, bufsize=bufsize)
+        logger.info('handshake completed on server side')
+    server_thread = threading.Thread(
+        target=lambda: server_handler())
+    server_thread.start()
+    do_handshake(tls=clientconn, transport=client, bufsize=bufsize)
+    logger.info('handshake completed on client side')
+    #encclisocket = pytds.tls.EncryptedSocket(client, clientconn)
+
+
+def test_output_param_value_not_match_type():
+    with pytest.raises(ValueError) as ex:
+        pytds.output(param_type=int, value='hello')
+    assert 'value should match param_type, value is \'hello\', param_type is \'int\'' == str(ex.value)
+
+
+def test_tds_session_raise_db_exception():
+    tds = pytds.tds._TdsSocket()
+    sess = pytds.tds._TdsSession(tds=tds, transport=None, tzinfo_factory=None)
+    with pytest.raises(pytds.Error) as ex:
+        sess.raise_db_exception()
+    assert "Request failed, server didn't send error message" == str(ex.value)

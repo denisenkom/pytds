@@ -5,18 +5,12 @@ import datetime
 import six
 import socket
 import struct
-try:
-    import ssl
-except ImportError:
-    ssl = None
-    encryption_supported = False
-else:
-    encryption_supported = True
 
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 from . import tds_base
 from . import tds_types
-from .tds_base import readall, readall_fast, skipall
+from . import tls
+from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
 
 logger = logging.getLogger()
 
@@ -38,14 +32,7 @@ _int8_be = struct.Struct('>q')
 _uint8_le = struct.Struct('<Q')
 _uint8_be = struct.Struct('>Q')
 
-
-class SimpleLoadBalancer(object):
-    def __init__(self, hosts):
-        self._hosts = hosts
-
-    def choose(self):
-        for host in self._hosts:
-            yield host
+logging_enabled = False
 
 
 # stored procedure output parameter
@@ -76,7 +63,7 @@ class output(object):
                 raise ValueError('Output type cannot be autodetected')
         elif isinstance(param_type, type) and value is not None:
             if value is not default and not isinstance(value, param_type):
-                raise ValueError('value should match param_type', value, param_type)
+                raise ValueError('value should match param_type, value is {}, param_type is \'{}\''.format(repr(value), param_type.__name__))
         self._type = param_type
         self._value = value
 
@@ -114,14 +101,22 @@ class _TdsReader(object):
     different kinds of integers etc.
     """
     def __init__(self, session):
-        self._buf = ''
-        self._pos = 0  # position in the buffer
+        self._buf = bytearray(b'\x00' * 4096)
+        self._bufview = memoryview(self._buf)
+        self._pos = len(self._buf)  # position in the buffer
         self._have = 0  # number of bytes read from packet
         self._size = 0  # size of current packet
         self._session = session
         self._transport = session._transport
         self._type = None
         self._status = None
+
+    def set_block_size(self, size):
+        self._buf = bytearray(b'\x00' * size)
+        self._bufview = memoryview(self._buf)
+
+    def get_block_size(self):
+        return len(self._buf)
 
     @property
     def session(self):
@@ -146,16 +141,20 @@ class _TdsReader(object):
         :param size: Number of bytes to read
         :returns: Tuple of bytes buffer, and offset in this buffer
         """
-        if self._pos >= len(self._buf):
-            if self._have >= self._size:
-                self._read_packet()
-            else:
-                self._buf = self._transport.read(self._size - self._have)
-                self._pos = 0
-                self._have += len(self._buf)
+        if self._pos >= self._size:
+            self._read_packet()
         offset = self._pos
-        self._pos += size
+        to_read = min(size, self._size - self._pos)
+        self._pos += to_read
         return self._buf, offset
+
+    def recv(self, size):
+        if self._pos >= self._size:
+            self._read_packet()
+        offset = self._pos
+        to_read = min(size, self._size - self._pos)
+        self._pos += to_read
+        return self._buf[offset:offset+to_read]
 
     def unpack(self, struc):
         """ Unpacks given structure from stream
@@ -217,33 +216,6 @@ class _TdsReader(object):
         buf = readall(self, Collation.wire_size)
         return Collation.unpack(buf)
 
-    def unget_byte(self):
-        """ Returns one last read byte to stream
-
-        Can only be called once per read byte.
-        """
-        # this is a one trick pony...don't call it twice
-        assert self._pos > 0
-        self._pos -= 1
-
-    def peek(self):
-        """ Returns next byte from stream without consuming it
-        """
-        res = self.get_byte()
-        self.unget_byte()
-        return res
-
-    def read(self, size):
-        """ Reads size bytes from buffer
-
-        May return fewer bytes than requested
-        :param size: Number of bytes to read
-        :returns: Bytes buffer, possibly shorter than requested,
-                  returns empty buffer in case of EOF
-        """
-        buf, offset = self.read_fast(size)
-        return buf[offset:offset + size]
-
     def _read_packet(self):
         """ Reads next TDS packet from the underlying transport
 
@@ -253,16 +225,24 @@ class _TdsReader(object):
         of the packet.
         """
         try:
-            header = readall(self._transport, _header.size)
+            pos = 0
+            while pos < _header.size:
+                received = self._transport.recv_into(self._bufview[pos:_header.size-pos])
+                if received == 0:
+                    raise tds_base.ClosedConnectionError()
+                pos += received
         except tds_base.TimeoutError:
             self._session.put_cancel()
             raise
-        self._pos = 0
-        self._type, self._status, self._size, self._session._spid, _ = _header.unpack(header)
-        self._have = _header.size
-        assert self._size > self._have, 'Empty packet doesn make any sense'
-        self._buf = self._transport.read(self._size - self._have)
-        self._have += len(self._buf)
+        self._pos = _header.size
+        self._type, self._status, self._size, self._session._spid, _ = _header.unpack_from(self._bufview, 0)
+        self._have = pos
+        while pos < self._size:
+            received = self._transport.recv_into(self._bufview[pos:], self._size - pos)
+            if received == 0:
+                raise tds_base.ClosedConnectionError()
+            pos += received
+            self._have += received
 
     def read_whole_packet(self):
         """ Reads single packet and returns bytes payload of the packet
@@ -283,7 +263,7 @@ class _TdsWriter(object):
     def __init__(self, session, bufsize):
         self._session = session
         self._tds = session
-        self._transport = session
+        self._transport = session._transport
         self._pos = 0
         self._buf = bytearray(bufsize)
         self._packet_no = 0
@@ -333,10 +313,6 @@ class _TdsWriter(object):
         """ Writes 16-bit unsigned integer into the stream """
         self.pack(_usmallint_le, value)
 
-    def put_smallint_be(self, value):
-        """ Writes 16-bit signed big-endian integer into the stream """
-        self.pack(_smallint_be, value)
-
     def put_usmallint_be(self, value):
         """ Writes 16-bit unsigned big-endian integer into the stream """
         self.pack(_usmallint_be, value)
@@ -348,10 +324,6 @@ class _TdsWriter(object):
     def put_uint(self, value):
         """ Writes 32-bit unsigned integer into the stream """
         self.pack(_uint_le, value)
-
-    def put_int_be(self, value):
-        """ Writes 32-bit signed big-endian integer into the stream """
-        self.pack(_int_be, value)
 
     def put_uint_be(self, value):
         """ Writes 32-bit unsigned big-endian integer into the stream """
@@ -415,44 +387,8 @@ class _TdsWriter(object):
         status = 1 if final else 0
         _header.pack_into(self._buf, 0, self._type, status, self._pos, 0, self._packet_no)
         self._packet_no = (self._packet_no + 1) % 256
-        self._transport.send(self._buf[:self._pos], final)
+        self._transport.sendall(self._buf[:self._pos])
         self._pos = 8
-
-
-class MemoryChunkedHandler(object):
-    def __init__(self):
-        self.size = 0
-        self._chunks = []
-        self._column = None
-
-    def begin(self, column, size):
-        self.size = size
-        self._chunks = []
-        self._column = column
-
-    def new_chunk(self, val):
-        self._chunks.append(val)
-
-    def end(self):
-        return b''.join(self._chunks)
-
-
-class MemoryStrChunkedHandler(object):
-    def __init__(self):
-        self.size = 0
-        self._chunks = []
-        self._column = None
-
-    def begin(self, column, size):
-        self.size = size
-        self._chunks = []
-        self._column = column
-
-    def new_chunk(self, val):
-        self._chunks.append(val)
-
-    def end(self):
-        return ''.join(self._chunks)
 
 
 def _create_exception_by_message(msg, custom_error_msg=None):
@@ -502,7 +438,6 @@ class _TdsSession(object):
         self.state = tds_base.TDS_IDLE
         self._tds = tds
         self.messages = []
-        self.chunk_handler = tds.chunk_handler
         self.rows_affected = -1
         self.use_tz = tds.use_tz
         self._spid = 0
@@ -516,6 +451,11 @@ class _TdsSession(object):
         self._out_params_indexes = []
         self.row = None
         self.end_marker = 0
+
+    def log_response_message(self, msg):
+        # logging is disabled by default
+        if logging_enabled:
+            logger.info('[%d] %s', self._spid, msg)
 
     def __repr__(self):
         fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={} in_cancel={}>"
@@ -550,7 +490,11 @@ class _TdsSession(object):
         """
         r = self._reader
         # User defined data type of the column
-        curcol.column_usertype = r.get_uint() if tds_base.IS_TDS72_PLUS(self) else r.get_usmallint()
+        if tds_base.IS_TDS72_PLUS(self):
+            user_type = r.get_uint()
+        else:
+            user_type = r.get_usmallint()
+        curcol.column_usertype = user_type
         curcol.flags = r.get_usmallint()  # Flags
         type_id = r.get_byte()
         serializer_class = self._tds.type_factory.get_type_serializer(type_id)
@@ -562,6 +506,7 @@ class _TdsSession(object):
         This stream contains a list of returned columns.
         Stream format link: http://msdn.microsoft.com/en-us/library/dd357363.aspx
         """
+        self.log_response_message('got COLMETADATA')
         r = self._reader
 
         # read number of columns and allocate the columns structure
@@ -613,6 +558,7 @@ class _TdsSession(object):
         This stream is used to send OUTPUT parameters from RPC to client.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd303881.aspx
         """
+        self.log_response_message('got RETURNVALUE message')
         r = self._reader
         if tds_base.IS_TDS72_PLUS(self):
             ordinal = r.get_usmallint()
@@ -636,6 +582,7 @@ class _TdsSession(object):
 
         In case when no cancel request is pending this function does nothing.
         """
+        self.log_response_message('got CANCEL message')
         # silly cases, nothing to do
         if not self.in_cancel:
             return
@@ -656,22 +603,12 @@ class _TdsSession(object):
 
         :param marker: TDS_ERROR_TOKEN or TDS_INFO_TOKEN
         """
+        self.log_response_message('got ERROR/INFO message')
         r = self._reader
         r.get_smallint()  # size
         msg = {'marker': marker, 'msgno': r.get_int(), 'state': r.get_byte(), 'severity': r.get_byte(),
                'sql_state': None}
-        has_eed = False
-        if marker == tds_base.TDS_EED_TOKEN:
-            if msg['severity'] <= 10:
-                msg['priv_msg_type'] = 0
-            else:
-                msg['priv_msg_type'] = 1
-            len_sqlstate = r.get_byte()
-            msg['sql_state'] = readall(r, len_sqlstate)
-            has_eed = r.get_byte()
-            # junk status and transaction state
-            r.get_smallint()
-        elif marker == tds_base.TDS_INFO_TOKEN:
+        if marker == tds_base.TDS_INFO_TOKEN:
             msg['priv_msg_type'] = 0
         elif marker == tds_base.TDS_ERROR_TOKEN:
             msg['priv_msg_type'] = 1
@@ -684,16 +621,6 @@ class _TdsSession(object):
         msg['proc_name'] = r.read_ucs2(r.get_byte())
         msg['line_number'] = r.get_int() if tds_base.IS_TDS72_PLUS(self) else r.get_smallint()
         # in case extended error data is sent, we just try to discard it
-        if has_eed:
-            while True:
-                next_marker = r.get_byte()
-                if next_marker in (tds_base.TDS5_PARAMFMT_TOKEN,
-                                   tds_base.TDS5_PARAMFMT2_TOKEN,
-                                   tds_base.TDS5_PARAMS_TOKEN):
-                    self.process_token(next_marker)
-                else:
-                    break
-            r.unget_byte()
 
         # special case
         self.messages.append(msg)
@@ -704,6 +631,7 @@ class _TdsSession(object):
         This stream contains list of values of one returned row.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd357254.aspx
         """
+        self.log_response_message("got ROW message")
         r = self._reader
         info = self.res_info
         info.row_count += 1
@@ -717,6 +645,7 @@ class _TdsSession(object):
         introduced in TDS 7.3.B
         Stream format url: http://msdn.microsoft.com/en-us/library/dd304783.aspx
         """
+        self.log_response_message("got NBCROW message")
         r = self._reader
         info = self.res_info
         if not info:
@@ -743,10 +672,6 @@ class _TdsSession(object):
         r = self._reader
         skipall(r, r.get_smallint())
 
-    def process_orderby2(self):
-        r = self._reader
-        skipall(r, r.get_int())
-
     def process_end(self, marker):
         """ Reads and processes DONE/DONEINPROC/DONEPROC streams
 
@@ -758,6 +683,11 @@ class _TdsSession(object):
 
         :param marker: Can be TDS_DONE_TOKEN or TDS_DONEINPROC_TOKEN or TDS_DONEPROC_TOKEN
         """
+        code_to_str = {
+            tds_base.TDS_DONE_TOKEN: 'DONE',
+            tds_base.TDS_DONEINPROC_TOKEN: 'DONEINPROC',
+            tds_base.TDS_DONEPROC_TOKEN: 'DONEPROC',
+        }
         self.end_marker = marker
         self.more_rows = False
         r = self._reader
@@ -769,6 +699,8 @@ class _TdsSession(object):
         if self.res_info:
             self.res_info.more_results = more_results
         rows_affected = r.get_int8() if tds_base.IS_TDS72_PLUS(self) else r.get_int()
+        self.log_response_message("got {} message, more_res={}, cancelled={}, rows_affected={}".format(
+            code_to_str[marker], more_results, was_cancelled, rows_affected))
         if was_cancelled or (not more_results and not self.in_cancel):
             self.in_cancel = False
             self.set_state(tds_base.TDS_IDLE)
@@ -785,12 +717,14 @@ class _TdsSession(object):
 
         Stream info url: http://msdn.microsoft.com/en-us/library/dd303449.aspx
         """
+        self.log_response_message("got ENVCHANGE message")
         r = self._reader
         size = r.get_smallint()
         type_id = r.get_byte()
         if type_id == tds_base.TDS_ENV_SQLCOLLATION:
             size = r.get_byte()
             self.conn.collation = r.get_collation()
+            logger.info('switched collation to %s', self.conn.collation)
             skipall(r, size - 5)
             # discard old one
             skipall(r, r.get_byte())
@@ -815,25 +749,47 @@ class _TdsSession(object):
                 self._writer.bufsize = new_block_size
         elif type_id == tds_base.TDS_ENV_DATABASE:
             newval = r.read_ucs2(r.get_byte())
+            logger.info('switched to database %s', newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.database = newval
         elif type_id == tds_base.TDS_ENV_LANG:
             newval = r.read_ucs2(r.get_byte())
+            logger.info('switched language to %s', newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.language = newval
         elif type_id == tds_base.TDS_ENV_CHARSET:
             newval = r.read_ucs2(r.get_byte())
+            logger.info('switched charset to %s', newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.charset = newval
             remap = {'iso_1': 'iso8859-1'}
             self.conn.server_codec = codecs.lookup(remap.get(newval, newval))
         elif type_id == tds_base.TDS_ENV_DB_MIRRORING_PARTNER:
-            r.read_ucs2(r.get_byte())
+            newval = r.read_ucs2(r.get_byte())
+            logger.info('got mirroring partner %s', newval)
             r.read_ucs2(r.get_byte())
         elif type_id == tds_base.TDS_ENV_LCID:
             lcid = int(r.read_ucs2(r.get_byte()))
+            logger.info('switched lcid to %s', lcid)
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
+        elif type_id == tds_base.TDS_ENV_UNICODE_DATA_SORT_COMP_FLAGS:
+            old_comp_flags = r.read_ucs2(r.get_byte())
+            comp_flags = r.read_ucs2(r.get_byte())
+            self.conn.comp_flags = comp_flags
+        elif type_id == 20:
+            # routing
+            sz = r.get_usmallint()
+            protocol = r.get_byte()
+            protocol_property = r.get_usmallint()
+            alt_server = r.read_ucs2(r.get_usmallint())
+            logger.info('got routing info proto=%d proto_prop=%d alt_srv=%s', protocol, protocol_property, alt_server)
+            self.conn.route = {
+                'server': alt_server,
+                'port': protocol_property,
+            }
+            # OLDVALUE = 0x00, 0x00
+            r.get_usmallint()
         else:
             logger.warning("unknown env type: {0}, skipping".format(type_id))
             # discard byte values, not still supported
@@ -1015,7 +971,7 @@ class _TdsSession(object):
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name, params, flags):
+    def submit_rpc(self, rpc_name, params, flags=0):
         """ Sends an RPC request.
 
         This call will transition session into pending state.
@@ -1028,12 +984,13 @@ class _TdsSession(object):
         :param params: Stored proc parameters, should be a list of :class:`Column` instances.
         :param flags: See spec for possible flags.
         """
+        logger.info('Sending RPC %s flags=%d', rpc_name, flags)
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()
         self.res_info = None
         w = self._writer
-        with self.querying_context(tds_base.TDS_RPC):
+        with self.querying_context(tds_base.PacketType.RPC):
             if tds_base.IS_TDS72_PLUS(self):
                 self._start_query()
             if tds_base.IS_TDS71_PLUS(self) and isinstance(rpc_name, tds_base.InternalProc):
@@ -1088,8 +1045,9 @@ class _TdsSession(object):
         self.messages = []
         self.cancel_if_pending()
         self.res_info = None
+        logger.info("Sending query %s", operation[:100])
         w = self._writer
-        with self.querying_context(tds_base.TDS_QUERY):
+        with self.querying_context(tds_base.PacketType.QUERY):
             if tds_base.IS_TDS72_PLUS(self):
                 self._start_query()
             w.write_ucs2(operation)
@@ -1103,10 +1061,11 @@ class _TdsSession(object):
         :param rows: A collection of rows, each row is a collection of values.
         :return:
         """
+        logger.info('Sending INSERT BULK')
         num_cols = len(metadata)
         w = self._writer
         serializers = []
-        with self.querying_context(tds_base.TDS_BULK):
+        with self.querying_context(tds_base.PacketType.BULK):
             w.put_byte(tds_base.TDS7_RESULT_TOKEN)
             w.put_usmallint(num_cols)
             for col in metadata:
@@ -1130,9 +1089,11 @@ class _TdsSession(object):
                 for i, col in enumerate(metadata):
                     serializers[i].write(w, row[i])
 
+            # https://msdn.microsoft.com/en-us/library/dd340421.aspx
             w.put_byte(tds_base.TDS_DONE_TOKEN)
             w.put_usmallint(tds_base.TDS_DONE_FINAL)
             w.put_usmallint(0)  # curcmd
+            # row count
             if tds_base.IS_TDS72_PLUS(self):
                 w.put_int8(0)
             else:
@@ -1143,13 +1104,15 @@ class _TdsSession(object):
 
         Switches connection to IN_CANCEL state.
         """
-        self._writer.begin_packet(tds_base.TDS_CANCEL)
+        logger.info('Sending CANCEL')
+        self._writer.begin_packet(tds_base.PacketType.CANCEL)
         self._writer.flush()
         self.in_cancel = 1
 
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
     def begin_tran(self, isolation_level=0):
+        logger.info('Sending BEGIN TRAN il=%x', isolation_level)
         self.submit_begin_tran(isolation_level=isolation_level)
         self.process_simple_request()
 
@@ -1158,7 +1121,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.querying_context(tds_base.TDS7_TRANS):
+            with self.querying_context(tds_base.PacketType.TRANS):
                 self._start_query()
                 w.pack(
                     self._begin_tran_struct_72,
@@ -1174,6 +1137,7 @@ class _TdsSession(object):
     _continue_tran_struct72 = struct.Struct('<BB')
 
     def rollback(self, cont, isolation_level=0):
+        logger.info('Sending ROLLBACK TRAN')
         self.submit_rollback(cont, isolation_level=isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
         self._tds.sock.settimeout(None)
@@ -1187,7 +1151,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.querying_context(tds_base.TDS7_TRANS):
+            with self.querying_context(tds_base.PacketType.TRANS):
                 self._start_query()
                 flags = 0
                 if cont:
@@ -1210,6 +1174,7 @@ class _TdsSession(object):
             self.conn.tds72_transaction = 1 if cont else 0
 
     def commit(self, cont, isolation_level=0):
+        logger.info('Sending COMMIT TRAN')
         self.submit_commit(cont, isolation_level=isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
         self._tds.sock.settimeout(None)
@@ -1223,7 +1188,7 @@ class _TdsSession(object):
             self.messages = []
             self.cancel_if_pending()
             w = self._writer
-            with self.querying_context(tds_base.TDS7_TRANS):
+            with self.querying_context(tds_base.PacketType.TRANS):
                 self._start_query()
                 flags = 0
                 if cont:
@@ -1257,80 +1222,81 @@ class _TdsSession(object):
                1,  # request count
                )
 
-    VERSION = 0
-    ENCRYPTION = 1
-    INSTOPT = 2
-    THREADID = 3
-    MARS = 4
-    TRACEID = 5
-    TERMINATOR = 0xff
-
     def send_prelogin(self, login):
+        from . import intversion
+        # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
         instance_name = instance_name.encode('ascii')
-        encryption_level = login.encryption_level
         if len(instance_name) > 65490:
             raise ValueError('Instance name is too long')
-        if encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE:
-            raise tds_base.NotSupportedError('Client requested encryption but it is not supported')
         if tds_base.IS_TDS72_PLUS(self):
             start_pos = 26
             buf = struct.pack(
                 b'>BHHBHHBHHBHHBHHB',
                 # netlib version
-                self.VERSION, start_pos, 6,
+                PreLoginToken.VERSION, start_pos, 6,
                 # encryption
-                self.ENCRYPTION, start_pos + 6, 1,
+                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
                 # instance
-                self.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
                 # thread id
-                self.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
                 # MARS enabled
-                self.MARS, start_pos + 6 + 1 + len(instance_name) + 1 + 4, 1,
+                PreLoginToken.MARS, start_pos + 6 + 1 + len(instance_name) + 1 + 4, 1,
                 # end
-                self.TERMINATOR
+                PreLoginToken.TERMINATOR
                 )
         else:
             start_pos = 21
             buf = struct.pack(
                 b'>BHHBHHBHHBHHB',
                 # netlib version
-                self.VERSION, start_pos, 6,
+                PreLoginToken.VERSION, start_pos, 6,
                 # encryption
-                self.ENCRYPTION, start_pos + 6, 1,
+                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
                 # instance
-                self.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
                 # thread id
-                self.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
                 # end
-                self.TERMINATOR
+                PreLoginToken.TERMINATOR
                 )
         assert start_pos == len(buf)
         w = self._writer
-        w.begin_packet(tds_base.TDS71_PRELOGIN)
+        w.begin_packet(tds_base.PacketType.PRELOGIN)
         w.write(buf)
-        from . import intversion
         w.put_uint_be(intversion)
         w.put_usmallint_be(0)  # build number
-        # encryption
-        if tds_base.ENCRYPTION_ENABLED and encryption_supported:
-            w.put_byte(1 if encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE else 0)
-        else:
-            # not supported
-            w.put_byte(2)
+        # encryption flag
+        w.put_byte(login.enc_flag)
         w.write(instance_name)
         w.put_byte(0)  # zero terminate instance_name
         w.put_int(0)  # TODO: change this to thread id
+        attribs = {
+            'lib_ver': '%x' % intversion,
+            'enc_flag': '%x' % login.enc_flag,
+            'inst_name': instance_name,
+        }
         if tds_base.IS_TDS72_PLUS(self):
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
+            attribs['mars'] = login.use_mars
+        logger.info('Sending PRELOGIN %s', ' '.join('%s=%s' % (n, v) for n, v in attribs.items()))
+
         w.flush()
 
     def process_prelogin(self, login):
+        # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         p = self._reader.read_whole_packet()
         size = len(p)
-        if size <= 0 or self._reader.packet_type != 4:
+        if size <= 0 or self._reader.packet_type != tds_base.PacketType.REPLY:
             self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
+        self.parse_prelogin(octets=p, login=login)
+
+    def parse_prelogin(self, octets, login):
+        # https://msdn.microsoft.com/en-us/library/dd357559.aspx
+        size = len(octets)
+        p = octets
         # default 2, no certificate, no encryptption
         crypt_flag = 2
         i = 0
@@ -1341,31 +1307,54 @@ class _TdsSession(object):
             if i >= size:
                 self.bad_stream('Invalid size of PRELOGIN structure')
             type_id, = byte_struct.unpack_from(p, i)
-            if type_id == 0xff:
+            if type_id == PreLoginToken.TERMINATOR:
                 break
             if i + 4 > size:
                 self.bad_stream('Invalid size of PRELOGIN structure')
             off, l = off_len_struct.unpack_from(p, i + 1)
             if off > size or off + l > size:
                 self.bad_stream('Invalid offset in PRELOGIN structure')
-            if type_id == self.VERSION:
+            if type_id == PreLoginToken.VERSION:
                 self.conn.server_library_version = prod_version_struct.unpack_from(p, off)
-            elif type_id == self.ENCRYPTION and l >= 1:
+            elif type_id == PreLoginToken.ENCRYPTION and l >= 1:
                 crypt_flag, = byte_struct.unpack_from(p, off)
-            elif type_id == self.MARS:
+            elif type_id == PreLoginToken.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
-            elif type_id == self.INSTOPT:
+            elif type_id == PreLoginToken.INSTOPT:
                 # ignore instance name mismatch
                 pass
             i += 5
+        logger.info("Got PRELOGIN response crypt=%x mars=%d",
+                    crypt_flag, self.conn._mars_enabled)
         # if server do not has certificate do normal login
-        if crypt_flag == 2:
-            if login.encryption_level >= tds_base.TDS_ENCRYPTION_REQUIRE:
-                raise tds_base.Error('Server required encryption but it is not supported')
-            return
-        # self.sock = ssl.wrap_socket(self.sock, ssl_version=ssl.PROTOCOL_SSLv3)
+        login.server_enc_flag = crypt_flag
+        if crypt_flag == PreLoginEnc.ENCRYPT_OFF:
+            if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
+                raise self.bad_stream('Server returned unexpected ENCRYPT_ON value')
+            else:
+                # encrypt login packet only
+                tls.establish_channel(self)
+        elif crypt_flag == PreLoginEnc.ENCRYPT_ON:
+            # encrypt entire connection
+            tls.establish_channel(self)
+        elif crypt_flag == PreLoginEnc.ENCRYPT_REQ:
+            if login.enc_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
+                # connection terminated by server and client
+                raise tds_base.Error('Client does not have encryption enabled but it is required by server, '
+                                     'enable encryption and try connecting again')
+            else:
+                # encrypt entire connection
+                tls.establish_channel(self)
+        elif crypt_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
+            if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
+                # connection terminated by server and client
+                raise tds_base.Error('You requested encryption but it is not supported by server')
+            # do not encrypt anything
+        else:
+            self.bad_stream('Unexpected value of enc_flag returned by server: {}'.format(crypt_flag))
 
     def tds7_send_login(self, login):
+        # https://msdn.microsoft.com/en-us/library/dd304019.aspx
         option_flag2 = login.option_flag2
         user_name = login.user_name
         if len(user_name) > 128:
@@ -1387,7 +1376,7 @@ class _TdsSession(object):
         if len(login.attach_db_file) > 260:
             raise ValueError('File path should be not longer than 260 characters')
         w = self._writer
-        w.begin_packet(tds_base.TDS7_LOGIN)
+        w.begin_packet(tds_base.PacketType.LOGIN)
         self.authentication = None
         current_pos = 86 + 8 if tds_base.IS_TDS72_PLUS(self) else 86
         client_host_name = login.client_host_name
@@ -1422,6 +1411,10 @@ class _TdsSession(object):
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
         mins_fix = int(login.client_tz.utcoffset(datetime.datetime.now()).total_seconds()) // 60
+        logger.info('Sending LOGIN tds_ver=%x bufsz=%d pid=%d opt1=%x opt2=%x opt3=%x cli_tz=%d cli_lcid=%s '
+                    'cli_host=%s lang=%s db=%s',
+                    login.tds_version, w.bufsize, login.pid, option_flag1, option_flag2, option_flag3, mins_fix,
+                    login.client_lcid, client_host_name, login.language, login.database)
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)
@@ -1509,6 +1502,7 @@ class _TdsSession(object):
         while True:
             marker = r.get_byte()
             if marker == tds_base.TDS_LOGINACK_TOKEN:
+                # https://msdn.microsoft.com/en-us/library/dd340651.aspx
                 succeed = True
                 size = r.get_smallint()
                 r.get_byte()  # interface
@@ -1522,12 +1516,14 @@ class _TdsSession(object):
                 size -= 10
                 self.conn.product_name = r.read_ucs2(size // 2)
                 product_version = r.get_uint_be()
+                logger.info('Got LOGINACK tds_ver=%x srv_name=%s srv_ver=%x',
+                            self.conn.tds_version, self.conn.product_name, product_version)
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
-                if self.conn.authentication:
-                    self.conn.authentication.close()
-                    self.conn.authentication = None
+                if self.authentication:
+                    self.authentication.close()
+                    self.authentication = None
             else:
                 self.process_token(marker)
                 if marker == tds_base.TDS_DONE_TOKEN:
@@ -1535,6 +1531,7 @@ class _TdsSession(object):
         return succeed
 
     def process_returnstatus(self):
+        self.log_response_message('got RETURNSTATUS message')
         self.ret_status = self._reader.get_int()
         self.has_status = True
 
@@ -1561,10 +1558,8 @@ class _TdsSession(object):
             marker = self.get_token_id()
             if marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN, tds_base.TDS_DONEINPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
-                    # skip results that don't event have rowcount
-                    continue
-                return
+                if not self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
+                    return
             else:
                 self.process_token(marker)
 
@@ -1614,9 +1609,6 @@ class _TdsSession(object):
                 if self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
                     if self.done_flags & tds_base.TDS_DONE_COUNT:
                         return True
-                    else:
-                        # skip results without rowcount
-                        continue
                 else:
                     return False
             else:
@@ -1639,6 +1631,11 @@ class _TdsSession(object):
             else:
                 self.process_token(marker)
 
+    def complete_rpc(self):
+        # go through all result sets
+        while self.next_set():
+            pass
+
     def find_return_status(self):
         self.skipped_to_status = True
         while True:
@@ -1656,27 +1653,26 @@ _token_map = {
     tds_base.TDS_DONEINPROC_TOKEN: lambda self: self.process_end(tds_base.TDS_DONEINPROC_TOKEN),
     tds_base.TDS_ERROR_TOKEN: lambda self: self.process_msg(tds_base.TDS_ERROR_TOKEN),
     tds_base.TDS_INFO_TOKEN: lambda self: self.process_msg(tds_base.TDS_INFO_TOKEN),
-    tds_base.TDS_EED_TOKEN: lambda self: self.process_msg(tds_base.TDS_EED_TOKEN),
     tds_base.TDS_CAPABILITY_TOKEN: lambda self: self.process_msg(tds_base.TDS_CAPABILITY_TOKEN),
     tds_base.TDS_PARAM_TOKEN: lambda self: self.process_param(),
     tds_base.TDS7_RESULT_TOKEN: lambda self: self.tds7_process_result(),
     tds_base.TDS_ROW_TOKEN: lambda self: self.process_row(),
     tds_base.TDS_NBC_ROW_TOKEN: lambda self: self.process_nbcrow(),
-    tds_base.TDS_ORDERBY2_TOKEN: lambda self: self.process_orderby2(),
     tds_base.TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
     tds_base.TDS_RETURNSTATUS_TOKEN: lambda self: self.process_returnstatus(),
     }
 
 
+# this class represents root TDS connection
+# if MARS is used it can have multiple sessions represented by _TdsSession class
+# if MARS is not used it would have single _TdsSession instance
 class _TdsSocket(object):
     def __init__(self, use_tz=None):
         self._is_connected = False
         self.env = _TdsEnv()
         self.collation = None
         self.tds72_transaction = 0
-        self.authentication = None
         self._mars_enabled = False
-        self.chunk_handler = MemoryChunkedHandler()
         self.sock = None
         self.bufsize = 4096
         self.tds_version = tds_base.TDS74
@@ -1687,6 +1683,7 @@ class _TdsSocket(object):
         self._smp_manager = None
         self._main_session = None
         self._login = None
+        self.route = None
 
     def __repr__(self):
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
@@ -1697,18 +1694,25 @@ class _TdsSocket(object):
         self._login = login
         self.bufsize = login.blocksize
         self.query_timeout = login.query_timeout
-        self._main_session = _TdsSession(self, self, tzinfo_factory)
+        self._main_session = _TdsSession(self, sock, tzinfo_factory)
         self.sock = sock
         self.tds_version = login.tds_version
+        login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         if tds_base.IS_TDS71_PLUS(self):
             self._main_session.send_prelogin(login)
             self._main_session.process_prelogin(login)
-        if tds_base.IS_TDS7_PLUS(self):
-            self._main_session.tds7_send_login(login)
-        else:
-            raise ValueError('This TDS version is not supported')
+        self._main_session.tds7_send_login(login)
+        if login.server_enc_flag == PreLoginEnc.ENCRYPT_OFF:
+            tls.revert_to_clear(self._main_session)
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()
+        if self.route is not None:
+            return self.route
+
+        # update block size if server returned different one
+        if self._main_session._writer.bufsize != self._main_session._reader.get_block_size():
+            self._main_session._reader.set_block_size(self._main_session._writer.bufsize)
+
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
         self.type_inferrer = tds_types.TdsTypeInferrer(
             type_factory=self.type_factory,
@@ -1716,23 +1720,21 @@ class _TdsSocket(object):
             bytes_to_unicode=self._login.bytes_to_unicode,
             allow_tz=not self.use_tz
         )
-        text_size = login.text_size
         if self._mars_enabled:
             from .smp import SmpManager
-            self._smp_manager = SmpManager(self)
+            self._smp_manager = SmpManager(self.sock)
             self._main_session = _TdsSession(
                 self,
                 self._smp_manager.create_session(),
                 tzinfo_factory)
         self._is_connected = True
         q = []
-        if text_size:
-            q.append('set textsize {0}'.format(int(text_size)))
         if login.database and self.env.database != login.database:
             q.append('use ' + tds_base.tds_quote_id(login.database))
         if q:
             self._main_session.submit_plain_query(''.join(q))
             self._main_session.process_simple_request()
+        return None
 
     @property
     def mars_enabled(self):
@@ -1747,28 +1749,6 @@ class _TdsSocket(object):
             self, self._smp_manager.create_session(),
             tzinfo_factory)
 
-    def read(self, size):
-        buf = self.sock.recv(size)
-        if len(buf) == 0:
-            self.close()
-            raise tds_base.ClosedConnectionError()
-        return buf
-
-    def _write(self, data, final):
-        try:
-            flags = 0
-            if hasattr(socket, 'MSG_NOSIGNAL'):
-                flags |= socket.MSG_NOSIGNAL
-            if not final:
-                if hasattr(socket, 'MSG_MORE'):
-                    flags |= socket.MSG_MORE
-            self.sock.sendall(data, flags)
-        except:
-            self.close()
-            raise
-
-    send = _write
-
     def is_connected(self):
         return self._is_connected
 
@@ -1779,9 +1759,9 @@ class _TdsSocket(object):
         if self._smp_manager:
             self._smp_manager.transport_closed()
         self._main_session.state = tds_base.TDS_DEAD
-        if self.authentication:
-            self.authentication.close()
-            self.authentication = None
+        if self._main_session.authentication:
+            self._main_session.authentication.close()
+            self._main_session.authentication = None
 
 
 class _Results(object):

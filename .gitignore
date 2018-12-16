@@ -17,3 +17,6 @@ RELEASE-VERSION
 .idea/
 docs/_build
 .tox/
+/.test-cache/
+/.cache/
+/.pytest_cache/

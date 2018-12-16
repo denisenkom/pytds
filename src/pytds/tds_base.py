@@ -18,18 +18,21 @@ IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
 IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
 IS_TDS73_PLUS = lambda x: x.tds_version >= TDS73A
 
-# packet types
-TDS_QUERY = 1
-TDS_LOGIN = 2
-TDS_RPC = 3
-TDS_REPLY = 4
-TDS_CANCEL = 6
-TDS_BULK = 7
-TDS7_TRANS = 14  # transaction management
-TDS_NORMAL = 15
-TDS7_LOGIN = 16
-TDS7_AUTH = 17
-TDS71_PRELOGIN = 18
+
+# https://msdn.microsoft.com/en-us/library/dd304214.aspx
+class PacketType:
+    QUERY = 1
+    OLDLOGIN = 2
+    RPC = 3
+    REPLY = 4
+    CANCEL = 6
+    BULK = 7
+    FEDAUTHTOKEN = 8
+    TRANS = 14  # transaction management
+    LOGIN = 16
+    AUTH = 17
+    PRELOGIN = 18
+
 
 # mssql login options flags
 # option_flag1_values
@@ -100,7 +103,6 @@ TDS_CMP_ROW_TOKEN = 211  # 0xD3
 TDS5_PARAMS_TOKEN = 215  # 0xD7    TDS 5.0 only
 TDS_CAPABILITY_TOKEN = 226  # 0xE2
 TDS_ENVCHANGE_TOKEN = 227  # 0xE3
-TDS_EED_TOKEN = 229  # 0xE5
 TDS_DBRPC_TOKEN = 230  # 0xE6
 TDS5_DYNAMIC_TOKEN = 231  # 0xE7    TDS 5.0 only
 TDS5_PARAMFMT_TOKEN = 236  # 0xEC    TDS 5.0 only
@@ -124,6 +126,7 @@ TDS_ENV_LANG = 2
 TDS_ENV_CHARSET = 3
 TDS_ENV_PACKSIZE = 4
 TDS_ENV_LCID = 5
+TDS_ENV_UNICODE_DATA_SORT_COMP_FLAGS = 6
 TDS_ENV_SQLCOLLATION = 7
 TDS_ENV_BEGINTRANS = 8
 TDS_ENV_COMMITTRANS = 9
@@ -269,11 +272,26 @@ TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
+class PreLoginToken:
+    VERSION = 0
+    ENCRYPTION = 1
+    INSTOPT = 2
+    THREADID = 3
+    MARS = 4
+    TRACEID = 5
+    FEDAUTHREQUIRED = 6
+    NONCEOPT = 7
+    TERMINATOR = 0xff
+
+class PreLoginEnc:
+    ENCRYPT_OFF = 0  # Encryption available but off
+    ENCRYPT_ON = 1  # Encryption available and on
+    ENCRYPT_NOT_SUP = 2  # Encryption not available
+    ENCRYPT_REQ = 3  # Encryption required
+
 PLP_MARKER = 0xffff
 PLP_NULL = 0xffffffffffffffff
 PLP_UNKNOWN = 0xfffffffffffffffe
-
-ENCRYPTION_ENABLED = False
 
 TDS_NO_COUNT = -1
 
@@ -354,10 +372,15 @@ if sys.version_info[0] >= 3:
     def my_ord(val):
         return val
 
+    def join_bytearrays(ba):
+        return b''.join(ba)
+
 else:
     exc_base_class = StandardError
     my_ord = ord
 
+    def join_bytearrays(bas):
+        return b''.join(bytes(ba) for ba in bas)
 
 # exception hierarchy
 class Warning(exc_base_class):
@@ -466,6 +489,8 @@ class InternalProc(object):
         return self.name
 
 SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
+SP_PREPARE = InternalProc(TDS_SP_PREPARE, 'sp_prepare')
+SP_EXECUTE = InternalProc(TDS_SP_EXECUTE, 'sp_execute')
 
 
 def skipall(stm, size):
@@ -479,14 +504,14 @@ def skipall(stm, size):
                 number of bytes.
     :param size: Number of bytes to skip.
     """
-    res = stm.read(size)
+    res = stm.recv(size)
     if len(res) == size:
         return
     elif len(res) == 0:
         raise ClosedConnectionError()
     left = size - len(res)
     while left:
-        buf = stm.read(left)
+        buf = stm.recv(left)
         if len(buf) == 0:
             raise ClosedConnectionError()
         left -= len(buf)
@@ -509,13 +534,13 @@ def read_chunks(stm, size):
         yield b''
         return
 
-    res = stm.read(size)
+    res = stm.recv(size)
     if len(res) == 0:
         raise ClosedConnectionError()
     yield res
     left = size - len(res)
     while left:
-        buf = stm.read(left)
+        buf = stm.recv(left)
         if len(buf) == 0:
             raise ClosedConnectionError()
         yield buf
@@ -536,7 +561,7 @@ def readall(stm, size):
     :param size: Number of bytes to read.
     :returns: Bytes buffer of exactly given size.
     """
-    return b''.join(read_chunks(stm, size))
+    return join_bytearrays(read_chunks(stm, size))
 
 
 def readall_fast(stm, size):
@@ -553,7 +578,7 @@ def readall_fast(stm, size):
     if len(buf) - offset < size:
         # slow case
         buf = buf[offset:]
-        buf += stm.read(size - len(buf))
+        buf += stm.recv(size - len(buf))
         return buf, 0
     return buf, offset
 
@@ -584,10 +609,15 @@ class Column(CommonEqualityMixin):
         self.serializer = None
 
     def __repr__(self):
-        return '<Column(name={},value={},type={},flags={},user_type={},codec={})>'.format(
+        val = self.value
+        if isinstance(val, bytes) and len(self.value) > 100:
+            val = self.value[:100] + b'... len is ' + str(len(val)).encode('ascii')
+        if isinstance(val, six.text_type) and len(self.value) > 100:
+            val = self.value[:100] + '... len is ' + str(len(val))
+        return '<Column(name={},type={},value={},flags={},user_type={},codec={})>'.format(
             repr(self.column_name),
-            repr(self.value),
             repr(self.type),
+            repr(val),
             repr(self.flags),
             repr(self.column_usertype),
             repr(self.char_codec),

@@ -10,14 +10,14 @@ import socket
 import uuid
 import warnings
 import weakref
+import logging
 
 from six.moves import xrange
 
 from pytds.tds_types import NVarCharType
 from . import lcid
-from . import tz
+import pytds.tz
 from .tds import (
-    SimpleLoadBalancer,
     _TdsSocket, tds7_get_instances,
     _create_exception_by_message,
     output, default
@@ -28,8 +28,8 @@ from .tds_base import (
     IntegrityError, DataError, InternalError,
     InterfaceError, TimeoutError, OperationalError,
     NotSupportedError, Warning, ClosedConnectionError,
-    Column
-)
+    Column,
+    PreLoginEnc)
 
 from .tds_types import (
     TableValuedParam, Binary
@@ -39,13 +39,22 @@ from .tds_base import (
     ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML
 )
 
+from . import tls
+import pkg_resources
+
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = '1.8.2'
+__version__ = pkg_resources.get_distribution('python-tds').version
+
+logger = logging.getLogger(__name__)
 
 
 def _ver_to_int(ver):
-    maj, minor, rev = ver.split('.')
-    return (int(maj) << 24) + (int(minor) << 16) + (int(rev) << 8)
+    res = ver.split('.')
+    if len(res) < 2:
+        logger.warning('Invalid version {}, it should have 2 parts at least separated by "."'.format(ver))
+        return 0
+    maj, minor, _ = ver.split('.')
+    return (int(maj) << 24) + (int(minor) << 16)
 
 
 intversion = _ver_to_int(__version__)
@@ -139,6 +148,25 @@ def recordtype_row_strategy(column_names):
     return row_factory
 
 
+class _ConnectionPool(object):
+    def __init__(self, max_pool_size=100, min_pool_size=0):
+        self._max_pool_size = max_pool_size
+        self._pool = {}
+
+    def add(self, key, conn):
+        l = self._pool.setdefault(key, []).append(conn)
+
+    def take(self, key):
+        l = self._pool.get(key, [])
+        if len(l) > 0:
+            return l.pop()
+        else:
+            return None
+
+
+_connection_pool = _ConnectionPool()
+
+
 class Connection(object):
     """Connection object, this object should be created by calling :func:`connect`"""
 
@@ -151,6 +179,8 @@ class Connection(object):
         self._login = None
         self._use_tz = None
         self._tzinfo_factory = None
+        self._key = None
+        self._pooling = False
 
     @property
     def as_dict(self):
@@ -223,20 +253,6 @@ class Connection(object):
             return cur.fetchone()[0]
 
     @property
-    def chunk_handler(self):
-        """
-        Returns current chunk handler
-        Default is MemoryChunkedHandler()
-        """
-        self._assert_open()
-        return self._conn.chunk_handler
-
-    @chunk_handler.setter
-    def chunk_handler(self, value):
-        self._assert_open()
-        self._conn.chunk_handler = value
-
-    @property
     def tds_version(self):
         """
         Version of tds protocol that is being used by this connection
@@ -258,6 +274,84 @@ class Connection(object):
         """
         return self._conn.mars_enabled
 
+    def _connect(self, host, port, instance, timeout):
+        login = self._login
+
+        try:
+            login.server_name = host
+            login.instance_name = instance
+            port = _resolve_instance_port(
+                host,
+                port,
+                instance,
+                timeout=timeout)
+            logger.info('Opening socket to %s:%d', host, port)
+            sock = socket.create_connection((host, port), timeout)
+        except Exception as e:
+            raise LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+
+        sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+
+        # default keep alive should be 30 seconds according to spec:
+        # https://msdn.microsoft.com/en-us/library/dd341108.aspx
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
+
+        sock.settimeout(timeout)
+        conn = _TdsSocket(self._use_tz)
+        self._conn = conn
+        try:
+            route = conn.login(login, sock, self._tzinfo_factory)
+            if route is not None:
+                # rerouted to different server
+                sock.close()
+                self._connect(host=route['server'],
+                              port=route['port'],
+                              instance=instance,
+                              timeout=timeout)
+                return
+
+            if conn.mars_enabled:
+                cursor = _MarsCursor(
+                    self,
+                    conn.create_session(self._tzinfo_factory),
+                    self._tzinfo_factory)
+            else:
+                cursor = Cursor(
+                    self,
+                    conn.main_session,
+                    self._tzinfo_factory)
+
+            self._active_cursor = self._main_cursor = cursor
+            if not self._autocommit:
+                cursor._session.begin_tran(isolation_level=self._isolation_level)
+            sock.settimeout(login.query_timeout)
+        except:
+            sock.close()
+            raise
+
+    def _try_open(self, timeout):
+        if self._pooling:
+            res = _connection_pool.take(self._key)
+            if res is not None:
+                self._conn, sess = res
+                if self._conn.mars_enabled:
+                    cursor = _MarsCursor(
+                        self,
+                        sess,
+                        self._tzinfo_factory)
+                else:
+                    cursor = Cursor(
+                        self,
+                        sess,
+                        self._tzinfo_factory)
+                self._active_cursor = self._main_cursor = cursor
+                cursor.callproc('sp_reset_connection')
+                return
+
+        login = self._login
+        host, port, instance = login.servers[0]
+        self._connect(host=host, port=port, instance=instance, timeout=timeout)
+
     def _open(self):
         import time
         self._conn = None
@@ -273,79 +367,34 @@ class Connection(object):
         end_time = time.time() + connect_timeout
         while True:
             for _ in xrange(len(login.servers)):
-                host, port, instance = login.servers[0]
                 try:
-                    login.server_name = host
-                    login.instance_name = instance
-                    port = _resolve_instance_port(
-                        host,
-                        port,
-                        instance,
-                        timeout=retry_time)
-                    sock = socket.create_connection(
-                        (host, port),
-                        retry_time)
-                except Exception as e:
-                    last_error = LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
-                else:
-                    sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-
-                    # default keep alive should be 30 seconds according to spec:
-                    # https://msdn.microsoft.com/en-us/library/dd341108.aspx
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
-
-                    sock.settimeout(retry_time)
-                    conn = _TdsSocket(self._use_tz)
-                    try:
-                        conn.login(login, sock, self._tzinfo_factory)
-                        if conn.mars_enabled:
-                            cursor = _MarsCursor(
-                                self,
-                                conn.create_session(self._tzinfo_factory),
-                                self._tzinfo_factory)
-                        else:
-                            cursor = Cursor(
-                                self,
-                                conn.main_session,
-                                self._tzinfo_factory)
-
-                        self._active_cursor = self._main_cursor = cursor
-                        if not self._autocommit:
-                            cursor._session.begin_tran(isolation_level=self._isolation_level)
-                        sock.settimeout(login.query_timeout)
-                    except OperationalError as e:
-                        sock.close()
-                        last_error = e
-                        # if there are more than one message this means
-                        # that the login was successful, like in the
-                        # case when database is not accessible
-                        # mssql returns 2 messages:
-                        # 1) Cannot open database "<dbname>" requested by the login. The login failed.
-                        # 2) Login failed for user '<username>'
-                        # in this case we want to retry
-                        if len(conn.main_session.messages) <= 1:
-                            # for the following error messages we don't retry
-                            # because if the password is incorrect and we
-                            # retry multiple times this can cause account
-                            # to be locked
-                            if e.msg_no in (
-                                    18456,  # login failed
-                                    18486,  # account is locked
-                                    18487,  # password expired
-                                    18488,  # password should be changed
-                                    18452,  # login from untrusted domain
-                                    ):
-                                raise
-                    except Exception as e:
-                        sock.close()
-                        last_error = e
-                    else:
-                        self._conn = conn
-                        return
+                    self._try_open(timeout=retry_time)
+                    return
+                except OperationalError as e:
+                    last_error = e
+                    # if there are more than one message this means
+                    # that the login was successful, like in the
+                    # case when database is not accessible
+                    # mssql returns 2 messages:
+                    # 1) Cannot open database "<dbname>" requested by the login. The login failed.
+                    # 2) Login failed for user '<username>'
+                    # in this case we want to retry
+                    if self._conn is not None and len(self._conn.main_session.messages) <= 1:
+                        # for the following error messages we don't retry
+                        # because if the password is incorrect and we
+                        # retry multiple times this can cause account
+                        # to be locked
+                        if e.msg_no in (
+                                18456,  # login failed
+                                18486,  # account is locked
+                                18487,  # password expired
+                                18488,  # password should be changed
+                                18452,  # login from untrusted domain
+                        ):
+                            raise
 
                 if time.time() > end_time:
                     raise last_error
-
                 login.servers.rotate(-1)
 
             time.sleep(retry_delay)
@@ -378,9 +427,13 @@ class Connection(object):
         if self.mars_enabled:
             in_tran = self._conn.tds72_transaction
             if in_tran and self._dirty:
-                return _MarsCursor(self,
-                                   self._conn.create_session(self._tzinfo_factory),
-                                   self._tzinfo_factory)
+                try:
+                    return _MarsCursor(self,
+                                       self._conn.create_session(self._tzinfo_factory),
+                                       self._tzinfo_factory)
+                except (socket.error, OSError) as e:
+                    self._conn.close()
+                    raise
             else:
                 try:
                     return _MarsCursor(self,
@@ -389,6 +442,7 @@ class Connection(object):
                 except (socket.error, OSError) as e:
                     if e.errno not in (errno.EPIPE, errno.ECONNRESET):
                         raise
+                    self._conn.close()
                 except ClosedConnectionError:
                     pass
                 self._assert_open()
@@ -417,16 +471,12 @@ class Connection(object):
             self._main_cursor._rollback(cont=True,
                                         isolation_level=self._isolation_level)
         except socket.error as e:
-            if e.errno in (errno.ENETRESET, errno.ECONNRESET):
+            if e.errno in (errno.ENETRESET, errno.ECONNRESET, errno.EPIPE):
                 return
+            self._conn.close()
             raise
         except ClosedConnectionError:
             pass
-        except OperationalError as e:
-            # ignore ROLLBACK TRANSACTION without BEGIN TRANSACTION
-            if e.number == 3903:
-                return
-            raise
 
     def close(self):
         """ Close connection to an MS SQL Server.
@@ -436,7 +486,10 @@ class Connection(object):
         this case.
         """
         if self._conn:
-            self._conn.close()
+            if self._pooling:
+                _connection_pool.add(self._key, (self._conn, self._main_cursor._session))
+            else:
+                self._conn.close()
             self._active_cursor = None
             self._main_cursor = None
             self._conn = None
@@ -505,6 +558,19 @@ class Cursor(six.Iterator):
         self._setup_row_factory()
         return results
 
+    def get_proc_outputs(self):
+        """
+        If stored procedure has result sets and OUTPUT parameters use this method
+        after you processed all result sets to get values of OUTPUT parameters.
+        :return: A list of output parameter values.
+        """
+
+        self._session.complete_rpc()
+        results = [None] * len(self._session.output_params.items())
+        for key, param in self._session.output_params.items():
+            results[key] = param.value
+        return results
+
     def callproc(self, procname, parameters=()):
         """
         Call a stored procedure with the given name.
@@ -513,6 +579,10 @@ class Cursor(six.Iterator):
         :type procname: str
         :keyword parameters: The optional parameters for the procedure
         :type parameters: sequence
+
+        Note: If stored procedure has OUTPUT parameters and result sets this
+        method will not return values for OUTPUT parameters, you should
+        call get_proc_outputs to get values for OUTPUT parameters.
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)
@@ -578,7 +648,12 @@ class Cursor(six.Iterator):
         in_tran = conn._conn.tds72_transaction
         if in_tran and conn._dirty:
             conn._dirty = True
-            return fun()
+            try:
+                return fun()
+            except socket.error as e:
+                if e.errno not in (errno.ECONNRESET, errno.EPIPE):
+                    raise
+                conn._conn.close()
         else:
             conn._dirty = True
             try:
@@ -586,6 +661,7 @@ class Cursor(six.Iterator):
             except socket.error as e:
                 if e.errno not in (errno.ECONNRESET, errno.EPIPE):
                     raise
+                conn._conn.close()
             except ClosedConnectionError:
                 pass
             # in case of connection reset try again
@@ -653,6 +729,8 @@ class Cursor(six.Iterator):
         conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._execute(operation, params)
+        # for compatibility with pyodbc
+        return self
 
     def _begin_tran(self, isolation_level):
         conn = self._assert_open()
@@ -738,6 +816,11 @@ class Cursor(six.Iterator):
         else:
             return None
 
+    def set_stream(self, column_idx, stream):
+        if len(self._session.res_info.columns) <= column_idx or column_idx < 0:
+            raise ValueError('Invalid value for column_idx')
+        self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
+
     @property
     def messages(self):
         """ Messages generated by server, see http://legacy.python.org/dev/peps/pep-0249/#cursor-messages
@@ -812,12 +895,14 @@ class Cursor(six.Iterator):
         """
         pass
 
-    def copy_to(self, file, table_or_view, sep='\t', columns=None,
+    def copy_to(self, file=None, table_or_view=None, sep='\t', columns=None,
                 check_constraints=False, fire_triggers=False, keep_nulls=False,
-                kb_per_batch=None, rows_per_batch=None, order=None, tablock=False, schema=None):
+                kb_per_batch=None, rows_per_batch=None, order=None, tablock=False,
+                schema=None, null_string=None, data=None):
         """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
 
-        :param file: Source file-like object, should be in csv format
+        :param file: Source file-like object, should be in csv format. Specify
+          either this or data, not both.
         :param table_or_view: Destination table or view in the database
         :type table_or_view: str
 
@@ -825,8 +910,17 @@ class Cursor(six.Iterator):
 
         :keyword sep: Separator used in csv file
         :type sep: str
-        :keyword columns: List of column names in target table to insert to,
-          if not provided will insert into all columns
+        :keyword columns: List of Column objects or column names in target
+          table to insert to. SQL Server will do some conversions, so these
+          may not have to match the actual table definition exactly.
+          If not provided will insert into all columns assuming nvarchar(4000)
+          NULL for all columns.
+          If only the column name is provided, the type is assumed to be
+          nvarchar(4000) NULL.
+          If rows are given with file, you cannot specify non-string data
+          types.
+          If rows are given with data, the values must be a type supported by
+          the serializer for the column in tds_types.
         :type columns: list
         :keyword check_constraints: Check table constraints for incoming data
         :type check_constraints: bool
@@ -847,20 +941,43 @@ class Cursor(six.Iterator):
         :type order: list
         :keyword tablock: Enable or disable table lock for the duration of bulk load
         :keyword schema: Name of schema for table or view, if not specified default schema will be used
+        :keyword null_string: String that should be interpreted as a NULL when
+          reading the CSV file. Has no meaning if using data instead of file.
+        :keyword data: The data to insert as an iterable of rows, which are
+          iterables of values. Specify either this or file, not both.
         """
         conn = self._conn()
-        import csv
-        reader = csv.reader(file, delimiter=sep)
+        rows = None
+        if data is None:
+            import csv
+            reader = csv.reader(file, delimiter=sep)
+
+            if null_string is not None:
+                def _convert_null_strings(csv_reader):
+                    for row in csv_reader:
+                        yield [r if r != null_string else None for r in row]
+
+                reader = _convert_null_strings(reader)
+
+            rows = reader
+        else:
+            rows = data
+
         obj_name = tds_base.tds_quote_id(table_or_view)
         if schema:
             obj_name = '{0}.{1}'.format(tds_base.tds_quote_id(schema), obj_name)
         if columns:
-            metadata = [Column(name=name, type=NVarCharType(size=4000), flags=Column.fNullable) for name in columns]
+            metadata = []
+            for column in columns:
+                if isinstance(column, Column):
+                    metadata.append(column)
+                else:
+                    metadata.append(Column(name=column, type=NVarCharType(size=4000), flags=Column.fNullable))
         else:
             self.execute('select top 1 * from {} where 1<>1'.format(obj_name))
             metadata = [Column(name=col[0], type=NVarCharType(size=4000), flags=Column.fNullable if col[6] else 0)
                         for col in self.description]
-        col_defs = ','.join('{0} {1}'.format(col.column_name, col.type.get_declaration())
+        col_defs = ','.join('{0} {1}'.format(tds_base.tds_quote_id(col.column_name), col.type.get_declaration())
                             for col in metadata)
         with_opts = []
         if check_constraints:
@@ -882,7 +999,7 @@ class Cursor(six.Iterator):
             with_part = 'WITH ({0})'.format(','.join(with_opts))
         operation = 'INSERT BULK {0}({1}) {2}'.format(obj_name, col_defs, with_part)
         self.execute(operation)
-        self._session.submit_bulk(metadata, reader)
+        self._session.submit_bulk(metadata, rows)
         self._session.process_simple_request()
 
 
@@ -926,6 +1043,8 @@ class _MarsCursor(Cursor):
     def execute(self, operation, params=()):
         self._assert_open()
         self._execute(operation, params)
+        # for compatibility with pyodbc
+        return self
 
     def callproc(self, procname, parameters=()):
         """
@@ -956,6 +1075,7 @@ class _MarsCursor(Cursor):
 
 def _resolve_instance_port(server, port, instance, timeout=5):
     if instance and not port:
+        logger.info('querying %s for list of instances', server)
         instances = tds7_get_instances(server, timeout=timeout)
         if instance not in instances:
             raise LoginError("Instance {0} not found on server {1}".format(instance, server))
@@ -1022,10 +1142,14 @@ def _parse_connection_string(connstr):
 def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             login_timeout=15, as_dict=None,
             appname=None, port=None, tds_version=tds_base.TDS74,
-            encryption_level=tds_base.TDS_ENCRYPTION_OFF, autocommit=False,
+            autocommit=False,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
-            row_strategy=None, failover_partner=None, server=None):
+            row_strategy=None, failover_partner=None, server=None,
+            cafile=None, validate_host=True, enc_login_only=False,
+            disable_connect_retry=False,
+            pooling=False,
+            ):
     """
     Opens connection to the database
 
@@ -1051,7 +1175,6 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     :type port: int
     :keyword tds_version: Maximum TDS version to use, should only be used for testing
     :type tds_version: int
-    :keyword encryption_level: Encryption level to use, not supported
     :keyword autocommit: Enable or disable database level autocommit
     :type autocommit: bool
     :keyword blocksize: Size of block for the TDS protocol, usually should not be used
@@ -1072,12 +1195,20 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
       :func:`tuple_row_strategy`, :func:`list_row_strategy`, :func:`dict_row_strategy`,
       :func:`namedtuple_row_strategy`, :func:`recordtype_row_strategy`
     :type row_strategy: function of list of column names returning row factory
+    :keyword cafile: Name of the file containing trusted CAs in PEM format, if provided will enable TLS
+    :type cafile: str
+    :keyword validate_host: Host name validation during TLS connection is enabled by default, if you disable it you
+      will be vulnerable to MitM type of attack.
+    :type validate_host: bool
+    :keyword enc_login_only: Allows you to scope TLS encryption only to an authentication portion.  This means that
+      anyone who can observe traffic on your network will be able to see all your SQL requests and potentially modify
+      them.
+    :type enc_login_only: bool
     :returns: An instance of :class:`Connection`
     """
     login = _TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
-    login.encryption_level = encryption_level
     login.user_name = user or ''
     login.password = password or ''
     login.app_name = appname or 'pytds'
@@ -1085,18 +1216,35 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login.language = ''  # use database default
     login.attach_db_file = ''
     login.tds_version = tds_version
+    if tds_version < tds_base.TDS70:
+        raise ValueError('This TDS version is not supported')
     login.database = database or ''
     login.bulk_copy = False
-    login.text_size = 0
     login.client_lcid = lcid.LANGID_ENGLISH_US
     login.use_mars = use_mars
     login.pid = os.getpid()
     login.change_password = ''
     login.client_id = uuid.getnode()  # client mac address
+    login.cafile = cafile
+    login.validate_host = validate_host
+    login.enc_login_only = enc_login_only
+    if cafile:
+        if not tls.OPENSSL_AVAILABLE:
+            raise ValueError("You are trying to use encryption but pyOpenSSL does not work, you probably "
+                             "need to install it first")
+        login.tls_ctx = tls.create_context(cafile)
+        if login.enc_login_only:
+            login.enc_flag = PreLoginEnc.ENCRYPT_OFF
+        else:
+            login.enc_flag = PreLoginEnc.ENCRYPT_ON
+    else:
+        login.tls_ctx = None
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
+
     if use_tz:
         login.client_tz = use_tz
     else:
-        login.client_tz = tz.local
+        login.client_tz = pytds.tz.local
 
     # that will set:
     # ANSI_DEFAULTS to ON,
@@ -1138,10 +1286,30 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
 
     login.servers = _get_servers_deque(tuple(parsed_servers), database)
 
+    # unique connection identifier used to pool connection
+    key = (
+        dsn,
+        login.user_name,
+        login.app_name,
+        login.tds_version,
+        login.database,
+        login.client_lcid,
+        login.use_mars,
+        login.cafile,
+        login.blocksize,
+        login.readonly,
+        login.bytes_to_unicode,
+        login.auth,
+        login.client_tz,
+        autocommit,
+    )
+
     conn = Connection()
     conn._use_tz = use_tz
     conn._autocommit = autocommit
     conn._login = login
+    conn._pooling = pooling
+    conn._key = key
 
     assert row_strategy is None or as_dict is None,\
         'Both row_startegy and as_dict were specified, you should use either one or another'
@@ -1156,7 +1324,10 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     conn._dirty = False
     from .tz import FixedOffsetTimezone
     conn._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
-    conn._open()
+    if disable_connect_retry:
+        conn._try_open(timeout=login.connect_timeout)
+    else:
+        conn._open()
     return conn
 
 

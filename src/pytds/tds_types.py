@@ -6,7 +6,9 @@ import re
 import uuid
 import six
 import functools
+from io import StringIO, BytesIO
 
+from pytds.tds_base import read_chunks
 from . import tds_base
 from .collate import ucs2_codec, raw_collation
 from . import tz
@@ -81,9 +83,40 @@ class PlpReader(object):
             total += chunk_len
             left = chunk_len
             while left:
-                buf = self._rdr.read(left)
+                buf = self._rdr.recv(left)
                 yield buf
                 left -= len(buf)
+
+
+class _StreamChunkedHandler(object):
+    def __init__(self, stream):
+        self.stream = stream
+
+    def add_chunk(self, val):
+        self.stream.write(val)
+
+    def end(self):
+        return self.stream
+
+
+class _DefaultChunkedHandler(object):
+    def __init__(self, stream):
+        self.stream = stream
+
+    def add_chunk(self, val):
+        self.stream.write(val)
+
+    def end(self):
+        value = self.stream.getvalue()
+        self.stream.seek(0)
+        self.stream.truncate()
+        return value
+
+    def __eq__(self, other):
+        return self.stream.getvalue() == other.stream.getvalue()
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
 
 class SqlTypeMetaclass(tds_base.CommonEqualityMixin):
@@ -220,15 +253,17 @@ class DecimalType(SqlTypeMetaclass):
     def from_value(cls, value):
         if not (-10 ** 38 + 1 <= value <= 10 ** 38 - 1):
             raise tds_base.DataError('Decimal value is out of range')
-        value = value.normalize()
-        _, digits, exp = value.as_tuple()
-        if exp > 0:
-            scale = 0
-            prec = len(digits) + exp
-        else:
-            scale = -exp
-            prec = max(len(digits), scale)
-        return cls(precision=prec, scale=scale)
+        with decimal.localcontext() as context:
+            context.prec = 38
+            value = value.normalize()
+            _, digits, exp = value.as_tuple()
+            if exp > 0:
+                scale = 0
+                prec = len(digits) + exp
+            else:
+                scale = -exp
+                prec = max(len(digits), scale)
+            return cls(precision=prec, scale=scale)
 
     @property
     def precision(self):
@@ -326,6 +361,9 @@ class BaseTypeSerializer(tds_base.CommonEqualityMixin):
         Should be implemented in actual types.
         """
         raise NotImplementedError
+
+    def set_chunk_handler(self, chunk_handler):
+        raise ValueError("Column type does not support chunk handler")
 
 
 class BasePrimitiveTypeSerializer(BaseTypeSerializer):
@@ -637,8 +675,10 @@ class VarChar70Serializer(BaseTypeSerializer):
         if val is None:
             w.put_smallint(-1)
         else:
-            val = tds_base.force_unicode(val)
-            val, _ = self._codec.encode(val)
+            if w._tds._tds._login.bytes_to_unicode:
+                val = tds_base.force_unicode(val)
+            if isinstance(val, six.text_type):
+                val, _ = self._codec.encode(val)
             w.put_smallint(len(val))
             w.write(val)
 
@@ -646,7 +686,10 @@ class VarChar70Serializer(BaseTypeSerializer):
         size = r.get_smallint()
         if size < 0:
             return None
-        return r.read_str(size, self._codec)
+        if r._session._tds._login.bytes_to_unicode:
+            return r.read_str(size, self._codec)
+        else:
+            return tds_base.readall(r, size)
 
 
 class VarChar71Serializer(VarChar70Serializer):
@@ -674,6 +717,7 @@ class VarChar72Serializer(VarChar71Serializer):
 class VarCharMaxSerializer(VarChar72Serializer):
     def __init__(self, collation=raw_collation):
         super(VarChar72Serializer, self).__init__(0, collation)
+        self._chunk_handler = None
 
     def write_info(self, w):
         w.put_usmallint(tds_base.PLP_MARKER)
@@ -683,19 +727,48 @@ class VarCharMaxSerializer(VarChar72Serializer):
         if val is None:
             w.put_uint8(tds_base.PLP_NULL)
         else:
-            val = tds_base.force_unicode(val)
-            val, _ = self._codec.encode(val)
-            w.put_int8(len(val))
+            if w._tds._tds._login.bytes_to_unicode:
+                val = tds_base.force_unicode(val)
+            if isinstance(val, six.text_type):
+                val, _ = self._codec.encode(val)
+
+            # Putting the actual length here causes an error when bulk inserting:
+            #
+            # While reading current row from host, a premature end-of-message
+            # was encountered--an incoming data stream was interrupted when
+            # the server expected to see more data. The host program may have
+            # terminated. Ensure that you are using a supported client
+            # application programming interface (API).
+            #
+            # See https://github.com/tediousjs/tedious/issues/197
+            # It is not known why this happens, but Microsoft's bcp tool
+            # uses PLP_UNKNOWN for varchar(max) as well.
+            w.put_uint8(tds_base.PLP_UNKNOWN)
             if len(val) > 0:
-                w.put_int(len(val))
+                w.put_uint(len(val))
                 w.write(val)
-            w.put_int(0)
+            w.put_uint(0)
 
     def read(self, r):
+        login = r._session._tds._login
         r = PlpReader(r)
         if r.is_null():
             return None
-        return ''.join(tds_base.iterdecode(r.chunks(), self._codec))
+        if self._chunk_handler is None:
+            if login.bytes_to_unicode:
+                self._chunk_handler = _DefaultChunkedHandler(StringIO())
+            else:
+                self._chunk_handler = _DefaultChunkedHandler(BytesIO())
+        if login.bytes_to_unicode:
+            for chunk in tds_base.iterdecode(r.chunks(), self._codec):
+                self._chunk_handler.add_chunk(chunk)
+        else:
+            for chunk in r.chunks():
+                self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class NVarChar70Serializer(BaseTypeSerializer):
@@ -756,6 +829,7 @@ class NVarChar72Serializer(NVarChar71Serializer):
 class NVarCharMaxSerializer(NVarChar72Serializer):
     def __init__(self, collation=raw_collation):
         super(NVarCharMaxSerializer, self).__init__(size=-1, collation=collation)
+        self._chunk_handler = _DefaultChunkedHandler(StringIO())
 
     def __repr__(self):
         return 'NVarCharMax(s={},c={})'.format(self.size, repr(self._collation))
@@ -774,7 +848,19 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
             if isinstance(val, bytes):
                 val = tds_base.force_unicode(val)
             val, _ = ucs2_codec.encode(val)
-            w.put_uint8(len(val))
+
+            # Putting the actual length here causes an error when bulk inserting:
+            #
+            # While reading current row from host, a premature end-of-message
+            # was encountered--an incoming data stream was interrupted when
+            # the server expected to see more data. The host program may have
+            # terminated. Ensure that you are using a supported client
+            # application programming interface (API).
+            #
+            # See https://github.com/tediousjs/tedious/issues/197
+            # It is not known why this happens, but Microsoft's bcp tool
+            # uses PLP_UNKNOWN for nvarchar(max) as well.
+            w.put_uint8(tds_base.PLP_UNKNOWN)
             if len(val) > 0:
                 w.put_uint(len(val))
                 w.write(val)
@@ -784,8 +870,12 @@ class NVarCharMaxSerializer(NVarChar72Serializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        res = ''.join(tds_base.iterdecode(r.chunks(), ucs2_codec))
-        return res
+        for chunk in tds_base.iterdecode(r.chunks(), ucs2_codec):
+            self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class XmlSerializer(NVarCharMaxSerializer):
@@ -837,6 +927,7 @@ class Text70Serializer(BaseTypeSerializer):
             self._codec = codec
         else:
             self._codec = collation.get_codec()
+        self._chunk_handler = None
 
     def __repr__(self):
         return 'Text70(size={},table_name={},codec={})'.format(self.size, self._table_name, self._codec)
@@ -854,8 +945,10 @@ class Text70Serializer(BaseTypeSerializer):
         if val is None:
             w.put_int(-1)
         else:
-            val = tds_base.force_unicode(val)
-            val, _ = self._codec.encode(val)
+            if w._tds._tds._login.bytes_to_unicode:
+                val = tds_base.force_unicode(val)
+            if isinstance(val, six.text_type):
+                val, _ = self._codec.encode(val)
             w.put_int(len(val))
             w.write(val)
 
@@ -866,7 +959,21 @@ class Text70Serializer(BaseTypeSerializer):
         tds_base.readall(r, size)  # textptr
         tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
-        return r.read_str(colsize, self._codec)
+        if self._chunk_handler is None:
+            if r._session._tds._login.bytes_to_unicode:
+                self._chunk_handler = _DefaultChunkedHandler(StringIO())
+            else:
+                self._chunk_handler = _DefaultChunkedHandler(BytesIO())
+        if r._session._tds._login.bytes_to_unicode:
+            for chunk in tds_base.iterdecode(read_chunks(r, colsize), self._codec):
+                self._chunk_handler.add_chunk(chunk)
+        else:
+            for chunk in read_chunks(r, colsize):
+                self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class Text71Serializer(Text70Serializer):
@@ -911,6 +1018,7 @@ class NText70Serializer(BaseTypeSerializer):
         super(NText70Serializer, self).__init__(size=size)
         self._collation = collation
         self._table_name = table_name
+        self._chunk_handler = _DefaultChunkedHandler(StringIO())
 
     def __repr__(self):
         return 'NText70(size={}, table_name={})'.format(self.size, self._table_name)
@@ -928,7 +1036,9 @@ class NText70Serializer(BaseTypeSerializer):
         tds_base.readall(r, textptr_size)  # textptr
         tds_base.readall(r, 8)  # timestamp
         colsize = r.get_int()
-        return r.read_str(colsize, ucs2_codec)
+        for chunk in tds_base.iterdecode(read_chunks(r, colsize), ucs2_codec):
+            self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
 
     def write_info(self, w):
         w.put_int(self.size * 2)
@@ -939,6 +1049,9 @@ class NText70Serializer(BaseTypeSerializer):
         else:
             w.put_int(len(val) * 2)
             w.write_ucs2(val)
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class NText71Serializer(NText70Serializer):
@@ -957,15 +1070,6 @@ class NText71Serializer(NText70Serializer):
     def write_info(self, w):
         w.put_int(self.size)
         w.put_collation(self._collation)
-
-    def read(self, r):
-        textptr_size = r.get_byte()
-        if textptr_size == 0:
-            return None
-        tds_base.readall(r, textptr_size)  # textptr
-        tds_base.readall(r, 8)  # timestamp
-        colsize = r.get_int()
-        return r.read_str(colsize, ucs2_codec)
 
 
 class NText72Serializer(NText71Serializer):
@@ -1039,6 +1143,7 @@ class VarBinarySerializer72(VarBinarySerializer):
 class VarBinarySerializerMax(VarBinarySerializer):
     def __init__(self):
         super(VarBinarySerializerMax, self).__init__(0)
+        self._chunk_handler = _DefaultChunkedHandler(BytesIO())
 
     def __repr__(self):
         return 'VarBinaryMax()'
@@ -1060,7 +1165,13 @@ class VarBinarySerializerMax(VarBinarySerializer):
         r = PlpReader(r)
         if r.is_null():
             return None
-        return b''.join(r.chunks())
+        for chunk in r.chunks():
+            self._chunk_handler.add_chunk(chunk)
+        return self._chunk_handler.end()
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
+
 
 class UDT72Serializer(BaseTypeSerializer):
     # Data type definition stream used for UDT_INFO in TYPE_INFO
@@ -1107,9 +1218,11 @@ class UDT72Serializer(BaseTypeSerializer):
             return None
         return b''.join(r.chunks())
 
+
 class UDT72SerializerMax(UDT72Serializer):
     def __init__(self, *args, **kwargs):
         super(UDT72SerializerMax, self).__init__(0, *args, **kwargs)
+
 
 class Image70Serializer(BaseTypeSerializer):
     type = tds_base.SYBIMAGE
@@ -1118,6 +1231,7 @@ class Image70Serializer(BaseTypeSerializer):
     def __init__(self, size=0, table_name=''):
         super(Image70Serializer, self).__init__(size=size)
         self._table_name = table_name
+        self._chunk_handler = _DefaultChunkedHandler(BytesIO())
 
     def __repr__(self):
         return 'Image70(tn={},s={})'.format(repr(self._table_name), self.size)
@@ -1134,7 +1248,9 @@ class Image70Serializer(BaseTypeSerializer):
             tds_base.readall(r, 16)  # textptr
             tds_base.readall(r, 8)  # timestamp
             colsize = r.get_int()
-            return tds_base.readall(r, colsize)
+            for chunk in read_chunks(r, colsize):
+                self._chunk_handler.add_chunk(chunk)
+            return self._chunk_handler.end()
         else:
             return None
 
@@ -1147,6 +1263,9 @@ class Image70Serializer(BaseTypeSerializer):
 
     def write_info(self, w):
         w.put_int(self.size)
+
+    def set_chunk_handler(self, chunk_handler):
+        self._chunk_handler = chunk_handler
 
 
 class Image72Serializer(Image70Serializer):
@@ -1768,28 +1887,28 @@ class MsDecimalSerializer(BaseTypeSerializer):
         w.pack(self._info_struct, self.size, self.precision, self.scale)
 
     def write(self, w, value):
-        if value is None:
-            w.put_byte(0)
-            return
-        if not isinstance(value, decimal.Decimal):
-            value = decimal.Decimal(value)
-        value = value.normalize()
-        scale = self.scale
-        size = self.size
-        w.put_byte(size)
-        val = value
-        positive = 1 if val > 0 else 0
-        w.put_byte(positive)  # sign
-        with decimal.localcontext() as ctx:
-            ctx.prec = 38
+        with decimal.localcontext() as context:
+            context.prec = 38
+            if value is None:
+                w.put_byte(0)
+                return
+            if not isinstance(value, decimal.Decimal):
+                value = decimal.Decimal(value)
+            value = value.normalize()
+            scale = self.scale
+            size = self.size
+            w.put_byte(size)
+            val = value
+            positive = 1 if val > 0 else 0
+            w.put_byte(positive)  # sign
             if not positive:
                 val *= -1
             size -= 1
             val *= 10 ** scale
-        for i in range(size):
-            w.put_byte(int(val % 256))
-            val //= 256
-        assert val == 0
+            for i in range(size):
+                w.put_byte(int(val % 256))
+                val //= 256
+            assert val == 0
 
     def _decode(self, positive, buf):
         val = _decode_num(buf)
