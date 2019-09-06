@@ -143,7 +143,7 @@ def test_connection_no_mars_autocommit():
         cur.close()
         with pytest.raises(Error) as ex:
             cur.execute('select 1')
-        assert 'Cursor is closed' in str(ex)
+        assert 'Cursor is closed' in str(ex.value)
         # calling get_proc_return_status on closed cursor works
         # this test does not have to pass
         assert cur.get_proc_return_status() is None
