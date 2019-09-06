@@ -9,6 +9,8 @@ environment:
   SQLPASSWORD: Password12!
   DATABASE: test
   matrix:
+    - PYTHON: "C:\\Python37"
+      SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python36"
       SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python35"
