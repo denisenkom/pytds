@@ -342,7 +342,7 @@ class BadConnection(unittest.TestCase):
         host = settings.HOST
         if '\\' in host:
             host, _ = host.split('\\')
-        with self.assertRaisesRegexp(ValueError, 'Both instance and port shouldn\'t be specified'):
+        with self.assertRaisesRegex(ValueError, 'Both instance and port shouldn\'t be specified'):
             with connect(server=host + '\\badinstancename', database='master', user=settings.USER, password=settings.PASSWORD, port=1212) as conn:
                 with conn.cursor() as cur:
                     cur.execute('select 1')
@@ -1057,11 +1057,11 @@ class TestRawBytes(unittest.TestCase):
         self.assertIsInstance(cur.execute_scalar("select %s", [b'abc']), six.binary_type)
 
         rawBytes = six.b('\x01\x02\x03')
-        self.assertEquals(rawBytes, cur.execute_scalar("select cast(0x010203 as varchar(max))"))
-        self.assertEquals(rawBytes, cur.execute_scalar("select %s", [rawBytes]))
+        self.assertEqual(rawBytes, cur.execute_scalar("select cast(0x010203 as varchar(max))"))
+        self.assertEqual(rawBytes, cur.execute_scalar("select %s", [rawBytes]))
 
         utf8char = six.b('\xee\xb4\xba')
-        self.assertEquals(utf8char, cur.execute_scalar("select %s", [utf8char]))
+        self.assertEqual(utf8char, cur.execute_scalar("select %s", [utf8char]))
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")

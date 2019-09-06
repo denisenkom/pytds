@@ -196,7 +196,7 @@ class TestMessages(unittest.TestCase):
             tds._main_session.process_prelogin(login)
 
         # test bad size
-        with self.assertRaisesRegexp(pytds.InterfaceError, 'Invalid size of PRELOGIN structure'):
+        with self.assertRaisesRegex(pytds.InterfaceError, 'Invalid size of PRELOGIN structure'):
             login = self._make_login()
             tds._main_session.parse_prelogin(login=login, octets=b'\x01')
 
@@ -208,14 +208,14 @@ class TestMessages(unittest.TestCase):
 
     def test_prelogin_unexpected_encrypt_on(self):
         tds = self.make_tds()
-        with self.assertRaisesRegexp(pytds.InterfaceError, 'Server returned unexpected ENCRYPT_ON value'):
+        with self.assertRaisesRegex(pytds.InterfaceError, 'Server returned unexpected ENCRYPT_ON value'):
             login = self._make_login()
             login.enc_flag = PreLoginEnc.ENCRYPT_ON
             tds._main_session.parse_prelogin(login=login, octets=b'\x01\x00\x06\x00\x01\xff\x00')
 
     def test_prelogin_unexpected_enc_flag(self):
         tds = self.make_tds()
-        with self.assertRaisesRegexp(pytds.InterfaceError, 'Unexpected value of enc_flag returned by server: 5'):
+        with self.assertRaisesRegex(pytds.InterfaceError, 'Unexpected value of enc_flag returned by server: 5'):
             login = self._make_login()
             tds._main_session.parse_prelogin(login=login, octets=b'\x01\x00\x06\x00\x01\xff\x05')
 
@@ -237,7 +237,7 @@ class TestMessages(unittest.TestCase):
 
         login.instance_name = 'x' * 65499
         sock._sent = b''
-        with self.assertRaisesRegexp(ValueError, 'Instance name is too long'):
+        with self.assertRaisesRegex(ValueError, 'Instance name is too long'):
             tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b'')
 
@@ -343,55 +343,55 @@ class TestMessages(unittest.TestCase):
             b'74006800')
         sock._sent = b''
         login.user_name = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'User name should be no longer that 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'User name should be no longer that 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.user_name = 'username'
         login.password = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'Password should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Password should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.password = 'password'
         login.client_host_name = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'Host name should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Host name should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.client_host_name = 'clienthost'
         login.app_name = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'App name should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'App name should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.app_name = 'appname'
         login.server_name = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'Server name should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Server name should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.server_name = 'servername'
         login.database = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'Database name should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Database name should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.database = 'database'
         login.language = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'Language should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Language should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.language = 'en'
         login.change_password = 'x' * 129
-        with self.assertRaisesRegexp(ValueError, 'Password should be not longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Password should be not longer than 128 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
         login.change_password = ''
         login.attach_db_file = 'x' * 261
-        with self.assertRaisesRegexp(ValueError, 'File path should be not longer than 260 characters'):
+        with self.assertRaisesRegex(ValueError, 'File path should be not longer than 260 characters'):
             tds._main_session.tds7_send_login(login)
         self.assertEqual(sock._sent, b'')
 
@@ -892,38 +892,38 @@ class TypeInferenceTestCase(unittest.TestCase):
         factory = SerializerFactory(TDS74)
         inner_tvp = pytds.TableValuedParam(type_name='dbo.InnerTVP', rows=[(1,)])
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[(inner_tvp,)])
-        with self.assertRaisesRegexp(pytds.DataError, 'TVP type cannot have nested TVP types'):
+        with self.assertRaisesRegex(pytds.DataError, 'TVP type cannot have nested TVP types'):
             infer_tds_serializer(tvp, serializer_factory=factory)
 
     def test_invalid_tvp(self):
         factory = SerializerFactory(TDS74)
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[])
-        with self.assertRaisesRegexp(pytds.DataError, 'Cannot infer columns from rows for TVP because there are no rows'):
+        with self.assertRaisesRegex(pytds.DataError, 'Cannot infer columns from rows for TVP because there are no rows'):
             infer_tds_serializer(tvp, serializer_factory=factory)
 
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=5)
-        with self.assertRaisesRegexp(pytds.DataError, 'rows should be iterable'):
+        with self.assertRaisesRegex(pytds.DataError, 'rows should be iterable'):
             infer_tds_serializer(tvp, serializer_factory=factory)
 
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[None])
-        with self.assertRaisesRegexp(pytds.DataError, 'Each row in table should be an iterable'):
+        with self.assertRaisesRegex(pytds.DataError, 'Each row in table should be an iterable'):
             infer_tds_serializer(tvp, serializer_factory=factory)
 
         # too many columns
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[[1] * 1025])
-        with self.assertRaisesRegexp(ValueError, 'TVP cannot have more than 1024 columns'):
+        with self.assertRaisesRegex(ValueError, 'TVP cannot have more than 1024 columns'):
             infer_tds_serializer(tvp, serializer_factory=factory)
 
         # too few columns
         tvp = pytds.TableValuedParam(type_name='dbo.OuterTVP', rows=[[]])
-        with self.assertRaisesRegexp(ValueError, 'TVP must have at least one column'):
+        with self.assertRaisesRegex(ValueError, 'TVP must have at least one column'):
             infer_tds_serializer(tvp, serializer_factory=factory)
 
-        with self.assertRaisesRegexp(ValueError, 'Schema part of TVP name should be no longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Schema part of TVP name should be no longer than 128 characters'):
             tvp = pytds.TableValuedParam(type_name=('x' * 129) + '.OuterTVP', rows=[[]])
             infer_tds_serializer(tvp, serializer_factory=factory)
 
-        with self.assertRaisesRegexp(ValueError, 'Name part of TVP name should be no longer than 128 characters'):
+        with self.assertRaisesRegex(ValueError, 'Name part of TVP name should be no longer than 128 characters'):
             tvp = pytds.TableValuedParam(type_name='dbo.' + ('x' * 129), rows=[[]])
             infer_tds_serializer(tvp, serializer_factory=factory)
 
