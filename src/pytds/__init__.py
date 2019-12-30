@@ -1153,7 +1153,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     """
     Opens connection to the database
 
-    :keyword dsn: SQL server host and instance: <host>[\<instance>]
+    :keyword dsn: SQL server host and instance: <host>[\\<instance>]
     :type dsn: string
     :keyword failover_partner: secondary database host, used if primary is not accessible
     :type failover_partner: string
