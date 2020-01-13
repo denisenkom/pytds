@@ -144,11 +144,16 @@ def establish_channel(tds_sock):
             conn.do_handshake()
         except OpenSSL.SSL.WantReadError:
             logger.debug('got WantReadError, getting data from the write end of the TLS connection buffer')
-            req = conn.bio_read(BUFSIZE)
-            logger.debug('sending %d bytes of the handshake data to the server', len(req))
-            w.begin_packet(tds_base.PacketType.PRELOGIN)
-            w.write(req)
-            w.flush()
+            try:
+                req = conn.bio_read(BUFSIZE)
+            except OpenSSL.SSL.WantReadError:
+                # PyOpenSSL - https://github.com/pyca/pyopenssl/issues/887
+                logger.debug('got WantReadError again, waiting for response...')
+            else:
+                logger.debug('sending %d bytes of the handshake data to the server', len(req))
+                w.begin_packet(tds_base.PacketType.PRELOGIN)
+                w.write(req)
+                w.flush()
             logger.debug('receiving response from the server')
             resp = r.read_whole_packet()
             # TODO validate r.packet_type
