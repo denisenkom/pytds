@@ -997,3 +997,12 @@ def test_no_metadata_request(cursor):
     assert cursor.fetchall() == [(2,)]
     while cursor.nextset():
         pass
+
+
+def test_with_sso():
+    if not LIVE_TEST:
+        pytest.skip('LIVE_TEST is not set')
+    with pytds.connect(settings.HOST, use_sso=True) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute('select 1')
+            cursor.fetchall()

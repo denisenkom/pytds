@@ -27,6 +27,7 @@ Features
 * Bulk insert
 * Table-valued parameters
 * TLS connection encryption
+* Kerberos support on non-Windows platforms (requires kerberos package)
 
 Installation
 ------------
@@ -48,6 +49,12 @@ For a better performance install bitarray package too:
 .. code-block:: bash
 
     $ pip install bitarray
+
+To use Kerberos on non-Windows platforms (experimental) install kerberos package:
+
+.. code-block:: bash
+
+    $ pip install kerberos
 
 Documentation
 -------------
