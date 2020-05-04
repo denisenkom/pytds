@@ -227,7 +227,7 @@ class _TdsReader(object):
         try:
             pos = 0
             while pos < _header.size:
-                received = self._transport.recv_into(self._bufview[pos:_header.size-pos])
+                received = self._transport.recv_into(self._bufview[pos:], _header.size - pos)
                 if received == 0:
                     raise tds_base.ClosedConnectionError()
                 pos += received
