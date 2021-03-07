@@ -4,7 +4,6 @@ python:
   - "3.5"
   - "3.6"
   - "3.7"
-  - "pypy3"
 install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""

@@ -15,8 +15,6 @@ environment:
       SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python35"
       SQLINSTANCE: SQL2016
-    - PYTHON: "C:\\Python27"
-      SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python36"
       SQLINSTANCE: SQL2014
     - PYTHON: "C:\\Python36"
