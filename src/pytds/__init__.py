@@ -274,7 +274,7 @@ class Connection(object):
         """
         return self._conn.mars_enabled
 
-    def _connect(self, host, port, instance, timeout):
+    def _connect(self, host, port, instance, timeout, sock=None):
         login = self._login
 
         try:
@@ -285,8 +285,9 @@ class Connection(object):
                 port,
                 instance,
                 timeout=timeout)
-            logger.info('Opening socket to %s:%d', host, port)
-            sock = socket.create_connection((host, port), timeout)
+            if not sock:
+                logger.info('Opening socket to %s:%d', host, port)
+                sock = socket.create_connection((host, port), timeout)
         except Exception as e:
             raise LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
 
@@ -329,7 +330,7 @@ class Connection(object):
             sock.close()
             raise
 
-    def _try_open(self, timeout):
+    def _try_open(self, timeout, sock=None):
         if self._pooling:
             res = _connection_pool.take(self._key)
             if res is not None:
@@ -350,9 +351,9 @@ class Connection(object):
 
         login = self._login
         host, port, instance = login.servers[0]
-        self._connect(host=host, port=port, instance=instance, timeout=timeout)
+        self._connect(host=host, port=port, instance=instance, timeout=timeout, sock=sock)
 
-    def _open(self):
+    def _open(self, sock=None):
         import time
         self._conn = None
         self._dirty = False
@@ -368,7 +369,7 @@ class Connection(object):
         while True:
             for _ in xrange(len(login.servers)):
                 try:
-                    self._try_open(timeout=retry_time)
+                    self._try_open(timeout=retry_time, sock=sock)
                     return
                 except OperationalError as e:
                     last_error = e
@@ -1146,8 +1147,8 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             blocksize=4096, use_mars=False, auth=None, readonly=False,
             load_balancer=None, use_tz=None, bytes_to_unicode=True,
             row_strategy=None, failover_partner=None, server=None,
-            cafile=None, validate_host=True, enc_login_only=False,
-            disable_connect_retry=False,
+            cafile=None, sock=None, validate_host=True,
+            enc_login_only=False, disable_connect_retry=False,
             pooling=False,
             use_sso=False,
             ):
@@ -1339,9 +1340,9 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     from .tz import FixedOffsetTimezone
     conn._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
     if disable_connect_retry:
-        conn._try_open(timeout=login.connect_timeout)
+        conn._try_open(timeout=login.connect_timeout, sock=sock)
     else:
-        conn._open()
+        conn._open(sock=sock)
     return conn
 
 
