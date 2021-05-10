@@ -41,6 +41,31 @@ Here is example of using TVP:
             tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
             cur.execute('SELECT * FROM %s', (tvp,))
 
+Using Binary Parameters
+=======================
+To use a parameter that is of a binary or varbinary type, you need to wrap the value with pytds.Binary(). This function accepts bytes objects so be sure to convert buffers or file-like objects to bytes first.
+
+Examples of wrapping various kinds of bytes representations:
+
+.. code-block:: py
+
+        pytds.Binary(b'')
+        pytds.Binary(b'\x00\x01\x02')
+        pytds.Binary(b'x' * 9000)
+   
+An example of how you might store an image from a file in a varbinary(MAX) field:
+
+.. code-block:: py
+
+        image=Image.open(image_path)
+        with io.BytesIO() as output:
+            image.save(output, format="jpeg")
+            image_data = pytds.Binary(output.getvalue())
+        with pytds.connect(dns='your connection info') as conn:
+            with conn.cursor() as cur:
+                cur.execute("insert into table_name (text_field, binary_field) values (%s, %s)", (image_name, image_data))
+            conn.commit()
+
 Testing
 =======
 
