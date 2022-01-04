@@ -1290,7 +1290,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
         parsed_servers.append((host, port, instance))
 
     if use_sso:
-        spn = "MSSQLSvc@{}:{}".format(parsed_servers[0][0], parsed_servers[0][1])
+        spn = "MSSQLSvc@{}:{}".format(parsed_servers[0][0], parsed_servers[0][1] or parsed_servers[0][2])
         from . import login as pytds_login
         try:
             login.auth = pytds_login.SspiAuth(spn=spn)
