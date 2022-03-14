@@ -1155,7 +1155,18 @@ class VarBinarySerializerMax(VarBinarySerializer):
         if val is None:
             w.put_uint8(tds_base.PLP_NULL)
         else:
-            w.put_uint8(len(val))
+            # Putting the actual length here causes an error when bulk inserting:
+            #
+            # While reading current row from host, a premature end-of-message
+            # was encountered--an incoming data stream was interrupted when
+            # the server expected to see more data. The host program may have
+            # terminated. Ensure that you are using a supported client
+            # application programming interface (API).
+            #
+            # See https://github.com/tediousjs/tedious/issues/197
+            # It is not known why this happens, but Microsoft's bcp tool
+            # uses PLP_UNKNOWN for nvarchar(max) as well.
+            w.put_uint8(tds_base.PLP_NULL)
             if val:
                 w.put_uint(len(val))
                 w.write(val)
