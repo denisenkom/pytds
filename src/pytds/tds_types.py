@@ -1166,7 +1166,7 @@ class VarBinarySerializerMax(VarBinarySerializer):
             # See https://github.com/tediousjs/tedious/issues/197
             # It is not known why this happens, but Microsoft's bcp tool
             # uses PLP_UNKNOWN for nvarchar(max) as well.
-            w.put_uint8(tds_base.PLP_NULL)
+            w.put_uint8(tds_base.PLP_UNKNOWN)
             if val:
                 w.put_uint(len(val))
                 w.write(val)
