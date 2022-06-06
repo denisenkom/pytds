@@ -308,7 +308,7 @@ class Connection(object):
                 ###  Change SPN once route exists
                 from . import login as pytds_login
                 if isinstance(login.auth, pytds_login.SspiAuth):
-                    route_spn = "MSSQLSvc@{}{}".format(host, port)
+                    route_spn = "MSSQLSvc@{}:{}".format(host, port)
                     login.auth = pytds_login.SspiAuth(user_name=login.user_name, password=login.password,
                                                       server_name=host, port=port, spn=route_spn)
 
