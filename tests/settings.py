@@ -22,7 +22,7 @@ if LIVE_TEST:
         'use_mars': USE_MARS,
         'bytes_to_unicode': True,
         'pooling': True,
-        'timeout': 30,
+        'timeout': 60,
     }
 
     if 'tds_version' in os.environ:
