@@ -112,9 +112,10 @@ def test_autocommit(separate_db_connection):
 
 def test_bulk_insert(cursor):
     cur = cursor
+    cur.execute('create table test_table_bulk(num int, data varchar(100))')
     f = StringIO("42\tfoo\n74\tbar\n")
-    cur.copy_to(f, 'bulk_insert_table', schema='myschema', columns=('num', 'data'))
-    cur.execute('select num, data from myschema.bulk_insert_table')
+    cur.copy_to(f, 'test_table_bulk', columns=('num', 'data'))
+    cur.execute('select num, data from test_table_bulk')
     assert cur.fetchall() == [(42, 'foo'), (74, 'bar')]
 
 
