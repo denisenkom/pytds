@@ -116,7 +116,7 @@ def test_bulk_insert(cursor):
     cur.execute('create table myschema.bulk_insert_table(num int not null, data varchar(100))')
     cur.copy_to(f, 'bulk_insert_table', schema='myschema', columns=('num', 'data'))
     cur.execute('select num, data from myschema.bulk_insert_table')
-    assert cur.fetchall() == [(42, 'foo'), (74, 'bar')]
+    assert [(42, 'foo'), (74, 'bar')] == cur.fetchall()
 
 
 def test_bug2(cursor):
