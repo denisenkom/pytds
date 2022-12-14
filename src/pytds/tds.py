@@ -1406,7 +1406,7 @@ class _TdsSession(object):
         w.put_byte(option_flag2)
         type_flags = 0
         if login.readonly:
-            type_flags |= (2 << 5)
+            type_flags |= tds_base.TDS_FREADONLY_INTENT
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
