@@ -1,3 +1,12 @@
+import sys
+import unittest
+
+
+if sys.version_info.major < 3:
+    # patch unittest.TestCase for Python 2.7
+    unittest.TestCase.assertRaisesRegex = unittest.TestCase.assertRaisesRegexp
+
+
 class MockSock(object):
     def __init__(self, input_packets=()):
         self.set_input(input_packets)

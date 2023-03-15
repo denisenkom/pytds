@@ -12,7 +12,7 @@ from . import tds_types
 from . import tls
 from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 # packet header
 # https://msdn.microsoft.com/en-us/library/dd340948.aspx
@@ -227,7 +227,7 @@ class _TdsReader(object):
         try:
             pos = 0
             while pos < _header.size:
-                received = self._transport.recv_into(self._bufview[pos:_header.size-pos])
+                received = self._transport.recv_into(self._bufview[pos:], _header.size - pos)
                 if received == 0:
                     raise tds_base.ClosedConnectionError()
                 pos += received
@@ -1406,7 +1406,7 @@ class _TdsSession(object):
         w.put_byte(option_flag2)
         type_flags = 0
         if login.readonly:
-            type_flags |= (2 << 5)
+            type_flags |= tds_base.TDS_FREADONLY_INTENT
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)

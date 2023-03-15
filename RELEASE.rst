@@ -20,6 +20,10 @@ Push to github:
 
  git push && git push --tags
 
+Install twine:
+
+ python3 -m pip install --user --upgrade twine
+
 Upload to pypi:
 
- python setup.py sdist upload
+ python3 -m twine upload dist/*

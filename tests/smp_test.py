@@ -26,7 +26,7 @@ class SmpSessionsTests(unittest.TestCase):
         self.sock.set_input([smp_hdr.pack(0x53, 16, 0, 16, 1, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Unexpected FLAGS' in str(excinfo)
+        assert 'Unexpected FLAGS' in str(excinfo.value)
 
     def test_syn_packet(self):
         """
@@ -35,7 +35,7 @@ class SmpSessionsTests(unittest.TestCase):
         self.sock.set_input([smp_hdr.pack(0x53, 1, 0, 16, 1, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Unexpected SYN' in str(excinfo)
+        assert 'Unexpected SYN' in str(excinfo.value)
 
     def test_data_after_fin(self):
         sess2 = self.mgr.create_session()
@@ -43,7 +43,7 @@ class SmpSessionsTests(unittest.TestCase):
         assert self.sess.recv_into(self.buf) == 0
         with pytest.raises(pytds.Error) as excinfo:
             sess2.recv_into(self.buf)
-        assert 'Unexpected DATA packet from server' in str(excinfo)
+        assert 'Unexpected DATA packet from server' in str(excinfo.value)
 
     def test_fin_after_fin(self):
         sess2 = self.mgr.create_session()
@@ -51,7 +51,7 @@ class SmpSessionsTests(unittest.TestCase):
         assert self.sess.recv_into(self.buf) == 0
         with pytest.raises(pytds.Error) as excinfo:
             sess2.recv_into(self.buf)
-        assert 'Unexpected FIN' in str(excinfo)
+        assert 'Unexpected FIN' in str(excinfo.value)
 
     def test_data_after_close(self):
         """should ignore data sent from server if we already send FIN packet"""
@@ -74,7 +74,7 @@ class SmpSessionsTests(unittest.TestCase):
         assert self.sess.recv_into(self.buf) == 0
         with pytest.raises(pytds.Error) as excinfo:
             sess2.recv_into(self.buf)
-        assert 'Unexpected ACK packet from server' in str(excinfo)
+        assert 'Unexpected ACK packet from server' in str(excinfo.value)
 
     def test_unexpected_eof(self):
         """
@@ -83,49 +83,49 @@ class SmpSessionsTests(unittest.TestCase):
         self.sock.set_input([b'0' * 10])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Unexpected EOF' in str(excinfo)
+        assert 'Unexpected EOF' in str(excinfo.value)
 
     def test_invalid_id(self):
         self.sock.set_input([smp_hdr.pack(0, 4, 0, 16, 1, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid SMP packet signature' in str(excinfo)
+        assert 'Invalid SMP packet signature' in str(excinfo.value)
 
     def test_invalid_session_id(self):
         self.sock.set_input([smp_hdr.pack(0x53, 0, 1, 0, 0, 0)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid SMP packet session id' in str(excinfo)
+        assert 'Invalid SMP packet session id' in str(excinfo.value)
 
     def test_invalid_wndw_value(self):
         self.sock.set_input([smp_hdr.pack(0x53, 0, 0, 0, 0, 0)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid WNDW in packet from server' in str(excinfo)
+        assert 'Invalid WNDW in packet from server' in str(excinfo.value)
 
     def test_invalid_seqnum_value(self):
         self.sock.set_input([smp_hdr.pack(0x53, 8, 0, 0, 500, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid SEQNUM in packet from server' in str(excinfo)
+        assert 'Invalid SEQNUM in packet from server' in str(excinfo.value)
 
     def test_invalid_length(self):
         self.sock.set_input([smp_hdr.pack(0x53, 8, 0, 0, 1, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid LENGTH' in str(excinfo)
+        assert 'Invalid LENGTH' in str(excinfo.value)
 
     def test_invalid_seqnum_in_data_packet(self):
         self.sock.set_input([smp_hdr.pack(0x53, 8, 0, 16, 0, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid SEQNUM' in str(excinfo)
+        assert 'Invalid SEQNUM' in str(excinfo.value)
 
     def test_invalid_seqnum_in_ack_packet(self):
         self.sock.set_input([smp_hdr.pack(0x53, 2, 0, 16, 1, 10)])
         with pytest.raises(pytds.Error) as excinfo:
             self.sess.recv_into(self.buf)
-        assert 'Invalid SEQNUM' in str(excinfo)
+        assert 'Invalid SEQNUM' in str(excinfo.value)
 
 
 def test_misc():
@@ -143,4 +143,4 @@ def test_misc():
     with pytest.raises(pytds.Error) as excinfo:
         for _ in range(10):
             mgr.create_session()
-    assert "Can't create more MARS sessions" in str(excinfo)
+    assert "Can't create more MARS sessions" in str(excinfo.value)
