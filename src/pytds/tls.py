@@ -100,14 +100,22 @@ def validate_host(cert, name):
         return True
 
     # checking SAN
-    s_name = name.decode('ascii')
+    s_name = name.decode("ascii")
     for i in range(cert.get_extension_count()):
         ext = cert.get_extension(i)
-        if ext.get_short_name() == b'subjectAltName':
+        if ext.get_short_name() == b"subjectAltName":
             s = str(ext)
-            # SANs are usually have form like: DNS:hostname
-            if s.startswith('DNS:') and s[4:] == s_name:
-                return True
+            items = s.split(",")
+            for item in items:
+                dnsentry = item.strip()
+                # SANs are usually have form like: DNS:hostname
+                if dnsentry.startswith("DNS:") and s[4:] == s_name:
+                    return True
+                if dnsentry.startswith("DNS:*."):
+                    afterstar_parts = dnsentry[6:]
+                    afterstar_parts_sname = ".".join(s_name.split(".")[1:])
+                    if afterstar_parts == afterstar_parts_sname:
+                        return True
 
     # TODO handle wildcards
     return False
