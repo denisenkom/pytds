@@ -1,6 +1,6 @@
 version: 1.0.{build}
 
-os: Visual Studio 2022
+os: Windows Server 2012 R2
 
 environment:
   INAPPVEYOR: 1
@@ -23,6 +23,8 @@ environment:
       SQLINSTANCE: SQL2008R2SP2
 
 install:
+  - dir c:\
+  - dir %PYTHON%
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
