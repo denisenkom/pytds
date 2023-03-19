@@ -11,15 +11,15 @@ environment:
   matrix:
     - PYTHON: "C:\\Python37"
       SQLINSTANCE: SQL2016
-    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python38"
       SQLINSTANCE: SQL2016
-    - PYTHON: "C:\\Python35"
+    - PYTHON: "C:\\Python39"
       SQLINSTANCE: SQL2016
-    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python310"
       SQLINSTANCE: SQL2014
-    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python311"
       SQLINSTANCE: SQL2012SP1
-    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python311"
       SQLINSTANCE: SQL2008R2SP2
 
 install:
