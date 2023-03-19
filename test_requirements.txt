@@ -1,7 +1,7 @@
 pytest>=3.3.2
 pytest-cov
 codecov
-pyOpenSSL
+pyOpenSSL<=21.0.0
 pyDes
 ntlm-auth
 namedlist
