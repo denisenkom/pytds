@@ -9,8 +9,6 @@ environment:
   SQLPASSWORD: Password12!
   DATABASE: test
   matrix:
-    #- PYTHON: "C:\\Python38"
-    #  SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python37"
       SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python37-x64"
@@ -23,8 +21,6 @@ environment:
       SQLINSTANCE: SQL2008R2SP2
 
 install:
-  - dir c:\
-  - dir %PYTHON%
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
