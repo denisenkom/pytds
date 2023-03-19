@@ -13,13 +13,13 @@ environment:
       SQLINSTANCE: SQL2016
     - PYTHON: "C:\\Python38"
       SQLINSTANCE: SQL2016
-    - PYTHON: "C:\\Python39"
+    - PYTHON: "C:\\Python38-x64"
       SQLINSTANCE: SQL2016
-    - PYTHON: "C:\\Python310"
+    - PYTHON: "C:\\Python38-x64"
       SQLINSTANCE: SQL2014
-    - PYTHON: "C:\\Python311"
+    - PYTHON: "C:\\Python38-x64"
       SQLINSTANCE: SQL2012SP1
-    - PYTHON: "C:\\Python311-x64"
+    - PYTHON: "C:\\Python38-x64"
       SQLINSTANCE: SQL2008R2SP2
 
 install:
