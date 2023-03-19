@@ -1,6 +1,6 @@
 version: 1.0.{build}
 
-os: Windows Server 2012 R2
+os: Windows Server 2019
 
 environment:
   INAPPVEYOR: 1
@@ -19,7 +19,7 @@ environment:
       SQLINSTANCE: SQL2014
     - PYTHON: "C:\\Python311"
       SQLINSTANCE: SQL2012SP1
-    - PYTHON: "C:\\Python311"
+    - PYTHON: "C:\\Python311-x64"
       SQLINSTANCE: SQL2008R2SP2
 
 install:
