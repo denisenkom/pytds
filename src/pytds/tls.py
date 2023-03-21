@@ -81,6 +81,18 @@ class EncryptedSocket(object):
 def verify_cb(conn, cert, err_num, err_depth, ret_code):
     return ret_code == 1
 
+def is_san_matching(san: str, host_name: str) -> bool:
+    for item in san.split(','):
+        dnsentry = item.lstrip('DNS:').strip()
+        # SANs are usually have form like: DNS:hostname
+        if dnsentry == s_name:
+            return True
+        if dnsentry[0:2] == "*.":  # support for wildcards, but only at the first position
+            afterstar_parts = dnsentry[2:]
+            afterstar_parts_sname = '.'.join(s_name.split('.')[1:])  # remove first part of dns name
+            if afterstar_parts == afterstar_parts_sname:
+                return True
+    return False
 
 def validate_host(cert, name):
     """
@@ -105,17 +117,8 @@ def validate_host(cert, name):
         ext = cert.get_extension(i)
         if ext.get_short_name() == b'subjectAltName':
             s = str(ext)
-            items = s.split(',')
-            for item in items:
-                dnsentry = item.strip()
-                # SANs are usually have form like: DNS:hostname
-                if dnsentry.startswith('DNS:') and s[4:] == s_name:
-                    return True
-                if dnsentry.startswith('DNS:*.'):  # support for wildcards, but only at the first position
-                    afterstar_parts = dnsentry[6:]
-                    afterstar_parts_sname = '.'.join(s_name.split('.')[1:])  # remove first part of dns name
-                    if afterstar_parts == afterstar_parts_sname:
-                        return True
+            if is_san_matching(s, s_name):
+                return True
 
     # TODO check if wildcard is needed in CN as well
     return False
