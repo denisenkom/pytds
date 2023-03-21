@@ -85,11 +85,11 @@ def is_san_matching(san: str, host_name: str) -> bool:
     for item in san.split(','):
         dnsentry = item.lstrip('DNS:').strip()
         # SANs are usually have form like: DNS:hostname
-        if dnsentry == s_name:
+        if dnsentry == host_name:
             return True
         if dnsentry[0:2] == "*.":  # support for wildcards, but only at the first position
             afterstar_parts = dnsentry[2:]
-            afterstar_parts_sname = '.'.join(s_name.split('.')[1:])  # remove first part of dns name
+            afterstar_parts_sname = '.'.join(host_name.split('.')[1:])  # remove first part of dns name
             if afterstar_parts == afterstar_parts_sname:
                 return True
     return False
