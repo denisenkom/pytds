@@ -1229,6 +1229,21 @@ class _TdsSession(object):
         instance_name = instance_name.encode('ascii')
         if len(instance_name) > 65490:
             raise ValueError('Instance name is too long')
+        if tds_base.IS_TDS74_PLUS(self):
+            start_pos = 26
+            buf = struct.pack(b'>BHHBHHBHHBHHBHHHB',
+                PreLoginToken.VERSION, start_pos, 6,
+                # encryption
+                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
+                # instance
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                # thread id
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                # MARS enabled
+                PreLoginToken.MARS, start_pos + 6 + 1 + len(instance_name) + 1 + 4, 1,
+                PreLoginToken.B_FEDAUTHREQUIRED, start_pos + start_pos + 6 + 1 + len(instance_name) + 1 + 4 + 1,1,
+                # end
+                PreLoginToken.TERMINATOR)
         if tds_base.IS_TDS72_PLUS(self):
             start_pos = 26
             buf = struct.pack(
@@ -1281,6 +1296,9 @@ class _TdsSession(object):
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
             attribs['mars'] = login.use_mars
+        if tds_base.IS_TDS74_PLUS(self):
+            w.put_byte(1 if login.access_token else 0)
+            attribs['fedautch'] = bool(login.access_token)
         logger.info('Sending PRELOGIN %s', ' '.join('%s=%s' % (n, v) for n, v in attribs.items()))
 
         w.flush()
@@ -1323,6 +1341,9 @@ class _TdsSession(object):
             elif type_id == PreLoginToken.INSTOPT:
                 # ignore instance name mismatch
                 pass
+            elif type_id == PreLoginToken.FEDAUTHREQUIRED:
+                if not login.access_token:
+                    raise tds_base.Error('Server requires Federated Auth but was not provided')
             i += 5
         logger.info("Got PRELOGIN response crypt=%x mars=%d",
                     crypt_flag, self.conn._mars_enabled)
@@ -1420,7 +1441,7 @@ class _TdsSession(object):
         w.put_smallint(current_pos)
         w.put_smallint(len(client_host_name))
         current_pos += len(client_host_name) * 2
-        if self.authentication:
+        if self.authentication or self.login.access_token:
             w.put_smallint(0)
             w.put_smallint(0)
             w.put_smallint(0)
@@ -1472,7 +1493,7 @@ class _TdsSession(object):
             # sspi long
             w.put_int(0)
         w.write_ucs2(client_host_name)
-        if not self.authentication:
+        if not self.authentication and not self.login.access_token:
             w.write_ucs2(user_name)
             w.write(tds7_crypt_pass(login.password))
         w.write_ucs2(login.app_name)
@@ -1484,6 +1505,9 @@ class _TdsSession(object):
             w.write(auth_packet)
         w.write_ucs2(login.attach_db_file)
         w.write_ucs2(login.change_password)
+        if login.access_token:
+            w.put_byte(tds_base.TDS_LOGIN_FEATURE_FEDAUTH)
+            
         w.flush()
 
     _SERVER_TO_CLIENT_MAPPING = {
