@@ -222,6 +222,7 @@ TDS_FOLEDB = 0x10
 TDS_FREADONLY_INTENT = 0x20
 
 # TDS Login Features
+# as per https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 TDS_LOGIN_FEATURE_SESSIONRECOVERY = 0x01
 TDS_LOGIN_FEATURE_FEDAUTH = 0x02
 TDS_LOGIN_FEATURE_COLUMNENCRYPTION = 0x04
