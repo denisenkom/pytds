@@ -6,8 +6,8 @@
 
 .. moduleauthor:: Mikhail Denisenko <denisenkom@gmail.com>
 """
-import socket
 import logging
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -91,14 +91,19 @@ class SspiAuth(object):
 
 
 class NtlmAuth(object):
-    """ NTLM authentication, uses Python implementation
+    """ NTLM authentication, uses Python implementation (ntlm-auth)
+
+    For more information about NTLM authentication see https://github.com/jborean93/ntlm-auth
 
     :param user_name: User name
     :type user_name: str
     :param password: User password
     :type password: str
+    :param ntlm_compatibility: NTLM compatibility level, default is 3(NTLMv2)
+    :type ntlm_compatibility: int
     """
-    def __init__(self, user_name, password):
+
+    def __init__(self, user_name, password, ntlm_compatibility=3):
         self._user_name = user_name
         if '\\' in user_name:
             domain, self._user = user_name.split('\\', 1)
@@ -107,41 +112,21 @@ class NtlmAuth(object):
             self._domain = 'WORKSPACE'
             self._user = user_name
         self._password = password
-        try:
-            from ntlm_auth.ntlm import NegotiateFlags
-        except ImportError:
-            raise ImportError("To use NTLM authentication you need to install ntlm-auth module")
-        self._nego_flags = NegotiateFlags.NTLMSSP_NEGOTIATE_128 | \
-                           NegotiateFlags.NTLMSSP_NEGOTIATE_56 | \
-                           NegotiateFlags.NTLMSSP_NEGOTIATE_UNICODE | \
-                           NegotiateFlags.NTLMSSP_NEGOTIATE_VERSION | \
-                           NegotiateFlags.NTLMSSP_REQUEST_TARGET | \
-                           NegotiateFlags.NTLMSSP_NEGOTIATE_NTLM | \
-                           NegotiateFlags.NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY | \
-                           NegotiateFlags.NTLMSSP_NEGOTIATE_ALWAYS_SIGN
-        self._ntlm_compat = 2
         self._workstation = socket.gethostname().upper()
 
+        try:
+            from ntlm_auth.ntlm import NtlmContext
+        except ImportError:
+            raise ImportError("To use NTLM authentication you need to install ntlm-auth module")
+
+        self._ntlm_context = NtlmContext(self._user, self._password, self._domain, self._workstation,
+                                         ntlm_compatibility=ntlm_compatibility)
+
     def create_packet(self):
-        import ntlm_auth.ntlm
-        return ntlm_auth.ntlm.NegotiateMessage(
-            negotiate_flags=self._nego_flags,
-            domain_name=self._domain,
-            workstation=self._workstation,
-        ).get_data()
+        return self._ntlm_context.step()
 
     def handle_next(self, packet):
-        import ntlm_auth.ntlm
-        challenge = ntlm_auth.ntlm.ChallengeMessage(packet)
-        return ntlm_auth.ntlm.AuthenticateMessage(
-            user_name=self._user,
-            password=self._password,
-            domain_name=self._domain,
-            workstation=self._workstation,
-            challenge_message=challenge,
-            ntlm_compatibility=self._ntlm_compat,
-            server_certificate_hash=None,
-        ).get_data()
+        return self._ntlm_context.step(packet)
 
     def close(self):
         pass
