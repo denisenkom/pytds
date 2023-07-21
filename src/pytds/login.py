@@ -87,7 +87,6 @@ class SspiAuth(object):
 
     def close(self):
         self._ctx.close()
-        self._cred.close()
 
 
 class NtlmAuth(object):

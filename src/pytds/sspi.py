@@ -1,7 +1,10 @@
 import six
+import logging
+
 from ctypes import c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER,\
     Structure, c_wchar_p, WINFUNCTYPE, windll, byref, cast
 
+logger = logging.getLogger(__name__)
 
 class Status(object):
     SEC_E_OK = 0
@@ -321,16 +324,17 @@ class SspiCredentials(object):
     def __init__(self, package, use, identity=None):
         self._handle = SecHandle()
         self._ts = TimeStamp()
+        logger.debug("Acquiring credentials handle")
         sec_fn.AcquireCredentialsHandle(
             None, package, use,
             None, byref(identity) if identity and identity.Domain else None,
             None, None, byref(self._handle), byref(self._ts))
 
     def close(self):
-        if self._handle.lower or self._handle.upper:
+        if self._handle and (self._handle.lower or self._handle.upper):
+            logger.debug("Releasing credentials handle")
             sec_fn.FreeCredentialsHandle(byref(self._handle))
-            self._handle.lower = 0
-            self._handle.upper = 0
+            self._handle = None
 
     def __del__(self):
         self.close()
@@ -355,6 +359,8 @@ class SspiCredentials(object):
             byte_ordering='network',
             input_buffers=None,
             output_buffers=None):
+        if self._handle is None:
+            raise RuntimeError("Using closed SspiCredentials object")
         ctx = _SecContext()
         ctx._cred = self
         ctx._handle = SecHandle()
@@ -362,6 +368,7 @@ class SspiCredentials(object):
         ctx._attrs = ULONG()
         input_buffers_desc = _make_buffers_desc(input_buffers) if input_buffers else None
         output_buffers_desc = _make_buffers_desc(output_buffers) if output_buffers else None
+        logger.debug("Initializing security context")
         status = sec_fn.InitializeSecurityContext(
             byref(self._handle),
             None,
