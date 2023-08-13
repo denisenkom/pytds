@@ -43,7 +43,10 @@ from . import tls
 import pkg_resources
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = pkg_resources.get_distribution('python-tds').version
+try:
+    __version__ = pkg_resources.get_distribution('python-tds').version
+except:
+    __version__ = "DEV"
 
 logger = logging.getLogger(__name__)
 

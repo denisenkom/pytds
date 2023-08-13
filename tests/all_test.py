@@ -586,6 +586,13 @@ class Auth(unittest.TestCase):
             cursor.execute('select 1')
             cursor.fetchall()
 
+    @unittest.skipUnless(os.getenv('NTLM_USER') and os.getenv('NTLM_PASSWORD'), "requires NTLM_USER and NTLM_PASSWORD environment variables to be set")
+    def test_spnego(self):
+        conn = connect(settings.HOST, auth=pytds.login.SpnegoAuth(os.getenv('NTLM_USER'), os.getenv('NTLM_PASSWORD')))
+        with conn.cursor() as cursor:
+            cursor.execute('select 1')
+            cursor.fetchall()
+
     @unittest.skipUnless(sys.platform.startswith("win"), "requires Windows")
     def test_sspi(self):
         from pytds.login import SspiAuth

@@ -131,6 +131,29 @@ class NtlmAuth(object):
         pass
 
 
+class SpnegoAuth(object):
+    """ Authentication using Negotiate protocol, uses implementation provided pyspnego package
+
+    Takes same parameters as spnego.client function.
+    """
+
+    def __init__(self, *args, **kwargs):
+        try:
+            import spnego
+        except ImportError:
+            raise ImportError("To use spnego authentication you need to install pyspnego package")
+        self._context = spnego.client(*args, **kwargs)
+
+    def create_packet(self):
+        return self._context.step()
+
+    def handle_next(self, packet):
+        return self._context.step(packet)
+
+    def close(self):
+        pass
+
+
 class KerberosAuth(object):
     def __init__(self, server_principal):
         try:
