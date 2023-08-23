@@ -92,6 +92,9 @@ class SspiAuth(object):
 class NtlmAuth(object):
     """ NTLM authentication, uses Python implementation (ntlm-auth)
 
+    This class is now deprecated since `ntlm-auth` package, on which it depends, is now deprecated.
+    Instead of this class use SpnegoAuth class.
+
     For more information about NTLM authentication see https://github.com/jborean93/ntlm-auth
 
     :param user_name: User name
