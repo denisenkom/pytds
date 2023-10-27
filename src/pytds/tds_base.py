@@ -1,3 +1,10 @@
+"""
+.. module:: tds_base
+   :platform: Unix, Windows, MacOSX
+   :synopsis: Various internal stuff
+
+.. moduleauthor:: Mikhail Denisenko <denisenkom@gmail.com>
+"""
 import socket
 import sys
 
@@ -278,7 +285,13 @@ TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
 TDS_ENCRYPTION_REQUIRE = 2
 
+
 class PreLoginToken:
+    """
+    PRELOGIN token option identifiers, corresponds to PL_OPTION_TOKEN in the spec.
+
+    Spec link: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/60f56408-0188-4cd5-8b90-25c6f2423868
+    """
     VERSION = 0
     ENCRYPTION = 1
     INSTOPT = 2
@@ -289,11 +302,18 @@ class PreLoginToken:
     NONCEOPT = 7
     TERMINATOR = 0xff
 
+
 class PreLoginEnc:
+    """
+    PRELOGIN encryption parameter.
+
+    Spec link: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/60f56408-0188-4cd5-8b90-25c6f2423868
+    """
     ENCRYPT_OFF = 0  # Encryption available but off
     ENCRYPT_ON = 1  # Encryption available and on
     ENCRYPT_NOT_SUP = 2  # Encryption not available
     ENCRYPT_REQ = 3  # Encryption required
+
 
 PLP_MARKER = 0xffff
 PLP_NULL = 0xffffffffffffffff
@@ -321,11 +341,11 @@ class CommonEqualityMixin(object):
 
 
 def iterdecode(iterable, codec):
-    """ Uses an incremental decoder to decode each chunk in iterable.
+    """ Uses an incremental decoder to decode each chunk of string in iterable.
     This function is a generator.
 
-    :param iterable: Iterable object which yields raw data to be decoded
-    :param codec: An instance of codec
+    :param iterable: Iterable object which yields raw data to be decoded.
+    :param codec: An instance of a codec which will be used for decoding.
     """
     decoder = codec.incrementaldecoder()
     for chunk in iterable:
@@ -334,6 +354,9 @@ def iterdecode(iterable, codec):
 
 
 def force_unicode(s):
+    """
+    Convert input into a string.  If input is a byte array, it will be decoded using UTF8 decoder.
+    """
     if isinstance(s, bytes):
         try:
             return s.decode('utf8')
@@ -346,9 +369,9 @@ def force_unicode(s):
 
 
 def tds_quote_id(ident):
-    """ Quote an identifier
+    """ Quote an identifier according to MSSQL rules
 
-    :param ident: id to quote
+    :param ident: identifier to quote
     :returns: Quoted identifier
     """
     return '[{0}]'.format(ident.replace(']', ']]'))
@@ -388,12 +411,16 @@ else:
     def join_bytearrays(bas):
         return b''.join(bytes(ba) for ba in bas)
 
+
 # exception hierarchy
 class Warning(exc_base_class):
     pass
 
 
 class Error(exc_base_class):
+    """
+    Base class for all error classes, except TimeoutError
+    """
     pass
 
 
@@ -401,10 +428,16 @@ TimeoutError = socket.timeout
 
 
 class InterfaceError(Error):
+    """
+    TODO add documentation
+    """
     pass
 
 
 class DatabaseError(Error):
+    """
+    This error is raised when MSSQL server returns an error which includes error number
+    """
     @property
     def message(self):
         if self.procname:
@@ -419,40 +452,67 @@ class DatabaseError(Error):
 
 
 class ClosedConnectionError(InterfaceError):
+    """
+    This error is raised when MSSQL server closes connection.
+    """
     def __init__(self):
         super(ClosedConnectionError, self).__init__('Server closed connection')
 
 
 class DataError(Error):
+    """
+    This error is raised when input parameter contains data which cannot be converted to acceptable data type.
+    """
     pass
 
 
 class OperationalError(DatabaseError):
+    """
+    TODO add documentation
+    """
     pass
 
 
 class LoginError(OperationalError):
+    """
+    This error is raised if provided login credentials are invalid
+    """
     pass
 
 
 class IntegrityError(DatabaseError):
+    """
+    TODO add documentation
+    """
     pass
 
 
 class InternalError(DatabaseError):
+    """
+    TODO add documentation
+    """
     pass
 
 
 class ProgrammingError(DatabaseError):
+    """
+    TODO add documentation
+    """
     pass
 
 
 class NotSupportedError(DatabaseError):
+    """
+    TODO add documentation
+    """
     pass
 
 
 # DB-API type definitions
 class DBAPITypeObject:
+    """
+    TODO add documentation
+    """
     def __init__(self, *values):
         self.values = set(values)
 
@@ -487,6 +547,9 @@ XML = DBAPITypeObject(SYBMSXML)
 
 
 class InternalProc(object):
+    """
+    TODO add documentation
+    """
     def __init__(self, proc_id, name):
         self.proc_id = proc_id
         self.name = name
@@ -599,6 +662,23 @@ def total_seconds(td):
 
 
 class Column(CommonEqualityMixin):
+    """
+    Describes table column.  Can be used to define schema for bulk insert.
+
+    Following flags can be used for columns in `flags` parameter:
+
+    * :const:`.fNullable` - column can contain `NULL` values
+    * :const:`.fCaseSen` - column is case-sensitive
+    * :const:`.fReadWrite` - TODO document
+    * :const:`.fIdentity` - TODO document
+    * :const:`.fComputed` - TODO document
+
+    :param name: Name of the column
+    :type name: str
+    :param type: Type of a column, e.g. :class:`pytds.tds_types.IntType`
+    :param flags: Combination of flags for the column, multiple flags can be combined using binary or operator.
+                  Possible flags are described above.
+    """
     fNullable = 1
     fCaseSen = 2
     fReadWrite = 8
@@ -630,4 +710,7 @@ class Column(CommonEqualityMixin):
         )
 
     def choose_serializer(self, type_factory, collation):
+        """
+        Chooses appropriate data type serializer for column's data type.
+        """
         return type_factory.serializer_by_type(sql_type=self.type, collation=collation)

@@ -43,7 +43,10 @@ from . import tls
 import pkg_resources
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
-__version__ = pkg_resources.get_distribution('python-tds').version
+try:
+    __version__ = pkg_resources.get_distribution('python-tds').version
+except:
+    __version__ = "DEV"
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +100,9 @@ def dict_row_strategy(column_names):
     return row_factory
 
 
-def is_valid_identifier(name):
+def is_valid_identifier(name: str) -> bool:
+    """ Returns true if given name can be used as an identifier in Python, otherwise returns false.
+    """
     return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
 
 
@@ -255,7 +260,7 @@ class Connection(object):
     @property
     def tds_version(self):
         """
-        Version of tds protocol that is being used by this connection
+        Version of the TDS protocol that is being used by this connection
         """
         self._assert_open()
         return self._conn.tds_version
@@ -270,7 +275,7 @@ class Connection(object):
 
     @property
     def mars_enabled(self):
-        """ Whether MARS is enabled or not on connection
+        """ Whether Multiple Active Results Sets (MARS) is enabled or not on the current connection
         """
         return self._conn.mars_enabled
 
@@ -569,7 +574,7 @@ class Cursor(six.Iterator):
     def get_proc_outputs(self):
         """
         If stored procedure has result sets and OUTPUT parameters use this method
-        after you processed all result sets to get values of OUTPUT parameters.
+        after you processed all result sets to get values of the OUTPUT parameters.
         :return: A list of output parameter values.
         """
 
@@ -610,7 +615,9 @@ class Cursor(six.Iterator):
 
     @property
     def spid(self):
-        """ MSSQL Server's SPID (session id)
+        """ MSSQL Server's session ID (SPID)
+
+        It can be used to correlate connections between client and server logs.
         """
         return self._session._spid
 
@@ -623,7 +630,10 @@ class Cursor(six.Iterator):
     tzinfo_factory = property(_get_tzinfo_factory, _set_tzinfo_factory)
 
     def get_proc_return_status(self):
-        """ Last stored proc result
+        """ Last executed stored procedure's return value
+
+        Returns integer value returned by `RETURN` statement from last executed stored procedure.
+        If no value was not returned or no stored procedure was executed return `None`.
         """
         if self._session is None:
             return None
@@ -632,7 +642,7 @@ class Cursor(six.Iterator):
         return self._session.ret_status if self._session.has_status else None
 
     def cancel(self):
-        """ Cancel current statement
+        """ Cancel currently executing statement or stored procedure call
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)
@@ -728,11 +738,30 @@ class Cursor(six.Iterator):
         self._session.find_result_or_done()
         self._setup_row_factory()
 
-    def execute(self, operation, params=()):
-        """ Execute the query
+    def execute(self, operation: str, params=()):
+        """ Execute an SQL query
 
-        :param operation: SQL statement
-        :type operation: str
+        Optionally query can be executed with parameters.
+        To make parametrized query use `%s` in the query to denote a parameter
+        and pass a tuple with parameter values, e.g.:
+
+        .. code-block::
+
+           execute("select %s, %s", (1,2))
+
+        This will execute query replacing first `%s` with first parameter value - 1,
+        and second `%s` with second parameter value -2.
+
+        Another option is to use named parameters with passing a dictionary, e.g.:
+
+        .. code-block::
+
+           execute("select %(param1)s, %(param2)s", {param1=1, param2=2})
+
+        Both those ways of passing parameters is safe from SQL injection attacks.
+
+        This function does not return results of the execution.
+        Use :func:`fetchone` or similar to fetch results.
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)
@@ -758,6 +787,9 @@ class Cursor(six.Iterator):
         conn._dirty = False
 
     def executemany(self, operation, params_seq):
+        """
+        Execute same SQL query multiple times for each parameter set in the `params_seq` list.
+        """
         counts = []
         for params in params_seq:
             self.execute(operation, params)
@@ -768,19 +800,16 @@ class Cursor(six.Iterator):
 
     def execute_scalar(self, query_string, params=None):
         """
-        This method sends a query to the MS SQL Server to which this object
-        instance is connected, then returns first column of first row from
-        result. An exception is raised on failure. If there are pending
+        This method executes SQL query then returns first column of first row or the
+        result.
 
-        results or rows prior to executing this command, they are silently
-        discarded.
-
-        This method accepts Python formatting. Please see execute_query()
-        for details.
+        Query can be parametrized, see :func:`execute` method for details.
 
         This method is useful if you want just a single value, as in:
 
-            ``conn.execute_scalar('SELECT COUNT(*) FROM employees')``
+        .. code-block::
+
+           conn.execute_scalar('SELECT COUNT(*) FROM employees')
 
         This method works in the same way as ``iter(conn).next()[0]``.
         Remaining rows, if any, can still be iterated after calling this
@@ -806,7 +835,7 @@ class Cursor(six.Iterator):
     def rowcount(self):
         """ Number of rows affected by previous statement
 
-        :returns: -1 if this information was not supplied by MSSQL server
+        :returns: -1 if this information was not supplied by the server
         """
         if self._session is None:
             return -1
@@ -824,7 +853,35 @@ class Cursor(six.Iterator):
         else:
             return None
 
-    def set_stream(self, column_idx, stream):
+    def set_stream(self, column_idx: int, stream):
+        """
+        This function can be used to efficiently receive values which can be very large, e.g. `TEXT`, `VARCHAR(MAX)`, `VARBINARY(MAX)`.
+
+        When streaming is not enabled, values are loaded to memory as they are received from server and
+        once entire row is loaded, it is returned.
+
+        With this function streaming receiver can be specified via `stream` parameter which will receive chunks of the data
+        as they are received. For each received chunk driver will call stream's write method.
+        For example this can be used to save value of a field into a file, or to
+        proces value as it is being received.
+
+        For string fields chunks are represented as unicode strings.
+        For binary fields chunks are represented as `bytes` strings.
+
+        Example usage:
+
+        .. code-block::
+
+           cursor.execute("select N'very large field'")
+           cursor.set_stream(0, StringIO())
+           row = cursor.fetchone()
+           # now row[0] contains instance of a StringIO object which was gradually
+           # filled with output from server for first column.
+
+        :param column_idx: Zero based index of a column for which to setup streaming receiver
+        :type column_idx: int
+        :param stream: Stream object that will be receiving chunks of data via it's `write` method.
+        """
         if len(self._session.res_info.columns) <= column_idx or column_idx < 0:
             raise ValueError('Invalid value for column_idx')
         self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
@@ -855,14 +912,16 @@ class Cursor(six.Iterator):
             return None
 
     def fetchone(self):
-        """ Fetches next row, or ``None`` if there are no more rows
+        """ Fetch next row.
+
+        Returns row using currently configured factory, or ``None`` if there are no more rows
         """
         row = self._session.fetchone()
         if row:
             return self._row_factory(row)
 
     def fetchmany(self, size=None):
-        """ Fetches next multiple rows
+        """ Fetch next N rows
 
         :param size: Maximum number of rows to return, default value is cursor.arraysize
         :returns: List of rows
@@ -879,7 +938,11 @@ class Cursor(six.Iterator):
         return rows
 
     def fetchall(self):
-        """ Fetches all remaining rows
+        """ Fetch all remaining rows
+
+        Do not use this if you expect large number of rows returned by the server,
+        since this method will load all rows into memory.  It is more efficient
+        to load and process rows by iterating over them.
         """
         return list(row for row in self)
 
@@ -918,7 +981,7 @@ class Cursor(six.Iterator):
 
         :keyword sep: Separator used in csv file
         :type sep: str
-        :keyword columns: List of Column objects or column names in target
+        :keyword columns: List of :class:`pytds.tds_base.Column` objects or column names in target
           table to insert to. SQL Server will do some conversions, so these
           may not have to match the actual table definition exactly.
           If not provided will insert into all columns assuming nvarchar(4000)
@@ -952,7 +1015,7 @@ class Cursor(six.Iterator):
         :keyword null_string: String that should be interpreted as a NULL when
           reading the CSV file. Has no meaning if using data instead of file.
         :keyword data: The data to insert as an iterable of rows, which are
-          iterables of values. Specify either this or file, not both.
+          iterables of values. Specify either data parameter or file parameter but not both.
         """
         conn = self._conn()
         rows = None

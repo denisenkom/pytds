@@ -12,7 +12,7 @@ from . import tds_types
 from . import tls
 from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 # packet header
 # https://msdn.microsoft.com/en-us/library/dd340948.aspx

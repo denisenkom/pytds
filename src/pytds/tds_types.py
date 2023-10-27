@@ -463,6 +463,10 @@ class SmallIntType(SqlTypeMetaclass):
 
 
 class IntType(SqlTypeMetaclass):
+    """
+    Integer type, corresponds to `INT <https://learn.microsoft.com/en-us/sql/t-sql/data-types/int-bigint-smallint-and-tinyint-transact-sql>`_
+    type in the MSSQL server.
+    """
     type = tds_base.SYBINTN
     size = 4
 
@@ -2544,7 +2548,7 @@ class DeclarationsParser(object):
             ('text', TextType),
             (r'(?:ntext|national\s+text)', NTextType),
             ('binary', BinaryType),
-            ('binary\((\d+)\)', lambda size_str: BinaryType(size=int(size_str))),
+            (r'binary\((\d+)\)', lambda size_str: BinaryType(size=int(size_str))),
             ('(?:varbinary|binary varying)', VarBinaryType),
             (r'(?:varbinary|binary varying)\((\d+)\)', lambda size_str: VarBinaryType(size=int(size_str))),
             (r'varbinary\(max\)', VarBinaryMaxType),
@@ -2560,9 +2564,9 @@ class DeclarationsParser(object):
             (r'datetimeoffset\((\d+)\)',
              lambda precision_str: DateTimeOffsetType(precision=int(precision_str))),
             ('(?:decimal|dec|numeric)', DecimalType),
-            ('(?:decimal|dec|numeric)\((\d+)\)',
+            (r'(?:decimal|dec|numeric)\((\d+)\)',
              lambda precision_str: DecimalType(precision=int(precision_str))),
-            ('(?:decimal|dec|numeric)\((\d+), ?(\d+)\)',
+            (r'(?:decimal|dec|numeric)\((\d+), ?(\d+)\)',
              lambda precision_str, scale_str: DecimalType(precision=int(precision_str), scale=int(scale_str))),
             ('smallmoney', SmallMoneyType),
             ('money', MoneyType),
