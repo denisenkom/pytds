@@ -616,6 +616,8 @@ class Cursor(six.Iterator):
     @property
     def spid(self):
         """ MSSQL Server's session ID (SPID)
+
+        It can be used to correlate connections between client and server logs.
         """
         return self._session._spid
 
@@ -628,7 +630,10 @@ class Cursor(six.Iterator):
     tzinfo_factory = property(_get_tzinfo_factory, _set_tzinfo_factory)
 
     def get_proc_return_status(self):
-        """ Last stored proc result
+        """ Last executed stored procedure's return value
+
+        Returns integer value returned by `RETURN` statement from last executed stored procedure.
+        If no value was not returned or no stored procedure was executed return `None`.
         """
         if self._session is None:
             return None
@@ -733,11 +738,30 @@ class Cursor(six.Iterator):
         self._session.find_result_or_done()
         self._setup_row_factory()
 
-    def execute(self, operation, params=()):
+    def execute(self, operation: str, params=()):
         """ Execute an SQL query
 
-        :param operation: SQL statement
-        :type operation: str
+        Optionally query can be executed with parameters.
+        To make parametrized query use `%s` in the query to denote a parameter
+        and pass a tuple with parameter values, e.g.:
+
+        .. code-block::
+
+           execute("select %s, %s", (1,2))
+
+        This will execute query replacing first `%s` with first parameter value - 1,
+        and second `%s` with second parameter value -2.
+
+        Another option is to use named parameters with passing a dictionary, e.g.:
+
+        .. code-block::
+
+           execute("select %(param1)s, %(param2)s", {param1=1, param2=2})
+
+        Both those ways of passing parameters is safe from SQL injection attacks.
+
+        This function does not return results of the execution.
+        Use :func:`fetchone` or similar to fetch results.
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)
@@ -779,12 +803,13 @@ class Cursor(six.Iterator):
         This method executes SQL query then returns first column of first row or the
         result.
 
-        This method accepts Python formatting. Please see execute_query()
-        for details.
+        Query can be parametrized, see :func:`execute` method for details.
 
         This method is useful if you want just a single value, as in:
 
-            ``conn.execute_scalar('SELECT COUNT(*) FROM employees')``
+        .. code-block::
+
+           conn.execute_scalar('SELECT COUNT(*) FROM employees')
 
         This method works in the same way as ``iter(conn).next()[0]``.
         Remaining rows, if any, can still be iterated after calling this
@@ -828,7 +853,35 @@ class Cursor(six.Iterator):
         else:
             return None
 
-    def set_stream(self, column_idx, stream):
+    def set_stream(self, column_idx: int, stream):
+        """
+        This function can be used to efficiently receive values which can be very large, e.g. `TEXT`, `VARCHAR(MAX)`, `VARBINARY(MAX)`.
+
+        When streaming is not enabled, values are loaded to memory as they are received from server and
+        once entire row is loaded, it is returned.
+
+        With this function streaming receiver can be specified via `stream` parameter which will receive chunks of the data
+        as they are received. For each received chunk driver will call stream's write method.
+        For example this can be used to save value of a field into a file, or to
+        proces value as it is being received.
+
+        For string fields chunks are represented as unicode strings.
+        For binary fields chunks are represented as `bytes` strings.
+
+        Example usage:
+
+        .. code-block::
+
+           cursor.execute("select N'very large field'")
+           cursor.set_stream(0, StringIO())
+           row = cursor.fetchone()
+           # now row[0] contains instance of a StringIO object which was gradually
+           # filled with output from server for first column.
+
+        :param column_idx: Zero based index of a column for which to setup streaming receiver
+        :type column_idx: int
+        :param stream: Stream object that will be receiving chunks of data via it's `write` method.
+        """
         if len(self._session.res_info.columns) <= column_idx or column_idx < 0:
             raise ValueError('Invalid value for column_idx')
         self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
