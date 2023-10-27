@@ -2566,7 +2566,7 @@ class DeclarationsParser(object):
             ('(?:decimal|dec|numeric)', DecimalType),
             (r'(?:decimal|dec|numeric)\((\d+)\)',
              lambda precision_str: DecimalType(precision=int(precision_str))),
-            (r'(?:decimal|dec|numeric)\((\d+), (\d+)\)',
+            (r'(?:decimal|dec|numeric)\((\d+), ?(\d+)\)',
              lambda precision_str, scale_str: DecimalType(precision=int(precision_str), scale=int(scale_str))),
             ('smallmoney', SmallMoneyType),
             ('money', MoneyType),
