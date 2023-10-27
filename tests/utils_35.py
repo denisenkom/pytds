@@ -75,16 +75,16 @@ def generate_root_certificate(private_key: rsa.RSAPrivateKey) -> x509.Certificat
         .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1)) \
         .serial_number(1) \
         .public_key(private_key.public_key()) \
-        .add_extension(extension=x509.BasicConstraints(ca=True, path_length=1), critical=True) \
-        .add_extension(extension=x509.KeyUsage(digital_signature=False,
-                                               content_commitment=False,
-                                               key_encipherment=False,
-                                               data_encipherment=False,
-                                               key_agreement=False,
-                                               key_cert_sign=True,
-                                               crl_sign=True,
-                                               encipher_only=False,
-                                               decipher_only=False,
-                                               ), critical=True) \
+        .add_extension(x509.BasicConstraints(ca=True, path_length=1), critical=True) \
+        .add_extension(x509.KeyUsage(digital_signature=False,
+                                     content_commitment=False,
+                                     key_encipherment=False,
+                                     data_encipherment=False,
+                                     key_agreement=False,
+                                     key_cert_sign=True,
+                                     crl_sign=True,
+                                     encipher_only=False,
+                                     decipher_only=False,
+                                     ), critical=True) \
         .sign(private_key=private_key, algorithm=hashes.SHA256(), backend=backend)
 
