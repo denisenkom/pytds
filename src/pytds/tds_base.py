@@ -664,6 +664,20 @@ def total_seconds(td):
 class Column(CommonEqualityMixin):
     """
     Describes table column.  Can be used to define schema for bulk insert.
+
+    Following flags can be used for columns in `flags` parameter:
+
+    * :const:`.fNullable` - column can contain `NULL` values
+    * :const:`.fCaseSen` - column is case-sensitive
+    * :const:`.fReadWrite` - TODO document
+    * :const:`.fIdentity` - TODO document
+    * :const:`.fComputed` - TODO document
+
+    :param name: Name of the column
+    :type name: str
+    :param type: Type of a column, e.g. :class:`pytds.tds_types.IntType`
+    :param flags: Combination of flags for the column, multiple flags can be combined using binary or operator.
+                  Possible flags are described above.
     """
     fNullable = 1
     fCaseSen = 2

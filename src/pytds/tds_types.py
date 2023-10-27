@@ -463,6 +463,10 @@ class SmallIntType(SqlTypeMetaclass):
 
 
 class IntType(SqlTypeMetaclass):
+    """
+    Integer type, corresponds to `INT <https://learn.microsoft.com/en-us/sql/t-sql/data-types/int-bigint-smallint-and-tinyint-transact-sql>`_
+    type in the MSSQL server.
+    """
     type = tds_base.SYBINTN
     size = 4
 

@@ -981,7 +981,7 @@ class Cursor(six.Iterator):
 
         :keyword sep: Separator used in csv file
         :type sep: str
-        :keyword columns: List of Column objects or column names in target
+        :keyword columns: List of :class:`pytds.tds_base.Column` objects or column names in target
           table to insert to. SQL Server will do some conversions, so these
           may not have to match the actual table definition exactly.
           If not provided will insert into all columns assuming nvarchar(4000)

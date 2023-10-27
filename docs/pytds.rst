@@ -16,6 +16,12 @@
 .. automodule:: pytds.tds_base
    :members:
 
+`pytds.tds_types`  -- Column type classes
+------------------------------------------
+
+.. automodule:: pytds.tds_types
+   :members:
+
 `pytds.tz` -- timezones
 -----------------------
 
