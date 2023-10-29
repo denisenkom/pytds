@@ -1,15 +1,32 @@
 import os
+import json
 
 CONNECT_ARGS = []
 CONNECT_KWARGS = {}
 
-LIVE_TEST = 'HOST' in os.environ
+connection_json_path = os.path.join(os.path.dirname(__file__), ".connection.json")
+
+if os.path.exists(connection_json_path):
+    conf = json.load(open(connection_json_path, 'rb'))
+    default_host = conf["host"]
+    default_database = conf["database"]
+    default_user = conf["sqluser"]
+    default_password = conf["sqlpassword"]
+    default_use_mars = conf["use_mars"]
+else:
+    default_host = None
+    default_database = None
+    default_user = None
+    default_password = None
+    default_use_mars = None
+
+LIVE_TEST = 'HOST' in os.environ or default_host
 if LIVE_TEST:
-    HOST = os.environ['HOST']
-    DATABASE = os.environ.get('DATABASE', 'test')
-    USER = os.environ.get('SQLUSER', 'sa')
-    PASSWORD = os.environ.get('SQLPASSWORD', 'sa')
-    USE_MARS = bool(os.environ.get('USE_MARS', True))
+    HOST = os.environ.get('HOST', default_host)
+    DATABASE = os.environ.get('DATABASE', default_database)
+    USER = os.environ.get('SQLUSER', default_user)
+    PASSWORD = os.environ.get('SQLPASSWORD', default_password)
+    USE_MARS = bool(os.environ.get('USE_MARS', default_use_mars))
     SKIP_SQL_AUTH = bool(os.environ.get('SKIP_SQL_AUTH'))
 
     import pytds

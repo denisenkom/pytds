@@ -20,3 +20,4 @@ docs/_build
 /.test-cache/
 /.cache/
 /.pytest_cache/
+/tests/.connection.json
