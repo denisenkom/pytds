@@ -88,7 +88,7 @@ def does_schema_exist(connection: pytds.Connection, name: str, database: str) ->
         val = cursor.execute_scalar(
             f"""
             select count(*) from {database}.information_schema.schemata
-            where schema_name = %s
+            where schema_name = cast(%s as nvarchar(max))
             """, (name,))
     return val > 0
 
@@ -98,7 +98,7 @@ def does_stored_proc_exist(connection: pytds.Connection, name: str, database: st
         val = cursor.execute_scalar(
             f"""
             select count(*) from {database}.information_schema.routines
-            where routine_schema = %s and routine_name = %s
+            where routine_schema = cast(%s as nvarchar(max)) and routine_name = cast(%s as nvarchar(max))
             """, (schema, name))
     return val > 0
 
@@ -108,12 +108,12 @@ def does_table_exist(connection: pytds.Connection, name: str, database: str, sch
         val = cursor.execute_scalar(
             f"""
             select count(*) from {database}.information_schema.tables
-            where table_schema = %s and table_name = %s
+            where table_schema = cast(%s as nvarchar(max)) and table_name = cast(%s as nvarchar(max))
             """, (schema, name))
     return val > 0
 
 
-def create_test_database(connection):
+def create_test_database(connection: pytds.Connection):
     with connection.cursor() as cur:
         if not does_database_exist(connection=connection, name=settings.DATABASE):
             cur.execute(f'create database [{settings.DATABASE}]')

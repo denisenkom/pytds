@@ -8,6 +8,7 @@ import codecs
 from six import StringIO, BytesIO
 import logging
 import socket
+import utils
 
 from pytds.tds_types import TimeType, DateTime2Type, DateType, DateTimeOffsetType, BitType, TinyIntType, SmallIntType, \
     IntType, BigIntType, RealType, FloatType, NVarCharType, VarBinaryType, SmallDateTimeType, DateTimeType, DecimalType, \
@@ -942,6 +943,7 @@ class TestTds71(unittest.TestCase):
         kwargs['database'] = settings.DATABASE
         kwargs['tds_version'] = pytds.tds_base.TDS71
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
+        utils.create_test_database(self.conn)
 
     def test_parsing(self):
         _params_tests(self)
