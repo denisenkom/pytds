@@ -133,3 +133,12 @@ def create_test_database(connection: pytds.Connection):
                 return @outparam
             end
             ''')
+        # Stored procedure which does not have RETURN statement
+        if not does_stored_proc_exist(connection=connection, name="test_proc_no_return", database=settings.DATABASE):
+            cur.execute('''
+            create procedure test_proc_no_return(@param int)
+            as
+            begin
+                select @param
+            end
+            ''')

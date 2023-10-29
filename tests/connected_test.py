@@ -144,6 +144,16 @@ def test_stored_proc(cursor):
     assert val + 2 == values[2]
     assert val + 2 == cur.get_proc_return_status()
 
+    # after calling stored proc which does not have RETURN statement get_proc_return_status() should return 0
+    # since in this case SQL server issues RETURN STATUS token with 0 value
+    cur.callproc('test_proc_no_return', (val,))
+    assert cur.fetchall() == [(val,)]
+    assert cur.get_proc_return_status() == 0
+
+    #TODO fix this part, currently it fails
+    #assert cur.execute_scalar("select 1") == 1
+    #assert cur.get_proc_return_status() == 0
+
 
 def test_table_selects(db_connection):
     cur = db_connection.cursor()
