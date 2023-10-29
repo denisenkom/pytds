@@ -15,10 +15,10 @@ if os.path.exists(connection_json_path):
     default_use_mars = conf["use_mars"]
 else:
     default_host = None
-    default_database = None
-    default_user = None
-    default_password = None
-    default_use_mars = None
+    default_database = "test"
+    default_user = "sa"
+    default_password = "sa"
+    default_use_mars = True
 
 LIVE_TEST = 'HOST' in os.environ or default_host
 if LIVE_TEST:
