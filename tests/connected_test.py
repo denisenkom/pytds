@@ -272,12 +272,6 @@ def test_table_valued_type_explicit(separate_db_connection):
         separate_db_connection.commit()
 
 
-def test_cursor_env(separate_db_connection):
-    with separate_db_connection.cursor() as cursor:
-        cursor.execute('use master')
-        assert cursor.execute_scalar('select DB_NAME()') == 'master'
-
-
 def test_minimal(cursor):
     cursor.execute('select 1')
     assert [(1,)] == cursor.fetchall()

@@ -53,50 +53,6 @@ logger = logging.getLogger(__name__)
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
 
 
-def create_test_database():
-    if not LIVE_TEST:
-        return
-    logger.info('in setup class')
-    kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs['database'] = 'master'
-    kwargs['autocommit'] = True
-    with connect(**kwargs) as conn:
-        with conn.cursor() as cur:
-            try:
-                cur.execute('drop database [{0}]'.format(settings.DATABASE))
-            except:
-                logger.exception('Failed to drop database')
-                pass
-            try:
-                cur.execute('create database [{0}]'.format(settings.DATABASE))
-            except:
-                pass
-            try:
-                cur.execute('create schema myschema')
-            except:
-                pass
-            try:
-                cur.execute('create table myschema.bulk_insert_table(num int, data varchar(100))')
-            except:
-                pass
-            try:
-                cur.execute('''
-                create procedure testproc (@param int, @add int = 2, @outparam int output)
-                as
-                begin
-                    set nocount on
-                    --select @param
-                    set @outparam = @param + @add
-                    return @outparam
-                end
-                ''')
-            except:
-                pass
-
-
-create_test_database()
-
-
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_timeout_with_mars():
     kwargs = settings.CONNECT_KWARGS.copy()
@@ -263,7 +219,7 @@ def test_get_instances():
 class ConnectionTestCase(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
+        kwargs['database'] = settings.DATABASE
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 
     def tearDown(self):
@@ -983,7 +939,7 @@ class TestTds70(unittest.TestCase):
 class TestTds71(unittest.TestCase):
     def setUp(self):
         kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
+        kwargs['database'] = settings.DATABASE
         kwargs['tds_version'] = pytds.tds_base.TDS71
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
 

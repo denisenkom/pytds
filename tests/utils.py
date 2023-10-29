@@ -1,5 +1,7 @@
 import sys
 import unittest
+import pytds
+import settings
 
 
 if sys.version_info.major < 3:
@@ -73,3 +75,61 @@ class MockSock(object):
         self._packets = packets
         self._curr_packet = 0
         self._packet_pos = 0
+
+
+def does_database_exist(connection: pytds.Connection, name: str):
+    with connection.cursor() as cursor:
+        db_id = cursor.execute_scalar("select db_id(%s)", (name,))
+    return db_id is not None
+
+
+def does_schema_exist(connection: pytds.Connection, name: str, database: str) -> bool:
+    with connection.cursor() as cursor:
+        val = cursor.execute_scalar(
+            f"""
+            select count(*) from {database}.information_schema.schemata
+            where schema_name = %s
+            """, (name,))
+    return val > 0
+
+
+def does_stored_proc_exist(connection: pytds.Connection, name: str, database: str, schema: str = "dbo") -> bool:
+    with connection.cursor() as cursor:
+        val = cursor.execute_scalar(
+            f"""
+            select count(*) from {database}.information_schema.routines
+            where routine_schema = %s and routine_name = %s
+            """, (schema, name))
+    return val > 0
+
+
+def does_table_exist(connection: pytds.Connection, name: str, database: str, schema: str = "dbo") -> bool:
+    with connection.cursor() as cursor:
+        val = cursor.execute_scalar(
+            f"""
+            select count(*) from {database}.information_schema.tables
+            where table_schema = %s and table_name = %s
+            """, (schema, name))
+    return val > 0
+
+
+def create_test_database(connection):
+    with connection.cursor() as cur:
+        if not does_database_exist(connection=connection, name=settings.DATABASE):
+            cur.execute(f'create database [{settings.DATABASE}]')
+        cur.execute(f"use [{settings.DATABASE}]")
+        if not does_schema_exist(connection=connection, name="myschema", database=settings.DATABASE):
+            cur.execute('create schema myschema')
+        if not does_table_exist(connection=connection, name="bulk_insert_table", schema="myschema", database=settings.DATABASE):
+            cur.execute('create table myschema.bulk_insert_table(num int, data varchar(100))')
+        if not does_stored_proc_exist(connection=connection, name="testproc", database=settings.DATABASE):
+            cur.execute('''
+            create procedure testproc (@param int, @add int = 2, @outparam int output)
+            as
+            begin
+                set nocount on
+                --select @param
+                set @outparam = @param + @add
+                return @outparam
+            end
+            ''')

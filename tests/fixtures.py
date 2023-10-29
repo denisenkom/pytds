@@ -4,6 +4,7 @@ import pytest
 
 import pytds.tds
 import settings
+import utils
 
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,11 @@ def db_connection():
     if not LIVE_TEST:
         pytest.skip('LIVE_TEST is not set')
     kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs['database'] = 'master'
-    return pytds.connect(*settings.CONNECT_ARGS, **kwargs)
+    kwargs['database'] = settings.DATABASE
+    conn = pytds.connect(*settings.CONNECT_ARGS, **kwargs)
+    utils.create_test_database(conn)
+    conn.commit()
+    return conn
 
 
 @pytest.fixture
@@ -32,7 +36,7 @@ def separate_db_connection():
     if not LIVE_TEST:
         pytest.skip('LIVE_TEST is not set')
     kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs['database'] = 'master'
+    kwargs['database'] = settings.DATABASE
     conn = pytds.connect(*settings.CONNECT_ARGS, **kwargs)
     yield conn
     conn.close()
