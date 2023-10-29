@@ -944,6 +944,7 @@ class TestTds71(unittest.TestCase):
         kwargs['tds_version'] = pytds.tds_base.TDS71
         self.conn = connect(*settings.CONNECT_ARGS, **kwargs)
         utils.create_test_database(self.conn)
+        self.conn.commit()
 
     def test_parsing(self):
         _params_tests(self)
