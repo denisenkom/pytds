@@ -2,6 +2,8 @@ import codecs
 import contextlib
 import logging
 import datetime
+import warnings
+
 import six
 import socket
 import struct
@@ -927,6 +929,7 @@ class _TdsSession(object):
             return value
 
         if isinstance(value, tds_base.Column):
+            warnings.warn("Usage of Column class as parameter is deprecated, use Param class instead", DeprecationWarning)
             return tds_base.Param(
                 name=name,
                 type=value.type,
