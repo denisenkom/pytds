@@ -41,7 +41,7 @@ from pytds import (
     STRING, BINARY, NUMBER, DATETIME, DECIMAL, INTEGER, REAL, XML)
 from pytds.tds_types import (DateTimeSerializer, SmallMoneyType)
 from pytds.tds_base import (
-    Column,
+    Param,
     IS_TDS73_PLUS, IS_TDS71_PLUS,
     )
 import dbapi20
@@ -840,7 +840,7 @@ class TestBug4(unittest.TestCase):
 def _params_tests(self):
     def test_val(typ, val):
         with self.conn.cursor() as cur:
-            param = Column(type=typ, value=val)
+            param = Param(type=typ, value=val)
             logger.info("Testing with %s", repr(param))
             cur.execute('select %s', [param])
             self.assertTupleEqual(cur.fetchone(), (val,))

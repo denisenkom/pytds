@@ -725,7 +725,7 @@ class Cursor(six.Iterator):
             if named_params:
                 named_params = self._session._convert_params(named_params)
                 param_definition = u','.join(
-                    u'{0} {1}'.format(p.column_name, p.type.get_declaration())
+                    u'{0} {1}'.format(p.name, p.type.get_declaration())
                     for p in named_params)
                 self._exec_with_retry(lambda: self._session.submit_rpc(
                     tds_base.SP_EXECUTESQL,

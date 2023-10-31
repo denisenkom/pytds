@@ -17,7 +17,8 @@ import pytds.login
 import settings
 
 from fixtures import *
-
+from pytds import Column
+from pytds.tds_types import BitType
 
 logger = logging.getLogger(__name__)
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
@@ -236,8 +237,8 @@ def test_bulk_insert_with_direct_data(cursor):
     ]
 
     column_types = [
-        pytds.tds_base.Column('num', pytds.tds_types.IntType(), pytds.tds_base.Column.fNullable),
-        pytds.tds_base.Column('data', pytds.tds_types.NVarCharMaxType(), pytds.tds_base.Column.fNullable)
+        pytds.tds_base.Column('num', type=pytds.tds_types.IntType()),
+        pytds.tds_base.Column('data', type=pytds.tds_types.NVarCharMaxType())
     ]
 
     cur.copy_to(data=data, table_or_view='test_table', columns=column_types)
@@ -785,3 +786,13 @@ def test_with_sso():
         with conn.cursor() as cursor:
             cursor.execute('select 1')
             cursor.fetchall()
+
+
+def test_param_as_column_backward_compat(cursor):
+    """
+    For backward compatibility need to support passing parameters as Column objects
+    New way to pass such parameters is to use Param object.
+    """
+    param = Column(type=BitType(), value=True)
+    result = cursor.execute_scalar('select %s', [param])
+    assert result is True

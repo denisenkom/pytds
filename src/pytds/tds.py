@@ -905,12 +905,12 @@ class _TdsSession(object):
             self.set_state(tds_base.TDS_PENDING)
             self._writer.flush()
 
-    def make_param(self, name, value):
-        """ Generates instance of :class:`Column` from value and name
+    def make_param(self, name, value) -> tds_base.Param:
+        """ Generates instance of :class:`Param` from value and name
 
         Value can also be of a special types:
 
-        - An instance of :class:`Column`, in which case it is just returned.
+        - An instance of :class:`Param`, in which case it is just returned.
         - An instance of :class:`output`, in which case parameter will become
           an output parameter.
         - A singleton :var:`default`, in which case default value will be passed
@@ -920,31 +920,39 @@ class _TdsSession(object):
         :param value: Value of the parameter, also used to guess the type of parameter.
         :return: An instance of :class:`Column`
         """
-        if isinstance(value, tds_base.Column):
-            value.column_name = name
+        if isinstance(value, tds_base.Param):
+            value.name = name
             return value
-        column = tds_base.Column()
-        column.column_name = name
-        column.flags = 0
-        
+
+        if isinstance(value, tds_base.Column):
+            return tds_base.Param(
+                name=name,
+                type=value.type,
+                value=value.value,
+            )
+
+        param_type = None
+        param_flags = 0
+
         if isinstance(value, output):
-            column.flags |= tds_base.fByRefValue
+            param_flags |= tds_base.fByRefValue
             if isinstance(value.type, six.string_types):
-                column.type = tds_types.sql_type_by_declaration(value.type)
+                param_type = tds_types.sql_type_by_declaration(value.type)
             elif value.type:
-                column.type = self.conn.type_inferrer.from_class(value.type)
+                param_type = self.conn.type_inferrer.from_class(value.type)
             value = value.value
 
         if value is default:
-            column.flags |= tds_base.fDefaultValue
+            param_flags |= tds_base.fDefaultValue
             value = None
 
-        column.value = value
-        if column.type is None:
-            column.type = self.conn.type_inferrer.from_value(value)
-        return column
+        param_value = value
+        if param_type is None:
+            param_type = self.conn.type_inferrer.from_value(value)
+        param = tds_base.Param(name=name, type=param_type, flags=param_flags, value=param_value)
+        return param
 
-    def _convert_params(self, parameters):
+    def _convert_params(self, parameters) -> list[tds_base.Param]:
         """ Converts a dict of list of parameters into a list of :class:`Column` instances.
 
         :param parameters: Can be a list of parameter values, or a dict of parameter names to values.
@@ -971,7 +979,7 @@ class _TdsSession(object):
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name, params, flags=0):
+    def submit_rpc(self, rpc_name, params: list[tds_base.Param], flags=0):
         """ Sends an RPC request.
 
         This call will transition session into pending state.
@@ -1011,8 +1019,8 @@ class _TdsSession(object):
             for i, param in enumerate(params):
                 if param.flags & tds_base.fByRefValue:
                     self._out_params_indexes.append(i)
-                w.put_byte(len(param.column_name))
-                w.write_ucs2(param.column_name)
+                w.put_byte(len(param.name))
+                w.write_ucs2(param.name)
                 #
                 # TODO support other flags (use defaul null/no metadata)
                 # bit 1 (2 as flag) in TDS7+ is "default value" bit
@@ -1021,8 +1029,8 @@ class _TdsSession(object):
                 w.put_byte(param.flags)
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
-                serializer = param.choose_serializer(
-                    type_factory=self._tds.type_factory,
+                serializer = self._tds.type_factory.serializer_by_type(
+                    sql_type=param.type,
                     collation=self._tds.collation or raw_collation
                 )
                 type_id = serializer.type

@@ -661,6 +661,14 @@ def total_seconds(td):
     return td.days * 24 * 60 * 60 + td.seconds
 
 
+class Param:
+    def __init__(self, name: str = "", type=None, value=None, flags: int = 0):
+        self.name = name
+        self.type = type
+        self.value = value
+        self.flags = flags
+
+
 class Column(CommonEqualityMixin):
     """
     Describes table column.  Can be used to define schema for bulk insert.
@@ -685,7 +693,7 @@ class Column(CommonEqualityMixin):
     fIdentity = 0x10
     fComputed = 0x20
 
-    def __init__(self, name='', type=None, flags=0, value=None):
+    def __init__(self, name='', type=None, flags=fNullable, value=None):
         self.char_codec = None
         self.column_name = name
         self.column_usertype = 0
