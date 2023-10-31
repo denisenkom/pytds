@@ -862,8 +862,8 @@ class TypeInferenceTestCase(unittest.TestCase):
 
     def test_tvp(self):
         def rows_gen():
-            yield (1, 'test1')
-            yield (2, 'test2')
+            yield 1, 'test1'
+            yield 2, 'test2'
 
         factory = SerializerFactory(TDS74)
         tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())

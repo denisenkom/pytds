@@ -246,41 +246,31 @@ def test_bulk_insert_with_direct_data(cursor):
     assert cur.fetchall() == [(42, 'foo'), (57, ''), (66, None), (74, 'bar')]
 
 
-def test_table_valued_type_autodetect(separate_db_connection):
+def test_table_valued_type_autodetect(cursor):
     def rows_gen():
-        yield (1, 'test1')
-        yield (2, 'test2')
+        yield 1, 'test1'
+        yield 2, 'test2'
 
-    with separate_db_connection.cursor() as cur:
-        cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
-        separate_db_connection.commit()
-
-        tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
-        cur.execute('SELECT * FROM %s', (tvp,))
-        assert cur.fetchall() == [(1, 'test1'), (2, 'test2')]
-
-        cur.execute('DROP TYPE dbo.CategoryTableType')
-        separate_db_connection.commit()
+    tvp = pytds.TableValuedParam(type_name='dbo.CategoryTableType', rows=rows_gen())
+    cursor.execute('SELECT * FROM %s', (tvp,))
+    assert cursor.fetchall() == [(1, 'test1'), (2, 'test2')]
 
 
-def test_table_valued_type_explicit(separate_db_connection):
+def test_table_valued_type_explicit(cursor):
     def rows_gen():
-        yield (1, 'test1')
-        yield (2, 'test2')
+        yield 1, 'test1'
+        yield 2, 'test2'
 
-    with separate_db_connection.cursor() as cur:
-        cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
-        separate_db_connection.commit()
-
-        tvp = pytds.TableValuedParam(
-            type_name='dbo.CategoryTableType',
-            columns=(pytds.Column(type=pytds.tds_types.IntType()), pytds.Column(type=pytds.tds_types.NVarCharType(size=30))),
-            rows=rows_gen())
-        cur.execute('SELECT * FROM %s', (tvp,))
-        assert cur.fetchall() == [(1, 'test1'), (2, 'test2')]
-
-        cur.execute('DROP TYPE dbo.CategoryTableType')
-        separate_db_connection.commit()
+    tvp = pytds.TableValuedParam(
+        type_name='dbo.CategoryTableType',
+        columns=(
+            pytds.Column(type=pytds.tds_types.IntType()),
+            pytds.Column(type=pytds.tds_types.NVarCharType(size=30))
+        ),
+        rows=rows_gen()
+    )
+    cursor.execute('SELECT * FROM %s', (tvp,))
+    assert cursor.fetchall() == [(1, 'test1'), (2, 'test2')]
 
 
 def test_minimal(cursor):

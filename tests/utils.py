@@ -113,6 +113,13 @@ def does_table_exist(connection: pytds.Connection, name: str, database: str, sch
     return val > 0
 
 
+def does_user_defined_type_exist(connection: pytds.Connection, name: str) -> bool:
+    with connection.cursor() as cursor:
+        val = cursor.execute_scalar("select type_id(%s)", (name,))
+        return val is not None
+
+
+
 def create_test_database(connection: pytds.Connection):
     with connection.cursor() as cur:
         if not does_database_exist(connection=connection, name=settings.DATABASE):
@@ -142,3 +149,5 @@ def create_test_database(connection: pytds.Connection):
                 select @param
             end
             ''')
+        if not does_user_defined_type_exist(connection=connection, name="dbo.CategoryTableType"):
+            cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
