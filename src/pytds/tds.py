@@ -6,6 +6,8 @@ import six
 import socket
 import struct
 
+from typing import List
+
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 from . import tds_base
 from . import tds_types
@@ -952,7 +954,7 @@ class _TdsSession(object):
         param = tds_base.Param(name=name, type=param_type, flags=param_flags, value=param_value)
         return param
 
-    def _convert_params(self, parameters) -> list[tds_base.Param]:
+    def _convert_params(self, parameters) -> List[tds_base.Param]:
         """ Converts a dict of list of parameters into a list of :class:`Column` instances.
 
         :param parameters: Can be a list of parameter values, or a dict of parameter names to values.
@@ -979,7 +981,7 @@ class _TdsSession(object):
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name, params: list[tds_base.Param], flags=0):
+    def submit_rpc(self, rpc_name, params: List[tds_base.Param], flags=0):
         """ Sends an RPC request.
 
         This call will transition session into pending state.
