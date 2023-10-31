@@ -662,6 +662,14 @@ def total_seconds(td):
 
 
 class Param:
+    """
+    Describes typed parameter.  Can be used to explicitly specify type of the parameter
+    in the parametrized query.
+
+    :param name: Optional name of the parameter
+    :type name: str
+    :param type: Type of the parameter, e.g. :class:`pytds.tds_types.IntType`
+    """
     def __init__(self, name: str = "", type=None, value=None, flags: int = 0):
         self.name = name
         self.type = type
