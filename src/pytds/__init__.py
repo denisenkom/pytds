@@ -1221,6 +1221,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
             enc_login_only=False, disable_connect_retry=False,
             pooling=False,
             use_sso=False,
+            access_token = None
             ):
     """
     Opens connection to the database
@@ -1278,6 +1279,8 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     :type enc_login_only: bool
     :keyword use_sso: Enables SSO login, e.g. Kerberos using SSPI on Windows and kerberos package on other platforms.
              Cannot be used together with auth parameter.
+    :keyword access_token: Use Azure Active Directory Authentication / Federated Authentication
+    :type access_token: str
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
@@ -1298,6 +1301,7 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     login.bulk_copy = False
     login.client_lcid = lcid.LANGID_ENGLISH_US
     login.use_mars = use_mars
+    login.access_token = access_token
     login.pid = os.getpid()
     login.change_password = ''
     login.client_id = uuid.getnode()  # client mac address
