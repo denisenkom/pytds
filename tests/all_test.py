@@ -5,9 +5,10 @@ import os
 import random
 import string
 import codecs
-from six import StringIO, BytesIO
 import logging
 import socket
+from io import StringIO
+
 import utils
 
 from pytds.tds_types import TimeType, DateTime2Type, DateType, DateTimeOffsetType, BitType, TinyIntType, SmallIntType, \
@@ -32,8 +33,6 @@ import pytds.smp
 tzoffset = pytds.tz.FixedOffsetTimezone
 utc = pytds.tz.utc
 import pytds.extensions
-import six
-from six.moves import xrange
 from pytds import (
     connect, ProgrammingError, TimeoutError, Time,
     Error, IntegrityError, Timestamp, DataError, Date, Binary,
@@ -253,7 +252,7 @@ class TestCaseWithCursor(ConnectionTestCase):
     #def test_mars_sessions_recycle_ids(self):
     #    if not self.conn.mars_enabled:
     #        self.skipTest('Only relevant to mars')
-    #    for _ in xrange(2 ** 16 + 1):
+    #    for _ in range(2 ** 16 + 1):
     #        cur = self.conn.cursor()
     #        cur.close()
 
@@ -318,7 +317,7 @@ def kill(conn, spid):
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class ConnectionClosing(unittest.TestCase):
     def test_open_close(self):
-        for x in xrange(3):
+        for x in range(3):
             kwargs = settings.CONNECT_KWARGS.copy()
             kwargs['database'] = 'master'
             connect(**kwargs).close()
@@ -1015,18 +1014,18 @@ class TestRawBytes(unittest.TestCase):
     def test_fetch(self):
         cur = self.conn.cursor()
 
-        self.assertIsInstance(cur.execute_scalar("select cast('abc' as nvarchar(max))"), six.text_type)
-        self.assertIsInstance(cur.execute_scalar("select cast('abc' as varchar(max))"), six.binary_type)
-        self.assertIsInstance(cur.execute_scalar("select cast('abc' as text)"), six.binary_type)
+        self.assertIsInstance(cur.execute_scalar("select cast('abc' as nvarchar(max))"), str)
+        self.assertIsInstance(cur.execute_scalar("select cast('abc' as varchar(max))"), bytes)
+        self.assertIsInstance(cur.execute_scalar("select cast('abc' as text)"), bytes)
 
-        self.assertIsInstance(cur.execute_scalar("select %s", ['abc']), six.text_type)
-        self.assertIsInstance(cur.execute_scalar("select %s", [b'abc']), six.binary_type)
+        self.assertIsInstance(cur.execute_scalar("select %s", ['abc']), str)
+        self.assertIsInstance(cur.execute_scalar("select %s", [b'abc']), bytes)
 
-        rawBytes = six.b('\x01\x02\x03')
+        rawBytes = b'\x01\x02\x03'
         self.assertEqual(rawBytes, cur.execute_scalar("select cast(0x010203 as varchar(max))"))
         self.assertEqual(rawBytes, cur.execute_scalar("select %s", [rawBytes]))
 
-        utf8char = six.b('\xee\xb4\xba')
+        utf8char = b'\xee\xb4\xba'
         self.assertEqual(utf8char, cur.execute_scalar("select %s", [utf8char]))
 
 

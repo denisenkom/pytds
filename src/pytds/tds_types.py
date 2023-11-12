@@ -4,7 +4,6 @@ import decimal
 import struct
 import re
 import uuid
-import six
 import functools
 from io import StringIO, BytesIO
 
@@ -681,7 +680,7 @@ class VarChar70Serializer(BaseTypeSerializer):
         else:
             if w._tds._tds._login.bytes_to_unicode:
                 val = tds_base.force_unicode(val)
-            if isinstance(val, six.text_type):
+            if isinstance(val, str):
                 val, _ = self._codec.encode(val)
             w.put_smallint(len(val))
             w.write(val)
@@ -733,7 +732,7 @@ class VarCharMaxSerializer(VarChar72Serializer):
         else:
             if w._tds._tds._login.bytes_to_unicode:
                 val = tds_base.force_unicode(val)
-            if isinstance(val, six.text_type):
+            if isinstance(val, str):
                 val, _ = self._codec.encode(val)
 
             # Putting the actual length here causes an error when bulk inserting:
@@ -951,7 +950,7 @@ class Text70Serializer(BaseTypeSerializer):
         else:
             if w._tds._tds._login.bytes_to_unicode:
                 val = tds_base.force_unicode(val)
-            if isinstance(val, six.text_type):
+            if isinstance(val, str):
                 val, _ = self._codec.encode(val)
             w.put_int(len(val))
             w.write(val)
@@ -2637,7 +2636,7 @@ class TdsTypeInferrer(object):
 
         if issubclass(value_type, bool):
             return BitType()
-        elif issubclass(value_type, six.integer_types):
+        elif issubclass(value_type, int):
             if value is None:
                 return IntType()
             if -2 ** 31 <= value <= 2 ** 31 - 1:
@@ -2655,12 +2654,12 @@ class TdsTypeInferrer(object):
                 return VarBinaryType(size=8000)
             else:
                 return type_factory.long_binary_type()
-        elif issubclass(value_type, six.binary_type):
+        elif issubclass(value_type, bytes):
             if bytes_to_unicode:
                 return type_factory.long_string_type()
             else:
                 return type_factory.long_varchar_type()
-        elif issubclass(value_type, six.string_types):
+        elif issubclass(value_type, str):
             return type_factory.long_string_type()
         elif issubclass(value_type, datetime.datetime):
             if value and value.tzinfo and allow_tz:

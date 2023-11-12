@@ -1,4 +1,3 @@
-import six
 import logging
 
 from ctypes import c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER,\
@@ -346,7 +345,7 @@ class SspiCredentials(object):
                 byref(self._handle),
                 SECPKG_CRED_ATTR_NAMES,
                 byref(names))
-            user_name = six.text_type(names.UserName)
+            user_name = str(names.UserName)
         finally:
             p = c_wchar_p.from_buffer(names, SecPkgCredentials_Names.UserName.offset)
             sec_fn.FreeContextBuffer(p)

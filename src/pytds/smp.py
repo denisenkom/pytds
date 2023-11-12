@@ -5,7 +5,6 @@ import logging
 import threading
 import socket
 import errno
-from six.moves import range
 try:
     from bitarray import bitarray
 except ImportError:

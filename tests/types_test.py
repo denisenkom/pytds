@@ -4,7 +4,6 @@ from decimal import Decimal, Context
 import uuid
 
 import pytest
-import six
 
 import pytds
 
@@ -96,7 +95,7 @@ def test_money(cursor):
 
 def test_strs(cursor):
     cur = cursor
-    assert isinstance(cur.execute_scalar("select 'test'"), six.text_type)
+    assert isinstance(cur.execute_scalar("select 'test'"), str)
 
 
 @pytest.mark.parametrize('val', [u'hello',

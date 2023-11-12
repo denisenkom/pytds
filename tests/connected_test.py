@@ -7,10 +7,10 @@ import datetime
 import logging
 import random
 import string
+from io import BytesIO, StringIO
+
 import pytest
-import six
 import os
-from six import StringIO, BytesIO
 import pytds
 import pytds.extensions
 import pytds.login

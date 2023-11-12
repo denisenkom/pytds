@@ -4,7 +4,6 @@ import logging
 import datetime
 import warnings
 
-import six
 import socket
 import struct
 
@@ -941,7 +940,7 @@ class _TdsSession(object):
 
         if isinstance(value, output):
             param_flags |= tds_base.fByRefValue
-            if isinstance(value.type, six.string_types):
+            if isinstance(value.type, str):
                 param_type = tds_types.sql_type_by_declaration(value.type)
             elif value.type:
                 param_type = self.conn.type_inferrer.from_class(value.type)

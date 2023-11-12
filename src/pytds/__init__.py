@@ -5,14 +5,12 @@ import errno
 import keyword
 import os
 import re
-import six
 import socket
 import uuid
 import warnings
 import weakref
 import logging
-
-from six.moves import xrange
+from collections.abc import Iterator
 
 from pytds.tds_types import NVarCharType
 from . import lcid
@@ -379,7 +377,7 @@ class Connection(object):
         last_error = None
         end_time = time.time() + connect_timeout
         while True:
-            for _ in xrange(len(login.servers)):
+            for _ in range(len(login.servers)):
                 try:
                     self._try_open(timeout=retry_time, sock=sock)
                     return
@@ -519,7 +517,7 @@ class Connection(object):
             self._active_cursor = cursor
 
 
-class Cursor(six.Iterator):
+class Cursor(Iterator):
     """
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
@@ -693,7 +691,7 @@ class Cursor(six.Iterator):
 
     def _execute(self, operation, params):
         self._ensure_transaction()
-        operation = six.text_type(operation)
+        operation = str(operation)
         if params:
             named_params = {}
             if isinstance(params, (list, tuple)):
@@ -930,7 +928,7 @@ class Cursor(six.Iterator):
             size = self.arraysize
 
         rows = []
-        for _ in xrange(size):
+        for _ in range(size):
             row = self.fetchone()
             if not row:
                 break

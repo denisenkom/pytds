@@ -8,8 +8,6 @@
 import socket
 import sys
 
-import six
-
 # tds protocol versions
 TDS70 = 0x70000000
 TDS71 = 0x71000000
@@ -362,10 +360,10 @@ def force_unicode(s):
             return s.decode('utf8')
         except UnicodeDecodeError as e:
             raise DatabaseError(e)
-    elif isinstance(s, six.text_type):
+    elif isinstance(s, str):
         return s
     else:
-        return six.text_type(s)
+        return str(s)
 
 
 def tds_quote_id(ident):
@@ -714,7 +712,7 @@ class Column(CommonEqualityMixin):
         val = self.value
         if isinstance(val, bytes) and len(self.value) > 100:
             val = self.value[:100] + b'... len is ' + str(len(val)).encode('ascii')
-        if isinstance(val, six.text_type) and len(self.value) > 100:
+        if isinstance(val, str) and len(self.value) > 100:
             val = self.value[:100] + '... len is ' + str(len(val))
         return '<Column(name={},type={},value={},flags={},user_type={},codec={})>'.format(
             repr(self.column_name),
