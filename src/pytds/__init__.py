@@ -718,7 +718,7 @@ class Cursor(six.Iterator):
                     if value is None:
                         rename[name] = 'NULL'
                     else:
-                        mssql_name = '@{0}'.format(name)
+                        mssql_name = '@{0}'.format(name.replace(' ', '_'))
                         rename[name] = mssql_name
                         named_params[mssql_name] = value
                 operation = operation % rename
