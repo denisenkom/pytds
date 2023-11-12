@@ -6,13 +6,17 @@
 
 .. moduleauthor:: Mikhail Denisenko <denisenkom@gmail.com>
 """
+from __future__ import annotations
+
 import logging
 import socket
+
+from pytds.tds_base import AuthProtocol
 
 logger = logging.getLogger(__name__)
 
 
-class SspiAuth(object):
+class SspiAuth(AuthProtocol):
     """ SSPI authentication
 
     :platform: Windows
@@ -30,7 +34,7 @@ class SspiAuth(object):
     :keyword spn: Service name
     :type spn: str
     """
-    def __init__(self, user_name='', password='', server_name='', port=None, spn=None):
+    def __init__(self, user_name: str = '', password: str = '', server_name: str = '', port: int | None = None, spn: str | None = None):
         from . import sspi
         # parse username/password informations
         if '\\' in user_name:
@@ -60,7 +64,7 @@ class SspiAuth(object):
         self._flags = sspi.ISC_REQ_CONFIDENTIALITY | sspi.ISC_REQ_REPLAY_DETECT | sspi.ISC_REQ_CONNECTION
         self._ctx = None
 
-    def create_packet(self):
+    def create_packet(self) -> bytes:
         from . import sspi
         import ctypes
         buf = ctypes.create_string_buffer(4096)
@@ -73,7 +77,7 @@ class SspiAuth(object):
             self._ctx.complete_auth_token(bufs)
         return bufs[0][1]
 
-    def handle_next(self, packet):
+    def handle_next(self, packet: bytes) -> bytes | None:
         from . import sspi
         import ctypes
         buf = ctypes.create_string_buffer(4096)
@@ -85,11 +89,11 @@ class SspiAuth(object):
             output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
         return buffers[0][1]
 
-    def close(self):
+    def close(self) -> None:
         self._ctx.close()
 
 
-class NtlmAuth(object):
+class NtlmAuth(AuthProtocol):
     """
     This class is deprecated since `ntlm-auth` package, on which it depends, is deprecated.
     Instead use :class:`.SpnegoAuth`.
@@ -106,7 +110,7 @@ class NtlmAuth(object):
     :type ntlm_compatibility: int
     """
 
-    def __init__(self, user_name, password, ntlm_compatibility=3):
+    def __init__(self, user_name: str, password: str, ntlm_compatibility: int = 3):
         self._user_name = user_name
         if '\\' in user_name:
             domain, self._user = user_name.split('\\', 1)
@@ -125,17 +129,17 @@ class NtlmAuth(object):
         self._ntlm_context = NtlmContext(self._user, self._password, self._domain, self._workstation,
                                          ntlm_compatibility=ntlm_compatibility)
 
-    def create_packet(self):
+    def create_packet(self) -> bytes:
         return self._ntlm_context.step()
 
-    def handle_next(self, packet):
+    def handle_next(self, packet: bytes) -> bytes | None:
         return self._ntlm_context.step(packet)
 
-    def close(self):
+    def close(self) -> None:
         pass
 
 
-class SpnegoAuth(object):
+class SpnegoAuth(AuthProtocol):
     """ Authentication using Negotiate protocol, uses implementation provided pyspnego package
 
     Takes same parameters as spnego.client function.
@@ -148,17 +152,17 @@ class SpnegoAuth(object):
             raise ImportError("To use spnego authentication you need to install pyspnego package")
         self._context = spnego.client(*args, **kwargs)
 
-    def create_packet(self):
+    def create_packet(self) -> bytes:
         return self._context.step()
 
-    def handle_next(self, packet):
+    def handle_next(self, packet: bytes) -> bytes | None:
         return self._context.step(packet)
 
-    def close(self):
+    def close(self) -> None:
         pass
 
 
-class KerberosAuth(object):
+class KerberosAuth(AuthProtocol):
     def __init__(self, server_principal):
         try:
             import kerberos
@@ -171,7 +175,7 @@ class KerberosAuth(object):
         logger.info('Initialized GSS context')
         self._context = context
 
-    def create_packet(self):
+    def create_packet(self) -> bytes:
         import base64
         res = self._kerberos.authGSSClientStep(self._context, '')
         if res < 0:
@@ -180,7 +184,7 @@ class KerberosAuth(object):
         logger.info('created first client GSS packet %s', data)
         return base64.b64decode(data)
 
-    def handle_next(self, packet):
+    def handle_next(self, packet: bytes) -> bytes | None:
         import base64
         res = self._kerberos.authGSSClientStep(self._context, base64.b64encode(packet).decode('ascii'))
         if res < 0:
@@ -193,5 +197,5 @@ class KerberosAuth(object):
             logger.info('created client GSS packet %s', data)
             return base64.b64decode(data)
 
-    def close(self):
+    def close(self) -> None:
         pass

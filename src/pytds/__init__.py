@@ -19,7 +19,7 @@ from typing import Any, Callable, TypeVar, Iterable, Type, Tuple, Protocol, Opti
 from pytds.tds_types import NVarCharType, TzInfoFactoryType
 from . import lcid
 import pytds.tz
-from .login import KerberosAuth, SspiAuth
+from .login import KerberosAuth, SspiAuth, AuthProtocol
 from .tds import (
     _TdsSocket, tds7_get_instances,
     _create_exception_by_message,
@@ -73,10 +73,6 @@ threadsafety = 1
 
 #: This module uses extended python format codes
 paramstyle = 'pyformat'
-
-
-class _TdsLogin:
-    pass
 
 
 def tuple_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], Tuple[Any, ...]]:
@@ -200,7 +196,7 @@ class Connection:
         self._isolation_level = 0
         self._autocommit = True
         self._row_strategy = tuple_row_strategy
-        self._login: _TdsLogin | None = None
+        self._login: tds._TdsLogin | None = None
         self._use_tz: datetime.tzinfo | None = None
         self._tzinfo_factory: TzInfoFactoryType | None = None
         self._key: PoolKeyType | None = None
@@ -1244,11 +1240,6 @@ def _parse_connection_string(connstr: str) -> dict[str, str]:
     return res
 
 
-class LoadBalancer(Protocol):
-    def choose(self) -> Iterable[str]:
-        ...
-
-
 def connect(
         dsn: str | None = None,
         database: str | None = None,
@@ -1263,9 +1254,9 @@ def connect(
         autocommit: bool = False,
         blocksize: int = 4096,
         use_mars: bool = False,
-        auth: Any | None = None,
+        auth: AuthProtocol | None = None,
         readonly: bool = False,
-        load_balancer: LoadBalancer | None = None,
+        load_balancer: tds_base.LoadBalancer | None = None,
         use_tz: datetime.tzinfo | None = None,
         bytes_to_unicode: bool = True,
         row_strategy: Callable[[Iterable[str]], Callable[[Tuple[Any, ...]], Any]] | None = None,
@@ -1339,7 +1330,7 @@ def connect(
     """
     if use_sso and auth:
         raise ValueError('use_sso cannot be used with auth parameter defined')
-    login = _TdsLogin()
+    login = tds._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
     login.user_name = user or ''

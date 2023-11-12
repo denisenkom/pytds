@@ -1,4 +1,9 @@
+from __future__ import annotations
+
 import logging
+import socket
+from typing import Any
+
 try:
     import OpenSSL.SSL
     import cryptography.hazmat.backends.openssl.backend
@@ -9,25 +14,25 @@ else:
 
 from . import tds_base
 
-
 BUFSIZE = 65536
 
 
 logger = logging.getLogger(__name__)
 
 
-class EncryptedSocket(object):
-    def __init__(self, transport, tls_conn):
+class EncryptedSocket(socket.socket):
+    def __init__(self, transport: socket.socket, tls_conn: OpenSSL.SSL.Connection):
+        super().__init__()
         self._transport = transport
         self._tls_conn = tls_conn
 
-    def gettimeout(self):
+    def gettimeout(self) -> float | None:
         return self._transport.gettimeout()
 
-    def settimeout(self, timeout):
+    def settimeout(self, timeout: float | None) -> None:
         self._transport.settimeout(timeout)
 
-    def sendall(self, data, flags=0):
+    def sendall(self, data: Any, flags: int = 0) -> int:
         # TLS.Connection does not support bytearrays, need to convert to bytes first
         if isinstance(data, bytearray):
             data = bytes(data)
@@ -45,14 +50,14 @@ class EncryptedSocket(object):
  #               buf = self._tls_conn.bio_read(BUFSIZE)
  #               self._transport.sendall(buf)
 
-    def recv_into(self, buffer, size=0):
+    def recv_into(self, buffer: bytes, size: int = 0, flags: int = 0) -> int:
         if size == 0:
             size = len(buffer)
         res = self.recv(size)
         buffer[0:len(res)] = res
         return len(res)
 
-    def recv(self, bufsize):
+    def recv(self, bufsize: int, flags: int = 0) -> bytes:
         while True:
             try:
                 buf = self._tls_conn.bio_read(bufsize)
@@ -70,16 +75,17 @@ class EncryptedSocket(object):
                 else:
                     return b''
 
-    def close(self):
+    def close(self) -> None:
         self._tls_conn.shutdown()
         self._transport.close()
 
-    def shutdown(self):
-        self._tls_conn.shutdown()
+    def shutdown(self, how: int = 0) -> bool:
+        return self._tls_conn.shutdown()
 
 
-def verify_cb(conn, cert, err_num, err_depth, ret_code):
+def verify_cb(conn, cert, err_num, err_depth, ret_code: int) -> bool:
     return ret_code == 1
+
 
 def is_san_matching(san: str, host_name: str) -> bool:
     for item in san.split(','):
@@ -94,7 +100,8 @@ def is_san_matching(san: str, host_name: str) -> bool:
                 return True
     return False
 
-def validate_host(cert, name):
+
+def validate_host(cert, name: bytes) -> bool:
     """
     Validates host name against certificate
 
@@ -124,7 +131,7 @@ def validate_host(cert, name):
     return False
 
 
-def create_context(cafile):
+def create_context(cafile: str) -> OpenSSL.SSL.Context:
     ctx = OpenSSL.SSL.Context(OpenSSL.SSL.TLSv1_2_METHOD)
     ctx.set_options(OpenSSL.SSL.OP_NO_SSLv2)
     ctx.set_options(OpenSSL.SSL.OP_NO_SSLv3)
@@ -137,7 +144,7 @@ def create_context(cafile):
 
 
 # https://msdn.microsoft.com/en-us/library/dd357559.aspx
-def establish_channel(tds_sock):
+def establish_channel(tds_sock: _TdsSession) -> None:
     w = tds_sock._writer
     r = tds_sock._reader
     login = tds_sock.conn._login
@@ -182,7 +189,7 @@ def establish_channel(tds_sock):
             return
 
 
-def revert_to_clear(tds_sock):
+def revert_to_clear(tds_sock: _TdsSession) -> None:
     """
     Reverts connection back to non-encrypted mode
     Used when client sent ENCRYPT_OFF flag

@@ -8,14 +8,16 @@ import warnings
 
 import socket
 import struct
+from collections import deque
 
-from typing import List, Iterable, Any
+from typing import List, Iterable, Any, Tuple, TypedDict
 
+import pytds
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
-from . import tds_base, TzInfoFactoryType
+from . import tds_base
 from . import tds_types
-from . import tls
 from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
+from .smp import SmpManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ logging_enabled = False
 
 
 # stored procedure output parameter
-class output(object):
+class output:
     @property
     def type(self):
         """
@@ -57,7 +59,7 @@ class output(object):
         """
         return self._value
 
-    def __init__(self, value=None, param_type=None):
+    def __init__(self, value: Any = None, param_type=None):
         """ Creates procedure output parameter.
 
         :param param_type: either sql type declaration or python type
@@ -73,13 +75,14 @@ class output(object):
         self._value = value
 
 
-class _Default(object):
+class _Default:
     pass
+
 
 default = _Default()
 
 
-def tds7_crypt_pass(password):
+def tds7_crypt_pass(password: str) -> bytearray:
     """ Mangle password according to tds rules
 
     :param password: Password str
@@ -89,6 +92,43 @@ def tds7_crypt_pass(password):
     for i, ch in enumerate(encoded):
         encoded[i] = ((ch << 4) & 0xff | (ch >> 4)) ^ 0xA5
     return encoded
+
+
+class _TdsLogin:
+    def __init__(self):
+        self.client_host_name = ""
+        self.library = ""
+        self.server_name = ""
+        self.instance_name = ""
+        self.user_name = ""
+        self.password = ""
+        self.app_name = ""
+        self.port: int | None = None
+        self.language = ""
+        self.attach_db_file = ""
+        self.tds_version = 0
+        self.database = ""
+        self.bulk_copy = False
+        self.client_lcid = 0
+        self.use_mars = False
+        self.pid = 0
+        self.change_password = ""
+        self.client_id = 0
+        self.cafile: str | None = None
+        self.validate_host = True
+        self.enc_login_only = False
+        self.enc_flag = 0
+        self.tls_ctx = None
+        self.client_tz: datetime.tzinfo = pytds.tz.local
+        self.option_flag2 = 0
+        self.connect_timeout = 0.0
+        self.query_timeout = 0.0
+        self.blocksize = 0
+        self.readonly = False
+        self.load_balancer: tds_base.LoadBalancer | None = None
+        self.bytes_to_unicode = False
+        self.auth: tds_base.AuthProtocol | None = None
+        self.servers: deque[Tuple[Any, int, str]] = deque()
 
 
 class _TdsEnv:
@@ -105,7 +145,7 @@ class _TdsReader(object):
     Also provides convinience methods to decode primitive data like
     different kinds of integers etc.
     """
-    def __init__(self, session):
+    def __init__(self, session: _TdsSession):
         self._buf = bytearray(b'\x00' * 4096)
         self._bufview = memoryview(self._buf)
         self._pos = len(self._buf)  # position in the buffer
@@ -113,31 +153,31 @@ class _TdsReader(object):
         self._size = 0  # size of current packet
         self._session = session
         self._transport = session._transport
-        self._type = None
+        self._type: int | None = None
         self._status = None
 
-    def set_block_size(self, size):
+    def set_block_size(self, size: int) -> None:
         self._buf = bytearray(b'\x00' * size)
         self._bufview = memoryview(self._buf)
 
-    def get_block_size(self):
+    def get_block_size(self) -> int:
         return len(self._buf)
 
     @property
-    def session(self):
+    def session(self) -> _TdsSession:
         """ Link to :class:`_TdsSession` object
         """
         return self._session
 
     @property
-    def packet_type(self):
+    def packet_type(self) -> int | None:
         """ Type of current packet
 
         Possible values are TDS_QUERY, TDS_LOGIN, etc.
         """
         return self._type
 
-    def read_fast(self, size):
+    def read_fast(self, size: int) -> Tuple[bytes, int]:
         """ Faster version of read
 
         Instead of returning sliced buffer it returns reference to internal
@@ -153,7 +193,7 @@ class _TdsReader(object):
         self._pos += to_read
         return self._buf, offset
 
-    def recv(self, size):
+    def recv(self, size: int) -> bytes:
         if self._pos >= self._size:
             self._read_packet()
         offset = self._pos
@@ -161,7 +201,7 @@ class _TdsReader(object):
         self._pos += to_read
         return self._buf[offset:offset+to_read]
 
-    def unpack(self, struc):
+    def unpack(self, struc: struct.Struct) -> Tuple[Any, ...]:
         """ Unpacks given structure from stream
 
         :param struc: A struct.Struct instance
@@ -170,44 +210,44 @@ class _TdsReader(object):
         buf, offset = readall_fast(self, struc.size)
         return struc.unpack_from(buf, offset)
 
-    def get_byte(self):
+    def get_byte(self) -> int:
         """ Reads one byte from stream """
         return self.unpack(_byte)[0]
 
-    def get_smallint(self):
+    def get_smallint(self) -> int:
         """ Reads 16bit signed integer from the stream """
         return self.unpack(_smallint_le)[0]
 
-    def get_usmallint(self):
+    def get_usmallint(self) -> int:
         """ Reads 16bit unsigned integer from the stream """
         return self.unpack(_usmallint_le)[0]
 
-    def get_int(self):
+    def get_int(self) -> int:
         """ Reads 32bit signed integer from the stream """
         return self.unpack(_int_le)[0]
 
-    def get_uint(self):
+    def get_uint(self) -> int:
         """ Reads 32bit unsigned integer from the stream """
         return self.unpack(_uint_le)[0]
 
-    def get_uint_be(self):
+    def get_uint_be(self) -> int:
         """ Reads 32bit unsigned big-endian integer from the stream """
         return self.unpack(_uint_be)[0]
 
-    def get_uint8(self):
+    def get_uint8(self) -> int:
         """ Reads 64bit unsigned integer from the stream """
         return self.unpack(_uint8_le)[0]
 
-    def get_int8(self):
+    def get_int8(self) -> int:
         """ Reads 64bit signed integer from the stream """
         return self.unpack(_int8_le)[0]
 
-    def read_ucs2(self, num_chars):
+    def read_ucs2(self, num_chars: int) -> str:
         """ Reads num_chars UCS2 string from the stream """
         buf = readall(self, num_chars * 2)
         return ucs2_codec.decode(buf)[0]
 
-    def read_str(self, size, codec):
+    def read_str(self, size: int, codec) -> str:
         """ Reads byte string from the stream and decodes it
 
         :param size: Size of string in bytes
@@ -216,12 +256,12 @@ class _TdsReader(object):
         """
         return codec.decode(readall(self, size))[0]
 
-    def get_collation(self):
+    def get_collation(self) -> Collation:
         """ Reads :class:`Collation` object from stream """
         buf = readall(self, Collation.wire_size)
         return Collation.unpack(buf)
 
-    def _read_packet(self):
+    def _read_packet(self) -> None:
         """ Reads next TDS packet from the underlying transport
 
         If timeout is happened during reading of packet's header will
@@ -249,7 +289,7 @@ class _TdsReader(object):
             pos += received
             self._have += received
 
-    def read_whole_packet(self):
+    def read_whole_packet(self) -> bytes:
         """ Reads single packet and returns bytes payload of the packet
 
         Can only be called when transport's read pointer is at the beginning
@@ -265,7 +305,7 @@ class _TdsWriter(object):
     Handles splitting of incoming data into TDS packets according to TDS protocol.
     Provides convinience methods for writing primitive data types.
     """
-    def __init__(self, session, bufsize):
+    def __init__(self, session: _TdsSession, bufsize: int):
         self._session = session
         self._tds = session
         self._transport = session._transport
@@ -275,17 +315,17 @@ class _TdsWriter(object):
         self._type = 0
 
     @property
-    def session(self):
+    def session(self) -> _TdsSession:
         """ Back reference to parent :class:`_TdsSession` object """
         return self._session
 
     @property
-    def bufsize(self):
+    def bufsize(self) -> int:
         """ Size of the buffer """
         return len(self._buf)
 
     @bufsize.setter
-    def bufsize(self, bufsize):
+    def bufsize(self, bufsize: int) -> None:
         if len(self._buf) == bufsize:
             return
 
@@ -294,7 +334,7 @@ class _TdsWriter(object):
         else:
             self._buf = self._buf[0:bufsize]
 
-    def begin_packet(self, packet_type):
+    def begin_packet(self, packet_type: int) -> None:
         """ Starts new packet stream
 
         :param packet_type: Type of TDS stream, e.g. TDS_PRELOGIN, TDS_QUERY etc.
@@ -302,51 +342,51 @@ class _TdsWriter(object):
         self._type = packet_type
         self._pos = 8
 
-    def pack(self, struc, *args):
+    def pack(self, struc: struct.Struct, *args) -> None:
         """ Packs and writes structure into stream """
         self.write(struc.pack(*args))
 
-    def put_byte(self, value):
+    def put_byte(self, value: int) -> None:
         """ Writes single byte into stream """
         self.pack(_byte, value)
 
-    def put_smallint(self, value):
+    def put_smallint(self, value: int) -> None:
         """ Writes 16-bit signed integer into the stream """
         self.pack(_smallint_le, value)
 
-    def put_usmallint(self, value):
+    def put_usmallint(self, value: int) -> None:
         """ Writes 16-bit unsigned integer into the stream """
         self.pack(_usmallint_le, value)
 
-    def put_usmallint_be(self, value):
+    def put_usmallint_be(self, value: int) -> None:
         """ Writes 16-bit unsigned big-endian integer into the stream """
         self.pack(_usmallint_be, value)
 
-    def put_int(self, value):
+    def put_int(self, value: int) -> None:
         """ Writes 32-bit signed integer into the stream """
         self.pack(_int_le, value)
 
-    def put_uint(self, value):
+    def put_uint(self, value: int) -> None:
         """ Writes 32-bit unsigned integer into the stream """
         self.pack(_uint_le, value)
 
-    def put_uint_be(self, value):
+    def put_uint_be(self, value: int) -> None:
         """ Writes 32-bit unsigned big-endian integer into the stream """
         self.pack(_uint_be, value)
 
-    def put_int8(self, value):
+    def put_int8(self, value: int) -> None:
         """ Writes 64-bit signed integer into the stream """
         self.pack(_int8_le, value)
 
-    def put_uint8(self, value):
+    def put_uint8(self, value: int) -> None:
         """ Writes 64-bit unsigned integer into the stream """
         self.pack(_uint8_le, value)
 
-    def put_collation(self, collation):
+    def put_collation(self, collation: Collation) -> None:
         """ Writes :class:`Collation` structure into the stream """
         self.write(collation.pack())
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         """ Writes given bytes buffer into the stream
 
         Function returns only when entire buffer is written
@@ -362,15 +402,15 @@ class _TdsWriter(object):
                 self._pos += to_write
                 data_off += to_write
 
-    def write_b_varchar(self, s):
+    def write_b_varchar(self, s: str) -> None:
         self.put_byte(len(s))
         self.write_ucs2(s)
 
-    def write_ucs2(self, s):
+    def write_ucs2(self, s: str) -> None:
         """ Write string encoding it in UCS2 into stream """
         self.write_string(s, ucs2_codec)
 
-    def write_string(self, s, codec):
+    def write_string(self, s: str, codec) -> None:
         """ Write string encoding it with codec into stream """
         for i in range(0, len(s), self.bufsize):
             chunk = s[i:i + self.bufsize]
@@ -378,11 +418,11 @@ class _TdsWriter(object):
             assert consumed == len(chunk)
             self.write(buf)
 
-    def flush(self):
+    def flush(self) -> None:
         """ Closes current packet stream """
         return self._write_packet(final=True)
 
-    def _write_packet(self, final):
+    def _write_packet(self, final: bool) -> None:
         """ Writes single TDS packet into underlying transport.
 
         Data for the packet is taken from internal buffer.
@@ -396,7 +436,7 @@ class _TdsWriter(object):
         self._pos = 8
 
 
-def _create_exception_by_message(msg, custom_error_msg=None):
+def _create_exception_by_message(msg: Message, custom_error_msg: str | None = None) -> tds_base.ProgrammingError | tds_base.IntegrityError | tds_base.OperationalError:
     msg_no = msg['msgno']
     if custom_error_msg is not None:
         error_msg = custom_error_msg
@@ -419,15 +459,28 @@ def _create_exception_by_message(msg, custom_error_msg=None):
     return ex
 
 
-class _TdsSession(object):
+class Message(TypedDict):
+    marker: int
+    msgno: int
+    state: int
+    severity: int
+    sql_state: int | None
+    priv_msg_type: int
+    message: str
+    server: str
+    proc_name: str
+    line_number: int
+
+
+class _TdsSession:
     """ TDS session
 
     Represents a single TDS session within MARS connection, when MARS enabled there could be multiple TDS sessions
     within one connection.
     """
-    def __init__(self, tds: _TdsSocket, transport: socket.socket, tzinfo_factory: TzInfoFactoryType | None):
+    def __init__(self, tds: _TdsSocket, transport: tds_base.TransportProtocol, tzinfo_factory: tds_types.TzInfoFactoryType | None):
         self.out_pos = 8
-        self.res_info = None
+        self.res_info: _Results | None = None
         self.in_cancel = False
         self.wire_mtx = None
         self.param_info = None
@@ -442,7 +495,7 @@ class _TdsSession(object):
         self.in_buf_max = 0
         self.state = tds_base.TDS_IDLE
         self._tds = tds
-        self.messages = []
+        self.messages: list[Message] = []
         self.rows_affected = -1
         self.use_tz = tds.use_tz
         self._spid = 0
@@ -450,11 +503,11 @@ class _TdsSession(object):
         self.more_rows = False
         self.done_flags = 0
         self.internal_sp_called = 0
-        self.output_params = {}
-        self.authentication = None
+        self.output_params: dict[int, tds_base.Column] = {}
+        self.authentication: tds_base.AuthProtocol | None = None
         self.return_value_index = 0
-        self._out_params_indexes = []
-        self.row = None
+        self._out_params_indexes: list[int] = []
+        self.row: list[Any] | None = None
         self.end_marker = 0
 
     def log_response_message(self, msg):
@@ -469,7 +522,7 @@ class _TdsSession(object):
                          self.in_cancel)
         return res
 
-    def raise_db_exception(self):
+    def raise_db_exception(self) -> None:
         """ Raises exception from last server message
 
         This function will skip messages: The statement has been terminated
@@ -598,7 +651,7 @@ class _TdsSession(object):
             if not self.in_cancel:
                 return
 
-    def process_msg(self, marker):
+    def process_msg(self, marker: int) -> None:
         """ Reads and processes ERROR/INFO streams
 
         Stream formats:
@@ -800,7 +853,7 @@ class _TdsSession(object):
             # discard byte values, not still supported
             skipall(r, size - 1)
 
-    def process_auth(self):
+    def process_auth(self) -> None:
         """ Reads and processes SSPI stream.
 
         Stream info: http://msdn.microsoft.com/en-us/library/dd302844.aspx
@@ -815,13 +868,13 @@ class _TdsSession(object):
             w.write(packet)
             w.flush()
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         """
         :return: True if transport is connected
         """
         return self._transport.is_connected()
 
-    def bad_stream(self, msg):
+    def bad_stream(self, msg) -> None:
         """ Called when input stream contains unexpected data.
 
         Will close stream and raise :class:`InterfaceError`
@@ -832,21 +885,21 @@ class _TdsSession(object):
         raise tds_base.InterfaceError(msg)
 
     @property
-    def tds_version(self):
+    def tds_version(self) -> int:
         """ Returns integer encoded current TDS protocol version
         """
         return self._tds.tds_version
 
     @property
-    def conn(self):
+    def conn(self) -> _TdsSocket:
         """ Reference to owning :class:`_TdsSocket`
         """
         return self._tds
 
-    def close(self):
+    def close(self) -> None:
         self._transport.close()
 
-    def set_state(self, state):
+    def set_state(self, state: int) -> int:
         """ Switches state of the TDS session.
 
         It also does state transitions checks.
@@ -891,7 +944,7 @@ class _TdsSession(object):
         return self.state
 
     @contextlib.contextmanager
-    def querying_context(self, packet_type):
+    def querying_context(self, packet_type) -> None:
         """ Context manager for querying.
 
         Sets state to TDS_QUERYING, and reverts it to TDS_IDLE if exception happens inside managed block,
@@ -910,7 +963,7 @@ class _TdsSession(object):
             self.set_state(tds_base.TDS_PENDING)
             self._writer.flush()
 
-    def make_param(self, name, value) -> tds_base.Param:
+    def make_param(self, name: str, value: Any) -> tds_base.Param:
         """ Generates instance of :class:`Param` from value and name
 
         Value can also be of a special types:
@@ -973,7 +1026,7 @@ class _TdsSession(object):
                 params.append(self.make_param('', parameter))
             return params
 
-    def cancel_if_pending(self):
+    def cancel_if_pending(self) -> None:
         """ Cancels current pending request.
 
         Does nothing if no request is pending, otherwise sends cancel request,
@@ -985,7 +1038,7 @@ class _TdsSession(object):
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name: tds_base.InternalProc | str, params: List[tds_base.Param], flags: int = 0):
+    def submit_rpc(self, rpc_name: tds_base.InternalProc | str, params: List[tds_base.Param], flags: int = 0) -> None:
         """ Sends an RPC request.
 
         This call will transition session into pending state.
@@ -1045,7 +1098,7 @@ class _TdsSession(object):
 
                 serializer.write(w, param.value)
 
-    def submit_plain_query(self, operation: str):
+    def submit_plain_query(self, operation: str) -> None:
         """ Sends a plain query to server.
 
         This call will transition session into pending state.
@@ -1236,7 +1289,7 @@ class _TdsSession(object):
                1,  # request count
                )
 
-    def send_prelogin(self, login) -> None:
+    def send_prelogin(self, login: _TdsLogin) -> None:
         from . import intversion
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
@@ -1299,7 +1352,7 @@ class _TdsSession(object):
 
         w.flush()
 
-    def process_prelogin(self, login) -> None:
+    def process_prelogin(self, login: _TdsLogin) -> None:
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         p = self._reader.read_whole_packet()
         size = len(p)
@@ -1307,7 +1360,8 @@ class _TdsSession(object):
             self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
         self.parse_prelogin(octets=p, login=login)
 
-    def parse_prelogin(self, octets: bytes, login) -> None:
+    def parse_prelogin(self, octets: bytes, login: _TdsLogin) -> None:
+        from . import tls
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         size = len(octets)
         p = octets
@@ -1367,7 +1421,7 @@ class _TdsSession(object):
         else:
             self.bad_stream('Unexpected value of enc_flag returned by server: {}'.format(crypt_flag))
 
-    def tds7_send_login(self, login):
+    def tds7_send_login(self, login: _TdsLogin) -> None:
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
         option_flag2 = login.option_flag2
         user_name = login.user_name
@@ -1510,7 +1564,7 @@ class _TdsSession(object):
         tds_base.TDS74: tds_base.TDS74,
         }
 
-    def process_login_tokens(self):
+    def process_login_tokens(self) -> bool:
         r = self._reader
         succeed = False
         while True:
@@ -1544,18 +1598,18 @@ class _TdsSession(object):
                     break
         return succeed
 
-    def process_returnstatus(self):
+    def process_returnstatus(self) -> None:
         self.log_response_message('got RETURNSTATUS message')
         self.ret_status = self._reader.get_int()
         self.has_status = True
 
-    def process_token(self, marker):
+    def process_token(self, marker: int) -> Any:
         handler = _token_map.get(marker)
         if not handler:
             self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(marker))
         return handler(self)
 
-    def get_token_id(self):
+    def get_token_id(self) -> int:
         self.set_state(tds_base.TDS_READING)
         try:
             marker = self._reader.get_byte()
@@ -1567,7 +1621,7 @@ class _TdsSession(object):
             raise
         return marker
 
-    def process_simple_request(self):
+    def process_simple_request(self) -> None:
         while True:
             marker = self.get_token_id()
             if marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN, tds_base.TDS_DONEINPROC_TOKEN):
@@ -1577,7 +1631,7 @@ class _TdsSession(object):
             else:
                 self.process_token(marker)
 
-    def next_set(self):
+    def next_set(self) -> bool:
         while self.more_rows:
             self.next_row()
         if self.state == tds_base.TDS_IDLE:
@@ -1585,7 +1639,7 @@ class _TdsSession(object):
         if self.find_result_or_done():
             return True
 
-    def fetchone(self):
+    def fetchone(self) -> list[Any] | None:
         if self.res_info is None:
             raise tds_base.ProgrammingError("Previous statement didn't produce any results")
 
@@ -1597,7 +1651,7 @@ class _TdsSession(object):
 
         return self.row
 
-    def next_row(self):
+    def next_row(self) -> bool:
         if not self.more_rows:
             return False
         while True:
@@ -1611,7 +1665,7 @@ class _TdsSession(object):
             else:
                 self.process_token(marker)
 
-    def find_result_or_done(self):
+    def find_result_or_done(self) -> bool:
         self.done_flags = 0
         while True:
             marker = self.get_token_id()
@@ -1628,7 +1682,7 @@ class _TdsSession(object):
             else:
                 self.process_token(marker)
 
-    def process_rpc(self):
+    def process_rpc(self) -> bool:
         self.done_flags = 0
         self.return_value_index = 0
         while True:
@@ -1645,12 +1699,12 @@ class _TdsSession(object):
             else:
                 self.process_token(marker)
 
-    def complete_rpc(self):
+    def complete_rpc(self) -> None:
         # go through all result sets
         while self.next_set():
             pass
 
-    def find_return_status(self):
+    def find_return_status(self) -> None:
         self.skipped_to_status = True
         while True:
             marker = self.get_token_id()
@@ -1677,11 +1731,16 @@ _token_map = {
     }
 
 
+class Route(TypedDict):
+    server: str
+    port: int
+
+
 # this class represents root TDS connection
 # if MARS is used it can have multiple sessions represented by _TdsSession class
 # if MARS is not used it would have single _TdsSession instance
 class _TdsSocket(object):
-    def __init__(self, use_tz=None):
+    def __init__(self, use_tz: datetime.tzinfo | None = None):
         self._is_connected = False
         self.env = _TdsEnv()
         self.collation = None
@@ -1694,17 +1753,18 @@ class _TdsSocket(object):
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
         self.type_inferrer = None
         self.query_timeout = 0
-        self._smp_manager = None
+        self._smp_manager: SmpManager | None = None
         self._main_session: _TdsSession | None = None
-        self._login = None
-        self.route = None
+        self._login: _TdsLogin | None = None
+        self.route: Route | None = None
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
         return fmt.format(self.tds72_transaction, self._mars_enabled,
                           self.tds_version, self.use_tz)
 
-    def login(self, login, sock: socket.socket, tzinfo_factory: TzInfoFactoryType | None):
+    def login(self, login: _TdsLogin, sock: tds_base.TransportProtocol, tzinfo_factory: tds_types.TzInfoFactoryType | None) -> Route | None:
+        from . import tls
         self._login = login
         self.bufsize = login.blocksize
         self.query_timeout = login.query_timeout
@@ -1735,7 +1795,6 @@ class _TdsSocket(object):
             allow_tz=not self.use_tz
         )
         if self._mars_enabled:
-            from .smp import SmpManager
             self._smp_manager = SmpManager(self.sock)
             self._main_session = _TdsSession(
                 self,
@@ -1758,7 +1817,7 @@ class _TdsSocket(object):
     def main_session(self) -> _TdsSession | None:
         return self._main_session
 
-    def create_session(self, tzinfo_factory: TzInfoFactoryType | None) -> _TdsSession:
+    def create_session(self, tzinfo_factory: tds_types.TzInfoFactoryType | None) -> _TdsSession:
         return _TdsSession(
             self, self._smp_manager.create_session(),
             tzinfo_factory)
@@ -1780,8 +1839,8 @@ class _TdsSocket(object):
 
 class _Results(object):
     def __init__(self):
-            self.columns = []
-            self.row_count = 0
+        self.columns: list[tds_base.Column] = []
+        self.row_count = 0
 
 
 def _parse_instances(msg: bytes) -> dict[str, dict[str, str]]:

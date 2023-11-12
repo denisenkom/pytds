@@ -5,8 +5,13 @@
 
 .. moduleauthor:: Mikhail Denisenko <denisenkom@gmail.com>
 """
+from __future__ import annotations
+
 import socket
 import sys
+from typing import Protocol, Iterable
+
+from _socket import SocketType
 
 # tds protocol versions
 TDS70 = 0x70000000
@@ -728,3 +733,24 @@ class Column(CommonEqualityMixin):
         Chooses appropriate data type serializer for column's data type.
         """
         return type_factory.serializer_by_type(sql_type=self.type, collation=collation)
+
+
+class TransportProtocol(SocketType):
+    def is_connected(self) -> bool:
+        ...
+
+
+class LoadBalancer(Protocol):
+    def choose(self) -> Iterable[str]:
+        ...
+
+
+class AuthProtocol(Protocol):
+    def create_packet(self) -> bytes:
+        ...
+
+    def handle_hext(self, packet: bytes) -> bytes | None:
+        ...
+
+    def close(self) -> None:
+        ...

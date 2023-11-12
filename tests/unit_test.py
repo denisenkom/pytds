@@ -17,9 +17,8 @@ import OpenSSL.crypto
 import pytds
 from pytds.collate import raw_collation
 from pytds.tds import (
-    _TdsSocket, _TdsSession, Collation,
-    )
-from pytds import _TdsLogin
+    _TdsSocket, _TdsSession, Collation, _TdsLogin,
+)
 from pytds.tds_base import (
     TDS_ENCRYPTION_REQUIRE, Column, TDS70, TDS73, TDS71, TDS72, TDS73, TDS74,
     TDS_ENCRYPTION_OFF, PreLoginEnc)

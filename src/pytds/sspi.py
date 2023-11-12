@@ -353,7 +353,7 @@ class SspiCredentials(object):
 
     def create_context(
             self,
-            flags,
+            flags: int,
             target_name=None,
             byte_ordering='network',
             input_buffers=None,

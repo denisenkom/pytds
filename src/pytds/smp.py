@@ -1,25 +1,29 @@
 # This file implements Session Multiplex Protocol used by MARS connections
 # Protocol documentation https://msdn.microsoft.com/en-us/library/cc219643.aspx
+from __future__ import annotations
+
 import struct
 import logging
 import threading
 import socket
 import errno
+from typing import Dict, Tuple
+from . import tds_base
+
 try:
     from bitarray import bitarray
 except ImportError:
     class BitArray(list):
-        def __init__(self, size):
+        def __init__(self, size: int):
             super(BitArray, self).__init__()
             self[:] = [False] * size
 
-        def setall(self, val):
+        def setall(self, val: bool) -> None:
             for i in range(len(self)):
                 self[i] = val
 
     bitarray = BitArray
-from .tds_base import Error, skipall
-
+from .tds_base import Error, skipall, TransportProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +32,9 @@ SMP_HEADER = struct.Struct('<BBHLLL')
 SMP_ID = 0x53
 
 
-class _SmpSession(object):
-    def __init__(self, mgr, session_id):
+class _SmpSession(tds_base.TransportProtocol):
+    def __init__(self, mgr: SmpManager, session_id: int):
+        super().__init__()
         self.session_id = session_id
         self.seq_num_for_send = 0
         self.high_water_for_send = 4
@@ -37,9 +42,9 @@ class _SmpSession(object):
         self.high_water_for_recv = 4
         self._last_high_water_for_recv = 4
         self._mgr = mgr
-        self.recv_queue = []
-        self.send_queue = []
-        self._state = None
+        self.recv_queue: list[bytes] = []
+        self.send_queue: list[bytes] = []
+        self._state: int | None = None
         self._curr_buf_pos = 0
         self._curr_buf = b''
 
@@ -48,16 +53,16 @@ class _SmpSession(object):
         return fmt.format(self.session_id, SessionState.to_str(self._state), self.recv_queue, self.send_queue,
                           self.seq_num_for_send)
 
-    def get_state(self):
+    def get_state(self) -> int | None:
         return self._state
 
-    def close(self):
+    def close(self) -> None:
         self._mgr.close_smp_session(self)
 
-    def sendall(self, data):
+    def sendall(self, data: bytes, flags: int = 0) -> None:
         self._mgr.send_packet(self, data)
 
-    def _recv_internal(self, size):
+    def _recv_internal(self, size: int) -> Tuple[int, int]:
         if not self._curr_buf[self._curr_buf_pos:]:
             self._curr_buf = self._mgr.recv_packet(self)
             self._curr_buf_pos = 0
@@ -68,7 +73,7 @@ class _SmpSession(object):
         self._curr_buf_pos += to_read
         return offset, to_read
 
-    def recv_into(self, buffer, size=0):
+    def recv_into(self, buffer: bytes, size: int = 0, flags: int = 0) -> int:
         if size == 0:
             size = len(buffer)
 
@@ -80,7 +85,7 @@ class _SmpSession(object):
     #    offset, to_read = self._recv_internal(size)
     #    return self._curr_buf[offset:offset + to_read]
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self._state == SessionState.SESSION_ESTABLISHED
 
 
@@ -109,7 +114,7 @@ class SessionState:
     FIN_RECEIVED = 4
 
     @staticmethod
-    def to_str(st):
+    def to_str(st) -> str:
         if st == SessionState.SESSION_ESTABLISHED:
             return 'SESSION ESTABLISHED'
         elif st == SessionState.CLOSED:
@@ -120,10 +125,10 @@ class SessionState:
             return 'FIN RECEIVED'
 
 
-class SmpManager(object):
-    def __init__(self, transport, max_sessions=2 ** 16):
+class SmpManager:
+    def __init__(self, transport: TransportProtocol, max_sessions: int = 2 ** 16):
         self._transport = transport
-        self._sessions = {}
+        self._sessions: Dict[int, _SmpSession] = {}
         self._used_ids_ba = bitarray(max_sessions)
         self._used_ids_ba.setall(False)
         self._lock = threading.RLock()
@@ -132,7 +137,7 @@ class SmpManager(object):
     def __repr__(self):
         return "<SmpManager sessions={}>".format(self._sessions)
 
-    def create_session(self):
+    def create_session(self) -> _SmpSession:
         try:
             session_id = self._used_ids_ba.index(False)
         except ValueError:
@@ -153,7 +158,7 @@ class SmpManager(object):
             session._state = SessionState.SESSION_ESTABLISHED
         return session
 
-    def close_smp_session(self, session):
+    def close_smp_session(self, session: _SmpSession) -> None:
         if session._state in (SessionState.CLOSED, SessionState.FIN_SENT):
             return
         elif session._state == SessionState.SESSION_ESTABLISHED:
@@ -176,17 +181,17 @@ class SmpManager(object):
                     else:
                         raise ex
 
-    def send_queued_packets(self, session):
+    def send_queued_packets(self, session: _SmpSession) -> None:
         with self._lock:
             while session.send_queue and session.seq_num_for_send < session.high_water_for_send:
                 data = session.send_queue.pop(0)
                 self.send_packet(session, data)
 
     @staticmethod
-    def _add_one_wrap(val):
+    def _add_one_wrap(val: int) -> int:
         return 0 if val == 2 ** 32 - 1 else val + 1
 
-    def send_packet(self, session, data):
+    def send_packet(self, session: _SmpSession, data: bytes) -> None:
         with self._lock:
             if session.seq_num_for_send < session.high_water_for_send:
                 l = SMP_HEADER.size + len(data)
@@ -206,7 +211,7 @@ class SmpManager(object):
                 session.send_queue.append(data)
                 self._read_smp_message()
 
-    def recv_packet(self, session):
+    def recv_packet(self, session: _SmpSession) -> bytes:
         with self._lock:
             if session._state == SessionState.CLOSED:
                 return b''
@@ -228,11 +233,11 @@ class SmpManager(object):
                 session._last_high_water_for_recv = session.high_water_for_recv
             return session.recv_queue.pop(0)
 
-    def _bad_stm(self, message):
+    def _bad_stm(self, message: _SmpSession) -> None:
         self.close()
         raise Error(message)
 
-    def _read_smp_message(self):
+    def _read_smp_message(self) -> None:
         # caller should acquire lock before calling this function
         buf_pos = 0
         while buf_pos < SMP_HEADER.size:
@@ -294,9 +299,9 @@ class SmpManager(object):
         else:
             self._bad_stm('Unexpected FLAGS in packet from server')
 
-    def close(self):
+    def close(self) -> None:
         self._transport.close()
 
-    def transport_closed(self):
+    def transport_closed(self) -> None:
         for session in self._sessions.values():
             session._state = SessionState.CLOSED
