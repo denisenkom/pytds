@@ -1,4 +1,7 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
+from __future__ import annotations
+
+import collections
 from collections import deque
 import datetime
 import errno
@@ -11,14 +14,16 @@ import warnings
 import weakref
 import logging
 from collections.abc import Iterator
+from typing import Any, Callable, TypeVar, Iterable, Type, Tuple, Protocol, Optional, Union
 
-from pytds.tds_types import NVarCharType
+from pytds.tds_types import NVarCharType, TzInfoFactoryType
 from . import lcid
 import pytds.tz
+from .login import KerberosAuth, SspiAuth
 from .tds import (
     _TdsSocket, tds7_get_instances,
     _create_exception_by_message,
-    output, default
+    output, default, _TdsSession
 )
 from . import tds_base
 from .tds_base import (
@@ -74,25 +79,25 @@ class _TdsLogin:
     pass
 
 
-def tuple_row_strategy(column_names):
+def tuple_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], Tuple[Any, ...]]:
     """ Tuple row strategy, rows returned as tuples, default
     """
     return tuple
 
 
-def list_row_strategy(column_names):
+def list_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], list[Any]]:
     """  List row strategy, rows returned as lists
     """
     return list
 
 
-def dict_row_strategy(column_names):
+def dict_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], dict[str, Any]]:
     """ Dict row strategy, rows returned as dictionaries
     """
     # replace empty column names with indices
     column_names = [(name or idx) for idx, name in enumerate(column_names)]
 
-    def row_factory(row):
+    def row_factory(row: Tuple[Any]) -> dict[str, Any]:
         return dict(zip(column_names, row))
 
     return row_factory
@@ -104,24 +109,23 @@ def is_valid_identifier(name: str) -> bool:
     return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
 
 
-def namedtuple_row_strategy(column_names):
+def namedtuple_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], collections.namedtuple]:
     """ Namedtuple row strategy, rows returned as named tuples
 
     Column names that are not valid Python identifiers will be replaced
     with col<number>_
     """
-    import collections
     # replace empty column names with placeholders
     column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
     row_class = collections.namedtuple('Row', column_names)
 
-    def row_factory(row):
+    def row_factory(row: Tuple[Any]) -> collections.namedtuple:
         return row_class(*row)
 
     return row_factory
 
 
-def recordtype_row_strategy(column_names):
+def recordtype_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], Any]:
     """ Recordtype row strategy, rows returned as recordtypes
 
     Column names that are not valid Python identifiers will be replaced
@@ -145,21 +149,38 @@ def recordtype_row_strategy(column_names):
         def __setitem__(self, index, value):
             setattr(self, self.__slots__[index], value)
 
-    def row_factory(row):
+    def row_factory(row: Tuple[Any]) -> Row:
         return Row(*row)
 
     return row_factory
 
 
-class _ConnectionPool(object):
-    def __init__(self, max_pool_size=100, min_pool_size=0):
-        self._max_pool_size = max_pool_size
-        self._pool = {}
+PoolKeyType = Tuple[
+    Optional[str],
+    Optional[str],
+    Optional[str],
+    int,
+    Optional[str],
+    int,
+    bool,
+    Optional[str],
+    int,
+    bool,
+    bool,
+    Union[KerberosAuth, SspiAuth, None],
+    TzInfoFactoryType,
+    bool]
 
-    def add(self, key, conn):
+
+class _ConnectionPool:
+    def __init__(self, max_pool_size: int = 100, min_pool_size: int = 0):
+        self._max_pool_size = max_pool_size
+        self._pool: dict[PoolKeyType, list[Tuple[_TdsSocket, _TdsSession]]] = {}
+
+    def add(self, key: PoolKeyType, conn: Tuple[_TdsSocket, _TdsSession]) -> None:
         l = self._pool.setdefault(key, []).append(conn)
 
-    def take(self, key):
+    def take(self, key: PoolKeyType) -> Tuple[_TdsSocket, _TdsSession] | None:
         l = self._pool.get(key, [])
         if len(l) > 0:
             return l.pop()
@@ -170,23 +191,23 @@ class _ConnectionPool(object):
 _connection_pool = _ConnectionPool()
 
 
-class Connection(object):
+class Connection:
     """Connection object, this object should be created by calling :func:`connect`"""
 
     def __init__(self):
         self._closed = False
-        self._conn = None
+        self._conn: _TdsSocket | None = None
         self._isolation_level = 0
         self._autocommit = True
         self._row_strategy = tuple_row_strategy
-        self._login = None
-        self._use_tz = None
-        self._tzinfo_factory = None
-        self._key = None
+        self._login: _TdsLogin | None = None
+        self._use_tz: datetime.tzinfo | None = None
+        self._tzinfo_factory: TzInfoFactoryType | None = None
+        self._key: PoolKeyType | None = None
         self._pooling = False
 
     @property
-    def as_dict(self):
+    def as_dict(self) -> bool:
         """
         Instructs all cursors this connection creates to return results
         as a dictionary rather than a tuple.
@@ -194,33 +215,33 @@ class Connection(object):
         return self._row_strategy == dict_row_strategy
 
     @as_dict.setter
-    def as_dict(self, value):
+    def as_dict(self, value: bool) -> None:
         if value:
             self._row_strategy = dict_row_strategy
         else:
             self._row_strategy = tuple_row_strategy
 
     @property
-    def autocommit_state(self):
+    def autocommit_state(self) -> bool:
         """
         An alias for `autocommit`, provided for compatibility with pymssql
         """
         return self._autocommit
 
-    def set_autocommit(self, value):
+    def set_autocommit(self, value: bool) -> None:
         """ An alias for `autocommit`, provided for compatibility with ADO dbapi
         """
         self.autocommit = value
 
     @property
-    def autocommit(self):
+    def autocommit(self) -> bool:
         """
         The current state of autocommit on the connection.
         """
         return self._autocommit
 
     @autocommit.setter
-    def autocommit(self, value):
+    def autocommit(self, value: bool) -> None:
         if self._autocommit != value:
             if value:
                 if self._conn.tds72_transaction:
@@ -230,7 +251,7 @@ class Connection(object):
             self._autocommit = value
 
     @property
-    def isolation_level(self):
+    def isolation_level(self) -> int:
         """Isolation level for transactions,
         for possible values see :ref:`isolation-level-constants`
 
@@ -241,22 +262,22 @@ class Connection(object):
         return self._isolation_level
 
     @isolation_level.setter
-    def isolation_level(self, level):
+    def isolation_level(self, level: int) -> None:
         self._isolation_level = level
 
-    def _assert_open(self):
+    def _assert_open(self) -> None:
         if self._closed:
             raise Error('Connection closed')
         if not self._conn or not self._conn.is_connected():
             self._open()
 
-    def _trancount(self):
+    def _trancount(self) -> int:
         with self.cursor() as cur:
             cur.execute('select @@trancount')
             return cur.fetchone()[0]
 
     @property
-    def tds_version(self):
+    def tds_version(self) -> int:
         """
         Version of the TDS protocol that is being used by this connection
         """
@@ -272,12 +293,12 @@ class Connection(object):
         return self._conn.product_version
 
     @property
-    def mars_enabled(self):
+    def mars_enabled(self) -> bool:
         """ Whether Multiple Active Results Sets (MARS) is enabled or not on the current connection
         """
         return self._conn.mars_enabled
 
-    def _connect(self, host, port, instance, timeout, sock=None):
+    def _connect(self, host: str, port: int, instance: str, timeout: float, sock: socket.socket | None = None) -> None:
         login = self._login
 
         try:
@@ -340,7 +361,7 @@ class Connection(object):
             sock.close()
             raise
 
-    def _try_open(self, timeout, sock=None):
+    def _try_open(self, timeout: float, sock: socket.socket | None = None) -> None:
         if self._pooling:
             res = _connection_pool.take(self._key)
             if res is not None:
@@ -363,7 +384,7 @@ class Connection(object):
         host, port, instance = login.servers[0]
         self._connect(host=host, port=port, instance=instance, timeout=timeout, sock=sock)
 
-    def _open(self, sock=None):
+    def _open(self, sock: socket.socket | None = None) -> None:
         import time
         self._conn = None
         self._dirty = False
@@ -412,13 +433,13 @@ class Connection(object):
             retry_time += 0.08 * connect_timeout
             retry_delay = min(1, retry_delay * 2)
 
-    def __enter__(self):
+    def __enter__(self) -> Connection:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args) -> None:
         self.close()
 
-    def commit(self):
+    def commit(self) -> None:
         """
         Commit transaction which is currently in progress.
         """
@@ -429,7 +450,7 @@ class Connection(object):
             return
         self._main_cursor._commit(cont=True, isolation_level=self._isolation_level)
 
-    def cursor(self):
+    def cursor(self) -> Cursor:
         """
         Return cursor object that can be used to make queries and fetch
         results from the database.
@@ -465,7 +486,7 @@ class Connection(object):
                           self._conn.main_session,
                           self._tzinfo_factory)
 
-    def rollback(self):
+    def rollback(self) -> None:
         """
         Roll back transaction which is currently in progress.
         """
@@ -489,7 +510,7 @@ class Connection(object):
         except ClosedConnectionError:
             pass
 
-    def close(self):
+    def close(self) -> None:
         """ Close connection to an MS SQL Server.
 
         This function tries to close the connection and free all memory used.
@@ -506,7 +527,7 @@ class Connection(object):
             self._conn = None
         self._closed = True
 
-    def _try_activate_cursor(self, cursor):
+    def _try_activate_cursor(self, cursor: Cursor) -> None:
         if cursor is not self._active_cursor:
             session = self._active_cursor._session
             if session.in_cancel:
@@ -522,13 +543,13 @@ class Cursor(Iterator):
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
     """
-    def __init__(self, conn, session, tzinfo_factory):
+    def __init__(self, conn: Connection, session: tds._TdsSession, tzinfo_factory: TzInfoFactoryType | None):
         self._conn = weakref.ref(conn)
         self.arraysize = 1
         self._session = session
         self._tzinfo_factory = tzinfo_factory
 
-    def _assert_open(self):
+    def _assert_open(self) -> Connection:
         conn = self._conn
         if conn is not None:
             conn = conn()
@@ -538,27 +559,27 @@ class Cursor(Iterator):
         self._session = conn._conn._main_session
         return conn
 
-    def __enter__(self):
+    def __enter__(self) -> Cursor:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args) -> None:
         self.close()
 
-    def __iter__(self):
+    def __iter__(self) -> Cursor:
         """
         Return self to make cursors compatibile with Python iteration
         protocol.
         """
         return self
 
-    def _setup_row_factory(self):
+    def _setup_row_factory(self) -> None:
         self._row_factory = None
         conn = self._conn()
         if self._session.res_info:
             column_names = [col[0] for col in self._session.res_info.description]
             self._row_factory = conn._row_strategy(column_names)
 
-    def _callproc(self, procname, parameters):
+    def _callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any]) -> list[Any]:
         self._ensure_transaction()
         results = list(parameters)
         parameters = self._session._convert_params(parameters)
@@ -569,7 +590,7 @@ class Cursor(Iterator):
         self._setup_row_factory()
         return results
 
-    def get_proc_outputs(self):
+    def get_proc_outputs(self) -> list[Any]:
         """
         If stored procedure has result sets and OUTPUT parameters use this method
         after you processed all result sets to get values of the OUTPUT parameters.
@@ -582,7 +603,7 @@ class Cursor(Iterator):
             results[key] = param.value
         return results
 
-    def callproc(self, procname, parameters=()):
+    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any] = ()) -> list[Any]:
         """
         Call a stored procedure with the given name.
 
@@ -600,34 +621,34 @@ class Cursor(Iterator):
         return self._callproc(procname, parameters)
 
     @property
-    def return_value(self):
+    def return_value(self) -> int | None:
         """  Alias to :func:`get_proc_return_status`
         """
         return self.get_proc_return_status()
 
     @property
-    def connection(self):
+    def connection(self) -> Connection | None:
         """ Provides link back to :class:`Connection` of this cursor
         """
         return self._conn()
 
     @property
-    def spid(self):
+    def spid(self) -> int:
         """ MSSQL Server's session ID (SPID)
 
         It can be used to correlate connections between client and server logs.
         """
         return self._session._spid
 
-    def _get_tzinfo_factory(self):
+    def _get_tzinfo_factory(self) -> TzInfoFactoryType | None:
         return self._tzinfo_factory
 
-    def _set_tzinfo_factory(self, tzinfo_factory):
+    def _set_tzinfo_factory(self, tzinfo_factory: TzInfoFactoryType | None) -> None:
         self._tzinfo_factory = self._session.tzinfo_factory = tzinfo_factory
 
     tzinfo_factory = property(_get_tzinfo_factory, _set_tzinfo_factory)
 
-    def get_proc_return_status(self):
+    def get_proc_return_status(self) -> int | None:
         """ Last executed stored procedure's return value
 
         Returns integer value returned by `RETURN` statement from last executed stored procedure.
@@ -639,14 +660,14 @@ class Cursor(Iterator):
             self._session.find_return_status()
         return self._session.ret_status if self._session.has_status else None
 
-    def cancel(self):
+    def cancel(self) -> None:
         """ Cancel currently executing statement or stored procedure call
         """
         conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.cancel_if_pending()
 
-    def close(self):
+    def close(self) -> None:
         """
         Closes the cursor. The cursor is unusable from this point.
         """
@@ -659,7 +680,9 @@ class Cursor(Iterator):
                 self._session = None
             self._conn = None
 
-    def _exec_with_retry(self, fun):
+    T = TypeVar('T')
+
+    def _exec_with_retry(self, fun: Callable[[], T]) -> T:
         conn = self._assert_open()
         in_tran = conn._conn.tds72_transaction
         if in_tran and conn._dirty:
@@ -684,12 +707,12 @@ class Cursor(Iterator):
             conn = self._assert_open()
             return fun()
 
-    def _ensure_transaction(self):
+    def _ensure_transaction(self) -> None:
         conn = self._conn()
         if not conn._autocommit and not conn._conn.tds72_transaction:
             conn._main_cursor._begin_tran(isolation_level=conn._isolation_level)
 
-    def _execute(self, operation, params):
+    def _execute(self, operation: str, params: list[Any] | tuple[Any] | dict[str, Any]) -> None:
         self._ensure_transaction()
         operation = str(operation)
         if params:
@@ -736,7 +759,7 @@ class Cursor(Iterator):
         self._session.find_result_or_done()
         self._setup_row_factory()
 
-    def execute(self, operation: str, params=()):
+    def execute(self, operation: str, params: list[Any] | tuple[Any] | dict[str, Any] = ()) -> Cursor:
         """ Execute an SQL query
 
         Optionally query can be executed with parameters.
@@ -767,24 +790,24 @@ class Cursor(Iterator):
         # for compatibility with pyodbc
         return self
 
-    def _begin_tran(self, isolation_level):
+    def _begin_tran(self, isolation_level: int) -> None:
         conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.begin_tran(isolation_level=isolation_level)
 
-    def _commit(self, cont, isolation_level=0):
+    def _commit(self, cont: bool, isolation_level: int = 0) -> None:
         conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.commit(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
-    def _rollback(self, cont, isolation_level=0):
+    def _rollback(self, cont: bool, isolation_level: int = 0) -> None:
         conn = self._assert_open()
         conn._try_activate_cursor(self)
         self._session.rollback(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
-    def executemany(self, operation, params_seq):
+    def executemany(self, operation: str, params_seq: Iterable[list[Any] | tuple[Any] | dict[str, Any]]) -> None:
         """
         Execute same SQL query multiple times for each parameter set in the `params_seq` list.
         """
@@ -796,7 +819,7 @@ class Cursor(Iterator):
         if counts:
             self._session.rows_affected = sum(counts)
 
-    def execute_scalar(self, query_string, params=None):
+    def execute_scalar(self, query_string: str, params: list[Any] | tuple[Any] | dict[str, Any] | None = None) -> Any:
         """
         This method executes SQL query then returns first column of first row or the
         result.
@@ -819,7 +842,7 @@ class Cursor(Iterator):
             return None
         return row[0]
 
-    def nextset(self):
+    def nextset(self) -> bool | None:
         """ Move to next recordset in batch statement, all rows of current recordset are
         discarded if present.
 
@@ -830,7 +853,7 @@ class Cursor(Iterator):
         return res
 
     @property
-    def rowcount(self):
+    def rowcount(self) -> int:
         """ Number of rows affected by previous statement
 
         :returns: -1 if this information was not supplied by the server
@@ -851,7 +874,7 @@ class Cursor(Iterator):
         else:
             return None
 
-    def set_stream(self, column_idx: int, stream):
+    def set_stream(self, column_idx: int, stream) -> None:
         """
         This function can be used to efficiently receive values which can be very large, e.g. `TEXT`, `VARCHAR(MAX)`, `VARBINARY(MAX)`.
 
@@ -885,7 +908,7 @@ class Cursor(Iterator):
         self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
 
     @property
-    def messages(self):
+    def messages(self) -> list[(Type, IntegrityError | ProgrammingError | OperationalError)] | None:
         """ Messages generated by server, see http://legacy.python.org/dev/peps/pep-0249/#cursor-messages
         """
         if self._session:
@@ -909,7 +932,7 @@ class Cursor(Iterator):
         else:
             return None
 
-    def fetchone(self):
+    def fetchone(self) -> Any:
         """ Fetch next row.
 
         Returns row using currently configured factory, or ``None`` if there are no more rows
@@ -918,7 +941,7 @@ class Cursor(Iterator):
         if row:
             return self._row_factory(row)
 
-    def fetchmany(self, size=None):
+    def fetchmany(self, size=None) -> list[Any]:
         """ Fetch next N rows
 
         :param size: Maximum number of rows to return, default value is cursor.arraysize
@@ -935,7 +958,7 @@ class Cursor(Iterator):
             rows.append(row)
         return rows
 
-    def fetchall(self):
+    def fetchall(self) -> list[Any]:
         """ Fetch all remaining rows
 
         Do not use this if you expect large number of rows returned by the server,
@@ -944,30 +967,43 @@ class Cursor(Iterator):
         """
         return list(row for row in self)
 
-    def __next__(self):
+    def __next__(self) -> Any:
         row = self.fetchone()
         if row is None:
             raise StopIteration
         return row
 
     @staticmethod
-    def setinputsizes(sizes=None):
+    def setinputsizes(sizes=None) -> None:
         """
         This method does nothing, as permitted by DB-API specification.
         """
         pass
 
     @staticmethod
-    def setoutputsize(size=None, column=0):
+    def setoutputsize(size=None, column=0) -> None:
         """
         This method does nothing, as permitted by DB-API specification.
         """
         pass
 
-    def copy_to(self, file=None, table_or_view=None, sep='\t', columns=None,
-                check_constraints=False, fire_triggers=False, keep_nulls=False,
-                kb_per_batch=None, rows_per_batch=None, order=None, tablock=False,
-                schema=None, null_string=None, data=None):
+    def copy_to(
+            self,
+            file: Iterable[str] | None = None,
+            table_or_view: str | None = None,
+            sep: str = '\t',
+            columns: Iterable[Column | str] | None = None,
+            check_constraints: bool = False,
+            fire_triggers: bool = False,
+            keep_nulls: bool = False,
+            kb_per_batch: int | None = None,
+            rows_per_batch: int | None = None,
+            order: str | None = None,
+            tablock: bool = False,
+            schema: str | None = None,
+            null_string: str | None = None,
+            data: Iterable[Tuple[Any, ...]] | None = None
+    ):
         """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
 
         :param file: Source file-like object, should be in csv format. Specify
@@ -1073,7 +1109,7 @@ class Cursor(Iterator):
 
 
 class _MarsCursor(Cursor):
-    def _assert_open(self):
+    def _assert_open(self) -> Connection:
         conn = self._conn
         if conn is not None:
             conn = conn()
@@ -1085,7 +1121,7 @@ class _MarsCursor(Cursor):
         return conn
 
     @property
-    def spid(self):
+    def spid(self) -> int:
         # not thread safe for connection
         conn = self._assert_open()
         dirty = conn._dirty
@@ -1093,11 +1129,11 @@ class _MarsCursor(Cursor):
         conn._dirty = dirty
         return spid
 
-    def cancel(self):
+    def cancel(self) -> None:
         self._assert_open()
         self._session.cancel_if_pending()
 
-    def close(self):
+    def close(self) -> None:
         """
         Closes the cursor. The cursor is unusable from this point.
         """
@@ -1109,13 +1145,13 @@ class _MarsCursor(Cursor):
                 if e.errno != errno.ECONNRESET:
                     raise
 
-    def execute(self, operation, params=()):
+    def execute(self, operation: str, params: list[Any] | tuple[Any] | dict[str, Any] = ()) -> Cursor:
         self._assert_open()
         self._execute(operation, params)
         # for compatibility with pyodbc
         return self
 
-    def callproc(self, procname, parameters=()):
+    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any] = ()) -> list[Any]:
         """
         Call a stored procedure with the given name.
 
@@ -1127,22 +1163,22 @@ class _MarsCursor(Cursor):
         self._assert_open()
         return self._callproc(procname, parameters)
 
-    def _begin_tran(self, isolation_level):
+    def _begin_tran(self, isolation_level: int) -> None:
         self._assert_open()
         self._session.begin_tran(isolation_level=isolation_level)
 
-    def _commit(self, cont, isolation_level=0):
+    def _commit(self, cont, isolation_level: int = 0) -> None:
         conn = self._assert_open()
         self._session.commit(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
-    def _rollback(self, cont, isolation_level=0):
+    def _rollback(self, cont, isolation_level: int = 0) -> None:
         conn = self._assert_open()
         self._session.rollback(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
 
-def _resolve_instance_port(server, port, instance, timeout=5):
+def _resolve_instance_port(server: Any, port: int, instance: str, timeout: float = 5) -> int:
     if instance and not port:
         logger.info('querying %s for list of instances', server)
         instances = tds7_get_instances(server, timeout=timeout)
@@ -1155,7 +1191,7 @@ def _resolve_instance_port(server, port, instance, timeout=5):
     return port or 1433
 
 
-def _parse_server(server):
+def _parse_server(server: str) -> Tuple[str, str]:
     instance = ""
     if "\\" in server:
         server, instance = server.split("\\")
@@ -1170,10 +1206,10 @@ def _parse_server(server):
 # map to servers deques, used to store active/passive servers
 # between calls to connect function
 # deques are used because they can be rotated
-_servers_deques = {}
+_servers_deques: dict[Tuple[Tuple[Tuple[str, int | None, str], ...], str | None], deque[Tuple[Any, int, str]]] = {}
 
 
-def _get_servers_deque(servers, database):
+def _get_servers_deque(servers: Tuple[Tuple[str, int | None, str], ...], database: str | None):
     """ Returns deque of servers for given tuple of servers and
     database name.
     This deque have active server at the begining, if first server
@@ -1190,7 +1226,7 @@ def _get_servers_deque(servers, database):
     return _servers_deques[key]
 
 
-def _parse_connection_string(connstr):
+def _parse_connection_string(connstr: str) -> dict[str, str]:
     """
     MSSQL style connection string parser
 
@@ -1208,18 +1244,41 @@ def _parse_connection_string(connstr):
     return res
 
 
-def connect(dsn=None, database=None, user=None, password=None, timeout=None,
-            login_timeout=15, as_dict=None,
-            appname=None, port=None, tds_version=tds_base.TDS74,
-            autocommit=False,
-            blocksize=4096, use_mars=False, auth=None, readonly=False,
-            load_balancer=None, use_tz=None, bytes_to_unicode=True,
-            row_strategy=None, failover_partner=None, server=None,
-            cafile=None, sock=None, validate_host=True,
-            enc_login_only=False, disable_connect_retry=False,
-            pooling=False,
-            use_sso=False,
-            ):
+class LoadBalancer(Protocol):
+    def choose(self) -> Iterable[str]:
+        ...
+
+
+def connect(
+        dsn: str | None = None,
+        database: str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        timeout: float | None = None,
+        login_timeout: float = 15,
+        as_dict: bool | None = None,
+        appname: str | None = None,
+        port: int | None = None,
+        tds_version: int = tds_base.TDS74,
+        autocommit: bool = False,
+        blocksize: int = 4096,
+        use_mars: bool = False,
+        auth: Any | None = None,
+        readonly: bool = False,
+        load_balancer: LoadBalancer | None = None,
+        use_tz: datetime.tzinfo | None = None,
+        bytes_to_unicode: bool = True,
+        row_strategy: Callable[[Iterable[str]], Callable[[Tuple[Any, ...]], Any]] | None = None,
+        failover_partner: str | None = None,
+        server: str | None = None,
+        cafile: str | None = None,
+        sock: socket.socket | None = None,
+        validate_host: bool = True,
+        enc_login_only: bool = False,
+        disable_connect_retry: bool = False,
+        pooling: bool = False,
+        use_sso: bool = False,
+    ):
     """
     Opens connection to the database
 
@@ -1414,26 +1473,26 @@ def connect(dsn=None, database=None, user=None, password=None, timeout=None,
     return conn
 
 
-def Date(year, month, day):
+def Date(year: int, month: int, day: int) -> datetime.date:
     return datetime.date(year, month, day)
 
 
-def DateFromTicks(ticks):
+def DateFromTicks(ticks: float) -> datetime.date:
     return datetime.date.fromtimestamp(ticks)
 
 
-def Time(hour, minute, second, microsecond=0, tzinfo=None):
+def Time(hour: int, minute: int, second: int, microsecond: int = 0, tzinfo: datetime.tzinfo | None = None) -> datetime.time:
     return datetime.time(hour, minute, second, microsecond, tzinfo)
 
 
-def TimeFromTicks(ticks):
+def TimeFromTicks(ticks: float) -> datetime.time:
     import time
     return Time(*time.localtime(ticks)[3:6])
 
 
-def Timestamp(year, month, day, hour, minute, second, microseconds=0, tzinfo=None):
+def Timestamp(year: int, month: int, day: int, hour: int, minute: int, second: int, microseconds: int = 0, tzinfo: datetime.tzinfo | None = None) -> datetime.datetime:
     return datetime.datetime(year, month, day, hour, minute, second, microseconds, tzinfo)
 
 
-def TimestampFromTicks(ticks):
+def TimestampFromTicks(ticks: float) -> datetime.datetime:
     return datetime.datetime.fromtimestamp(ticks)

@@ -6,6 +6,7 @@ import re
 import uuid
 import functools
 from io import StringIO, BytesIO
+from typing import Callable
 
 from pytds.tds_base import read_chunks
 from . import tds_base
@@ -16,6 +17,9 @@ from . import tz
 _flt4_struct = struct.Struct('f')
 _flt8_struct = struct.Struct('d')
 _utc = tz.utc
+
+
+TzInfoFactoryType = Callable[[int], datetime.tzinfo]
 
 
 def _applytz(dt, tzinfo):

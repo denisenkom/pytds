@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import codecs
 import contextlib
 import logging
@@ -7,10 +9,10 @@ import warnings
 import socket
 import struct
 
-from typing import List
+from typing import List, Iterable, Any
 
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
-from . import tds_base
+from . import tds_base, TzInfoFactoryType
 from . import tds_types
 from . import tls
 from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
@@ -423,14 +425,14 @@ class _TdsSession(object):
     Represents a single TDS session within MARS connection, when MARS enabled there could be multiple TDS sessions
     within one connection.
     """
-    def __init__(self, tds, transport, tzinfo_factory):
+    def __init__(self, tds: _TdsSocket, transport: socket.socket, tzinfo_factory: TzInfoFactoryType | None):
         self.out_pos = 8
         self.res_info = None
         self.in_cancel = False
         self.wire_mtx = None
         self.param_info = None
         self.has_status = False
-        self.ret_status = None
+        self.ret_status: int | None = None
         self.skipped_to_status = False
         self._transport = transport
         self._reader = _TdsReader(self)
@@ -956,7 +958,7 @@ class _TdsSession(object):
         param = tds_base.Param(name=name, type=param_type, flags=param_flags, value=param_value)
         return param
 
-    def _convert_params(self, parameters) -> List[tds_base.Param]:
+    def _convert_params(self, parameters: dict[str, Any] | list[Any]) -> List[tds_base.Param]:
         """ Converts a dict of list of parameters into a list of :class:`Column` instances.
 
         :param parameters: Can be a list of parameter values, or a dict of parameter names to values.
@@ -983,7 +985,7 @@ class _TdsSession(object):
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name, params: List[tds_base.Param], flags=0):
+    def submit_rpc(self, rpc_name: tds_base.InternalProc | str, params: List[tds_base.Param], flags: int = 0):
         """ Sends an RPC request.
 
         This call will transition session into pending state.
@@ -1043,7 +1045,7 @@ class _TdsSession(object):
 
                 serializer.write(w, param.value)
 
-    def submit_plain_query(self, operation):
+    def submit_plain_query(self, operation: str):
         """ Sends a plain query to server.
 
         This call will transition session into pending state.
@@ -1064,7 +1066,7 @@ class _TdsSession(object):
                 self._start_query()
             w.write_ucs2(operation)
 
-    def submit_bulk(self, metadata, rows):
+    def submit_bulk(self, metadata: list[tds_base.Column], rows: Iterable[tuple[Any]]) -> None:
         """ Sends insert bulk command.
 
         Spec: http://msdn.microsoft.com/en-us/library/dd358082.aspx
@@ -1111,7 +1113,7 @@ class _TdsSession(object):
             else:
                 w.put_int(0)
 
-    def put_cancel(self):
+    def put_cancel(self) -> None:
         """ Sends a cancel request to the server.
 
         Switches connection to IN_CANCEL state.
@@ -1123,12 +1125,12 @@ class _TdsSession(object):
 
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
-    def begin_tran(self, isolation_level=0):
+    def begin_tran(self, isolation_level: int = 0) -> None:
         logger.info('Sending BEGIN TRAN il=%x', isolation_level)
         self.submit_begin_tran(isolation_level=isolation_level)
         self.process_simple_request()
 
-    def submit_begin_tran(self, isolation_level=0):
+    def submit_begin_tran(self, isolation_level: int = 0) -> None:
         if tds_base.IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -1148,7 +1150,7 @@ class _TdsSession(object):
     _commit_rollback_tran_struct72_hdr = struct.Struct('<HBB')
     _continue_tran_struct72 = struct.Struct('<BB')
 
-    def rollback(self, cont, isolation_level=0):
+    def rollback(self, cont: bool, isolation_level: int = 0) -> None:
         logger.info('Sending ROLLBACK TRAN')
         self.submit_rollback(cont, isolation_level=isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
@@ -1158,7 +1160,7 @@ class _TdsSession(object):
         finally:
             self._tds.sock.settimeout(prev_timeout)
 
-    def submit_rollback(self, cont, isolation_level=0):
+    def submit_rollback(self, cont: bool, isolation_level: int = 0) -> None:
         if tds_base.IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -1185,7 +1187,7 @@ class _TdsSession(object):
                 "IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
             self.conn.tds72_transaction = 1 if cont else 0
 
-    def commit(self, cont, isolation_level=0):
+    def commit(self, cont: bool, isolation_level: int = 0) -> None:
         logger.info('Sending COMMIT TRAN')
         self.submit_commit(cont, isolation_level=isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
@@ -1195,7 +1197,7 @@ class _TdsSession(object):
         finally:
             self._tds.sock.settimeout(prev_timeout)
 
-    def submit_commit(self, cont, isolation_level=0):
+    def submit_commit(self, cont: bool, isolation_level: int = 0) -> None:
         if tds_base.IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()
@@ -1224,7 +1226,7 @@ class _TdsSession(object):
 
     _tds72_query_start = struct.Struct('<IIHQI')
 
-    def _start_query(self):
+    def _start_query(self) -> None:
         w = self._writer
         w.pack(_TdsSession._tds72_query_start,
                0x16,  # total length
@@ -1234,7 +1236,7 @@ class _TdsSession(object):
                1,  # request count
                )
 
-    def send_prelogin(self, login):
+    def send_prelogin(self, login) -> None:
         from . import intversion
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
@@ -1297,7 +1299,7 @@ class _TdsSession(object):
 
         w.flush()
 
-    def process_prelogin(self, login):
+    def process_prelogin(self, login) -> None:
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         p = self._reader.read_whole_packet()
         size = len(p)
@@ -1305,7 +1307,7 @@ class _TdsSession(object):
             self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
         self.parse_prelogin(octets=p, login=login)
 
-    def parse_prelogin(self, octets, login):
+    def parse_prelogin(self, octets: bytes, login) -> None:
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         size = len(octets)
         p = octets
@@ -1693,16 +1695,16 @@ class _TdsSocket(object):
         self.type_inferrer = None
         self.query_timeout = 0
         self._smp_manager = None
-        self._main_session = None
+        self._main_session: _TdsSession | None = None
         self._login = None
         self.route = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
         return fmt.format(self.tds72_transaction, self._mars_enabled,
                           self.tds_version, self.use_tz)
 
-    def login(self, login, sock, tzinfo_factory):
+    def login(self, login, sock: socket.socket, tzinfo_factory: TzInfoFactoryType | None):
         self._login = login
         self.bufsize = login.blocksize
         self.query_timeout = login.query_timeout
@@ -1749,22 +1751,22 @@ class _TdsSocket(object):
         return None
 
     @property
-    def mars_enabled(self):
+    def mars_enabled(self) -> bool:
         return self._mars_enabled
 
     @property
-    def main_session(self):
+    def main_session(self) -> _TdsSession | None:
         return self._main_session
 
-    def create_session(self, tzinfo_factory):
+    def create_session(self, tzinfo_factory: TzInfoFactoryType | None) -> _TdsSession:
         return _TdsSession(
             self, self._smp_manager.create_session(),
             tzinfo_factory)
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self._is_connected
 
-    def close(self):
+    def close(self) -> None:
         self._is_connected = False
         if self.sock is not None:
             self.sock.close()
@@ -1782,7 +1784,7 @@ class _Results(object):
             self.row_count = 0
 
 
-def _parse_instances(msg):
+def _parse_instances(msg: bytes) -> dict[str, dict[str, str]]:
     name = None
     if len(msg) > 3 and tds_base.my_ord(msg[0]) == 5:
         tokens = msg[3:].decode('ascii').split(';')
@@ -1810,7 +1812,7 @@ def _parse_instances(msg):
 # @return default port number or 0 if error
 # @remark experimental, cf. MC-SQLR.pdf.
 #
-def tds7_get_instances(ip_addr, timeout=5):
+def tds7_get_instances(ip_addr: Any, timeout: float = 5) -> dict[str, dict[str, str]]:
     s = socket.socket(type=socket.SOCK_DGRAM)
     s.settimeout(timeout)
     try:
