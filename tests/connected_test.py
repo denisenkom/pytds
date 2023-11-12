@@ -786,3 +786,12 @@ def test_param_as_column_backward_compat(cursor):
     param = Column(type=BitType(), value=True)
     result = cursor.execute_scalar('select %s', [param])
     assert result is True
+
+
+def test_param_with_spaces(cursor):
+    """
+    For backward compatibility need to support passing parameters as Column objects
+    New way to pass such parameters is to use Param object.
+    """
+    result = cursor.execute_scalar('select %(param name)s', {"param name": "abc"})
+    assert result == "abc"
