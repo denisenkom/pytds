@@ -4,6 +4,8 @@ import logging
 import socket
 from typing import Any
 
+from pytds.tds import _TdsSession
+
 try:
     import OpenSSL.SSL
     import cryptography.hazmat.backends.openssl.backend

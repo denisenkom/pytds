@@ -8,6 +8,9 @@ import threading
 import socket
 import errno
 from typing import Dict, Tuple
+
+from typing_extensions import Buffer
+
 from . import tds_base
 
 try:
@@ -59,7 +62,7 @@ class _SmpSession(tds_base.TransportProtocol):
     def close(self) -> None:
         self._mgr.close_smp_session(self)
 
-    def sendall(self, data: bytes, flags: int = 0) -> None:
+    def sendall(self, data: Buffer, flags: int = 0) -> None:
         self._mgr.send_packet(self, data)
 
     def _recv_internal(self, size: int) -> Tuple[int, int]:

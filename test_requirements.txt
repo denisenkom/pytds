@@ -15,3 +15,5 @@ namedlist
 cryptography < 3.3
 sqlalchemy-pytds==1.0.0
 SQLAlchemy==2.0.22
+mypy
+pytest-mypy

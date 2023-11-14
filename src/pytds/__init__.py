@@ -14,7 +14,7 @@ import warnings
 import weakref
 import logging
 from collections.abc import Iterator
-from typing import Any, Callable, TypeVar, Iterable, Type, Tuple, Protocol, Optional, Union
+from typing import Any, Callable, TypeVar, Iterable, Type, Tuple, Protocol, Optional, Union, NamedTuple
 
 from pytds.tds_types import NVarCharType, TzInfoFactoryType
 from . import lcid
@@ -23,7 +23,7 @@ from .login import KerberosAuth, SspiAuth, AuthProtocol
 from .tds import (
     _TdsSocket, tds7_get_instances,
     _create_exception_by_message,
-    output, default, _TdsSession
+    output, default, _TdsSession, _TdsLogin
 )
 from . import tds_base
 from .tds_base import (
@@ -75,25 +75,25 @@ threadsafety = 1
 paramstyle = 'pyformat'
 
 
-def tuple_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], Tuple[Any, ...]]:
+def tuple_row_strategy(column_names: Iterable[str]) -> Callable[[Iterable[Any]], Tuple[Any, ...]]:
     """ Tuple row strategy, rows returned as tuples, default
     """
     return tuple
 
 
-def list_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], list[Any]]:
+def list_row_strategy(column_names: Iterable[str]) -> Callable[[Iterable[Any]], list[Any]]:
     """  List row strategy, rows returned as lists
     """
     return list
 
 
-def dict_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], dict[str, Any]]:
+def dict_row_strategy(column_names: Iterable[str]) -> Callable[[Iterable[Any]], dict[str, Any]]:
     """ Dict row strategy, rows returned as dictionaries
     """
     # replace empty column names with indices
-    column_names = [(name or idx) for idx, name in enumerate(column_names)]
+    column_names = [(name or str(idx)) for idx, name in enumerate(column_names)]
 
-    def row_factory(row: Tuple[Any]) -> dict[str, Any]:
+    def row_factory(row: Iterable[Any]) -> dict[str, Any]:
         return dict(zip(column_names, row))
 
     return row_factory
@@ -102,26 +102,26 @@ def dict_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]]
 def is_valid_identifier(name: str) -> bool:
     """ Returns true if given name can be used as an identifier in Python, otherwise returns false.
     """
-    return name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name)
+    return bool(name and re.match("^[_A-Za-z][_a-zA-Z0-9]*$", name) and not keyword.iskeyword(name))
 
 
-def namedtuple_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], collections.namedtuple]:
+def namedtuple_row_strategy(column_names: Iterable[str]) -> Callable[[Iterable[Any]], NamedTuple]:
     """ Namedtuple row strategy, rows returned as named tuples
 
     Column names that are not valid Python identifiers will be replaced
     with col<number>_
     """
     # replace empty column names with placeholders
-    column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
-    row_class = collections.namedtuple('Row', column_names)
+    clean_column_names = [name if is_valid_identifier(name) else 'col%s_' % idx for idx, name in enumerate(column_names)]
+    row_class = collections.namedtuple('Row', clean_column_names)
 
-    def row_factory(row: Tuple[Any]) -> collections.namedtuple:
+    def row_factory(row: Iterable[Any]) -> collections.namedtuple:
         return row_class(*row)
 
     return row_factory
 
 
-def recordtype_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any, ...]], Any]:
+def recordtype_row_strategy(column_names: Iterable[str]) -> Callable[[Iterable[Any]], Any]:
     """ Recordtype row strategy, rows returned as recordtypes
 
     Column names that are not valid Python identifiers will be replaced
@@ -145,7 +145,7 @@ def recordtype_row_strategy(column_names: Iterable[str]) -> Callable[[Tuple[Any,
         def __setitem__(self, index, value):
             setattr(self, self.__slots__[index], value)
 
-    def row_factory(row: Tuple[Any]) -> Row:
+    def row_factory(row: Iterable[Any]) -> Row:
         return Row(*row)
 
     return row_factory
@@ -163,8 +163,8 @@ PoolKeyType = Tuple[
     int,
     bool,
     bool,
-    Union[KerberosAuth, SspiAuth, None],
-    TzInfoFactoryType,
+    Union[AuthProtocol, None],
+    datetime.tzinfo,
     bool]
 
 
@@ -174,7 +174,7 @@ class _ConnectionPool:
         self._pool: dict[PoolKeyType, list[Tuple[_TdsSocket, _TdsSession]]] = {}
 
     def add(self, key: PoolKeyType, conn: Tuple[_TdsSocket, _TdsSession]) -> None:
-        l = self._pool.setdefault(key, []).append(conn)
+        self._pool.setdefault(key, []).append(conn)
 
     def take(self, key: PoolKeyType) -> Tuple[_TdsSocket, _TdsSession] | None:
         l = self._pool.get(key, [])
@@ -190,17 +190,26 @@ _connection_pool = _ConnectionPool()
 class Connection:
     """Connection object, this object should be created by calling :func:`connect`"""
 
-    def __init__(self):
+    def __init__(
+            self,
+            login_info: _TdsLogin,
+            pooling: bool,
+            key: PoolKeyType,
+            use_tz: datetime.tzinfo | None,
+            autocommit: bool,
+            tzinfo_factory: TzInfoFactoryType,
+    ) -> None:
         self._closed = False
         self._conn: _TdsSocket | None = None
         self._isolation_level = 0
-        self._autocommit = True
-        self._row_strategy = tuple_row_strategy
-        self._login: tds._TdsLogin | None = None
-        self._use_tz: datetime.tzinfo | None = None
-        self._tzinfo_factory: TzInfoFactoryType | None = None
-        self._key: PoolKeyType | None = None
-        self._pooling = False
+        self._autocommit = autocommit
+        self._row_strategy: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]] = tuple_row_strategy
+        self._login = login_info
+        self._use_tz = use_tz
+        self._tzinfo_factory = tzinfo_factory
+        self._key = key
+        self._pooling = pooling
+        self._dirty = False
 
     @property
     def as_dict(self) -> bool:
@@ -339,7 +348,7 @@ class Connection:
                 return
 
             if conn.mars_enabled:
-                cursor = _MarsCursor(
+                cursor: _MarsCursor | Cursor | None = _MarsCursor(
                     self,
                     conn.create_session(self._tzinfo_factory),
                     self._tzinfo_factory)
@@ -363,7 +372,7 @@ class Connection:
             if res is not None:
                 self._conn, sess = res
                 if self._conn.mars_enabled:
-                    cursor = _MarsCursor(
+                    cursor: _MarsCursor | Cursor = _MarsCursor(
                         self,
                         sess,
                         self._tzinfo_factory)
@@ -539,16 +548,18 @@ class Cursor(Iterator):
     This class represents a database cursor, which is used to issue queries
     and fetch results from a database connection.
     """
-    def __init__(self, conn: Connection, session: tds._TdsSession, tzinfo_factory: TzInfoFactoryType | None):
-        self._conn = weakref.ref(conn)
+    def __init__(self, conn: Connection, session: _TdsSession, tzinfo_factory: TzInfoFactoryType | None):
+        self._conn: weakref.ReferenceType[Connection] | None = weakref.ref(conn)
         self.arraysize = 1
         self._session = session
         self._tzinfo_factory = tzinfo_factory
 
     def _assert_open(self) -> Connection:
-        conn = self._conn
-        if conn is not None:
-            conn = conn()
+        conn_ref = self._conn
+        if conn_ref is not None:
+            conn = conn_ref()
+        else:
+            conn = None
         if not conn:
             raise InterfaceError('Cursor is closed')
         conn._assert_open()
@@ -575,7 +586,7 @@ class Cursor(Iterator):
             column_names = [col[0] for col in self._session.res_info.description]
             self._row_factory = conn._row_strategy(column_names)
 
-    def _callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any]) -> list[Any]:
+    def _callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any, ...]) -> list[Any]:
         self._ensure_transaction()
         results = list(parameters)
         parameters = self._session._convert_params(parameters)
@@ -599,7 +610,7 @@ class Cursor(Iterator):
             results[key] = param.value
         return results
 
-    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any] = ()) -> list[Any]:
+    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any, ...] = ()) -> list[Any]:
         """
         Call a stored procedure with the given name.
 
@@ -667,9 +678,11 @@ class Cursor(Iterator):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
-        conn = self._conn
-        if conn is not None:
-            conn = conn()
+        conn_ref = self._conn
+        if conn_ref is not None:
+            conn = conn_ref()
+        else:
+            conn = None
         if conn is not None:
             if self is conn._active_cursor:
                 conn._active_cursor = conn._main_cursor
@@ -708,7 +721,7 @@ class Cursor(Iterator):
         if not conn._autocommit and not conn._conn.tds72_transaction:
             conn._main_cursor._begin_tran(isolation_level=conn._isolation_level)
 
-    def _execute(self, operation: str, params: list[Any] | tuple[Any] | dict[str, Any]) -> None:
+    def _execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None) -> None:
         self._ensure_transaction()
         operation = str(operation)
         if params:
@@ -740,13 +753,13 @@ class Cursor(Iterator):
                         named_params[mssql_name] = value
                 operation = operation % rename
             if named_params:
-                named_params = self._session._convert_params(named_params)
+                list_named_params = self._session._convert_params(named_params)
                 param_definition = u','.join(
                     u'{0} {1}'.format(p.name, p.type.get_declaration())
-                    for p in named_params)
+                    for p in list_named_params)
                 self._exec_with_retry(lambda: self._session.submit_rpc(
                     tds_base.SP_EXECUTESQL,
-                    [self._session.make_param('', operation), self._session.make_param('', param_definition)] + named_params,
+                    [self._session.make_param('', operation), self._session.make_param('', param_definition)] + list_named_params,
                     0))
             else:
                 self._exec_with_retry(lambda: self._session.submit_plain_query(operation))
@@ -755,7 +768,7 @@ class Cursor(Iterator):
         self._session.find_result_or_done()
         self._setup_row_factory()
 
-    def execute(self, operation: str, params: list[Any] | tuple[Any] | dict[str, Any] = ()) -> Cursor:
+    def execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = ()) -> Cursor:
         """ Execute an SQL query
 
         Optionally query can be executed with parameters.
@@ -803,7 +816,7 @@ class Cursor(Iterator):
         self._session.rollback(cont=cont, isolation_level=isolation_level)
         conn._dirty = False
 
-    def executemany(self, operation: str, params_seq: Iterable[list[Any] | tuple[Any] | dict[str, Any]]) -> None:
+    def executemany(self, operation: str, params_seq: Iterable[list[Any] | tuple[Any, ...] | dict[str, Any]]) -> None:
         """
         Execute same SQL query multiple times for each parameter set in the `params_seq` list.
         """
@@ -815,7 +828,7 @@ class Cursor(Iterator):
         if counts:
             self._session.rows_affected = sum(counts)
 
-    def execute_scalar(self, query_string: str, params: list[Any] | tuple[Any] | dict[str, Any] | None = None) -> Any:
+    def execute_scalar(self, query_string: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None) -> Any:
         """
         This method executes SQL query then returns first column of first row or the
         result.
@@ -904,7 +917,7 @@ class Cursor(Iterator):
         self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
 
     @property
-    def messages(self) -> list[(Type, IntegrityError | ProgrammingError | OperationalError)] | None:
+    def messages(self) -> list[Tuple[Type, IntegrityError | ProgrammingError | OperationalError]] | None:
         """ Messages generated by server, see http://legacy.python.org/dev/peps/pep-0249/#cursor-messages
         """
         if self._session:
@@ -1106,9 +1119,11 @@ class Cursor(Iterator):
 
 class _MarsCursor(Cursor):
     def _assert_open(self) -> Connection:
-        conn = self._conn
-        if conn is not None:
-            conn = conn()
+        conn_ref = self._conn
+        if conn_ref is not None:
+            conn = conn_ref()
+        else:
+            conn = None
         if not conn:
             raise InterfaceError('Cursor is closed')
         conn._assert_open()
@@ -1141,13 +1156,13 @@ class _MarsCursor(Cursor):
                 if e.errno != errno.ECONNRESET:
                     raise
 
-    def execute(self, operation: str, params: list[Any] | tuple[Any] | dict[str, Any] = ()) -> Cursor:
+    def execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = ()) -> Cursor:
         self._assert_open()
         self._execute(operation, params)
         # for compatibility with pyodbc
         return self
 
-    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any] = ()) -> list[Any]:
+    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | Tuple[Any, ...] = ()) -> list[Any]:
         """
         Call a stored procedure with the given name.
 
@@ -1202,7 +1217,7 @@ def _parse_server(server: str) -> Tuple[str, str]:
 # map to servers deques, used to store active/passive servers
 # between calls to connect function
 # deques are used because they can be rotated
-_servers_deques: dict[Tuple[Tuple[Tuple[str, int | None, str], ...], str | None], deque[Tuple[Any, int, str]]] = {}
+_servers_deques: dict[Tuple[Tuple[Tuple[str, int | None, str], ...], str | None], deque[Tuple[Any, int | None, str]]] = {}
 
 
 def _get_servers_deque(servers: Tuple[Tuple[str, int | None, str], ...], database: str | None):
@@ -1330,7 +1345,7 @@ def connect(
     """
     if use_sso and auth:
         raise ValueError('use_sso cannot be used with auth parameter defined')
-    login = tds._TdsLogin()
+    login = _TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
     login.user_name = user or ''
@@ -1393,10 +1408,11 @@ def connect(
 
     if load_balancer and failover_partner:
         raise ValueError("Both load_balancer and failover_partner shoudln't be specified")
+    servers: list[Tuple[str, int | None]] = []
     if load_balancer:
-        servers = [(srv, None) for srv in load_balancer.choose()]
+        servers += ((srv, None) for srv in load_balancer.choose())
     else:
-        servers = [(dsn or 'localhost', port)]
+        servers += [(dsn or 'localhost', port)]
         if failover_partner:
             servers.append((failover_partner, port))
 
@@ -1437,12 +1453,16 @@ def connect(
         autocommit,
     )
 
-    conn = Connection()
-    conn._use_tz = use_tz
-    conn._autocommit = autocommit
-    conn._login = login
-    conn._pooling = pooling
-    conn._key = key
+    from .tz import FixedOffsetTimezone
+    tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
+    conn = Connection(
+        login_info=login,
+        pooling=pooling,
+        key=key,
+        use_tz=use_tz,
+        autocommit=autocommit,
+        tzinfo_factory=tzinfo_factory
+    )
 
     assert row_strategy is None or as_dict is None,\
         'Both row_startegy and as_dict were specified, you should use either one or another'
@@ -1453,10 +1473,6 @@ def connect(
     else:
         conn._row_strategy = tuple_row_strategy # default row strategy
 
-    conn._isolation_level = 0
-    conn._dirty = False
-    from .tz import FixedOffsetTimezone
-    conn._tzinfo_factory = None if use_tz is None else FixedOffsetTimezone
     if disable_connect_retry:
         conn._try_open(timeout=login.connect_timeout, sock=sock)
     else:

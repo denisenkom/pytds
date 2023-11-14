@@ -944,7 +944,7 @@ class _TdsSession:
         return self.state
 
     @contextlib.contextmanager
-    def querying_context(self, packet_type) -> None:
+    def querying_context(self, packet_type: int) -> None:
         """ Context manager for querying.
 
         Sets state to TDS_QUERYING, and reverts it to TDS_IDLE if exception happens inside managed block,

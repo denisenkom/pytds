@@ -735,7 +735,7 @@ class Column(CommonEqualityMixin):
         return type_factory.serializer_by_type(sql_type=self.type, collation=collation)
 
 
-class TransportProtocol(SocketType):
+class TransportProtocol(Protocol):
     def is_connected(self) -> bool:
         ...
 
@@ -749,7 +749,7 @@ class AuthProtocol(Protocol):
     def create_packet(self) -> bytes:
         ...
 
-    def handle_hext(self, packet: bytes) -> bytes | None:
+    def handle_next(self, packet: bytes) -> bytes | None:
         ...
 
     def close(self) -> None:

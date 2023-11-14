@@ -68,13 +68,14 @@ class SspiAuth(AuthProtocol):
         from . import sspi
         import ctypes
         buf = ctypes.create_string_buffer(4096)
-        self._ctx, status, bufs = self._cred.create_context(
+        ctx, status, bufs = self._cred.create_context(
             flags=self._flags,
             byte_ordering='network',
             target_name=self._sname,
             output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
+        self._ctx = ctx
         if status == sspi.Status.SEC_I_COMPLETE_AND_CONTINUE:
-            self._ctx.complete_auth_token(bufs)
+            ctx.complete_auth_token(bufs)
         return bufs[0][1]
 
     def handle_next(self, packet: bytes) -> bytes | None:
