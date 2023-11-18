@@ -77,9 +77,8 @@ class MockSock(object):
         self._packet_pos = 0
 
 
-def does_database_exist(connection: pytds.Connection, name: str):
-    with connection.cursor() as cursor:
-        db_id = cursor.execute_scalar("select db_id(%s)", (name,))
+def does_database_exist(cursor: pytds.Cursor, name: str):
+    db_id = cursor.execute_scalar("select db_id(%s)", (name,))
     return db_id is not None
 
 
@@ -119,10 +118,9 @@ def does_user_defined_type_exist(connection: pytds.Connection, name: str) -> boo
         return val is not None
 
 
-
 def create_test_database(connection: pytds.Connection):
     with connection.cursor() as cur:
-        if not does_database_exist(connection=connection, name=settings.DATABASE):
+        if not does_database_exist(cursor=cur, name=settings.DATABASE):
             cur.execute(f'create database [{settings.DATABASE}]')
         cur.execute(f"use [{settings.DATABASE}]")
         if not does_schema_exist(connection=connection, name="myschema", database=settings.DATABASE):
@@ -151,3 +149,7 @@ def create_test_database(connection: pytds.Connection):
             ''')
         if not does_user_defined_type_exist(connection=connection, name="dbo.CategoryTableType"):
             cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
+
+
+def tran_count(cursor: pytds.Cursor) -> int:
+    return cursor.execute_scalar('select @@trancount')

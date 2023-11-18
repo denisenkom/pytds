@@ -10,13 +10,14 @@ import socket
 import struct
 from collections import deque
 
-from typing import List, Iterable, Any, Tuple, TypedDict
+from typing import List, Iterable, Any, Tuple, TypedDict, Callable
 
 import pytds
 from .collate import ucs2_codec, Collation, lcid2charset, raw_collation
 from . import tds_base
 from . import tds_types
 from .tds_base import readall, readall_fast, skipall, PreLoginEnc, PreLoginToken
+from .row_strategies import list_row_strategy
 from .smp import SmpManager
 
 logger = logging.getLogger(__name__)
@@ -478,7 +479,13 @@ class _TdsSession:
     Represents a single TDS session within MARS connection, when MARS enabled there could be multiple TDS sessions
     within one connection.
     """
-    def __init__(self, tds: _TdsSocket, transport: tds_base.TransportProtocol, tzinfo_factory: tds_types.TzInfoFactoryType | None):
+    def __init__(
+            self,
+            tds: _TdsSocket,
+            transport: tds_base.TransportProtocol,
+            tzinfo_factory: tds_types.TzInfoFactoryType | None,
+            row_strategy: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]] = list_row_strategy,
+    ):
         self.out_pos = 8
         self.res_info: _Results | None = None
         self.in_cancel = False
@@ -509,6 +516,15 @@ class _TdsSession:
         self._out_params_indexes: list[int] = []
         self.row: list[Any] | None = None
         self.end_marker = 0
+        self._row_strategy = row_strategy
+
+    @property
+    def row_strategy(self) -> Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]]:
+        return self._row_strategy
+
+    @row_strategy.setter
+    def row_strategy(self, value: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]]) -> None:
+        self._row_strategy = value
 
     def log_response_message(self, msg):
         # logging is disabled by default
@@ -608,6 +624,7 @@ class _TdsSession:
                  scale,
                  curcol.flags & tds_base.Column.fNullable))
         info.description = tuple(header_tuple)
+        self._setup_row_factory()
         return info
 
     def process_param(self):
@@ -1097,6 +1114,123 @@ class _TdsSession:
                 serializer.write_info(w)
 
                 serializer.write(w, param.value)
+
+    def _setup_row_factory(self) -> None:
+        self._row_convertor = None
+        if self.res_info:
+            column_names = [col[0] for col in self.res_info.description]
+            self._row_convertor = self._row_strategy(column_names)
+
+    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any, ...]) -> list[Any]:
+        results = list(parameters)
+        parameters = self._convert_params(parameters)
+        self.submit_rpc(procname, parameters, 0)
+        self.process_rpc()
+        for key, param in self.output_params.items():
+            results[key] = param.value
+        return results
+
+    def get_proc_outputs(self) -> list[Any]:
+        """
+        If stored procedure has result sets and OUTPUT parameters use this method
+        after you processed all result sets to get values of the OUTPUT parameters.
+        :return: A list of output parameter values.
+        """
+
+        self.complete_rpc()
+        results = [None] * len(self.output_params.items())
+        for key, param in self.output_params.items():
+            results[key] = param.value
+        return results
+
+    def get_proc_return_status(self) -> int | None:
+        """ Last executed stored procedure's return value
+
+        Returns integer value returned by `RETURN` statement from last executed stored procedure.
+        If no value was not returned or no stored procedure was executed return `None`.
+        """
+        if not self.has_status:
+            self.find_return_status()
+        return self.ret_status if self.has_status else None
+
+    def executemany(self, operation: str, params_seq: Iterable[list[Any] | tuple[Any, ...] | dict[str, Any]]) -> None:
+        """
+        Execute same SQL query multiple times for each parameter set in the `params_seq` list.
+        """
+        counts = []
+        for params in params_seq:
+            self.execute(operation, params)
+            if self.rows_affected != -1:
+                counts.append(self.rows_affected)
+        if counts:
+            self.rows_affected = sum(counts)
+
+    def execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None) -> None:
+        if params:
+            named_params = {}
+            if isinstance(params, (list, tuple)):
+                names = []
+                pid = 1
+                for val in params:
+                    if val is None:
+                        names.append('NULL')
+                    else:
+                        name = '@P{0}'.format(pid)
+                        names.append(name)
+                        named_params[name] = val
+                        pid += 1
+                if len(names) == 1:
+                    operation = operation % names[0]
+                else:
+                    operation = operation % tuple(names)
+            elif isinstance(params, dict):
+                # prepend names with @
+                rename = {}
+                for name, value in params.items():
+                    if value is None:
+                        rename[name] = 'NULL'
+                    else:
+                        mssql_name = '@{0}'.format(name.replace(' ', '_'))
+                        rename[name] = mssql_name
+                        named_params[mssql_name] = value
+                operation = operation % rename
+            if named_params:
+                list_named_params = self._convert_params(named_params)
+                param_definition = u','.join(
+                    u'{0} {1}'.format(p.name, p.type.get_declaration())
+                    for p in list_named_params)
+                self.submit_rpc(
+                    tds_base.SP_EXECUTESQL,
+                    [self.make_param('', operation), self.make_param('', param_definition)] + list_named_params,
+                    0)
+            else:
+                self.submit_plain_query(operation)
+        else:
+            self.submit_plain_query(operation)
+        self.find_result_or_done()
+
+    def execute_scalar(self, query_string: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None) -> Any:
+        """
+        This method executes SQL query then returns first column of first row or the
+        result.
+
+        Query can be parametrized, see :func:`execute` method for details.
+
+        This method is useful if you want just a single value, as in:
+
+        .. code-block::
+
+           conn.execute_scalar('SELECT COUNT(*) FROM employees')
+
+        This method works in the same way as ``iter(conn).next()[0]``.
+        Remaining rows, if any, can still be iterated after calling this
+        method.
+        """
+        self.execute(operation=query_string, params=params)
+        row = self._fetchone()
+        if not row:
+            return None
+        return row[0]
 
     def submit_plain_query(self, operation: str) -> None:
         """ Sends a plain query to server.
@@ -1639,7 +1773,14 @@ class _TdsSession:
         if self.find_result_or_done():
             return True
 
-    def fetchone(self) -> list[Any] | None:
+    def fetchone(self) -> Any | None:
+        row = self._fetchone()
+        if row is None:
+            return None
+        else:
+            return self._row_convertor(row)
+
+    def _fetchone(self) -> list[Any] | None:
         if self.res_info is None:
             raise tds_base.ProgrammingError("Previous statement didn't produce any results")
 
@@ -1740,7 +1881,7 @@ class Route(TypedDict):
 # if MARS is used it can have multiple sessions represented by _TdsSession class
 # if MARS is not used it would have single _TdsSession instance
 class _TdsSocket(object):
-    def __init__(self, use_tz: datetime.tzinfo | None = None):
+    def __init__(self, row_strategy=list_row_strategy, use_tz: datetime.tzinfo | None = None):
         self._is_connected = False
         self.env = _TdsEnv()
         self.collation = None
@@ -1757,6 +1898,7 @@ class _TdsSocket(object):
         self._main_session: _TdsSession | None = None
         self._login: _TdsLogin | None = None
         self.route: Route | None = None
+        self._row_strategy = row_strategy
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
@@ -1768,7 +1910,7 @@ class _TdsSocket(object):
         self._login = login
         self.bufsize = login.blocksize
         self.query_timeout = login.query_timeout
-        self._main_session = _TdsSession(self, sock, tzinfo_factory)
+        self._main_session = _TdsSession(tds=self, transport=sock, tzinfo_factory=tzinfo_factory, row_strategy=self._row_strategy)
         self.sock = sock
         self.tds_version = login.tds_version
         login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
@@ -1797,9 +1939,11 @@ class _TdsSocket(object):
         if self._mars_enabled:
             self._smp_manager = SmpManager(self.sock)
             self._main_session = _TdsSession(
-                self,
-                self._smp_manager.create_session(),
-                tzinfo_factory)
+                tds=self,
+                transport=self._smp_manager.create_session(),
+                tzinfo_factory=tzinfo_factory,
+                row_strategy=self._row_strategy,
+            )
         self._is_connected = True
         q = []
         if login.database and self.env.database != login.database:
@@ -1819,8 +1963,11 @@ class _TdsSocket(object):
 
     def create_session(self, tzinfo_factory: tds_types.TzInfoFactoryType | None) -> _TdsSession:
         return _TdsSession(
-            self, self._smp_manager.create_session(),
-            tzinfo_factory)
+            tds=self,
+            transport=self._smp_manager.create_session(),
+            tzinfo_factory=tzinfo_factory,
+            row_strategy=self._row_strategy,
+        )
 
     def is_connected(self) -> bool:
         return self._is_connected
@@ -1835,6 +1982,9 @@ class _TdsSocket(object):
         if self._main_session.authentication:
             self._main_session.authentication.close()
             self._main_session.authentication = None
+
+    def close_all_mars_sessions(self) -> None:
+        self._smp_manager.close_all_sessions(keep=self.main_session._transport)
 
 
 class _Results(object):

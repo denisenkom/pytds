@@ -19,6 +19,7 @@ import settings
 from fixtures import *
 from pytds import Column
 from pytds.tds_types import BitType
+from tests.utils import tran_count
 
 logger = logging.getLogger(__name__)
 LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
@@ -43,13 +44,13 @@ def test_rollback_timeout_recovery(separate_db_connection):
         for i in range(10):
             cur.execute(sql)
 
-    conn._conn.sock.settimeout(0.00001)
+    conn._tds_socket.sock.settimeout(0.00001)
     try:
         conn.rollback()
     except:
         pass
 
-    conn._conn.sock.settimeout(10)
+    conn._tds_socket.sock.settimeout(10)
     cur = conn.cursor()
     cur.execute('select 1')
     cur.fetchall()
@@ -70,13 +71,13 @@ def test_commit_timeout_recovery(separate_db_connection):
         for i in range(10):
             cur.execute(sql)
 
-    conn._conn.sock.settimeout(0.00001)
+    conn._tds_socket.sock.settimeout(0.00001)
     try:
         conn.commit()
     except:
         pass
 
-    conn._conn.sock.settimeout(10)
+    conn._tds_socket.sock.settimeout(10)
     cur = conn.cursor()
     cur.execute('select 1')
     cur.fetchall()
@@ -92,9 +93,9 @@ def test_autocommit(separate_db_connection):
             pass
         cur.execute('create table test_autocommit(field int)')
         conn.commit()
-        assert 1 == conn._trancount()
+        assert 1 == tran_count(cur)
         cur.execute('insert into test_autocommit(field) values(1)')
-        assert 1 == conn._trancount()
+        assert 1 == tran_count(cur)
         cur.execute('select field from test_autocommit')
         row = cur.fetchone()
         conn.rollback()
@@ -108,7 +109,7 @@ def test_autocommit(separate_db_connection):
         # rollback in autocommit mode should be a no-op
         conn.rollback()
         cur.execute('insert into test_autocommit(field) values(1)')
-        assert 0 == conn._trancount()
+        assert 0 == tran_count(cur)
 
 
 def test_bulk_insert(cursor):
@@ -501,12 +502,11 @@ def test_bug4(separate_db_connection):
 
 
 def test_row_strategies(separate_db_connection):
-    conn = separate_db_connection
-    conn.as_dict = True
+    conn = pytds.connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS, row_strategy=pytds.dict_row_strategy)
     with conn.cursor() as cur:
         cur.execute('select 1 as f')
         assert cur.fetchall() == [{'f': 1}]
-    conn.as_dict = False
+    conn = pytds.connect(*settings.CONNECT_ARGS, **settings.CONNECT_KWARGS, row_strategy=pytds.tuple_row_strategy)
     with conn.cursor() as cur:
         cur.execute('select 1 as f')
         assert cur.fetchall() == [(1,)]
@@ -541,7 +541,7 @@ def test_cursor_closing(db_connection):
 
 def test_multi_packet(cursor):
     cur = cursor
-    param = 'x' * (cursor._conn()._conn.main_session._writer.bufsize * 3)
+    param = 'x' * (cursor._connection()._tds_socket.main_session._writer.bufsize * 3)
     cur.execute('select %s', (param,))
     assert [(param, )] == cur.fetchall()
 
@@ -596,9 +596,9 @@ def test_transactions(separate_db_connection):
         ''')
         cur.execute("select object_id('testtable_trans')")
         assert (None,) != cur.fetchone()
-        assert 1 == conn._trancount()
+        assert 1 == tran_count(cur)
         conn.rollback()
-        assert 1 == conn._trancount()
+        assert 1 == tran_count(cur)
         cur.execute("select object_id('testtable_trans')")
         assert (None,) == cur.fetchone()
 
@@ -624,10 +624,11 @@ def test_manual_commit(separate_db_connection):
     conn.autocommit = False
     cur = conn.cursor()
     cur.execute("create table tbl(x int)")
-    assert conn._conn.tds72_transaction
+    assert 1 == cur.execute_scalar("select @@trancount"), 'Should be in transaction even after errors'
+    assert conn._tds_socket.tds72_transaction
     try:
         cur.execute("create table tbl(x int)")
-    except:
+    except pytds.OperationalError:
         pass
     trancount = cur.execute_scalar("select @@trancount")
     assert 1 == trancount, 'Should be in transaction even after errors'
@@ -752,7 +753,6 @@ def test_no_metadata_request(cursor):
         params=cursor._session._convert_params((handle, 1)),
     )
     cursor._session.process_rpc()
-    cursor._setup_row_factory()
     assert cursor.fetchall() == [(1,)]
     while cursor.nextset():
         pass
@@ -762,7 +762,6 @@ def test_no_metadata_request(cursor):
         flags=0x02  # no metadata
     )
     cursor._session.process_rpc()
-    cursor._setup_row_factory()
     # for some reason SQL server still sends metadata back
     assert cursor.fetchall() == [(2,)]
     while cursor.nextset():

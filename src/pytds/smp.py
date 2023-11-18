@@ -161,6 +161,11 @@ class SmpManager:
             session._state = SessionState.SESSION_ESTABLISHED
         return session
 
+    def close_all_sessions(self, keep):
+        for sess in list(self._sessions.values()):
+            if sess is not keep:
+                self.close_smp_session(sess)
+
     def close_smp_session(self, session: _SmpSession) -> None:
         if session._state in (SessionState.CLOSED, SessionState.FIN_SENT):
             return
@@ -196,6 +201,8 @@ class SmpManager:
 
     def send_packet(self, session: _SmpSession, data: bytes) -> None:
         with self._lock:
+            if session._state == SessionState.CLOSED or session._state == SessionState.FIN_SENT:
+                raise Error("Stream closed")
             if session.seq_num_for_send < session.high_water_for_send:
                 l = SMP_HEADER.size + len(data)
                 seq_num = self._add_one_wrap(session.seq_num_for_send)

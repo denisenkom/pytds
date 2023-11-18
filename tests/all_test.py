@@ -304,102 +304,6 @@ class BadConnection(unittest.TestCase):
                     cur.execute('select 1')
 
 
-def get_spid(conn):
-    with conn.cursor() as cur:
-        return cur.spid
-
-
-def kill(conn, spid):
-    with conn.cursor() as cur:
-        cur.execute('kill {0}'.format(spid))
-
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-class ConnectionClosing(unittest.TestCase):
-    def test_open_close(self):
-        for x in range(3):
-            kwargs = settings.CONNECT_KWARGS.copy()
-            kwargs['database'] = 'master'
-            connect(**kwargs).close()
-
-    def test_closing_after_closed_by_server(self):
-        """
-        You should be able to call close on connection closed by server
-        """
-        kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
-        kwargs['autocommit'] = True
-        with connect(**kwargs) as master_conn:
-            kwargs['autocommit'] = False
-            with connect(**kwargs) as conn:
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                    conn.commit()
-                    kill(master_conn, get_spid(conn))
-                    sleep(0.2)
-                conn.close()
-
-    def test_connection_closed_by_server(self):
-        kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
-        with connect(**kwargs) as master_conn:
-            master_conn.autocommit = True
-            with connect(**kwargs) as conn:
-                conn.autocommit = False
-                # test overall recovery
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                    conn.commit()
-                    kill(master_conn, get_spid(conn))
-                    sleep(0.2)
-                    cur.execute('select 1')
-                    cur.fetchall()
-                kill(master_conn, get_spid(conn))
-                sleep(0.2)
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-
-                # test cursor opening in a transaction, it should raise exception
-                # make transaction dirty
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                kill(master_conn, get_spid(conn))
-                sleep(0.2)
-                # it does not have to raise this specific exception
-                with pytest.raises(socket.error):
-                    with conn.cursor() as cur:
-                        cur.execute('select 1')
-
-                # test recovery on transaction
-                with conn.cursor() as cur:
-                    cur.execute('create table ##testtable3 (fld int)')
-                    kill(master_conn, get_spid(conn))
-                    sleep(0.2)
-                    with self.assertRaises(Exception):
-                        cur.execute('select * from ##testtable2')
-                        cur.fetchall()
-                    conn.rollback()
-                    cur.execute('select 1')
-
-                # test server closed connection on rollback
-                with conn.cursor() as cur:
-                    cur.execute('select 1')
-                kill(master_conn, get_spid(conn))
-                sleep(0.2)
-                conn.rollback()
-
-            #with connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD) as conn:
-            #    spid = get_spid(conn)
-            #    with conn.cursor() as cur:
-            #        # test recovery of specific lowlevel methods
-            #        tds_submit_query(cur._session, "waitfor delay '00:00:05'; select 1")
-            #        kill(master_conn, spid)
-            #        self.assertTrue(cur._session.is_connected())
-            #        with self.assertRaises(Exception):
-            #            tds_process_tokens(cur._session, TDS_TOKEN_RESULTS)
-            #        self.assertFalse(cur._session.is_connected())
-
-
 #class EncryptionTest(unittest.TestCase):
 #    def runTest(self):
 #        conn = connect(server=settings.HOST, database='master', user=settings.USER, password=settings.PASSWORD, encryption_level=TDS_ENCRYPTION_REQUIRE)
@@ -829,8 +733,7 @@ class TestBug4(unittest.TestCase):
     def test_as_dict(self):
         kwargs = settings.CONNECT_KWARGS.copy()
         kwargs['database'] = 'master'
-        with connect(*settings.CONNECT_ARGS, **kwargs) as conn:
-            conn.as_dict = True
+        with connect(*settings.CONNECT_ARGS, **kwargs, row_strategy=pytds.dict_row_strategy) as conn:
             with conn.cursor() as cur:
                 cur.execute('select 1 as a, 2 as b')
                 self.assertDictEqual({'a': 1, 'b': 2}, cur.fetchone())
@@ -861,7 +764,7 @@ def _params_tests(self):
     test_val(DateTimeType(), datetime(1753, 1, 1, 0, 0, 0))
     test_val(DateTimeType(), datetime(9999, 12, 31, 23, 59, 59, 990000))
     test_val(DateTimeType(), None)
-    if pytds.tds_base.IS_TDS73_PLUS(self.conn._conn):
+    if pytds.tds_base.IS_TDS73_PLUS(self.conn._tds_socket):
         test_val(DateType(), date(1, 1, 1))
         test_val(DateType(), date(9999, 12, 31))
         test_val(DateType(), None)
@@ -885,7 +788,7 @@ def _params_tests(self):
     test_val(MoneyType(), None)
     test_val(UniqueIdentifierType(), None)
     test_val(UniqueIdentifierType(), uuid.uuid4())
-    if pytds.tds_base.IS_TDS71_PLUS(self.conn._conn):
+    if pytds.tds_base.IS_TDS71_PLUS(self.conn._tds_socket):
         test_val(VariantType(), None)
         #test_val(self.conn._conn.type_factory.SqlVariant(10), 100)
     test_val(VarBinaryType(size=10), b'')
@@ -909,7 +812,7 @@ def _params_tests(self):
     test_val(ImageType(), None)
     test_val(ImageType(), b'')
     test_val(ImageType(), b'test')
-    if pytds.tds_base.IS_TDS72_PLUS(self.conn._conn):
+    if pytds.tds_base.IS_TDS72_PLUS(self.conn._tds_socket):
         test_val(VarBinaryMaxType(), None)
         test_val(VarBinaryMaxType(), b'')
         test_val(VarBinaryMaxType(), b'testtest12')
