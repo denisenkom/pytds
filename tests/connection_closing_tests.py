@@ -57,3 +57,17 @@ def test_closing_after_closed_by_server():
                 kill(master_conn, get_spid(conn))
                 sleep(0.2)
             conn.close()
+
+
+def test_using_connection_after_closed():
+    """
+    Using cursors from closed connection should throw correct errors
+    """
+    conn = pytds.connect(**settings.CONNECT_KWARGS)
+    cursor = conn.cursor()
+    assert 1 == cursor.execute_scalar("select 1")
+    conn.close()
+    with pytest.raises(pytds.Error, match="Stream closed"):
+        cursor.execute("select 1")
+    with pytest.raises(pytds.Error, match="Stream closed"):
+        cursor.callproc("someproc")
