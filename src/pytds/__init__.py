@@ -276,13 +276,6 @@ class BaseConnection(Connection):
     @autocommit.setter
     def autocommit(self, value: bool) -> None:
         self._tds_socket.main_session.autocommit = value
-        #if self._autocommit != value:
-        #    if value:
-        #        if self._tds_socket.tds72_transaction:
-        #            self._tds_socket.main_session.rollback(cont=False, isolation_level=self._isolation_level)
-        #    else:
-        #        self._tds_socket.main_session.begin_tran(isolation_level=self._isolation_level)
-        #    self._autocommit = value
 
     @property
     def isolation_level(self) -> int:
@@ -332,12 +325,16 @@ class BaseConnection(Connection):
         Commit transaction which is currently in progress.
         """
         self._assert_open()
+        # Setting cont to True to start new transaction
+        # after current transaction is rolled back
         self._tds_socket.main_session.commit(cont=True)
 
     def rollback(self) -> None:
         """
         Roll back transaction which is currently in progress.
         """
+        # Setting cont to True to start new transaction
+        # after current transaction is rolled back
         self._tds_socket.main_session.rollback(cont=True)
 
     def close(self) -> None:
@@ -1266,6 +1263,9 @@ def connect(
     def ex_handler(ex: Exception) -> None:
         if isinstance(ex, LoginError):
             raise ex
+        elif isinstance(ex, BrokenPipeError):
+            # Allow to retry when BrokenPipeError is received
+            pass
         elif isinstance(ex, OperationalError):
             # if there are more than one message this means
             # that the login was successful, like in the
@@ -1329,7 +1329,7 @@ def _connect(
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
 
     sock.settimeout(timeout)
-    tds_socket = _TdsSocket(use_tz=use_tz, row_strategy=row_strategy)
+    tds_socket = _TdsSocket(use_tz=use_tz, row_strategy=row_strategy, autocommit=autocommit)
     try:
         route = tds_socket.login(login, sock, tzinfo_factory)
         if route is not None:

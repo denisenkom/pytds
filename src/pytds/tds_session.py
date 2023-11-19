@@ -19,8 +19,11 @@ from pytds.row_strategies import list_row_strategy
 class _TdsSession:
     """ TDS session
 
-    Represents a single TDS session within MARS connection, when MARS enabled there could be multiple TDS sessions
-    within one connection.
+    This class has following responsibilities:
+    * Track state of a single TDS session if MARS enabled there could be multiple TDS sessions
+      within one connection.
+    * Provides API to send requests and receive responses
+    * Does serialization of requests and deserialization of responses
     """
     def __init__(
             self,
@@ -912,6 +915,11 @@ class _TdsSession:
     _continue_tran_struct72 = struct.Struct('<BB')
 
     def rollback(self, cont: bool) -> None:
+        """
+        Rollback current transaction if it exists.
+        If `cont` parameter is set to true, new transaction will start immediately
+        after current transaction is rolled back
+        """
         if self._env.autocommit:
             return
 
@@ -930,6 +938,11 @@ class _TdsSession:
             self._tds.sock.settimeout(prev_timeout)
 
     def submit_rollback(self, cont: bool, isolation_level: int = 0) -> None:
+        """
+        Send transaction rollback request.
+        If `cont` parameter is set to true, new transaction will start immediately
+        after current transaction is rolled back
+        """
         if tds_base.IS_TDS72_PLUS(self):
             self.messages = []
             self.cancel_if_pending()

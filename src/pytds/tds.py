@@ -45,7 +45,7 @@ class _TdsSocket(object):
         self._login: _TdsLogin | None = None
         self.route: Route | None = None
         self._row_strategy = row_strategy
-        self._autocommit = autocommit
+        self.env.autocommit = autocommit
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
