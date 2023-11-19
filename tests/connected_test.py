@@ -609,6 +609,7 @@ def test_no_metadata_request(cursor):
         rpc_name=pytds.tds_base.SP_EXECUTE,
         params=cursor._session._convert_params((handle, 1)),
     )
+    cursor._session.begin_response()
     cursor._session.process_rpc()
     assert cursor.fetchall() == [(1,)]
     while cursor.nextset():
@@ -618,6 +619,7 @@ def test_no_metadata_request(cursor):
         params=cursor._session._convert_params((handle, 2)),
         flags=0x02  # no metadata
     )
+    cursor._session.begin_response()
     cursor._session.process_rpc()
     # for some reason SQL server still sends metadata back
     assert cursor.fetchall() == [(2,)]

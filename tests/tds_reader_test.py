@@ -10,7 +10,7 @@ def test_reader():
     Test that reader readiness
     """
     reader = _TdsReader(
-        BytesSocket(
+        transport=BytesSocket(
             # Setup byte stream which contains two responses
             # First response consists of two packets
             _header.pack(PacketType.REPLY, 0, 8 + len(b'hello'), 123, 0) +
@@ -44,7 +44,7 @@ def test_begin_response_incorrectly():
     Test that calling begin_response at wrong time issues an exception
     """
     reader = _TdsReader(
-        BytesSocket(
+        transport=BytesSocket(
             # First response consists of two packets
             _header.pack(PacketType.REPLY, 0, 8 + len(b'hello'), 123, 0) +
             b'hello' +

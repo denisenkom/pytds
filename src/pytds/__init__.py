@@ -1357,7 +1357,8 @@ def _connect(
                 row_strategy=row_strategy,
                 sock=None,
             )
-
+        if not autocommit:
+            tds_socket.main_session.begin_tran()
         sock.settimeout(login.query_timeout)
         if tds_socket.mars_enabled:
             return MarsConnection(

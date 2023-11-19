@@ -100,8 +100,6 @@ class _TdsSocket(object):
                 row_strategy=self._row_strategy,
                 env=self.env,
             )
-        if not self._autocommit:
-            self._main_session.begin_tran()
         self._is_connected = True
         q = []
         if login.database and self.env.database != login.database:
