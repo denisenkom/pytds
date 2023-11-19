@@ -1,5 +1,7 @@
 import sys
 import unittest
+from io import BytesIO
+
 import pytds
 import settings
 
@@ -9,7 +11,18 @@ if sys.version_info.major < 3:
     unittest.TestCase.assertRaisesRegex = unittest.TestCase.assertRaisesRegexp
 
 
-class MockSock(object):
+class BytesSocket(pytds.tds_base.TransportProtocol):
+    """
+    Provides socket interface for BytesIO
+    """
+    def __init__(self, bytes: bytes):
+        self._data = BytesIO(bytes)
+
+    def recv_into(self, buffer, size) -> int:
+        return self._data.readinto(buffer[:size])
+
+
+class MockSock:
     def __init__(self, input_packets=()):
         self.set_input(input_packets)
         self._out_packets = []

@@ -4,8 +4,6 @@ import logging
 import socket
 from typing import Any
 
-from pytds.tds import _TdsSession
-
 try:
     import OpenSSL.SSL
     import cryptography.hazmat.backends.openssl.backend
@@ -175,6 +173,7 @@ def establish_channel(tds_sock: _TdsSession) -> None:
                 w.write(req)
                 w.flush()
             logger.debug('receiving response from the server')
+            resp_header = r.begin_response()
             resp = r.read_whole_packet()
             # TODO validate r.packet_type
             logger.debug('adding %d bytes of the response into the TLS connection buffer', len(resp))

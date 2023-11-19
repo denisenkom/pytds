@@ -6,7 +6,9 @@ import logging
 import OpenSSL.SSL
 
 import pytds.tds
-
+import pytds.tds_reader
+import pytds.tds_writer
+import pytds.collate
 
 _BYTE_STRUCT = struct.Struct('B')
 _OFF_LEN_STRUCT = struct.Struct('>HH')
@@ -105,11 +107,12 @@ class RequestHandler(socketserver.StreamRequestHandler):
         # TdsReader expects this
         self._transport = Sock(self.request)
 
-        r = pytds.tds._TdsReader(self)
-        w = pytds.tds._TdsWriter(self, bufsize=bufsize)
+        r = pytds.tds_reader._TdsReader(tds_session=self, transport=self._transport)
+        w = pytds.tds_writer._TdsWriter(tds_session=self, bufsize=bufsize, transport=self._transport)
 
+        resp_header = r.begin_response()
         buf = r.read_whole_packet()
-        if r.packet_type != pytds.tds_base.PacketType.PRELOGIN:
+        if resp_header.type != pytds.tds_base.PacketType.PRELOGIN:
             msg = 'Invalid packet type: {0}, expected PRELOGIN({1})'.format(r.packet_type,
                                                                             pytds.tds_base.PacketType.PRELOGIN)
             self.bad_stream(msg)
@@ -175,6 +178,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
                         w.write(buf)
                         w.flush()
 
+                    r.begin_response()
                     buf = r.read_whole_packet()
                     tlsconn.bio_write(buf)
                 else:
@@ -193,6 +197,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
             w._transport = wrapped_socket
 
         try:
+            r.begin_response()
             buf = r.read_whole_packet()
         except pytds.tds_base.ClosedConnectionError:
             logger.info('client closed connection, probably did not like server certificate')
@@ -210,7 +215,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
 
         w.begin_packet(pytds.tds_base.PacketType.REPLY)
         # https://msdn.microsoft.com/en-us/library/dd340651.aspx
-        srv_name_coded, _ = pytds.tds.ucs2_codec.encode(srv_name)
+        srv_name_coded, _ = pytds.collate.ucs2_codec.encode(srv_name)
         srv_name_size = len(srv_name_coded)
         w.put_byte(pytds.tds_base.TDS_LOGINACK_TOKEN)
         size = 1 + 4 + 1 + srv_name_size + 4

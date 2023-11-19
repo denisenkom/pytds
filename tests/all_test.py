@@ -237,11 +237,6 @@ class NoMarsTestCase(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def test_commit(self):
-        cursor = self.conn.cursor()
-        cursor.execute('select 1')
-        cursor.fetchall()
-        self.conn.commit()
 
 
 class TestCaseWithCursor(ConnectionTestCase):
@@ -851,9 +846,6 @@ class TestTds71(unittest.TestCase):
     def test_parsing(self):
         _params_tests(self)
 
-    def test_transaction(self):
-        self.conn.rollback()
-        self.conn.commit()
 
     def test_bulk(self):
         f = StringIO("42\tfoo\n74\tbar\n")

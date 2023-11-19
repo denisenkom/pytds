@@ -15,13 +15,14 @@ import pytest
 import OpenSSL.crypto
 
 import pytds
-from pytds.collate import raw_collation
+from pytds.collate import raw_collation, Collation
 from pytds.tds import (
-    _TdsSocket, _TdsSession, Collation, _TdsLogin,
+    _TdsSocket, _TdsLogin,
 )
 from pytds.tds_base import (
     TDS_ENCRYPTION_REQUIRE, Column, TDS70, TDS73, TDS71, TDS72, TDS73, TDS74,
-    TDS_ENCRYPTION_OFF, PreLoginEnc)
+    TDS_ENCRYPTION_OFF, PreLoginEnc, _TdsEnv)
+from pytds.tds_session import _TdsSession
 from pytds.tds_types import DateTimeSerializer, DateTime, DateTime2Type, DateType, TimeType, DateTimeOffsetType, IntType, \
     BigIntType, TinyIntType, SmallIntType, VarChar72Serializer, XmlSerializer, Text72Serializer, NText72Serializer, \
     Image72Serializer, MoneyNSerializer, VariantSerializer, BitType, DeclarationsParser, SmallDateTimeType, DateTimeType, \
@@ -146,11 +147,12 @@ class TestMessages(unittest.TestCase):
 
     def test_prelogin_parsing(self):
         # test good packet
+        env = _TdsEnv()
         sock = _FakeSock([
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         # test repr on some objects
         repr(tds._main_session)
         repr(tds)
@@ -166,7 +168,7 @@ class TestMessages(unittest.TestCase):
             b'\x03\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
@@ -177,7 +179,7 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
@@ -188,7 +190,7 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00',
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
         with self.assertRaises(pytds.InterfaceError):
             login = self._make_login()
@@ -200,9 +202,10 @@ class TestMessages(unittest.TestCase):
             tds._main_session.parse_prelogin(login=login, octets=b'\x01')
 
     def make_tds(self):
+        env = _TdsEnv()
         tds = _TdsSocket()
         sock = _FakeSock([])
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         return tds
 
     def test_prelogin_unexpected_encrypt_on(self):
@@ -221,7 +224,8 @@ class TestMessages(unittest.TestCase):
     def test_prelogin_generation(self):
         sock = _FakeSock('')
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        env = _TdsEnv()
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
         login = _TdsLogin()
         login.instance_name = 'MSSQLServer'
@@ -250,8 +254,10 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        env = _TdsEnv()
+        tds._main_session = _TdsSession(tds=tds, transport=sock, tzinfo_factory=None, env=env)
         tds.sock = sock
+        tds._main_session.begin_response()
         tds._main_session.process_login_tokens()
 
         # test invalid tds version
@@ -259,8 +265,9 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01\x65\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds=tds, transport=sock, tzinfo_factory=None, env=env)
         tds.sock = sock
+        tds._main_session.begin_response()
         with self.assertRaises(pytds.InterfaceError):
             tds._main_session.process_login_tokens()
 
@@ -269,14 +276,16 @@ class TestMessages(unittest.TestCase):
             b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\xab\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
         ])
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
+        tds._main_session.begin_response()
         tds._main_session.process_login_tokens()
 
     def test_login_generation(self):
         sock = _FakeSock(b'')
         tds = _TdsSocket()
-        tds._main_session = _TdsSession(tds, sock, None)
+        env = _TdsEnv()
+        tds._main_session = _TdsSession(tds=tds, transport=sock, tzinfo_factory=None, env=env)
         tds.sock = sock
         login = _TdsLogin()
         login.option_flag2 = 0
@@ -396,9 +405,10 @@ class TestMessages(unittest.TestCase):
 
     def test_submit_plain_query(self):
         tds = _TdsSocket()
+        env = _TdsEnv()
         tds.tds_version = TDS72
         sock = _FakeSock(b'')
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
         tds._main_session.submit_plain_query('select 5*6')
         self.assertEqual(
@@ -410,7 +420,7 @@ class TestMessages(unittest.TestCase):
         # test pre TDS7.2 query
         tds = _TdsSocket()
         tds.tds_version = TDS71
-        tds._main_session = _TdsSession(tds, sock, None)
+        tds._main_session = _TdsSession(tds, sock, None, env)
         tds.sock = sock
         tds._main_session.submit_plain_query('select 5*6')
         self.assertEqual(
@@ -422,7 +432,8 @@ class TestMessages(unittest.TestCase):
         tds = _TdsSocket()
         tds.tds_version = TDS72
         sock = _FakeSock(b'')
-        tds._main_session = _TdsSession(tds, sock, None)
+        env = _TdsEnv()
+        tds._main_session = _TdsSession(tds=tds, transport=sock, tzinfo_factory=None, env=env)
         tds.sock = sock
         col1 = Column()
         col1.column_name = 'c1'
@@ -459,8 +470,9 @@ class TestMessages(unittest.TestCase):
 
     def test_types(self):
         tds = _TdsSocket()
+        env = _TdsEnv()
         tds.tds_version = TDS72
-        tds._main_session = _TdsSession(tds, tds, None)
+        tds._main_session = _TdsSession(tds, tds, None, env)
         sock = _FakeSock(b'')
         tds.sock = sock
         w = tds._main_session._writer
@@ -1387,7 +1399,8 @@ def test_output_param_value_not_match_type():
 
 def test_tds_session_raise_db_exception():
     tds = pytds.tds._TdsSocket()
-    sess = pytds.tds._TdsSession(tds=tds, transport=None, tzinfo_factory=None)
+    env = pytds.tds_base._TdsEnv()
+    sess = pytds.tds._TdsSession(tds=tds, transport=None, tzinfo_factory=None, env=env)
     with pytest.raises(pytds.Error) as ex:
         sess.raise_db_exception()
     assert "Request failed, server didn't send error message" == str(ex.value)

@@ -25,8 +25,7 @@ from .login import KerberosAuth, SspiAuth, AuthProtocol
 from .row_strategies import *
 from .tds import (
     _TdsSocket, tds7_get_instances,
-    _create_exception_by_message,
-    output, default, _TdsSession, _TdsLogin
+    _TdsLogin
 )
 from . import tds_base
 from .tds_base import (
@@ -35,15 +34,16 @@ from .tds_base import (
     InterfaceError, TimeoutError, OperationalError,
     NotSupportedError, Warning, ClosedConnectionError,
     Column,
-    PreLoginEnc)
+    PreLoginEnc, _create_exception_by_message)
 
 from .tds_types import (
     TableValuedParam, Binary
 )
 
 from .tds_base import (
-    ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML
+    ROWID, DECIMAL, STRING, BINARY, NUMBER, DATETIME, INTEGER, REAL, XML, output, default
 )
+
 
 from . import tls
 import pkg_resources
@@ -54,8 +54,7 @@ try:
 except:
     __version__ = "DEV"
 
-logger = logging.getLogger(__name__)
-
+from .tds_base import logger
 
 def _ver_to_int(ver):
     res = ver.split('.')
@@ -232,13 +231,13 @@ class BaseConnection(Connection):
             isolation_level: int,
     ) -> None:
         self._tds_socket: _TdsSocket | None = tds_socket
-        self._isolation_level = isolation_level
-        self._autocommit = autocommit
+        #self._isolation_level = isolation_level
+        #self._autocommit = autocommit
         self._key = key
         self._pooling = pooling
         self._dirty = False
-        if not autocommit:
-            self._tds_socket.main_session.begin_tran(isolation_level=isolation_level)
+        #if not autocommit:
+        #    self._tds_socket.main_session.begin_tran(isolation_level=isolation_level)
 
     @property
     def as_dict(self) -> bool:
@@ -260,29 +259,30 @@ class BaseConnection(Connection):
         """
         An alias for `autocommit`, provided for compatibility with pymssql
         """
-        return self._autocommit
+        return self._tds_socket.main_session.autocommit
 
     def set_autocommit(self, value: bool) -> None:
         """ An alias for `autocommit`, provided for compatibility with ADO dbapi
         """
-        self.autocommit = value
+        self._tds_socket.main_session.autocommit = value
 
     @property
     def autocommit(self) -> bool:
         """
         The current state of autocommit on the connection.
         """
-        return self._autocommit
+        return self._tds_socket.main_session.autocommit
 
     @autocommit.setter
     def autocommit(self, value: bool) -> None:
-        if self._autocommit != value:
-            if value:
-                if self._tds_socket.tds72_transaction:
-                    self._tds_socket.main_session.rollback(cont=False, isolation_level=self._isolation_level)
-            else:
-                self._tds_socket.main_session.begin_tran(isolation_level=self._isolation_level)
-            self._autocommit = value
+        self._tds_socket.main_session.autocommit = value
+        #if self._autocommit != value:
+        #    if value:
+        #        if self._tds_socket.tds72_transaction:
+        #            self._tds_socket.main_session.rollback(cont=False, isolation_level=self._isolation_level)
+        #    else:
+        #        self._tds_socket.main_session.begin_tran(isolation_level=self._isolation_level)
+        #    self._autocommit = value
 
     @property
     def isolation_level(self) -> int:
@@ -293,11 +293,11 @@ class BaseConnection(Connection):
 
             .. __: http://msdn.microsoft.com/en-us/library/ms173763.aspx
         """
-        return self._isolation_level
+        return self._tds_socket.main_session.isolation_level
 
     @isolation_level.setter
     def isolation_level(self, level: int) -> None:
-        self._isolation_level = level
+        self._tds_socket.main_session.isolation_level = level
 
     def _assert_open(self) -> None:
         if not self._tds_socket:
@@ -332,29 +332,13 @@ class BaseConnection(Connection):
         Commit transaction which is currently in progress.
         """
         self._assert_open()
-        if self._autocommit:
-            return
-        if not self._tds_socket.tds72_transaction:
-            return
-        self._tds_socket.main_session.commit(cont=True, isolation_level=self._isolation_level)
+        self._tds_socket.main_session.commit(cont=True)
 
     def rollback(self) -> None:
         """
         Roll back transaction which is currently in progress.
         """
-        if self._autocommit:
-            return
-
-        #if not self._conn or not self._conn.is_connected():
-        #    return
-
-        if not self._tds_socket.tds72_transaction:
-            return
-
-        self._tds_socket.main_session.rollback(
-            cont=True,
-            isolation_level=self._isolation_level
-        )
+        self._tds_socket.main_session.rollback(cont=True)
 
     def close(self) -> None:
         """ Close connection to an MS SQL Server.

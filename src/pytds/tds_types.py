@@ -1368,8 +1368,8 @@ class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerialize
         days, minutes = r.unpack(self._struct)
         dt = SmallDateTime(days=days, minutes=minutes)
         tzinfo = None
-        if r.session.tzinfo_factory is not None:
-            tzinfo = r.session.tzinfo_factory(0)
+        if r._session.tzinfo_factory is not None:
+            tzinfo = r._session.tzinfo_factory(0)
         return dt.to_pydatetime().replace(tzinfo=tzinfo)
 
 SmallDateTimeSerializer.instance = SmallDateTimeSerializer()

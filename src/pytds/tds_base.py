@@ -7,11 +7,20 @@
 """
 from __future__ import annotations
 
+import datetime
+import logging
 import socket
+import struct
 import sys
-from typing import Protocol, Iterable
+from collections import deque
+from typing import Protocol, Iterable, TypedDict, Tuple, Any
 
 from _socket import SocketType
+
+import pytds
+from pytds.collate import ucs2_codec
+
+logger = logging.getLogger("pytds")
 
 # tds protocol versions
 TDS70 = 0x70000000
@@ -754,3 +763,172 @@ class AuthProtocol(Protocol):
 
     def close(self) -> None:
         ...
+
+
+# packet header
+# https://msdn.microsoft.com/en-us/library/dd340948.aspx
+_header = struct.Struct('>BBHHBx')
+
+_byte = struct.Struct('B')
+_smallint_le = struct.Struct('<h')
+_smallint_be = struct.Struct('>h')
+_usmallint_le = struct.Struct('<H')
+_usmallint_be = struct.Struct('>H')
+_int_le = struct.Struct('<l')
+_int_be = struct.Struct('>l')
+_uint_le = struct.Struct('<L')
+_uint_be = struct.Struct('>L')
+_int8_le = struct.Struct('<q')
+_int8_be = struct.Struct('>q')
+_uint8_le = struct.Struct('<Q')
+_uint8_be = struct.Struct('>Q')
+
+
+
+logging_enabled = False
+
+
+# stored procedure output parameter
+class output:
+    @property
+    def type(self):
+        """
+        This is either the sql type declaration or python type instance
+        of the parameter.
+        """
+        return self._type
+
+    @property
+    def value(self):
+        """
+        This is the value of the parameter.
+        """
+        return self._value
+
+    def __init__(self, value: Any = None, param_type=None):
+        """ Creates procedure output parameter.
+
+        :param param_type: either sql type declaration or python type
+        :param value: value to pass into procedure
+        """
+        if param_type is None:
+            if value is None or value is default:
+                raise ValueError('Output type cannot be autodetected')
+        elif isinstance(param_type, type) and value is not None:
+            if value is not default and not isinstance(value, param_type):
+                raise ValueError('value should match param_type, value is {}, param_type is \'{}\''.format(repr(value), param_type.__name__))
+        self._type = param_type
+        self._value = value
+
+
+class _Default:
+    pass
+
+
+default = _Default()
+
+
+def tds7_crypt_pass(password: str) -> bytearray:
+    """ Mangle password according to tds rules
+
+    :param password: Password str
+    :returns: Byte-string with encoded password
+    """
+    encoded = bytearray(ucs2_codec.encode(password)[0])
+    for i, ch in enumerate(encoded):
+        encoded[i] = ((ch << 4) & 0xff | (ch >> 4)) ^ 0xA5
+    return encoded
+
+
+class _TdsLogin:
+    def __init__(self):
+        self.client_host_name = ""
+        self.library = ""
+        self.server_name = ""
+        self.instance_name = ""
+        self.user_name = ""
+        self.password = ""
+        self.app_name = ""
+        self.port: int | None = None
+        self.language = ""
+        self.attach_db_file = ""
+        self.tds_version = 0
+        self.database = ""
+        self.bulk_copy = False
+        self.client_lcid = 0
+        self.use_mars = False
+        self.pid = 0
+        self.change_password = ""
+        self.client_id = 0
+        self.cafile: str | None = None
+        self.validate_host = True
+        self.enc_login_only = False
+        self.enc_flag = 0
+        self.tls_ctx = None
+        self.client_tz: datetime.tzinfo = pytds.tz.local
+        self.option_flag2 = 0
+        self.connect_timeout = 0.0
+        self.query_timeout = 0.0
+        self.blocksize = 0
+        self.readonly = False
+        self.load_balancer: LoadBalancer | None = None
+        self.bytes_to_unicode = False
+        self.auth: AuthProtocol | None = None
+        self.servers: deque[Tuple[Any, int, str]] = deque()
+
+
+class _TdsEnv:
+    def __init__(self):
+        self.database = None
+        self.language = None
+        self.charset = None
+        self.autocommit = False
+        # Transaction isolation level
+        self.isolation_level = 0
+
+
+def _create_exception_by_message(msg: Message, custom_error_msg: str | None = None) -> ProgrammingError | IntegrityError | OperationalError:
+    msg_no = msg['msgno']
+    if custom_error_msg is not None:
+        error_msg = custom_error_msg
+    else:
+        error_msg = msg['message']
+    if msg_no in prog_errors:
+        ex = ProgrammingError(error_msg)
+    elif msg_no in integrity_errors:
+        ex = IntegrityError(error_msg)
+    else:
+        ex = OperationalError(error_msg)
+    ex.msg_no = msg['msgno']
+    ex.text = msg['message']
+    ex.srvname = msg['server']
+    ex.procname = msg['proc_name']
+    ex.number = msg['msgno']
+    ex.severity = msg['severity']
+    ex.state = msg['state']
+    ex.line = msg['line_number']
+    return ex
+
+
+class Message(TypedDict):
+    marker: int
+    msgno: int
+    state: int
+    severity: int
+    sql_state: int | None
+    priv_msg_type: int
+    message: str
+    server: str
+    proc_name: str
+    line_number: int
+
+
+class Route(TypedDict):
+    server: str
+    port: int
+
+
+class _Results(object):
+    def __init__(self):
+        self.columns: list[Column] = []
+        self.row_count = 0
