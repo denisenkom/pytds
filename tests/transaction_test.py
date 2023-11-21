@@ -67,6 +67,10 @@ def test_commit_timeout_recovery(separate_db_connection):
 
 
 def test_autocommit(separate_db_connection):
+    """
+    Testing autocommit off mode, making sure that new transaction is started immediately after previous
+    one is committed or rolled back
+    """
     conn = separate_db_connection
     assert not conn.autocommit
     with conn.cursor() as cur:
@@ -76,12 +80,14 @@ def test_autocommit(separate_db_connection):
             pass
         cur.execute('create table test_autocommit(field int)')
         conn.commit()
+        # New transaction should be started after committing previous transaction
         assert 1 == tran_count(cur)
         cur.execute('insert into test_autocommit(field) values(1)')
         assert 1 == tran_count(cur)
         cur.execute('select field from test_autocommit')
         row = cur.fetchone()
         conn.rollback()
+        assert 1 == tran_count(cur)
         cur.execute('select field from test_autocommit')
         row = cur.fetchone()
         assert not row
@@ -96,16 +102,27 @@ def test_autocommit(separate_db_connection):
 
 
 def test_isolation_level(separate_db_connection):
+    """
+    Testing setting different isolation levels and verifying that they are set via querying MSSQL's
+    sys.dm_exec_sessions view.
+    """
     conn = separate_db_connection
-    # enable autocommit and then reenable to force new transaction to be started
-    conn.autocommit = True
-    conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE
     conn.autocommit = False
     with conn.cursor() as cur:
-        cur.execute('select transaction_isolation_level '
-                    'from sys.dm_exec_sessions where session_id = @@SPID')
-        lvl, = cur.fetchone()
-    assert pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE == lvl
+        for level in [
+            pytds.extensions.ISOLATION_LEVEL_SERIALIZABLE,
+            pytds.extensions.ISOLATION_LEVEL_SNAPSHOT,
+            pytds.extensions.ISOLATION_LEVEL_READ_COMMITTED,
+            pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED,
+            pytds.extensions.ISOLATION_LEVEL_REPEATABLE_READ,
+        ]:
+            conn.isolation_level = level
+            # rollback to force new transaction to start
+            conn.rollback()
+            assert level == cur.execute_scalar(
+                'select transaction_isolation_level '
+                'from sys.dm_exec_sessions where session_id = @@SPID'
+            )
 
 
 def test_transactions(separate_db_connection):

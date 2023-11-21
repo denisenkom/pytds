@@ -30,6 +30,7 @@ from .tds_base import (
     NotSupportedError, Warning, ClosedConnectionError,
     Column,
     PreLoginEnc, _create_exception_by_message)
+from .tds_session import _TdsSession
 
 from .tds_types import (
     TableValuedParam, Binary
@@ -74,6 +75,10 @@ paramstyle = 'pyformat'
 
 
 class Cursor(Protocol, Iterable):
+    """
+    This class defines an interface for cursor classes.
+    It is implemented by MARS and non-MARS cursor classes.
+    """
     def __enter__(self) -> Cursor:
         ...
 
@@ -95,7 +100,7 @@ class Cursor(Protocol, Iterable):
         ...
 
     @property
-    def connection(self) -> Connection:
+    def connection(self) -> Connection | None:
         ...
 
     def get_proc_return_status(self) -> int | None:
@@ -176,6 +181,10 @@ class Cursor(Protocol, Iterable):
 
 
 class Connection(Protocol):
+    """
+    This class defines interface for connection object according to DBAPI specification.
+    This interface is implemented by MARS and non-MARS connection classes.
+    """
     @property
     def autocommit(self) -> bool:
         ...
@@ -216,7 +225,10 @@ class Connection(Protocol):
 
 
 class BaseConnection(Connection):
-    """Connection object, this object should be created by calling :func:`connect`"""
+    """
+    Base connection class.  It implements most of the common logic for
+    MARS and non-MARS connection classes.
+    """
 
     _connection_closed_exception = InterfaceError("Connection closed")
 
@@ -226,9 +238,12 @@ class BaseConnection(Connection):
             key: PoolKeyType,
             tds_socket: _TdsSocket,
     ) -> None:
+        # _tds_socket is set to None when connection is closed
         self._tds_socket: _TdsSocket | None = tds_socket
         self._key = key
         self._pooling = pooling
+        # references to all cursors opened from connection
+        # those references used to close cursors when connection is closed
         self._cursors: weakref.WeakSet[Cursor] = weakref.WeakSet()
 
     @property
@@ -361,6 +376,10 @@ class BaseConnection(Connection):
 
 
 class MarsConnection(BaseConnection):
+    """
+    MARS connection class, this object is created by calling :func:`connect`
+    with use_mars parameter set to False.
+    """
     def __init__(self, pooling: bool, key: PoolKeyType,
                  tds_socket: _TdsSocket):
         super().__init__(pooling=pooling, key=key, tds_socket=tds_socket)
@@ -374,6 +393,8 @@ class MarsConnection(BaseConnection):
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         cursor = _MarsCursor(
             connection=self,
             session=self._tds_socket.create_session(self._tds_socket.main_session.tzinfo_factory),
@@ -388,6 +409,10 @@ class MarsConnection(BaseConnection):
 
 
 class NonMarsConnection(BaseConnection):
+    """
+    Non-MARS connection class, this object should be created by calling :func:`connect`
+    with use_mars parameter set to False.
+    """
     def __init__(self, pooling: bool, key: PoolKeyType,
                  tds_socket: _TdsSocket):
 
@@ -417,22 +442,16 @@ class NonMarsConnection(BaseConnection):
         self._cursors.add(cursor)
         return cursor
 
-    #def _try_activate_cursor(self, cursor: NonMarsCursor) -> None:
-    #    if cursor is not self._active_cursor:
-    #        session = self._active_cursor._session
-    #        if session.in_cancel:
-    #            session.process_cancel()
-
-    #        if session.state == tds_base.TDS_PENDING:
-    #            raise InterfaceError('Results are still pending on connection')
-    #        self._active_cursor = cursor
-
 
 class BaseCursor(Cursor, Iterator):
     """
-    This class represents a database cursor, which is used to issue queries
+    This class represents a base database cursor, which is used to issue queries
     and fetch results from a database connection.
+    There are two actual cursor classes: one for MARS connections and one
+    for non-MARS connections.
     """
+    _cursor_closed_exception = InterfaceError("Cursor is closed")
+
     def __init__(self, connection: Connection, session: _TdsSession):
         self.arraysize = 1
         self._session: _TdsSession | None = session
@@ -466,7 +485,7 @@ class BaseCursor(Cursor, Iterator):
         :return: A list of output parameter values.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session.get_proc_outputs()
 
     def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any, ...] = ()) -> list[Any]:
@@ -482,9 +501,8 @@ class BaseCursor(Cursor, Iterator):
         method will not return values for OUTPUT parameters, you should
         call get_proc_outputs to get values for OUTPUT parameters.
         """
-        #conn = self._assert_open()
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session.callproc(procname, parameters)
 
     @property
@@ -506,17 +524,17 @@ class BaseCursor(Cursor, Iterator):
         It can be used to correlate connections between client and server logs.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session._spid
 
     def _get_tzinfo_factory(self) -> TzInfoFactoryType | None:
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session.tzinfo_factory
 
     def _set_tzinfo_factory(self, tzinfo_factory: TzInfoFactoryType | None) -> None:
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         self._session.tzinfo_factory = tzinfo_factory
 
     tzinfo_factory = property(_get_tzinfo_factory, _set_tzinfo_factory)
@@ -534,8 +552,6 @@ class BaseCursor(Cursor, Iterator):
     def cancel(self) -> None:
         """ Cancel currently executing statement or stored procedure call
         """
-        #conn = self._assert_open()
-        #conn._try_activate_cursor(self)
         if self._session is None:
             return
         self._session.cancel_if_pending()
@@ -547,17 +563,6 @@ class BaseCursor(Cursor, Iterator):
         self._session = None
 
     T = TypeVar('T')
-
-    #def _ensure_transaction(self) -> None:
-    #    conn = self._conn()
-    #    if not conn._autocommit and not conn._conn.tds72_transaction:
-    #        conn._main_cursor._begin_tran(isolation_level=conn._isolation_level)
-
-    def _execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None) -> None:
-        if self._session is None:
-            raise InterfaceError("Cursor is closed")
-        #self._ensure_transaction()
-        self._session.execute(operation=operation, params=params)
 
     def execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = ()) -> BaseCursor:
         """ Execute an SQL query
@@ -585,10 +590,8 @@ class BaseCursor(Cursor, Iterator):
         Use :func:`fetchone` or similar to fetch results.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
-        #conn = self._assert_open()
-        #conn._try_activate_cursor(self)
-        self._execute(operation, params)
+            raise self._cursor_closed_exception
+        self._session.execute(operation, params)
         # for compatibility with pyodbc
         return self
 
@@ -597,7 +600,7 @@ class BaseCursor(Cursor, Iterator):
         Execute same SQL query multiple times for each parameter set in the `params_seq` list.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         self._session.executemany(operation=operation, params_seq=params_seq)
 
     def execute_scalar(self, query_string: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None) -> Any:
@@ -618,7 +621,7 @@ class BaseCursor(Cursor, Iterator):
         method.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session.execute_scalar(query_string, params)
 
     def nextset(self) -> bool | None:
@@ -628,7 +631,7 @@ class BaseCursor(Cursor, Iterator):
         :returns: true if successful or ``None`` when there are no more recordsets
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session.next_set()
 
     @property
@@ -683,7 +686,7 @@ class BaseCursor(Cursor, Iterator):
         :param stream: Stream object that will be receiving chunks of data via it's `write` method.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         if len(self._session.res_info.columns) <= column_idx or column_idx < 0:
             raise ValueError('Invalid value for column_idx')
         self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
@@ -719,7 +722,7 @@ class BaseCursor(Cursor, Iterator):
         Returns row using currently configured factory, or ``None`` if there are no more rows
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return self._session.fetchone()
 
     def fetchmany(self, size=None) -> list[Any]:
@@ -729,7 +732,7 @@ class BaseCursor(Cursor, Iterator):
         :returns: List of rows
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         if size is None:
             size = self.arraysize
 
@@ -749,7 +752,7 @@ class BaseCursor(Cursor, Iterator):
         to load and process rows by iterating over them.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         return list(row for row in self)
 
     def __next__(self) -> Any:
@@ -837,7 +840,7 @@ class BaseCursor(Cursor, Iterator):
           iterables of values. Specify either data parameter or file parameter but not both.
         """
         if self._session is None:
-            raise InterfaceError("Cursor is closed")
+            raise self._cursor_closed_exception
         #conn = self._conn()
         rows = None
         if data is None:
@@ -897,14 +900,22 @@ class BaseCursor(Cursor, Iterator):
 
 class NonMarsCursor(BaseCursor):
     """
-    This class represents a database cursor, which is used to issue queries
+    This class represents a non-MARS database cursor, which is used to issue queries
     and fetch results from a database connection.
+
+    Non-MARS connections allow only one cursor to be active at a given time.
     """
     def __init__(self, connection: NonMarsConnection, session: _TdsSession):
         super().__init__(connection=connection, session=session)
 
 
 class _MarsCursor(BaseCursor):
+    """
+    This class represents a MARS database cursor, which is used to issue queries
+    and fetch results from a database connection.
+
+    MARS connections allow multiple cursors to be active at the same time.
+    """
     def __init__(self, connection: MarsConnection, session: _TdsSession):
         super().__init__(
             connection=connection,
