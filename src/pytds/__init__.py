@@ -1,21 +1,16 @@
 """DB-SIG compliant module for communicating with MS SQL servers"""
 from __future__ import annotations
 
-import collections
 from collections import deque
 import datetime
-import errno
-import keyword
 import os
-import re
 import socket
 import time
 import uuid
 import warnings
 import weakref
-import logging
 from collections.abc import Iterator
-from typing import Any, Callable, TypeVar, Iterable, Type, Tuple, Protocol, Optional, Union, NamedTuple
+from typing import TypeVar, Type, Protocol
 
 from pytds.tds_types import NVarCharType, TzInfoFactoryType
 from . import lcid
@@ -55,6 +50,7 @@ except:
     __version__ = "DEV"
 
 from .tds_base import logger
+
 
 def _ver_to_int(ver):
     res = ver.split('.')
@@ -222,22 +218,18 @@ class Connection(Protocol):
 class BaseConnection(Connection):
     """Connection object, this object should be created by calling :func:`connect`"""
 
+    _connection_closed_exception = InterfaceError("Connection closed")
+
     def __init__(
             self,
             pooling: bool,
             key: PoolKeyType,
-            autocommit: bool,
             tds_socket: _TdsSocket,
-            isolation_level: int,
     ) -> None:
         self._tds_socket: _TdsSocket | None = tds_socket
-        #self._isolation_level = isolation_level
-        #self._autocommit = autocommit
         self._key = key
         self._pooling = pooling
-        self._dirty = False
-        #if not autocommit:
-        #    self._tds_socket.main_session.begin_tran(isolation_level=isolation_level)
+        self._cursors: weakref.WeakSet[Cursor] = weakref.WeakSet()
 
     @property
     def as_dict(self) -> bool:
@@ -245,10 +237,14 @@ class BaseConnection(Connection):
         Instructs all cursors this connection creates to return results
         as a dictionary rather than a tuple.
         """
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         return self._tds_socket.main_session.row_strategy == dict_row_strategy
 
     @as_dict.setter
     def as_dict(self, value: bool) -> None:
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         if value:
             self._tds_socket.main_session.row_strategy = dict_row_strategy
         else:
@@ -259,11 +255,15 @@ class BaseConnection(Connection):
         """
         An alias for `autocommit`, provided for compatibility with pymssql
         """
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         return self._tds_socket.main_session.autocommit
 
     def set_autocommit(self, value: bool) -> None:
         """ An alias for `autocommit`, provided for compatibility with ADO dbapi
         """
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         self._tds_socket.main_session.autocommit = value
 
     @property
@@ -271,10 +271,14 @@ class BaseConnection(Connection):
         """
         The current state of autocommit on the connection.
         """
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         return self._tds_socket.main_session.autocommit
 
     @autocommit.setter
     def autocommit(self, value: bool) -> None:
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         self._tds_socket.main_session.autocommit = value
 
     @property
@@ -286,24 +290,23 @@ class BaseConnection(Connection):
 
             .. __: http://msdn.microsoft.com/en-us/library/ms173763.aspx
         """
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         return self._tds_socket.main_session.isolation_level
 
     @isolation_level.setter
     def isolation_level(self, level: int) -> None:
-        self._tds_socket.main_session.isolation_level = level
-
-    def _assert_open(self) -> None:
         if not self._tds_socket:
-            raise Error('Connection closed')
-        #if not self._conn or not self._conn.is_connected():
-        #    self._open()
+            raise self._connection_closed_exception
+        self._tds_socket.main_session.isolation_level = level
 
     @property
     def tds_version(self) -> int:
         """
         Version of the TDS protocol that is being used by this connection
         """
-        self._assert_open()
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         return self._tds_socket.tds_version
 
     @property
@@ -311,7 +314,8 @@ class BaseConnection(Connection):
         """
         Version of the MSSQL server
         """
-        self._assert_open()
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         return self._tds_socket.product_version
 
     def __enter__(self) -> BaseConnection:
@@ -324,7 +328,8 @@ class BaseConnection(Connection):
         """
         Commit transaction which is currently in progress.
         """
-        self._assert_open()
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         # Setting cont to True to start new transaction
         # after current transaction is rolled back
         self._tds_socket.main_session.commit(cont=True)
@@ -333,9 +338,10 @@ class BaseConnection(Connection):
         """
         Roll back transaction which is currently in progress.
         """
-        # Setting cont to True to start new transaction
-        # after current transaction is rolled back
-        self._tds_socket.main_session.rollback(cont=True)
+        if self._tds_socket:
+            # Setting cont to True to start new transaction
+            # after current transaction is rolled back
+            self._tds_socket.main_session.rollback(cont=True)
 
     def close(self) -> None:
         """ Close connection to an MS SQL Server.
@@ -349,15 +355,15 @@ class BaseConnection(Connection):
                 connection_pool.add(self._key, (self._tds_socket, self._tds_socket.main_session))
             else:
                 self._tds_socket.close()
+            for cursor in self._cursors:
+                cursor.close()
             self._tds_socket = None
 
 
 class MarsConnection(BaseConnection):
     def __init__(self, pooling: bool, key: PoolKeyType,
-                 autocommit: bool, tds_socket: _TdsSocket,
-                 isolation_level: int):
-        super().__init__(pooling, key, autocommit, tds_socket,
-                         isolation_level)
+                 tds_socket: _TdsSocket):
+        super().__init__(pooling=pooling, key=key, tds_socket=tds_socket)
 
     @property
     def mars_enabled(self) -> bool:
@@ -368,10 +374,12 @@ class MarsConnection(BaseConnection):
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
-        return _MarsCursor(
+        cursor = _MarsCursor(
             connection=self,
             session=self._tds_socket.create_session(self._tds_socket.main_session.tzinfo_factory),
         )
+        self._cursors.add(cursor)
+        return cursor
 
     def close(self):
         if self._tds_socket:
@@ -381,11 +389,9 @@ class MarsConnection(BaseConnection):
 
 class NonMarsConnection(BaseConnection):
     def __init__(self, pooling: bool, key: PoolKeyType,
-                 autocommit: bool, tds_socket: _TdsSocket,
-                 isolation_level: int):
+                 tds_socket: _TdsSocket):
 
-        super().__init__(pooling, key, autocommit, tds_socket,
-                         isolation_level)
+        super().__init__(pooling=pooling, key=key, tds_socket=tds_socket)
         self._active_cursor: NonMarsCursor | None = None
 
     @property
@@ -397,7 +403,8 @@ class NonMarsConnection(BaseConnection):
         Return cursor object that can be used to make queries and fetch
         results from the database.
         """
-        #self._assert_open()
+        if not self._tds_socket:
+            raise self._connection_closed_exception
         # Only one cursor can be active at any given time
         if self._active_cursor:
             self._active_cursor.cancel()
@@ -407,6 +414,7 @@ class NonMarsConnection(BaseConnection):
             session=self._tds_socket.main_session,
         )
         self._active_cursor = cursor
+        self._cursors.add(cursor)
         return cursor
 
     #def _try_activate_cursor(self, cursor: NonMarsCursor) -> None:
@@ -432,6 +440,10 @@ class BaseCursor(Cursor, Iterator):
 
     @property
     def connection(self) -> Connection | None:
+        warnings.warn(
+            "connection property is deprecated on the cursor object and will be removed in future releases",
+            DeprecationWarning
+        )
         return self._connection()
 
     def __enter__(self) -> BaseCursor:
@@ -579,23 +591,6 @@ class BaseCursor(Cursor, Iterator):
         self._execute(operation, params)
         # for compatibility with pyodbc
         return self
-
-    #def _begin_tran(self, isolation_level: int) -> None:
-    #    conn = self._assert_open()
-    #    conn._try_activate_cursor(self)
-    #    self._session.begin_tran(isolation_level=isolation_level)
-
-    #def _commit(self, cont: bool, isolation_level: int = 0) -> None:
-    #    conn = self._assert_open()
-    #    conn._try_activate_cursor(self)
-    #    self._session.commit(cont=cont, isolation_level=isolation_level)
-    #    conn._dirty = False
-
-    #def _rollback(self, cont: bool, isolation_level: int = 0) -> None:
-    #    conn = self._assert_open()
-    #    conn._try_activate_cursor(self)
-    #    self._session.rollback(cont=cont, isolation_level=isolation_level)
-    #    conn._dirty = False
 
     def executemany(self, operation: str, params_seq: Iterable[list[Any] | tuple[Any, ...] | dict[str, Any]]) -> None:
         """
@@ -1231,17 +1226,13 @@ def connect(
                     return MarsConnection(
                         pooling=pooling,
                         key=key,
-                        autocommit=autocommit,
                         tds_socket=tds_socket,
-                        isolation_level=isolation_level,
                     )
                 else:
                     return NonMarsConnection(
                         pooling=pooling,
                         key=key,
-                        autocommit=autocommit,
                         tds_socket=tds_socket,
-                        isolation_level=isolation_level,
                     )
         host, port, instance = login.servers[0]
         return _connect(
@@ -1364,17 +1355,13 @@ def _connect(
             return MarsConnection(
                 pooling=pooling,
                 key=key,
-                autocommit=autocommit,
                 tds_socket=tds_socket,
-                isolation_level=isolation_level,
             )
         else:
             return NonMarsConnection(
                 pooling=pooling,
                 key=key,
-                autocommit=autocommit,
                 tds_socket=tds_socket,
-                isolation_level=isolation_level,
             )
     except:
         sock.close()

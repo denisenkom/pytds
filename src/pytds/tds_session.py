@@ -380,10 +380,13 @@ class _TdsSession:
             size = r.get_byte()
             assert size == 8
             self.conn.tds72_transaction = r.get_uint8()
+            # old val, should be 0
             skipall(r, r.get_byte())
         elif type_id == tds_base.TDS_ENV_COMMITTRANS or type_id == tds_base.TDS_ENV_ROLLBACKTRANS:
             self.conn.tds72_transaction = 0
+            # new val, should be 0
             skipall(r, r.get_byte())
+            # old val, should have previous transaction id
             skipall(r, r.get_byte())
         elif type_id == tds_base.TDS_ENV_PACKSIZE:
             newval = r.read_ucs2(r.get_byte())
