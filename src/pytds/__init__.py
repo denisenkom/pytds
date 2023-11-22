@@ -366,10 +366,12 @@ class BaseConnection(Connection):
         this case.
         """
         if self._tds_socket:
+            logger.debug("Closing connection")
             if self._pooling:
                 connection_pool.add(self._key, (self._tds_socket, self._tds_socket.main_session))
             else:
                 self._tds_socket.close()
+            logger.debug("Closing all cursors which were opened by connection")
             for cursor in self._cursors:
                 cursor.close()
             self._tds_socket = None
@@ -557,6 +559,7 @@ class BaseCursor(Cursor, Iterator):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
+        logger.debug("Closing cursor")
         self._session = None
         self._connection = None
 
@@ -929,9 +932,11 @@ class _MarsCursor(BaseCursor):
         """
         Closes the cursor. The cursor is unusable from this point.
         """
+        logger.debug("Closing MARS cursor")
         if self._session is not None:
             self._session.close()
             self._session = None
+        self._connection = None
 
 
 def _resolve_instance_port(server: Any, port: int, instance: str, timeout: float = 5) -> int:

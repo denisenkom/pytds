@@ -90,45 +90,44 @@ class MockSock:
         self._packet_pos = 0
 
 
-def does_database_exist(cursor: pytds.Cursor, name: str):
+def does_database_exist(cursor: pytds.Cursor, name: str) -> bool:
+    """
+    Checks if given database exist and returns true if it does
+    """
     db_id = cursor.execute_scalar("select db_id(%s)", (name,))
     return db_id is not None
 
 
-def does_schema_exist(connection: pytds.Connection, name: str, database: str) -> bool:
-    with connection.cursor() as cursor:
-        val = cursor.execute_scalar(
-            f"""
-            select count(*) from {database}.information_schema.schemata
-            where schema_name = cast(%s as nvarchar(max))
-            """, (name,))
+def does_schema_exist(cursor: pytds.Cursor, name: str, database: str) -> bool:
+    val = cursor.execute_scalar(
+        f"""
+        select count(*) from {database}.information_schema.schemata
+        where schema_name = cast(%s as nvarchar(max))
+        """, (name,))
     return val > 0
 
 
-def does_stored_proc_exist(connection: pytds.Connection, name: str, database: str, schema: str = "dbo") -> bool:
-    with connection.cursor() as cursor:
-        val = cursor.execute_scalar(
-            f"""
-            select count(*) from {database}.information_schema.routines
-            where routine_schema = cast(%s as nvarchar(max)) and routine_name = cast(%s as nvarchar(max))
-            """, (schema, name))
+def does_stored_proc_exist(cursor: pytds.Cursor, name: str, database: str, schema: str = "dbo") -> bool:
+    val = cursor.execute_scalar(
+        f"""
+        select count(*) from {database}.information_schema.routines
+        where routine_schema = cast(%s as nvarchar(max)) and routine_name = cast(%s as nvarchar(max))
+        """, (schema, name))
     return val > 0
 
 
-def does_table_exist(connection: pytds.Connection, name: str, database: str, schema: str = "dbo") -> bool:
-    with connection.cursor() as cursor:
-        val = cursor.execute_scalar(
-            f"""
-            select count(*) from {database}.information_schema.tables
-            where table_schema = cast(%s as nvarchar(max)) and table_name = cast(%s as nvarchar(max))
-            """, (schema, name))
+def does_table_exist(cursor: pytds.Cursor, name: str, database: str, schema: str = "dbo") -> bool:
+    val = cursor.execute_scalar(
+        f"""
+        select count(*) from {database}.information_schema.tables
+        where table_schema = cast(%s as nvarchar(max)) and table_name = cast(%s as nvarchar(max))
+        """, (schema, name))
     return val > 0
 
 
-def does_user_defined_type_exist(connection: pytds.Connection, name: str) -> bool:
-    with connection.cursor() as cursor:
-        val = cursor.execute_scalar("select type_id(%s)", (name,))
-        return val is not None
+def does_user_defined_type_exist(cursor: pytds.Cursor, name: str) -> bool:
+    val = cursor.execute_scalar("select type_id(%s)", (name,))
+    return val is not None
 
 
 def create_test_database(connection: pytds.Connection):
@@ -136,11 +135,11 @@ def create_test_database(connection: pytds.Connection):
         if not does_database_exist(cursor=cur, name=settings.DATABASE):
             cur.execute(f'create database [{settings.DATABASE}]')
         cur.execute(f"use [{settings.DATABASE}]")
-        if not does_schema_exist(connection=connection, name="myschema", database=settings.DATABASE):
+        if not does_schema_exist(cursor=cur, name="myschema", database=settings.DATABASE):
             cur.execute('create schema myschema')
-        if not does_table_exist(connection=connection, name="bulk_insert_table", schema="myschema", database=settings.DATABASE):
+        if not does_table_exist(cursor=cur, name="bulk_insert_table", schema="myschema", database=settings.DATABASE):
             cur.execute('create table myschema.bulk_insert_table(num int, data varchar(100))')
-        if not does_stored_proc_exist(connection=connection, name="testproc", database=settings.DATABASE):
+        if not does_stored_proc_exist(cursor=cur, name="testproc", database=settings.DATABASE):
             cur.execute('''
             create procedure testproc (@param int, @add int = 2, @outparam int output)
             as
@@ -152,7 +151,7 @@ def create_test_database(connection: pytds.Connection):
             end
             ''')
         # Stored procedure which does not have RETURN statement
-        if not does_stored_proc_exist(connection=connection, name="test_proc_no_return", database=settings.DATABASE):
+        if not does_stored_proc_exist(cursor=cur, name="test_proc_no_return", database=settings.DATABASE):
             cur.execute('''
             create procedure test_proc_no_return(@param int)
             as
@@ -160,7 +159,7 @@ def create_test_database(connection: pytds.Connection):
                 select @param
             end
             ''')
-        if not does_user_defined_type_exist(connection=connection, name="dbo.CategoryTableType"):
+        if not does_user_defined_type_exist(cursor=cur, name="dbo.CategoryTableType"):
             cur.execute('CREATE TYPE dbo.CategoryTableType AS TABLE ( CategoryID int, CategoryName nvarchar(50) )')
 
 
