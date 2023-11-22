@@ -1340,9 +1340,10 @@ def _connect(
         use_tz=use_tz,
         row_strategy=row_strategy,
         autocommit=autocommit,
+        login=login,
     )
     try:
-        route = tds_socket.login(login)
+        route = tds_socket.login()
         if route is not None:
             # rerouted to different server
             sock.close()

@@ -25,6 +25,7 @@ class _TdsSocket(object):
     def __init__(
             self,
             sock: tds_base.TransportProtocol,
+            login: _TdsLogin,
             tzinfo_factory: tds_types.TzInfoFactoryType | None = None,
             row_strategy=list_row_strategy,
             use_tz: datetime.tzinfo | None = None,
@@ -36,7 +37,7 @@ class _TdsSocket(object):
         self.tds72_transaction = 0
         self._mars_enabled = False
         self.sock = sock
-        self.bufsize = 4096
+        self.bufsize = login.blocksize
         self.tds_version = tds_base.TDS74
         self.use_tz = use_tz
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
@@ -50,29 +51,31 @@ class _TdsSocket(object):
             tzinfo_factory=tzinfo_factory,
             row_strategy=row_strategy,
             env=self.env,
+            # initially we use fixed bufsize
+            # it may be updated later if server specifies different block size
+            bufsize=4096,
         )
         self._login: _TdsLogin | None = None
         self.route: Route | None = None
         self._row_strategy = row_strategy
         self.env.autocommit = autocommit
+        self._login = login
+        self.query_timeout = login.query_timeout
+        self.tds_version = login.tds_version
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
         return fmt.format(self.tds72_transaction, self._mars_enabled,
                           self.tds_version, self.use_tz)
 
-    def login(self, login: _TdsLogin) -> Route | None:
+    def login(self) -> Route | None:
         from . import tls
-        self._login = login
-        self.bufsize = login.blocksize
-        self.query_timeout = login.query_timeout
-        self.tds_version = login.tds_version
-        login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
+        self._login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         if tds_base.IS_TDS71_PLUS(self):
-            self._main_session.send_prelogin(login)
-            self._main_session.process_prelogin(login)
-        self._main_session.tds7_send_login(login)
-        if login.server_enc_flag == PreLoginEnc.ENCRYPT_OFF:
+            self._main_session.send_prelogin(self._login)
+            self._main_session.process_prelogin(self._login)
+        self._main_session.tds7_send_login(self._login)
+        if self._login.server_enc_flag == PreLoginEnc.ENCRYPT_OFF:
             tls.revert_to_clear(self._main_session)
         self._main_session.begin_response()
         if not self._main_session.process_login_tokens():
@@ -95,6 +98,7 @@ class _TdsSocket(object):
             self._smp_manager = SmpManager(self.sock)
             self._main_session = _TdsSession(
                 tds=self,
+                bufsize=self.bufsize,
                 transport=self._smp_manager.create_session(),
                 tzinfo_factory=self._tzinfo_factory,
                 row_strategy=self._row_strategy,
@@ -102,8 +106,8 @@ class _TdsSocket(object):
             )
         self._is_connected = True
         q = []
-        if login.database and self.env.database != login.database:
-            q.append('use ' + tds_base.tds_quote_id(login.database))
+        if self._login.database and self.env.database != self._login.database:
+            q.append('use ' + tds_base.tds_quote_id(self._login.database))
         if q:
             self._main_session.submit_plain_query(''.join(q))
             self._main_session.process_simple_request()
@@ -123,6 +127,7 @@ class _TdsSocket(object):
             transport=self._smp_manager.create_session(),
             tzinfo_factory=self._tzinfo_factory,
             row_strategy=self._row_strategy,
+            bufsize=self.bufsize,
             env=self.env,
         )
 

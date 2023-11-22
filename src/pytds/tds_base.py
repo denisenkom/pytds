@@ -869,7 +869,7 @@ class _TdsLogin:
         self.option_flag2 = 0
         self.connect_timeout = 0.0
         self.query_timeout = 0.0
-        self.blocksize = 0
+        self.blocksize = 4096
         self.readonly = False
         self.load_balancer: LoadBalancer | None = None
         self.bytes_to_unicode = False

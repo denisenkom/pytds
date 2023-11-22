@@ -26,8 +26,8 @@ class _TdsReader:
     Also provides convinience methods to decode primitive data like
     different kinds of integers etc.
     """
-    def __init__(self, tds_session: 'pytds.tds_session._TdsSession', transport: tds_base.TransportProtocol):
-        self._buf = bytearray(b'\x00' * 4096)
+    def __init__(self, tds_session: 'pytds.tds_session._TdsSession', transport: tds_base.TransportProtocol, bufsize: int):
+        self._buf = bytearray(b'\x00' * bufsize)
         self._bufview = memoryview(self._buf)
         self._pos = len(self._buf)  # position in the buffer
         self._have = 0  # number of bytes read from packet
@@ -68,9 +68,9 @@ class _TdsReader:
         :returns: Tuple of bytes buffer, and offset in this buffer
         """
         # Current response stream finished
-        if self._status == 1:
-            return b'', 0
         if self._pos >= self._size:
+            if self._status == 1:
+                return b'', 0
             self._read_packet()
         offset = self._pos
         to_read = min(size, self._size - self._pos)

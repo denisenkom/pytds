@@ -31,6 +31,7 @@ class _TdsSession:
             transport: tds_base.TransportProtocol,
             tzinfo_factory: tds_types.TzInfoFactoryType | None,
             env: _TdsEnv,
+            bufsize: int,
             row_strategy: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]] = list_row_strategy,
     ):
         self.out_pos = 8
@@ -42,8 +43,8 @@ class _TdsSession:
         self.ret_status: int | None = None
         self.skipped_to_status = False
         self._transport = transport
-        self._reader = _TdsReader(transport=transport, tds_session=self)
-        self._writer = _TdsWriter(transport=transport, bufsize=tds.bufsize, tds_session=self)
+        self._reader = _TdsReader(transport=transport, bufsize=bufsize, tds_session=self)
+        self._writer = _TdsWriter(transport=transport, bufsize=bufsize, tds_session=self)
         self.in_buf_max = 0
         self.state = tds_base.TDS_IDLE
         self._tds = tds
