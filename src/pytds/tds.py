@@ -38,8 +38,8 @@ class _TdsSocket(object):
         self._mars_enabled = False
         self.sock = sock
         self.bufsize = login.blocksize
-        self.tds_version = tds_base.TDS74
         self.use_tz = use_tz
+        self.tds_version = login.tds_version
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
         self.type_inferrer = None
         self.query_timeout = 0
@@ -61,7 +61,6 @@ class _TdsSocket(object):
         self.env.autocommit = autocommit
         self._login = login
         self.query_timeout = login.query_timeout
-        self.tds_version = login.tds_version
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"

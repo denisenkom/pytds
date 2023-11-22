@@ -852,7 +852,7 @@ class _TdsLogin:
         self.port: int | None = None
         self.language = ""
         self.attach_db_file = ""
-        self.tds_version = 0
+        self.tds_version = TDS74
         self.database = ""
         self.bulk_copy = False
         self.client_lcid = 0
