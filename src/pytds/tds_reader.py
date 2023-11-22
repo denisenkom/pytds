@@ -26,7 +26,7 @@ class _TdsReader:
     Also provides convinience methods to decode primitive data like
     different kinds of integers etc.
     """
-    def __init__(self, tds_session: 'pytds.tds_session._TdsSession', transport: tds_base.TransportProtocol, bufsize: int):
+    def __init__(self, tds_session: 'pytds.tds_session._TdsSession', transport: tds_base.TransportProtocol, bufsize: int = 4096):
         self._buf = bytearray(b'\x00' * bufsize)
         self._bufview = memoryview(self._buf)
         self._pos = len(self._buf)  # position in the buffer

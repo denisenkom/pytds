@@ -926,6 +926,10 @@ class TestRawBytes(unittest.TestCase):
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_invalid_block_size():
+    """
+    Test buffer size changing.  Initially buffer should start at 4096 according to TDS spec
+    and then it should upgrade to buffer size that was provided in login request.
+    """
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update({
         'blocksize': 4000,

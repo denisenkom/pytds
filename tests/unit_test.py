@@ -154,11 +154,11 @@ class TestMessages(unittest.TestCase):
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
         # test repr on some objects
-        repr(tds._main_session)
-        repr(tds)
         login = _TdsLogin()
         login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         tds = _TdsSocket(sock=sock, login=login)
+        repr(tds._main_session)
+        repr(tds)
         tds._main_session.process_prelogin(login)
         self.assertFalse(tds._mars_enabled)
         self.assertTupleEqual(tds.server_library_version, (0xa001588, 0))
@@ -167,27 +167,27 @@ class TestMessages(unittest.TestCase):
         sock = _FakeSock([
             b'\x03\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\xff\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
-        tds = _TdsSocket(sock=sock)
+        login = self._make_login()
+        tds = _TdsSocket(sock=sock, login=login)
         with self.assertRaises(pytds.InterfaceError):
-            login = self._make_login()
             tds._main_session.process_prelogin(login)
 
         # test bad offset 1
         sock = _FakeSock([
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\n\x00\x15\x88\x00\x00\x02\x00\x00',
         ])
-        tds = _TdsSocket(sock=sock)
+        login = self._make_login()
+        tds = _TdsSocket(sock=sock, login=login)
         with self.assertRaises(pytds.InterfaceError):
-            login = self._make_login()
             tds._main_session.process_prelogin(login)
 
         # test bad offset 2
         sock = _FakeSock([
             b'\x04\x01\x00+\x00\x00\x01\x00\x00\x00\x1a\x00\x06\x01\x00 \x00\x01\x02\x00!\x00\x01\x03\x00"\x00\x00\x04\x00"\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00',
         ])
-        tds = _TdsSocket(sock=sock)
+        login = self._make_login()
+        tds = _TdsSocket(sock=sock, login=login)
         with self.assertRaises(pytds.InterfaceError):
-            login = self._make_login()
             tds._main_session.process_prelogin(login)
 
         # test bad size

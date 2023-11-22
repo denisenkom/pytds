@@ -1210,7 +1210,7 @@ class _TdsSession:
             packet_size += (len(user_name) + len(login.password)) * 2
         w.put_int(packet_size)
         w.put_uint(login.tds_version)
-        w.put_int(w.bufsize)
+        w.put_int(login.blocksize)
         from . import intversion
         w.put_uint(intversion)
         w.put_int(login.pid)
