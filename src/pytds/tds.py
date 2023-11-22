@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 class _TdsSocket(object):
     def __init__(
             self,
+            sock: tds_base.TransportProtocol,
+            tzinfo_factory: tds_types.TzInfoFactoryType | None = None,
             row_strategy=list_row_strategy,
             use_tz: datetime.tzinfo | None = None,
             autocommit=False
@@ -33,15 +35,22 @@ class _TdsSocket(object):
         self.collation = None
         self.tds72_transaction = 0
         self._mars_enabled = False
-        self.sock = None
+        self.sock = sock
         self.bufsize = 4096
         self.tds_version = tds_base.TDS74
         self.use_tz = use_tz
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
         self.type_inferrer = None
         self.query_timeout = 0
+        self._tzinfo_factory = tzinfo_factory
         self._smp_manager: SmpManager | None = None
-        self._main_session: _TdsSession | None = None
+        self._main_session = _TdsSession(
+            tds=self,
+            transport=sock,
+            tzinfo_factory=tzinfo_factory,
+            row_strategy=row_strategy,
+            env=self.env,
+        )
         self._login: _TdsLogin | None = None
         self.route: Route | None = None
         self._row_strategy = row_strategy
@@ -52,20 +61,11 @@ class _TdsSocket(object):
         return fmt.format(self.tds72_transaction, self._mars_enabled,
                           self.tds_version, self.use_tz)
 
-    def login(self, login: _TdsLogin, sock: tds_base.TransportProtocol, tzinfo_factory: tds_types.TzInfoFactoryType | None) -> Route | None:
+    def login(self, login: _TdsLogin) -> Route | None:
         from . import tls
-        from .tds_session import _TdsSession
         self._login = login
         self.bufsize = login.blocksize
         self.query_timeout = login.query_timeout
-        self._main_session = _TdsSession(
-            tds=self,
-            transport=sock,
-            tzinfo_factory=tzinfo_factory,
-            row_strategy=self._row_strategy,
-            env=self.env,
-        )
-        self.sock = sock
         self.tds_version = login.tds_version
         login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         if tds_base.IS_TDS71_PLUS(self):
@@ -96,7 +96,7 @@ class _TdsSocket(object):
             self._main_session = _TdsSession(
                 tds=self,
                 transport=self._smp_manager.create_session(),
-                tzinfo_factory=tzinfo_factory,
+                tzinfo_factory=self._tzinfo_factory,
                 row_strategy=self._row_strategy,
                 env=self.env,
             )
@@ -114,15 +114,14 @@ class _TdsSocket(object):
         return self._mars_enabled
 
     @property
-    def main_session(self) -> _TdsSession | None:
+    def main_session(self) -> _TdsSession:
         return self._main_session
 
-    def create_session(self, tzinfo_factory: tds_types.TzInfoFactoryType | None) -> _TdsSession:
-        from .tds_session import _TdsSession
+    def create_session(self) -> _TdsSession:
         return _TdsSession(
             tds=self,
             transport=self._smp_manager.create_session(),
-            tzinfo_factory=tzinfo_factory,
+            tzinfo_factory=self._tzinfo_factory,
             row_strategy=self._row_strategy,
             env=self.env,
         )

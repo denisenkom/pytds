@@ -397,7 +397,7 @@ class MarsConnection(BaseConnection):
             raise self._connection_closed_exception
         cursor = _MarsCursor(
             connection=self,
-            session=self._tds_socket.create_session(self._tds_socket.main_session.tzinfo_factory),
+            session=self._tds_socket.create_session(),
         )
         self._cursors.add(cursor)
         return cursor
@@ -454,8 +454,11 @@ class BaseCursor(Cursor, Iterator):
 
     def __init__(self, connection: Connection, session: _TdsSession):
         self.arraysize = 1
+        # Null value in _session means cursor was closed
         self._session: _TdsSession | None = session
-        self._connection = weakref.ref(connection)
+        # Keeping strong reference to connection to prevent connection from being garbage collected
+        # while there are active cursors
+        self._connection: Connection | None = connection
 
     @property
     def connection(self) -> Connection | None:
@@ -463,7 +466,7 @@ class BaseCursor(Cursor, Iterator):
             "connection property is deprecated on the cursor object and will be removed in future releases",
             DeprecationWarning
         )
-        return self._connection()
+        return self._connection
 
     def __enter__(self) -> BaseCursor:
         return self
@@ -511,12 +514,6 @@ class BaseCursor(Cursor, Iterator):
         """
         return self.get_proc_return_status()
 
-    #@property
-    #def connection(self) -> Connection | None:
-    #    """ Provides link back to :class:`Connection` of this cursor
-    #    """
-    #    return self._conn()
-
     @property
     def spid(self) -> int:
         """ MSSQL Server's session ID (SPID)
@@ -561,6 +558,7 @@ class BaseCursor(Cursor, Iterator):
         Closes the cursor. The cursor is unusable from this point.
         """
         self._session = None
+        self._connection = None
 
     T = TypeVar('T')
 
@@ -1331,9 +1329,15 @@ def _connect(
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 30)
 
     sock.settimeout(timeout)
-    tds_socket = _TdsSocket(use_tz=use_tz, row_strategy=row_strategy, autocommit=autocommit)
+    tds_socket = _TdsSocket(
+        sock=sock,
+        tzinfo_factory=tzinfo_factory,
+        use_tz=use_tz,
+        row_strategy=row_strategy,
+        autocommit=autocommit,
+    )
     try:
-        route = tds_socket.login(login, sock, tzinfo_factory)
+        route = tds_socket.login(login)
         if route is not None:
             # rerouted to different server
             sock.close()

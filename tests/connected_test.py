@@ -451,7 +451,7 @@ def test_cursor_closing(db_connection):
 
 def test_multi_packet(cursor):
     cur = cursor
-    param = 'x' * (cursor._connection()._tds_socket.main_session._writer.bufsize * 3)
+    param = 'x' * (cursor._connection._tds_socket.main_session._writer.bufsize * 3)
     cur.execute('select %s', (param,))
     assert [(param, )] == cur.fetchall()
 
