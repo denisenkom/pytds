@@ -4,6 +4,7 @@ import codecs
 import contextlib
 import datetime
 import struct
+import typing
 import warnings
 from typing import Callable, Iterable, Any, List
 
@@ -15,11 +16,14 @@ from pytds.tds_reader import _TdsReader, ResponseMetadata
 from pytds.tds_writer import _TdsWriter
 from pytds.row_strategies import list_row_strategy
 
+if typing.TYPE_CHECKING:
+    from pytds.tds import _TdsSocket
+
 
 class _TdsSession:
     """ TDS session
 
-    This class has following responsibilities:
+    This class has the following responsibilities:
     * Track state of a single TDS session if MARS enabled there could be multiple TDS sessions
       within one connection.
     * Provides API to send requests and receive responses
@@ -102,6 +106,7 @@ class _TdsSession:
 
     @row_strategy.setter
     def row_strategy(self, value: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]]) -> None:
+        warnings.warn("Changing row_strategy on live connection is now deprecated, you should set it when creating new connection", DeprecationWarning)
         self._row_strategy = value
 
     def log_response_message(self, msg):
@@ -369,7 +374,7 @@ class _TdsSession:
 
     def _ensure_transaction(self) -> None:
         if not self._env.autocommit and not self._tds.tds72_transaction:
-            self.begin_tran(isolation_level=self._env.isolation_level)
+            self.begin_tran()
 
     def process_env_chg(self):
         """ Reads and processes ENVCHANGE stream.
@@ -903,9 +908,9 @@ class _TdsSession:
 
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
-    def begin_tran(self, isolation_level: int = 0) -> None:
-        logger.info('Sending BEGIN TRAN il=%x', isolation_level)
-        self.submit_begin_tran(isolation_level=isolation_level)
+    def begin_tran(self) -> None:
+        logger.info('Sending BEGIN TRAN il=%x', self._env.isolation_level)
+        self.submit_begin_tran(isolation_level=self._env.isolation_level)
         self.process_simple_request()
 
     def submit_begin_tran(self, isolation_level: int = 0) -> None:

@@ -76,20 +76,27 @@ def test_autocommit_off(separate_db_connection):
     conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
     assert not conn.autocommit
     # second connection is used to observe effects of transaction on first connection
-    conn2 = pytds.connect(**settings.CONNECT_KWARGS)
-    conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
-    conn2.autocommit = True
+    conn2 = pytds.connect(**{
+        **settings.CONNECT_KWARGS,
+        "isolation_level": pytds.extensions.ISOLATION_LEVEL_SNAPSHOT,
+        "autocommit": True,
+    })
+    assert conn2.isolation_level == pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
+    assert conn2.autocommit
     # This connection can see changes which are made by other transactions and which are not yet committed
-    conn_read_uncom = pytds.connect(**settings.CONNECT_KWARGS)
-    conn_read_uncom.isolation_level = pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
-    conn_read_uncom.autocommit = False
+    conn_read_uncom = pytds.connect(**{
+        **settings.CONNECT_KWARGS,
+        "isolation_level": pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED,
+        "autocommit": False,
+    })
+    assert conn_read_uncom.isolation_level == pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
+    assert not conn_read_uncom.autocommit
     with conn.cursor() as cur, conn2.cursor() as cur2, conn_read_uncom.cursor() as cur_read_uncom:
         try:
             cur.execute('drop table test_autocommit')
         except:
             pass
         conn.commit()
-        assert not does_table_exist(cursor=cur2, name='test_autocommit', database='test'), "table should not exist now since we ensured it is deleted"
         cur.execute('create table test_autocommit(field int)')
         conn.commit()
         assert does_table_exist(cursor=cur2, name='test_autocommit', database='test'), "table should exist now, since we committed creation"

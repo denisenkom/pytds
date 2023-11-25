@@ -1341,6 +1341,7 @@ def _connect(
         row_strategy=row_strategy,
         autocommit=autocommit,
         login=login,
+        isolation_level=isolation_level,
     )
     try:
         route = tds_socket.login()

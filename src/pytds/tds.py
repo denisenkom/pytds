@@ -29,10 +29,12 @@ class _TdsSocket(object):
             tzinfo_factory: tds_types.TzInfoFactoryType | None = None,
             row_strategy=list_row_strategy,
             use_tz: datetime.tzinfo | None = None,
-            autocommit=False
+            autocommit=False,
+            isolation_level=0,
     ):
         self._is_connected = False
         self.env = _TdsEnv()
+        self.env.isolation_level = isolation_level
         self.collation = None
         self.tds72_transaction = 0
         self._mars_enabled = False
