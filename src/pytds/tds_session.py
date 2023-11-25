@@ -1318,6 +1318,13 @@ class _TdsSession:
         r = self._reader
         succeed = False
         while True:
+            # When handling login requests that involve special mechanisms such as SSPI,
+            # it's crucial to be aware that multiple response streams may be generated.
+            # Therefore, it becomes necessary to iterate through these streams during
+            # the response processing phase.
+            if r.stream_finished():
+                r.begin_response()
+
             marker = r.get_byte()
             if marker == tds_base.TDS_LOGINACK_TOKEN:
                 # https://msdn.microsoft.com/en-us/library/dd340651.aspx

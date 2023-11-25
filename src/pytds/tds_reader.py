@@ -58,6 +58,18 @@ class _TdsReader:
         """
         return self._type
 
+    def stream_finished(self) -> bool:
+        """
+        Verifies whether the current response packet stream has finished reading.
+        If the function returns True, it indicates that you should invoke the begin_response
+        method to initiate the reading of the next stream.
+        :return:
+        """
+        if self._pos >= self._size:
+            return self._status == 1
+        else:
+            return False
+
     def read_fast(self, size: int) -> Tuple[bytes, int]:
         """ Faster version of read
 
