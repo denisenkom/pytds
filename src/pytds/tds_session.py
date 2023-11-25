@@ -443,7 +443,7 @@ class _TdsSession:
             # OLDVALUE = 0x00, 0x00
             r.get_usmallint()
         else:
-            logger.warning("unknown env type: {0}, skipping".format(type_id))
+            logger.warning("unknown env type: %d, skipping", type_id)
             # discard byte values, not still supported
             skipall(r, size - 1)
 

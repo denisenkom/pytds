@@ -2,7 +2,7 @@ import pytds
 import pytds.extensions
 import settings
 from fixtures import separate_db_connection
-from utils import tran_count
+from utils import tran_count, does_table_exist
 
 
 def test_rollback_commit():
@@ -66,33 +66,55 @@ def test_commit_timeout_recovery(separate_db_connection):
     cur.fetchall()
 
 
-def test_autocommit(separate_db_connection):
+def test_autocommit_off(separate_db_connection):
     """
     Testing autocommit off mode, making sure that new transaction is started immediately after previous
     one is committed or rolled back
     """
     conn = separate_db_connection
+    # second connection is used to observe effects of transaction on first connection
+    conn2 = pytds.connect(**settings.CONNECT_KWARGS)
+    conn2.autocommit = False
     assert not conn.autocommit
-    with conn.cursor() as cur:
+    conn2.rollback()
+    with conn.cursor() as cur, conn2.cursor() as cur2:
+        conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
+        conn.rollback()
+        conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
+        conn2.rollback()
         try:
             cur.execute('drop table test_autocommit')
         except:
             pass
+        conn.commit()
+        assert not does_table_exist(cursor=cur2, name='test_autocommit', database='test'), "table should not exist now since we ensured it is deleted"
         cur.execute('create table test_autocommit(field int)')
         conn.commit()
+        assert does_table_exist(cursor=cur2, name='test_autocommit', database='test'), "table should exist now, since we committed creation"
         # New transaction should be started after committing previous transaction
         assert 1 == tran_count(cur)
         cur.execute('insert into test_autocommit(field) values(1)')
         assert 1 == tran_count(cur)
         cur.execute('select field from test_autocommit')
         row = cur.fetchone()
+        assert cur2.execute("select * from test_autocommit").fetchall() == [], "should not see created row from another connection since it is not committed yet"
+
+        # But using read uncommitted level we should see changes from different connection
+        conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
+        conn2.rollback()
+        assert cur2.execute("select * from test_autocommit").fetchall() == [(1,)]
+
         conn.rollback()
         assert 1 == tran_count(cur)
         cur.execute('select field from test_autocommit')
         row = cur.fetchone()
         assert not row
 
-        conn.autocommit = True
+
+def test_autocommit_on(separate_db_connection):
+    conn = separate_db_connection
+    conn.autocommit = True
+    with conn.cursor() as cur:
         # commit in autocommit mode should be a no-op
         conn.commit()
         # rollback in autocommit mode should be a no-op
