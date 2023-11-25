@@ -258,6 +258,10 @@ class BaseConnection(Connection):
 
     @as_dict.setter
     def as_dict(self, value: bool) -> None:
+        warnings.warn(
+            "setting as_dict property on the active connection, instead create connection with needed row_strategy",
+            DeprecationWarning
+        )
         if not self._tds_socket:
             raise self._connection_closed_exception
         if value:
@@ -1325,7 +1329,7 @@ def _connect(
             logger.info('Opening socket to %s:%d', host, port)
             sock = socket.create_connection((host, port), timeout)
     except Exception as e:
-        raise LoginError("Cannot connect to server '{0}': {1}".format(host, e), e)
+        raise LoginError(f"Cannot connect to server '{host}': {e}", e)
 
     sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 
