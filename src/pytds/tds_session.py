@@ -84,8 +84,17 @@ class _TdsSession:
         return self._env.isolation_level
 
     @isolation_level.setter
-    def isolation_level(self, value):
-        self._env.isolation_level = value
+    def isolation_level(self, value: int):
+        """
+        Set transaction isolation level.
+        Will roll back current transaction if it has different isolation level.
+        """
+        if self._env.isolation_level != value:
+            if self._tds.tds72_transaction:
+                # Setting cont=False to delay reopening of new transaction until
+                # next command execution in case isolation_level changes again
+                self.rollback(cont=False)
+            self._env.isolation_level = value
 
     @property
     def row_strategy(self) -> Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]]:

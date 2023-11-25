@@ -72,16 +72,18 @@ def test_autocommit_off(separate_db_connection):
     one is committed or rolled back
     """
     conn = separate_db_connection
+    # using snapshot isolation level to prevent blocking between connections
+    conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
+    assert not conn.autocommit
     # second connection is used to observe effects of transaction on first connection
     conn2 = pytds.connect(**settings.CONNECT_KWARGS)
-    conn2.autocommit = False
-    assert not conn.autocommit
-    conn2.rollback()
-    with conn.cursor() as cur, conn2.cursor() as cur2:
-        conn.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
-        conn.rollback()
-        conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
-        conn2.rollback()
+    conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
+    conn2.autocommit = True
+    # This connection can see changes which are made by other transactions and which are not yet committed
+    conn_read_uncom = pytds.connect(**settings.CONNECT_KWARGS)
+    conn_read_uncom.isolation_level = pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
+    conn_read_uncom.autocommit = False
+    with conn.cursor() as cur, conn2.cursor() as cur2, conn_read_uncom.cursor() as cur_read_uncom:
         try:
             cur.execute('drop table test_autocommit')
         except:
@@ -100,16 +102,13 @@ def test_autocommit_off(separate_db_connection):
         assert cur2.execute("select * from test_autocommit").fetchall() == [], "should not see created row from another connection since it is not committed yet"
 
         # Using read uncommitted level we should see changes from different connection
-        conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
-        conn2.rollback()
-        assert cur2.execute("select * from test_autocommit").fetchall() == [(1,)]
+        assert cur_read_uncom.execute("select * from test_autocommit").fetchall() == [(1,)]
 
         # Now commit transaction, after that changes should be visible from other connections
         conn.commit()
         assert 1 == tran_count(cur)
 
-        conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
-        conn2.rollback()
+        assert cur.execute("select * from test_autocommit").fetchall() == [(1,)]
         assert cur2.execute("select * from test_autocommit").fetchall() == [(1,)]
 
         # cleanup
@@ -154,8 +153,6 @@ def test_isolation_level(separate_db_connection):
             pytds.extensions.ISOLATION_LEVEL_REPEATABLE_READ,
         ]:
             conn.isolation_level = level
-            # rollback to force new transaction to start
-            conn.rollback()
             assert level == cur.execute_scalar(
                 'select transaction_isolation_level '
                 'from sys.dm_exec_sessions where session_id = @@SPID'
