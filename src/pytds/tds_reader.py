@@ -35,8 +35,10 @@ class _TdsReader:
         self._transport = transport
         self._session = tds_session
         self._type: int | None = None
+        # value of status field from packet header
+        # 0 - means not last packet
+        # 1 - means last packet
         self._status = 1
-        self._ready_to_read = False
         self._spid = 0
 
     @property
@@ -90,8 +92,6 @@ class _TdsReader:
         return self._buf, offset
 
     def recv(self, size: int) -> bytes:
-        if not self._ready_to_read:
-            raise RuntimeError("Attempted to read on reader without calling begin_response")
         if self._pos >= self._size:
             # Current response stream finished
             if self._status == 1:
@@ -168,10 +168,9 @@ class _TdsReader:
         It will read first response packet and return its metadata, after that
         read methods can be called to read contents of the response packet stream until it ends.
         """
-        if self._status != 1:
+        if self._status != 1 or self._pos < self._size:
             raise RuntimeError("begin_response was called before previous response was fully consumed")
         self._read_packet()
-        self._ready_to_read = True
         res = ResponseMetadata()
         res.type = self._type
         res.spid = self._spid

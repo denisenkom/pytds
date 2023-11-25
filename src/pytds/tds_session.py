@@ -241,11 +241,12 @@ class _TdsSession:
             return
 
         while True:
+            while not self._reader.stream_finished():
+                token_id = self.get_token_id()
+                self.process_token(token_id)
+                if not self.in_cancel:
+                    return
             self.begin_response()
-            token_id = self.get_token_id()
-            self.process_token(token_id)
-            if not self.in_cancel:
-                return
 
     def process_msg(self, marker: int) -> None:
         """ Reads and processes ERROR/INFO streams
