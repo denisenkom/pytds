@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import struct
+import typing
 from typing import Tuple, Any
 
 from pytds import tds_base
 from pytds.collate import Collation, ucs2_codec
 from pytds.tds_base import readall, readall_fast, _header, _int_le, _uint_be, _uint_le, _uint8_le, _int8_le, _byte, \
     _smallint_le, _usmallint_le
+
+
+if typing.TYPE_CHECKING:
+    from pytds.tds_session import _TdsSession
 
 
 class ResponseMetadata:
@@ -26,7 +31,7 @@ class _TdsReader:
     Also provides convinience methods to decode primitive data like
     different kinds of integers etc.
     """
-    def __init__(self, tds_session: 'pytds.tds_session._TdsSession', transport: tds_base.TransportProtocol, bufsize: int = 4096):
+    def __init__(self, tds_session: _TdsSession, transport: tds_base.TransportProtocol, bufsize: int = 4096):
         self._buf = bytearray(b'\x00' * bufsize)
         self._bufview = memoryview(self._buf)
         self._pos = len(self._buf)  # position in the buffer

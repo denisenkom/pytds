@@ -9,6 +9,8 @@ import time
 import uuid
 import warnings
 import weakref
+import csv
+import typing
 from collections.abc import Iterator
 from typing import TypeVar, Type, Protocol
 
@@ -42,7 +44,7 @@ from .tds_base import (
 
 
 from . import tls
-import pkg_resources
+import pkg_resources # type: ignore # fix later
 
 __author__ = 'Mikhail Denisenko <denisenkom@gmail.com>'
 try:
@@ -692,9 +694,12 @@ class BaseCursor(Cursor, Iterator):
         """
         if self._session is None:
             raise self._cursor_closed_exception
-        if len(self._session.res_info.columns) <= column_idx or column_idx < 0:
+        res_info = self._session.res_info
+        if not res_info:
+            raise ValueError('No result set is active')
+        if len(res_info.columns) <= column_idx or column_idx < 0:
             raise ValueError('Invalid value for column_idx')
-        self._session.res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
+        res_info.columns[column_idx].serializer.set_chunk_handler(pytds.tds_types._StreamChunkedHandler(stream))
 
     @property
     def messages(self) -> list[Tuple[Type, IntegrityError | ProgrammingError | OperationalError]] | None:
@@ -795,7 +800,7 @@ class BaseCursor(Cursor, Iterator):
             tablock: bool = False,
             schema: str | None = None,
             null_string: str | None = None,
-            data: Iterable[Tuple[Any, ...]] | None = None
+            data: Iterable[collections.abc.Sequence[Any]] | None = None
     ):
         """ *Experimental*. Efficiently load data to database from file using ``BULK INSERT`` operation
 
@@ -847,9 +852,10 @@ class BaseCursor(Cursor, Iterator):
         if self._session is None:
             raise self._cursor_closed_exception
         #conn = self._conn()
-        rows = None
+        rows: typing.Iterable[collections.abc.Sequence[typing.Any]]
         if data is None:
-            import csv
+            if file is None:
+                raise ValueError("No data was specified via file or data parameter")
             reader = csv.reader(file, delimiter=sep)
 
             if null_string is not None:
@@ -865,7 +871,7 @@ class BaseCursor(Cursor, Iterator):
 
         obj_name = tds_base.tds_quote_id(table_or_view)
         if schema:
-            obj_name = '{0}.{1}'.format(tds_base.tds_quote_id(schema), obj_name)
+            obj_name = f'{tds_base.tds_quote_id(schema)}.{obj_name}'
         if columns:
             metadata = []
             for column in columns:
@@ -874,10 +880,10 @@ class BaseCursor(Cursor, Iterator):
                 else:
                     metadata.append(Column(name=column, type=NVarCharType(size=4000), flags=Column.fNullable))
         else:
-            self.execute('select top 1 * from {} where 1<>1'.format(obj_name))
+            self.execute(f'select top 1 * from {obj_name} where 1<>1')
             metadata = [Column(name=col[0], type=NVarCharType(size=4000), flags=Column.fNullable if col[6] else 0)
                         for col in self.description]
-        col_defs = ','.join('{0} {1}'.format(tds_base.tds_quote_id(col.column_name), col.type.get_declaration())
+        col_defs = ','.join(f'{tds_base.tds_quote_id(col.column_name)} {col.type.get_declaration()}'
                             for col in metadata)
         with_opts = []
         if check_constraints:
@@ -947,6 +953,8 @@ def _resolve_instance_port(server: Any, port: int, instance: str, timeout: float
     if instance and not port:
         logger.info('querying %s for list of instances', server)
         instances = tds7_get_instances(server, timeout=timeout)
+        if not instances:
+            raise RuntimeError("Querying list of instances failed, returned value has invalid format")
         if instance not in instances:
             raise LoginError("Instance {0} not found on server {1}".format(instance, server))
         instdict = instances[instance]
@@ -1028,7 +1036,7 @@ def connect(
         load_balancer: tds_base.LoadBalancer | None = None,
         use_tz: datetime.tzinfo | None = None,
         bytes_to_unicode: bool = True,
-        row_strategy: Callable[[Iterable[str]], Callable[[Tuple[Any, ...]], Any]] | None = None,
+        row_strategy: RowStrategy | None = None,
         failover_partner: str | None = None,
         server: str | None = None,
         cafile: str | None = None,
@@ -1315,7 +1323,7 @@ def _connect(
         tzinfo_factory: TzInfoFactoryType | None,
         sock: socket.socket | None,
         use_tz: datetime.tzinfo | None,
-        row_strategy: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]],
+        row_strategy: RowStrategy,
 ) -> BaseConnection:
     try:
         login.server_name = host
@@ -1355,7 +1363,7 @@ def _connect(
             ###  Change SPN once route exists
             from . import login as pytds_login
             if isinstance(login.auth, pytds_login.SspiAuth):
-                route_spn = "MSSQLSvc@{}:{}".format(host, port)
+                route_spn = f"MSSQLSvc@{host}:{port}"
                 login.auth = pytds_login.SspiAuth(user_name=login.user_name, password=login.password,
                                                   server_name=host, port=port, spn=route_spn)
 

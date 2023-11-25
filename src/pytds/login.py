@@ -81,17 +81,21 @@ class SspiAuth(AuthProtocol):
     def handle_next(self, packet: bytes) -> bytes | None:
         from . import sspi
         import ctypes
-        buf = ctypes.create_string_buffer(4096)
-        status, buffers = self._ctx.next(
-            flags=self._flags,
-            byte_ordering='network',
-            target_name=self._sname,
-            input_buffers=[(sspi.SECBUFFER_TOKEN, packet)],
-            output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
-        return buffers[0][1]
+        if self._ctx:
+            buf = ctypes.create_string_buffer(4096)
+            status, buffers = self._ctx.next(
+                flags=self._flags,
+                byte_ordering='network',
+                target_name=self._sname,
+                input_buffers=[(sspi.SECBUFFER_TOKEN, packet)],
+                output_buffers=[(sspi.SECBUFFER_TOKEN, buf)])
+            return buffers[0][1]
+        else:
+            return None
 
     def close(self) -> None:
-        self._ctx.close()
+        if self._ctx:
+            self._ctx.close()
 
 
 class NtlmAuth(AuthProtocol):
@@ -123,7 +127,7 @@ class NtlmAuth(AuthProtocol):
         self._workstation = socket.gethostname().upper()
 
         try:
-            from ntlm_auth.ntlm import NtlmContext
+            from ntlm_auth.ntlm import NtlmContext # type: ignore # fix later
         except ImportError:
             raise ImportError("To use NTLM authentication you need to install ntlm-auth module")
 
@@ -166,9 +170,9 @@ class SpnegoAuth(AuthProtocol):
 class KerberosAuth(AuthProtocol):
     def __init__(self, server_principal):
         try:
-            import kerberos
+            import kerberos # type: ignore # fix later
         except ImportError:
-            import winkerberos as kerberos
+            import winkerberos as kerberos # type: ignore # fix later
         self._kerberos = kerberos
         res, context = kerberos.authGSSClientInit(server_principal)
         if res < 0:

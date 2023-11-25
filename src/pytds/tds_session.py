@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import collections.abc
 import contextlib
 import datetime
 import struct
@@ -14,7 +15,7 @@ from pytds.tds_base import readall, skipall, PreLoginToken, PreLoginEnc, Message
     _create_exception_by_message, output, default, _TdsLogin, tds7_crypt_pass, logger, _Results, _TdsEnv
 from pytds.tds_reader import _TdsReader, ResponseMetadata
 from pytds.tds_writer import _TdsWriter
-from pytds.row_strategies import list_row_strategy
+from pytds.row_strategies import list_row_strategy, RowStrategy, RowGenerator
 
 if typing.TYPE_CHECKING:
     from pytds.tds import _TdsSocket
@@ -36,7 +37,7 @@ class _TdsSession:
             tzinfo_factory: tds_types.TzInfoFactoryType | None,
             env: _TdsEnv,
             bufsize: int,
-            row_strategy: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]] = list_row_strategy,
+            row_strategy: RowStrategy = list_row_strategy,
     ):
         self.out_pos = 8
         self.res_info: _Results | None = None
@@ -68,6 +69,7 @@ class _TdsSession:
         self.end_marker = 0
         self._row_strategy = row_strategy
         self._env = env
+        self._row_convertor: RowGenerator = list
 
     @property
     def autocommit(self):
@@ -80,7 +82,7 @@ class _TdsSession:
                 if self._tds.tds72_transaction:
                     self.rollback(cont=False)
             else:
-                self.begin_tran(isolation_level=self._env.isolation_level)
+                self.begin_tran()
             self._env.autocommit = value
 
     @property
@@ -266,14 +268,24 @@ class _TdsSession:
         self.log_response_message('got ERROR/INFO message')
         r = self._reader
         r.get_smallint()  # size
-        msg = {'marker': marker, 'msgno': r.get_int(), 'state': r.get_byte(), 'severity': r.get_byte(),
-               'sql_state': None}
+        msg: Message = {
+            'marker': marker,
+            'msgno': r.get_int(),
+            'state': r.get_byte(),
+            'severity': r.get_byte(),
+            'sql_state': None,
+            'priv_msg_type': 0,
+            'message': '',
+            'server': '',
+            'proc_name': '',
+            'line_number': 0,
+        }
         if marker == tds_base.TDS_INFO_TOKEN:
             msg['priv_msg_type'] = 0
         elif marker == tds_base.TDS_ERROR_TOKEN:
             msg['priv_msg_type'] = 1
         else:
-            logger.error('tds_process_msg() called with unknown marker "{0}"'.format(marker))
+            logger.error('tds_process_msg() called with unknown marker "%d"', marker)
         msg['message'] = r.read_ucs2(r.get_smallint())
         # server name
         msg['server'] = r.read_ucs2(r.get_byte())
@@ -553,7 +565,7 @@ class _TdsSession:
         return self.state
 
     @contextlib.contextmanager
-    def querying_context(self, packet_type: int) -> None:
+    def querying_context(self, packet_type: int) -> typing.Iterator[None]:
         """ Context manager for querying.
 
         Sets state to TDS_QUERYING, and reverts it to TDS_IDLE if exception happens inside managed block,
@@ -620,7 +632,7 @@ class _TdsSession:
         param = tds_base.Param(name=name, type=param_type, flags=param_flags, value=param_value)
         return param
 
-    def _convert_params(self, parameters: dict[str, Any] | list[Any]) -> List[tds_base.Param]:
+    def _convert_params(self, parameters: dict[str, Any] | typing.Iterable[Any]) -> List[tds_base.Param]:
         """ Converts a dict of list of parameters into a list of :class:`Column` instances.
 
         :param parameters: Can be a list of parameter values, or a dict of parameter names to values.
@@ -674,9 +686,11 @@ class _TdsSession:
                 w.put_smallint(rpc_name.proc_id)
             else:
                 if isinstance(rpc_name, tds_base.InternalProc):
-                    rpc_name = rpc_name.name
-                w.put_smallint(len(rpc_name))
-                w.write_ucs2(rpc_name)
+                    proc_name = rpc_name.name
+                else:
+                    proc_name = rpc_name
+                w.put_smallint(len(proc_name))
+                w.write_ucs2(proc_name)
             #
             # TODO support flags
             # bit 0 (1 as flag) in TDS7/TDS5 is "recompile"
@@ -708,16 +722,16 @@ class _TdsSession:
                 serializer.write(w, param.value)
 
     def _setup_row_factory(self) -> None:
-        self._row_convertor = None
+        self._row_convertor = list
         if self.res_info:
             column_names = [col[0] for col in self.res_info.description]
             self._row_convertor = self._row_strategy(column_names)
 
-    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | tuple[Any, ...]) -> list[Any]:
+    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | typing.Iterable[Any]) -> list[Any]:
         self._ensure_transaction()
         results = list(parameters)
-        parameters = self._convert_params(parameters)
-        self.submit_rpc(procname, parameters, 0)
+        conv_parameters = self._convert_params(parameters)
+        self.submit_rpc(procname, conv_parameters, 0)
         self.begin_response()
         self.process_rpc()
         for key, param in self.output_params.items():
@@ -849,7 +863,7 @@ class _TdsSession:
                 self._start_query()
             w.write_ucs2(operation)
 
-    def submit_bulk(self, metadata: list[tds_base.Column], rows: Iterable[tuple[Any]]) -> None:
+    def submit_bulk(self, metadata: list[tds_base.Column], rows: Iterable[collections.abc.Sequence[Any]]) -> None:
         """ Sends insert bulk command.
 
         Spec: http://msdn.microsoft.com/en-us/library/dd358082.aspx
@@ -904,7 +918,7 @@ class _TdsSession:
         logger.info('Sending CANCEL')
         self._writer.begin_packet(tds_base.PacketType.CANCEL)
         self._writer.flush()
-        self.in_cancel = 1
+        self.in_cancel = True
 
     _begin_tran_struct_72 = struct.Struct('<HBB')
 
@@ -1045,8 +1059,8 @@ class _TdsSession:
         from . import intversion
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or 'MSSQLServer'
-        instance_name = instance_name.encode('ascii')
-        if len(instance_name) > 65490:
+        instance_name_encoded = instance_name.encode('ascii')
+        if len(instance_name_encoded) > 65490:
             raise ValueError('Instance name is too long')
         if tds_base.IS_TDS72_PLUS(self):
             start_pos = 26
@@ -1057,11 +1071,11 @@ class _TdsSession:
                 # encryption
                 PreLoginToken.ENCRYPTION, start_pos + 6, 1,
                 # instance
-                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name_encoded) + 1,
                 # thread id
-                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name_encoded) + 1, 4,
                 # MARS enabled
-                PreLoginToken.MARS, start_pos + 6 + 1 + len(instance_name) + 1 + 4, 1,
+                PreLoginToken.MARS, start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4, 1,
                 # end
                 PreLoginToken.TERMINATOR
             )
@@ -1074,9 +1088,9 @@ class _TdsSession:
                 # encryption
                 PreLoginToken.ENCRYPTION, start_pos + 6, 1,
                 # instance
-                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name) + 1,
+                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name_encoded) + 1,
                 # thread id
-                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name) + 1, 4,
+                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name_encoded) + 1, 4,
                 # end
                 PreLoginToken.TERMINATOR
             )
@@ -1088,19 +1102,19 @@ class _TdsSession:
         w.put_usmallint_be(0)  # build number
         # encryption flag
         w.put_byte(login.enc_flag)
-        w.write(instance_name)
+        w.write(instance_name_encoded)
         w.put_byte(0)  # zero terminate instance_name
         w.put_int(0)  # TODO: change this to thread id
-        attribs = {
-            'lib_ver': '%x' % intversion,
-            'enc_flag': '%x' % login.enc_flag,
+        attribs: dict[str, str | int | bool] = {
+            'lib_ver': f'{intversion:x}',
+            'enc_flag': f'{login.enc_flag:x}',
             'inst_name': instance_name,
         }
         if tds_base.IS_TDS72_PLUS(self):
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
             attribs['mars'] = login.use_mars
-        logger.info('Sending PRELOGIN %s', ' '.join('%s=%s' % (n, v) for n, v in attribs.items()))
+        logger.info('Sending PRELOGIN %s', ' '.join(f'{n}={v!r}' for n, v in attribs.items()))
 
         w.flush()
 
@@ -1163,7 +1177,7 @@ class _TdsSession:
         login.server_enc_flag = crypt_flag
         if crypt_flag == PreLoginEnc.ENCRYPT_OFF:
             if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
-                raise self.bad_stream('Server returned unexpected ENCRYPT_ON value')
+                self.bad_stream('Server returned unexpected ENCRYPT_ON value')
             else:
                 # encrypt login packet only
                 tls.establish_channel(self)
@@ -1221,7 +1235,7 @@ class _TdsSession:
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
         else:
-            auth_packet = ''
+            auth_packet = b''
             packet_size += (len(user_name) + len(login.password)) * 2
         w.put_int(packet_size)
         w.put_uint(login.tds_version)
@@ -1378,7 +1392,8 @@ class _TdsSession:
     def process_token(self, marker: int) -> Any:
         handler = _token_map.get(marker)
         if not handler:
-            self.bad_stream('Invalid TDS marker: {0}({0:x})'.format(marker))
+            self.bad_stream(f'Invalid TDS marker: {marker}({marker:x})')
+            return
         return handler(self)
 
     def get_token_id(self) -> int:
@@ -1404,13 +1419,14 @@ class _TdsSession:
             else:
                 self.process_token(marker)
 
-    def next_set(self) -> bool:
+    def next_set(self) -> bool | None:
         while self.more_rows:
             self.next_row()
         if self.state == tds_base.TDS_IDLE:
             return False
         if self.find_result_or_done():
             return True
+        return None
 
     def fetchone(self) -> Any | None:
         row = self._fetchone()

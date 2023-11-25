@@ -1,7 +1,7 @@
 import logging
 
-from ctypes import c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER,\
-    Structure, c_wchar_p, WINFUNCTYPE, windll, byref, cast
+from ctypes import (c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER, # type: ignore # needs fixing
+    Structure, c_wchar_p, WINFUNCTYPE, windll, byref, cast) # type: ignore # needs fixing
 
 logger = logging.getLogger(__name__)
 
@@ -278,12 +278,18 @@ sec_fn = sec_fn.contents
 
 
 class _SecContext(object):
-    def close(self):
+    def __init__(self, cred: SspiCredentials) -> None:
+        self._cred = cred
+        self._handle = SecHandle()
+        self._ts = TimeStamp()
+        self._attrs = ULONG()
+
+    def close(self) -> None:
         if self._handle.lower and self._handle.upper:
             sec_fn.DeleteSecurityContext(self._handle)
             self._handle.lower = self._handle.upper = 0
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.close()
 
     def complete_auth_token(self, bufs):
@@ -360,11 +366,7 @@ class SspiCredentials(object):
             output_buffers=None):
         if self._handle is None:
             raise RuntimeError("Using closed SspiCredentials object")
-        ctx = _SecContext()
-        ctx._cred = self
-        ctx._handle = SecHandle()
-        ctx._ts = TimeStamp()
-        ctx._attrs = ULONG()
+        ctx = _SecContext(cred=self)
         input_buffers_desc = _make_buffers_desc(input_buffers) if input_buffers else None
         output_buffers_desc = _make_buffers_desc(output_buffers) if output_buffers else None
         logger.debug("Initializing security context")

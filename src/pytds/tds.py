@@ -43,8 +43,6 @@ class _TdsSocket(object):
         self.use_tz = use_tz
         self.tds_version = login.tds_version
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
-        self.type_inferrer = None
-        self.query_timeout = 0
         self._tzinfo_factory = tzinfo_factory
         self._smp_manager: SmpManager | None = None
         self._main_session = _TdsSession(
@@ -57,12 +55,20 @@ class _TdsSocket(object):
             # it may be updated later if server specifies different block size
             bufsize=4096,
         )
-        self._login: _TdsLogin | None = None
+        self._login = login
         self.route: Route | None = None
         self._row_strategy = row_strategy
         self.env.autocommit = autocommit
-        self._login = login
         self.query_timeout = login.query_timeout
+        self.type_inferrer = tds_types.TdsTypeInferrer(
+            type_factory=self.type_factory,
+            collation=self.collation,
+            bytes_to_unicode=self._login.bytes_to_unicode,
+            allow_tz=not self.use_tz
+        )
+        self.server_library_version = (0, 0)
+        self.product_name = ""
+        self.product_version = 0
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
@@ -123,6 +129,8 @@ class _TdsSocket(object):
         return self._main_session
 
     def create_session(self) -> _TdsSession:
+        if not self._smp_manager:
+            raise RuntimeError("Calling create_session on a non-MARS connection does not work")
         return _TdsSession(
             tds=self,
             transport=self._smp_manager.create_session(),
@@ -147,18 +155,19 @@ class _TdsSocket(object):
             self._main_session.authentication = None
 
     def close_all_mars_sessions(self) -> None:
-        self._smp_manager.close_all_sessions(keep=self.main_session._transport)
+        if self._smp_manager:
+            self._smp_manager.close_all_sessions(keep=self.main_session._transport)
 
 
-def _parse_instances(msg: bytes) -> dict[str, dict[str, str]]:
-    name = None
+def _parse_instances(msg: bytes) -> dict[str, dict[str, str]] | None:
+    name: str | None = None
     if len(msg) > 3 and tds_base.my_ord(msg[0]) == 5:
         tokens = msg[3:].decode('ascii').split(';')
-        results = {}
-        instdict = {}
+        results: dict[str, dict[str, str]] = {}
+        instdict: dict[str, str] = {}
         got_name = False
         for token in tokens:
-            if got_name:
+            if got_name and name:
                 instdict[name] = token
                 got_name = False
             else:
@@ -171,14 +180,14 @@ def _parse_instances(msg: bytes) -> dict[str, dict[str, str]]:
                     continue
                 got_name = True
         return results
-
+    return None
 
 #
 # Get port of all instances
 # @return default port number or 0 if error
 # @remark experimental, cf. MC-SQLR.pdf.
 #
-def tds7_get_instances(ip_addr: Any, timeout: float = 5) -> dict[str, dict[str, str]]:
+def tds7_get_instances(ip_addr: Any, timeout: float = 5) -> dict[str, dict[str, str]] | None:
     s = socket.socket(type=socket.SOCK_DGRAM)
     s.settimeout(timeout)
     try:

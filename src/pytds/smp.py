@@ -14,7 +14,7 @@ from typing_extensions import Buffer
 from . import tds_base
 
 try:
-    from bitarray import bitarray
+    from bitarray import bitarray  # type: ignore # fix typing later
 except ImportError:
     class BitArray(list):
         def __init__(self, size: int):
@@ -50,6 +50,7 @@ class _SmpSession(tds_base.TransportProtocol):
         self._state: int | None = None
         self._curr_buf_pos = 0
         self._curr_buf = b''
+        self._last_recv_seq_num = 0
 
     def __repr__(self):
         fmt = "<_SmpSession sid={} state={} recv_queue={} send_queue={} seq_num_for_send={}>"
@@ -62,7 +63,7 @@ class _SmpSession(tds_base.TransportProtocol):
     def close(self) -> None:
         self._mgr.close_smp_session(self)
 
-    def sendall(self, data: Buffer, flags: int = 0) -> None:
+    def sendall(self, data: bytearray, flags: int = 0) -> None:
         self._mgr.send_packet(self, data)
 
     def _recv_internal(self, size: int) -> Tuple[int, int]:
@@ -76,7 +77,7 @@ class _SmpSession(tds_base.TransportProtocol):
         self._curr_buf_pos += to_read
         return offset, to_read
 
-    def recv_into(self, buffer: bytes, size: int = 0, flags: int = 0) -> int:
+    def recv_into(self, buffer: bytearray, size: int = 0, flags: int = 0) -> int:
         if size == 0:
             size = len(buffer)
 
@@ -117,7 +118,7 @@ class SessionState:
     FIN_RECEIVED = 4
 
     @staticmethod
-    def to_str(st) -> str:
+    def to_str(st: int) -> str:
         if st == SessionState.SESSION_ESTABLISHED:
             return 'SESSION ESTABLISHED'
         elif st == SessionState.CLOSED:
@@ -126,6 +127,8 @@ class SessionState:
             return 'FIN SENT'
         elif st == SessionState.FIN_RECEIVED:
             return 'FIN RECEIVED'
+        else:
+            raise RuntimeError(f"invalid session state: {st}")
 
 
 class SmpManager:
@@ -243,7 +246,7 @@ class SmpManager:
                 session._last_high_water_for_recv = session.high_water_for_recv
             return session.recv_queue.pop(0)
 
-    def _bad_stm(self, message: _SmpSession) -> None:
+    def _bad_stm(self, message: str) -> None:
         self.close()
         raise Error(message)
 

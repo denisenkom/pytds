@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import socket
 from typing import Any
+import typing
 
 try:
-    import OpenSSL.SSL
-    import cryptography.hazmat.backends.openssl.backend
+    import OpenSSL.SSL # type: ignore # needs fixing
+    import cryptography.hazmat.backends.openssl.backend # type: ignore # needs fixing
 except ImportError:
     OPENSSL_AVAILABLE = False
 else:
@@ -18,6 +19,10 @@ BUFSIZE = 65536
 
 
 logger = logging.getLogger(__name__)
+
+
+if typing.TYPE_CHECKING:
+    from pytds.tds_session import _TdsSession
 
 
 class EncryptedSocket(socket.socket):
@@ -50,7 +55,7 @@ class EncryptedSocket(socket.socket):
  #               buf = self._tls_conn.bio_read(BUFSIZE)
  #               self._transport.sendall(buf)
 
-    def recv_into(self, buffer: bytes, size: int = 0, flags: int = 0) -> int:
+    def recv_into(self, buffer: bytearray, size: int = 0, flags: int = 0) -> int:
         if size == 0:
             size = len(buffer)
         res = self.recv(size)

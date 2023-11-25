@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import itertools
 import datetime
 import decimal
@@ -387,7 +389,7 @@ class BasePrimitiveTypeSerializer(BaseTypeSerializer):
     def read(self, r):
         raise NotImplementedError
 
-    instance = None
+    instance: BaseTypeSerializer | None = None
 
     @classmethod
     def from_stream(cls, r):
@@ -406,7 +408,7 @@ class BaseTypeSerializerN(BaseTypeSerializer):
     - type - class variable storing type identifier
     - subtypes - class variable storing dict {subtype_size: subtype_instance}
     """
-    subtypes = {}
+    subtypes: dict[int, BaseTypeSerializer] = {}
 
     def __init__(self, size):
         super(BaseTypeSerializerN, self).__init__(size=size)
@@ -505,12 +507,12 @@ class BitSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return bool(r.get_byte())
 
-BitSerializer.instance = BitSerializer()
+BitSerializer.instance = bit_serializer = BitSerializer()
 
 
 class BitNSerializer(BaseTypeSerializerN):
     type = tds_base.SYBBITN
-    subtypes = {1: BitSerializer.instance}
+    subtypes = {1: bit_serializer}
 
     def __init__(self, typ):
         super(BitNSerializer, self).__init__(size=1)
@@ -520,7 +522,7 @@ class BitNSerializer(BaseTypeSerializerN):
         return 'BitNSerializer({})'.format(self._typ)
 
 
-BitNSerializer.instance = BitNSerializer(BitType())
+#BitNSerializer.instance = BitNSerializer(BitType())
 
 
 class TinyIntSerializer(BasePrimitiveTypeSerializer):
@@ -533,7 +535,7 @@ class TinyIntSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return r.get_byte()
 
-TinyIntSerializer.instance = TinyIntSerializer()
+TinyIntSerializer.instance = tiny_int_serializer = TinyIntSerializer()
 
 
 class SmallIntSerializer(BasePrimitiveTypeSerializer):
@@ -546,7 +548,7 @@ class SmallIntSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return r.get_smallint()
 
-SmallIntSerializer.instance = SmallIntSerializer()
+SmallIntSerializer.instance = small_int_serializer = SmallIntSerializer()
 
 
 class IntSerializer(BasePrimitiveTypeSerializer):
@@ -559,7 +561,7 @@ class IntSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return r.get_int()
 
-IntSerializer.instance = IntSerializer()
+IntSerializer.instance = int_serializer = IntSerializer()
 
 
 class BigIntSerializer(BasePrimitiveTypeSerializer):
@@ -572,17 +574,17 @@ class BigIntSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return r.get_int8()
 
-BigIntSerializer.instance = BigIntSerializer()
+BigIntSerializer.instance = big_int_serializer = BigIntSerializer()
 
 
 class IntNSerializer(BaseTypeSerializerN):
     type = tds_base.SYBINTN
 
     subtypes = {
-        1: TinyIntSerializer.instance,
-        2: SmallIntSerializer.instance,
-        4: IntSerializer.instance,
-        8: BigIntSerializer.instance,
+        1: tiny_int_serializer,
+        2: small_int_serializer,
+        4: int_serializer,
+        8: big_int_serializer,
     }
 
     type_by_size = {
@@ -617,7 +619,7 @@ class RealSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return r.unpack(_flt4_struct)[0]
 
-RealSerializer.instance = RealSerializer()
+RealSerializer.instance = real_serializer = RealSerializer()
 
 
 class FloatSerializer(BasePrimitiveTypeSerializer):
@@ -630,15 +632,15 @@ class FloatSerializer(BasePrimitiveTypeSerializer):
     def read(self, r):
         return r.unpack(_flt8_struct)[0]
 
-FloatSerializer.instance = FloatSerializer()
+FloatSerializer.instance = float_serializer = FloatSerializer()
 
 
 class FloatNSerializer(BaseTypeSerializerN):
     type = tds_base.SYBFLTN
 
     subtypes = {
-        4: RealSerializer.instance,
-        8: FloatSerializer.instance,
+        4: real_serializer,
+        8: float_serializer,
     }
 
 
@@ -1372,7 +1374,7 @@ class SmallDateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerialize
             tzinfo = r._session.tzinfo_factory(0)
         return dt.to_pydatetime().replace(tzinfo=tzinfo)
 
-SmallDateTimeSerializer.instance = SmallDateTimeSerializer()
+SmallDateTimeSerializer.instance = small_date_time_serializer = SmallDateTimeSerializer()
 
 
 class DateTime(SqlValueMetaclass):
@@ -1444,14 +1446,14 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
         dt = DateTime(days=days, time_part=time_part)
         return dt.to_pydatetime()
 
-DateTimeSerializer.instance = DateTimeSerializer()
+DateTimeSerializer.instance = date_time_serializer = DateTimeSerializer()
 
 
 class DateTimeNSerializer(BaseTypeSerializerN, BaseDateTimeSerializer):
     type = tds_base.SYBDATETIMN
     subtypes = {
-        4: SmallDateTimeSerializer.instance,
-        8: DateTimeSerializer.instance,
+        4: small_date_time_serializer,
+        8: date_time_serializer,
     }
 
 
@@ -1950,7 +1952,7 @@ class Money4Serializer(BasePrimitiveTypeSerializer):
         val = int(val * 10000)
         w.put_int(val)
 
-Money4Serializer.instance = Money4Serializer()
+Money4Serializer.instance = money4_serializer = Money4Serializer()
 
 
 class Money8Serializer(BasePrimitiveTypeSerializer):
@@ -1970,22 +1972,22 @@ class Money8Serializer(BasePrimitiveTypeSerializer):
         lo = int(val % (2 ** 32))
         w.pack(self._struct, hi, lo)
 
-Money8Serializer.instance = Money8Serializer()
+Money8Serializer.instance = money8_serializer = Money8Serializer()
 
 
 class MoneyNSerializer(BaseTypeSerializerN):
     type = tds_base.SYBMONEYN
 
     subtypes = {
-        4: Money4Serializer.instance,
-        8: Money8Serializer.instance,
+        4: money4_serializer,
+        8: money8_serializer,
     }
 
 
 class MsUniqueSerializer(BaseTypeSerializer):
     type = tds_base.SYBUNIQUE
     declaration = 'UNIQUEIDENTIFIER'
-    instance = None
+    instance: MsUniqueSerializer
 
     def __repr__(self):
         return 'MsUniqueSerializer()'
@@ -2018,7 +2020,7 @@ class MsUniqueSerializer(BaseTypeSerializer):
         if size != 16:
             raise tds_base.InterfaceError('Invalid size of UNIQUEIDENTIFIER field')
         return self.read_fixed(r, size)
-MsUniqueSerializer.instance = MsUniqueSerializer()
+MsUniqueSerializer.instance = ms_unique_serializer = MsUniqueSerializer()
 
 
 def _variant_read_str(r, size):
@@ -2050,18 +2052,18 @@ class VariantSerializer(BaseTypeSerializer):
     decimal_info_struct = struct.Struct('BB')
 
     _type_map = {
-        tds_base.GUIDTYPE: lambda r, size: MsUniqueSerializer.instance.read_fixed(r, size),
-        tds_base.BITTYPE: lambda r, size: BitSerializer.instance.read(r),
-        tds_base.INT1TYPE: lambda r, size: TinyIntSerializer.instance.read(r),
-        tds_base.INT2TYPE: lambda r, size: SmallIntSerializer.instance.read(r),
-        tds_base.INT4TYPE: lambda r, size: IntSerializer.instance.read(r),
-        tds_base.INT8TYPE: lambda r, size: BigIntSerializer.instance.read(r),
-        tds_base.DATETIMETYPE: lambda r, size: DateTimeSerializer.instance.read(r),
-        tds_base.DATETIM4TYPE: lambda r, size: SmallDateTimeSerializer.instance.read(r),
-        tds_base.FLT4TYPE: lambda r, size: RealSerializer.instance.read(r),
-        tds_base.FLT8TYPE: lambda r, size: FloatSerializer.instance.read(r),
-        tds_base.MONEYTYPE: lambda r, size: Money8Serializer.instance.read(r),
-        tds_base.MONEY4TYPE: lambda r, size: Money4Serializer.instance.read(r),
+        tds_base.GUIDTYPE: lambda r, size: ms_unique_serializer.read_fixed(r, size),
+        tds_base.BITTYPE: lambda r, size: bit_serializer.read(r),
+        tds_base.INT1TYPE: lambda r, size: tiny_int_serializer.read(r),
+        tds_base.INT2TYPE: lambda r, size: small_int_serializer.read(r),
+        tds_base.INT4TYPE: lambda r, size: int_serializer.read(r),
+        tds_base.INT8TYPE: lambda r, size: big_int_serializer.read(r),
+        tds_base.DATETIMETYPE: lambda r, size: date_time_serializer.read(r),
+        tds_base.DATETIM4TYPE: lambda r, size: small_date_time_serializer.read(r),
+        tds_base.FLT4TYPE: lambda r, size: real_serializer.read(r),
+        tds_base.FLT8TYPE: lambda r, size: float_serializer.read(r),
+        tds_base.MONEYTYPE: lambda r, size: money8_serializer.read(r),
+        tds_base.MONEY4TYPE: lambda r, size: money4_serializer.read(r),
         tds_base.DATENTYPE: lambda r, size: MsDateSerializer(DateType()).read_fixed(r),
 
         tds_base.TIMENTYPE: lambda r, size: MsTimeSerializer(TimeType(precision=r.get_byte())).read_fixed(r, size),

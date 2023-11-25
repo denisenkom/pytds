@@ -4,7 +4,7 @@ import datetime
 from typing import Optional, Union, Tuple
 
 from pytds.tds_base import AuthProtocol
-from pytds.tds import _TdsSocket
+from pytds.tds import _TdsSocket, _TdsSession
 
 PoolKeyType = Tuple[
     Optional[str],

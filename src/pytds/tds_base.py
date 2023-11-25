@@ -12,6 +12,7 @@ import logging
 import socket
 import struct
 import sys
+import typing
 from collections import deque
 from typing import Protocol, Iterable, TypedDict, Tuple, Any
 
@@ -450,6 +451,17 @@ class DatabaseError(Error):
     """
     This error is raised when MSSQL server returns an error which includes error number
     """
+    def __init__(self, msg: str, exc: typing.Any | None=None):
+        super().__init__(msg, exc)
+        self.msg_no = 0
+        self.text = msg
+        self.srvname = ""
+        self.procname = ""
+        self.number = 0
+        self.severity = 0
+        self.state = 0
+        self.line = 0
+
     @property
     def message(self):
         if self.procname:
@@ -841,7 +853,7 @@ def tds7_crypt_pass(password: str) -> bytearray:
 
 
 class _TdsLogin:
-    def __init__(self):
+    def __init__(self) -> None:
         self.client_host_name = ""
         self.library = ""
         self.server_name = ""
@@ -868,13 +880,14 @@ class _TdsLogin:
         self.client_tz: datetime.tzinfo = pytds.tz.local
         self.option_flag2 = 0
         self.connect_timeout = 0.0
-        self.query_timeout = 0.0
+        self.query_timeout: float | None = None
         self.blocksize = 4096
         self.readonly = False
         self.load_balancer: LoadBalancer | None = None
         self.bytes_to_unicode = False
         self.auth: AuthProtocol | None = None
         self.servers: deque[Tuple[Any, int, str]] = deque()
+        self.server_enc_flag = 0
 
 
 class _TdsEnv:
@@ -893,6 +906,7 @@ def _create_exception_by_message(msg: Message, custom_error_msg: str | None = No
         error_msg = custom_error_msg
     else:
         error_msg = msg['message']
+    ex: ProgrammingError | IntegrityError | OperationalError
     if msg_no in prog_errors:
         ex = ProgrammingError(error_msg)
     elif msg_no in integrity_errors:
@@ -929,6 +943,7 @@ class Route(TypedDict):
 
 
 class _Results(object):
-    def __init__(self):
+    def __init__(self) -> None:
         self.columns: list[Column] = []
         self.row_count = 0
+        self.description: tuple[tuple[str, Any, None, int, int, int, int], ...] = ()
