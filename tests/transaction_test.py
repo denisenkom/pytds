@@ -96,31 +96,46 @@ def test_autocommit_off(separate_db_connection):
         cur.execute('insert into test_autocommit(field) values(1)')
         assert 1 == tran_count(cur)
         cur.execute('select field from test_autocommit')
-        row = cur.fetchone()
+        assert cur.fetchall() == [(1,)]
         assert cur2.execute("select * from test_autocommit").fetchall() == [], "should not see created row from another connection since it is not committed yet"
 
-        # But using read uncommitted level we should see changes from different connection
+        # Using read uncommitted level we should see changes from different connection
         conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_READ_UNCOMMITTED
         conn2.rollback()
         assert cur2.execute("select * from test_autocommit").fetchall() == [(1,)]
 
-        conn.rollback()
+        # Now commit transaction, after that changes should be visible from other connections
+        conn.commit()
         assert 1 == tran_count(cur)
-        cur.execute('select field from test_autocommit')
-        row = cur.fetchone()
-        assert not row
+
+        conn2.isolation_level = pytds.extensions.ISOLATION_LEVEL_SNAPSHOT
+        conn2.rollback()
+        assert cur2.execute("select * from test_autocommit").fetchall() == [(1,)]
+
+        # cleanup
+        cur.execute("delete from test_autocommit")
+        conn.commit()
 
 
 def test_autocommit_on(separate_db_connection):
     conn = separate_db_connection
     conn.autocommit = True
-    with conn.cursor() as cur:
+    # second connection is used to observe effects of transaction on first connection
+    conn2 = pytds.connect(**settings.CONNECT_KWARGS)
+    with conn.cursor() as cur, conn2.cursor() as cur2:
         # commit in autocommit mode should be a no-op
         conn.commit()
         # rollback in autocommit mode should be a no-op
         conn.rollback()
+        # cleanup table before test
+        cur.execute("delete from test_autocommit")
+        # insert test data
         cur.execute('insert into test_autocommit(field) values(1)')
         assert 0 == tran_count(cur)
+        # should see inserted record on other connection without calling commit on first connection
+        assert cur2.execute("select * from test_autocommit").fetchall() == [(1,)]
+        # cleanup table after test
+        cur.execute("delete from test_autocommit")
 
 
 def test_isolation_level(separate_db_connection):
