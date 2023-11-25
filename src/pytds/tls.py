@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import socket
 from typing import Any
 import typing
 
@@ -25,8 +24,8 @@ if typing.TYPE_CHECKING:
     from pytds.tds_session import _TdsSession
 
 
-class EncryptedSocket(socket.socket):
-    def __init__(self, transport: socket.socket, tls_conn: OpenSSL.SSL.Connection):
+class EncryptedSocket(tds_base.TransportProtocol):
+    def __init__(self, transport: tds_base.TransportProtocol, tls_conn: OpenSSL.SSL.Connection):
         super().__init__()
         self._transport = transport
         self._tls_conn = tls_conn
@@ -37,7 +36,7 @@ class EncryptedSocket(socket.socket):
     def settimeout(self, timeout: float | None) -> None:
         self._transport.settimeout(timeout)
 
-    def sendall(self, data: Any, flags: int = 0) -> int:
+    def sendall(self, data: Any, flags: int = 0) -> None:
         # TLS.Connection does not support bytearrays, need to convert to bytes first
         if isinstance(data, bytearray):
             data = bytes(data)
@@ -45,7 +44,6 @@ class EncryptedSocket(socket.socket):
         res = self._tls_conn.sendall(data)
         buf = self._tls_conn.bio_read(BUFSIZE)
         self._transport.sendall(buf)
-        return res
 
  #   def send(self, data):
  #       while True:
@@ -55,7 +53,7 @@ class EncryptedSocket(socket.socket):
  #               buf = self._tls_conn.bio_read(BUFSIZE)
  #               self._transport.sendall(buf)
 
-    def recv_into(self, buffer: bytearray, size: int = 0, flags: int = 0) -> int:
+    def recv_into(self, buffer: bytearray | memoryview, size: int = 0, flags: int = 0) -> int:
         if size == 0:
             size = len(buffer)
         res = self.recv(size)
@@ -84,8 +82,8 @@ class EncryptedSocket(socket.socket):
         self._tls_conn.shutdown()
         self._transport.close()
 
-    def shutdown(self, how: int = 0) -> bool:
-        return self._tls_conn.shutdown()
+    def shutdown(self, how: int = 0) -> None:
+        self._tls_conn.shutdown()
 
 
 def verify_cb(conn, cert, err_num, err_depth, ret_code: int) -> bool:
@@ -203,8 +201,9 @@ def revert_to_clear(tds_sock: _TdsSession) -> None:
     @return:
     """
     enc_conn = tds_sock.conn.sock
-    clear_conn = enc_conn._transport
-    enc_conn.shutdown()
-    tds_sock.conn.sock = clear_conn
-    tds_sock._writer._transport = clear_conn
-    tds_sock._reader._transport = clear_conn
+    if isinstance(enc_conn, EncryptedSocket):
+        clear_conn = enc_conn._transport
+        enc_conn.shutdown()
+        tds_sock.conn.sock = clear_conn
+        tds_sock._writer._transport = clear_conn
+        tds_sock._reader._transport = clear_conn

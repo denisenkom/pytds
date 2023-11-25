@@ -493,7 +493,7 @@ class _TdsSession:
         """
         :return: True if transport is connected
         """
-        return self._transport.is_connected()
+        return self._transport.is_connected() # type: ignore # needs fixing
 
     def bad_stream(self, msg) -> None:
         """ Called when input stream contains unexpected data.
@@ -1257,7 +1257,7 @@ class _TdsSession:
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
-        mins_fix = int(login.client_tz.utcoffset(datetime.datetime.now()).total_seconds()) // 60
+        mins_fix = int((login.client_tz.utcoffset(datetime.datetime.now()) or datetime.timedelta()).total_seconds()) // 60
         logger.info('Sending LOGIN tds_ver=%x bufsz=%d pid=%d opt1=%x opt2=%x opt3=%x cli_tz=%d cli_lcid=%s '
                     'cli_host=%s lang=%s db=%s',
                     login.tds_version, w.bufsize, login.pid, option_flag1, option_flag2, option_flag3, mins_fix,

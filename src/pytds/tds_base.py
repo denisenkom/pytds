@@ -757,9 +757,29 @@ class Column(CommonEqualityMixin):
 
 
 class TransportProtocol(Protocol):
-    def is_connected(self) -> bool:
+    """
+    This protocol mimics socket protocol
+    """
+    #def is_connected(self) -> bool:
+    #    ...
+
+    def close(self) -> None:
         ...
 
+    def gettimeout(self) -> float | None:
+        ...
+
+    def settimeout(self, timeout: float | None) -> None:
+        ...
+
+    def sendall(self, buf: bytes, flags: int = 0) -> None:
+        ...
+
+    def recv(self, size: int) -> bytes:
+        ...
+
+    def recv_into(self, buf: bytearray | memoryview, size: int = 0, flags: int = 0) -> int:
+        ...
 
 class LoadBalancer(Protocol):
     def choose(self) -> Iterable[str]:

@@ -63,7 +63,7 @@ class _SmpSession(tds_base.TransportProtocol):
     def close(self) -> None:
         self._mgr.close_smp_session(self)
 
-    def sendall(self, data: bytearray, flags: int = 0) -> None:
+    def sendall(self, data: bytes, flags: int = 0) -> None:
         self._mgr.send_packet(self, data)
 
     def _recv_internal(self, size: int) -> Tuple[int, int]:
@@ -77,7 +77,7 @@ class _SmpSession(tds_base.TransportProtocol):
         self._curr_buf_pos += to_read
         return offset, to_read
 
-    def recv_into(self, buffer: bytearray, size: int = 0, flags: int = 0) -> int:
+    def recv_into(self, buffer: bytearray | memoryview, size: int = 0, flags: int = 0) -> int:
         if size == 0:
             size = len(buffer)
 
@@ -85,12 +85,18 @@ class _SmpSession(tds_base.TransportProtocol):
         buffer[:to_read] = self._curr_buf[offset:offset + to_read]
         return to_read
 
-    #def recv(self, size):
-    #    offset, to_read = self._recv_internal(size)
-    #    return self._curr_buf[offset:offset + to_read]
+    def recv(self, size: int) -> bytes:
+        offset, to_read = self._recv_internal(size)
+        return self._curr_buf[offset:offset + to_read]
 
     def is_connected(self) -> bool:
         return self._state == SessionState.SESSION_ESTABLISHED
+
+    def gettimeout(self) -> float | None:
+        return self._mgr._transport.gettimeout()
+
+    def settimeout(self, timeout: float | None) -> None:
+        self._mgr._transport.settimeout(timeout)
 
 
 class PacketTypes:
