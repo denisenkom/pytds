@@ -84,7 +84,7 @@ class _TdsSocket(object):
         from . import tls
 
         self._login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
-        if tds_base.IS_TDS71_PLUS(self):
+        if tds_base.IS_TDS71_PLUS(self._main_session):
             self._main_session.send_prelogin(self._login)
             self._main_session.process_prelogin(self._login)
         self._main_session.tds7_send_login(self._login)
