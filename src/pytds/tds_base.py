@@ -11,12 +11,9 @@ import datetime
 import logging
 import socket
 import struct
-import sys
 import typing
 from collections import deque
 from typing import Protocol, Iterable, TypedDict, Tuple, Any
-
-from _socket import SocketType
 
 import pytds
 from pytds.collate import ucs2_codec
@@ -33,10 +30,25 @@ TDS73 = TDS73A
 TDS73B = 0x730B0003
 TDS74 = 0x74000004
 
-IS_TDS7_PLUS = lambda x: x.tds_version >= TDS70
-IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
-IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
-IS_TDS73_PLUS = lambda x: x.tds_version >= TDS73A
+
+if typing.TYPE_CHECKING:
+    from pytds.tds_session import _TdsSession
+
+
+def IS_TDS7_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS70
+
+
+def IS_TDS71_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS71
+
+
+def IS_TDS72_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS72
+
+
+def IS_TDS73_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS73A
 
 
 # https://msdn.microsoft.com/en-us/library/dd304214.aspx
@@ -410,29 +422,20 @@ integrity_errors = (
 )
 
 
-if sys.version_info[0] >= 3:
-    exc_base_class = Exception
+def my_ord(val):
+    return val
 
-    def my_ord(val):
-        return val
 
-    def join_bytearrays(ba):
-        return b"".join(ba)
-
-else:
-    exc_base_class = StandardError
-    my_ord = ord
-
-    def join_bytearrays(bas):
-        return b"".join(bytes(ba) for ba in bas)
+def join_bytearrays(ba):
+    return b"".join(ba)
 
 
 # exception hierarchy
-class Warning(exc_base_class):
+class Warning(Exception):
     pass
 
 
-class Error(exc_base_class):
+class Error(Exception):
     """
     Base class for all error classes, except TimeoutError
     """

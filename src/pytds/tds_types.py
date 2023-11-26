@@ -817,8 +817,8 @@ class NVarChar70Serializer(BaseTypeSerializer):
             if isinstance(val, bytes):
                 val = tds_base.force_unicode(val)
             buf, _ = ucs2_codec.encode(val)
-            l = len(buf)
-            w.put_usmallint(l)
+            length = len(buf)
+            w.put_usmallint(length)
             w.write(buf)
 
     def read(self, r):

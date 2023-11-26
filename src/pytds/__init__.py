@@ -19,44 +19,44 @@ from pytds.tds_types import NVarCharType, TzInfoFactoryType
 from . import lcid
 import pytds.tz
 from .connection_pool import connection_pool, PoolKeyType
-from .login import KerberosAuth, SspiAuth, AuthProtocol
-from .row_strategies import tuple_row_strategy, list_row_strategy, dict_row_strategy, namedtuple_row_strategy, recordtype_row_strategy, RowGenerator, RowStrategy
+from .login import KerberosAuth, SspiAuth, AuthProtocol # noqa: F401 # export for backward compatibility
+from .row_strategies import tuple_row_strategy, list_row_strategy, dict_row_strategy, namedtuple_row_strategy, recordtype_row_strategy, RowGenerator, RowStrategy # noqa: F401 # export for backward compatibility
 from .tds import _TdsSocket, tds7_get_instances, _TdsLogin
 from . import tds_base
 from .tds_base import (
-    Error,
-    LoginError,
-    DatabaseError,
-    ProgrammingError,
-    IntegrityError,
-    DataError,
-    InternalError,
-    InterfaceError,
-    TimeoutError,
-    OperationalError,
-    NotSupportedError,
-    Warning,
-    ClosedConnectionError,
-    Column,
-    PreLoginEnc,
+    Error,  # noqa: F401 # export for backward compatibility
+    LoginError,  # noqa: F401 # export for backward compatibility
+    DatabaseError,  # noqa: F401 # export for backward compatibility
+    ProgrammingError,  # noqa: F401 # export for backward compatibility
+    IntegrityError,  # noqa: F401 # export for backward compatibility
+    DataError,  # noqa: F401 # export for backward compatibility
+    InternalError,  # noqa: F401 # export for backward compatibility
+    InterfaceError,  # noqa: F401 # export for backward compatibility
+    TimeoutError,  # noqa: F401 # export for backward compatibility
+    OperationalError,  # noqa: F401 # export for backward compatibility
+    NotSupportedError,  # noqa: F401 # export for backward compatibility
+    Warning,  # noqa: F401 # export for backward compatibility
+    ClosedConnectionError,  # noqa: F401 # export for backward compatibility
+    Column,  # noqa: F401 # export for backward compatibility
+    PreLoginEnc,  # noqa: F401 # export for backward compatibility
     _create_exception_by_message,
 )
 from .tds_session import _TdsSession
 
-from .tds_types import TableValuedParam, Binary
+from .tds_types import TableValuedParam, Binary  # noqa: F401 # export for backward compatibility
 
 from .tds_base import (
-    ROWID,
-    DECIMAL,
-    STRING,
-    BINARY,
-    NUMBER,
-    DATETIME,
-    INTEGER,
-    REAL,
-    XML,
-    output,
-    default,
+    ROWID,  # noqa: F401 # export for backward compatibility
+    DECIMAL,  # noqa: F401 # export for backward compatibility
+    STRING,  # noqa: F401 # export for backward compatibility
+    BINARY,  # noqa: F401 # export for backward compatibility
+    NUMBER,  # noqa: F401 # export for backward compatibility
+    DATETIME,  # noqa: F401 # export for backward compatibility
+    INTEGER,  # noqa: F401 # export for backward compatibility
+    REAL,  # noqa: F401 # export for backward compatibility
+    XML,  # noqa: F401 # export for backward compatibility
+    output,  # noqa: F401 # export for backward compatibility
+    default,  # noqa: F401 # export for backward compatibility
 )
 
 
@@ -66,7 +66,7 @@ import pkg_resources  # type: ignore # fix later
 __author__ = "Mikhail Denisenko <denisenkom@gmail.com>"
 try:
     __version__ = pkg_resources.get_distribution("python-tds").version
-except:
+except Exception:
     __version__ = "DEV"
 
 from .tds_base import logger

@@ -6,7 +6,6 @@ import typing
 
 try:
     import OpenSSL.SSL  # type: ignore # needs fixing
-    import cryptography.hazmat.backends.openssl.backend  # type: ignore # needs fixing
 except ImportError:
     OPENSSL_AVAILABLE = False
 else:
@@ -43,7 +42,7 @@ class EncryptedSocket(tds_base.TransportProtocol):
         if isinstance(data, bytearray):
             data = bytes(data)
 
-        res = self._tls_conn.sendall(data)
+        self._tls_conn.sendall(data)
         buf = self._tls_conn.bio_read(BUFSIZE)
         self._transport.sendall(buf)
 
@@ -188,7 +187,7 @@ def establish_channel(tds_sock: _TdsSession) -> None:
                 w.write(req)
                 w.flush()
             logger.debug("receiving response from the server")
-            resp_header = r.begin_response()
+            r.begin_response()
             resp = r.read_whole_packet()
             # TODO validate r.packet_type
             logger.debug(

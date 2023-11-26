@@ -9,8 +9,6 @@ import socket
 import errno
 from typing import Dict, Tuple
 
-from typing_extensions import Buffer
-
 from . import tds_base
 
 try:
@@ -229,13 +227,13 @@ class SmpManager:
             ):
                 raise Error("Stream closed")
             if session.seq_num_for_send < session.high_water_for_send:
-                l = SMP_HEADER.size + len(data)
+                size = SMP_HEADER.size + len(data)
                 seq_num = self._add_one_wrap(session.seq_num_for_send)
                 hdr = SMP_HEADER.pack(
                     SMP_ID,
                     PacketTypes.DATA,
                     session.session_id,
-                    l,
+                    size,
                     seq_num,
                     session.high_water_for_recv,
                 )
@@ -282,7 +280,7 @@ class SmpManager:
             buf_pos += read
             if read == 0:
                 self._bad_stm("Unexpected EOF while reading SMP header")
-        smid, flags, sid, l, seq_num, wnd = SMP_HEADER.unpack(self._hdr_buf)
+        smid, flags, sid, length, seq_num, wnd = SMP_HEADER.unpack(self._hdr_buf)
         if smid != SMP_ID:
             self._bad_stm("Invalid SMP packet signature")
         try:
@@ -293,7 +291,7 @@ class SmpManager:
             self._bad_stm("Invalid WNDW in packet from server")
         if seq_num > session.high_water_for_recv:
             self._bad_stm("Invalid SEQNUM in packet from server")
-        if l < SMP_HEADER.size:
+        if length < SMP_HEADER.size:
             self._bad_stm("Invalid LENGTH in packet from server")
         session._last_recv_seq_num = seq_num
         if flags == PacketTypes.DATA:
@@ -301,7 +299,7 @@ class SmpManager:
                 if seq_num != self._add_one_wrap(session._seq_num_for_recv):
                     self._bad_stm("Invalid SEQNUM in DATA packet from server")
                 session._seq_num_for_recv = seq_num
-                remains = l - SMP_HEADER.size
+                remains = length - SMP_HEADER.size
                 while remains:
                     data = self._transport.recv(remains)
                     session.recv_queue.append(data)
@@ -311,7 +309,7 @@ class SmpManager:
                     self.send_queued_packets(session)
 
             elif session._state == SessionState.FIN_SENT:
-                skipall(self._transport, l - SMP_HEADER.size)
+                skipall(self._transport, length - SMP_HEADER.size)
             else:
                 self._bad_stm("Unexpected DATA packet from server")
         elif flags == PacketTypes.ACK:

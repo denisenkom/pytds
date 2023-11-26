@@ -33,9 +33,9 @@ class ConnectionPool:
         self._pool.setdefault(key, []).append(conn)
 
     def take(self, key: PoolKeyType) -> tuple[_TdsSocket, _TdsSession] | None:
-        l = self._pool.get(key, [])
-        if len(l) > 0:
-            return l.pop()
+        conns = self._pool.get(key, [])
+        if len(conns) > 0:
+            return conns.pop()
         else:
             return None
 

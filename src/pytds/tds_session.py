@@ -498,12 +498,12 @@ class _TdsSession:
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
         elif type_id == tds_base.TDS_ENV_UNICODE_DATA_SORT_COMP_FLAGS:
-            old_comp_flags = r.read_ucs2(r.get_byte())
+            r.read_ucs2(r.get_byte())
             comp_flags = r.read_ucs2(r.get_byte())
             self.conn.comp_flags = comp_flags
         elif type_id == 20:
             # routing
-            sz = r.get_usmallint()
+            r.get_usmallint()
             protocol = r.get_byte()
             protocol_property = r.get_usmallint()
             alt_server = r.read_ucs2(r.get_usmallint())
@@ -1292,14 +1292,14 @@ class _TdsSession:
                 break
             if i + 4 > size:
                 self.bad_stream("Invalid size of PRELOGIN structure")
-            off, l = off_len_struct.unpack_from(p, i + 1)
-            if off > size or off + l > size:
+            off, length = off_len_struct.unpack_from(p, i + 1)
+            if off > size or off + length > size:
                 self.bad_stream("Invalid offset in PRELOGIN structure")
             if type_id == PreLoginToken.VERSION:
                 self.conn.server_library_version = prod_version_struct.unpack_from(
                     p, off
                 )
-            elif type_id == PreLoginToken.ENCRYPTION and l >= 1:
+            elif type_id == PreLoginToken.ENCRYPTION and length >= 1:
                 (crypt_flag,) = byte_struct.unpack_from(p, off)
             elif type_id == PreLoginToken.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])

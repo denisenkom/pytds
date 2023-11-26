@@ -488,7 +488,7 @@ def make_winnt_identity(domain, user_name, password):
 def enum_security_packages():
     num = ULONG()
     infos = POINTER(SecPkgInfo)()
-    status = sec_fn.EnumerateSecurityPackages(byref(num), byref(infos))
+    sec_fn.EnumerateSecurityPackages(byref(num), byref(infos))
     try:
         return [
             {

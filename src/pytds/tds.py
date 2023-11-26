@@ -14,7 +14,10 @@ from .row_strategies import list_row_strategy
 from .smp import SmpManager
 
 # _token_map is needed by sqlalchemy_pytds connector
-from .tds_session import _token_map, _TdsSession
+from .tds_session import (
+    _token_map,  # noqa: F401 # _token_map is needed by sqlalchemy_pytds connector
+    _TdsSession
+)
 
 logger = logging.getLogger(__name__)
 
