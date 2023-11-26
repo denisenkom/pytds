@@ -1,18 +1,18 @@
 import logging
 
-from ctypes import (
+from ctypes import (  # type: ignore # needs fixing
     c_ulong,
     c_ushort,
     c_void_p,
     c_ulonglong,
-    POINTER,  # type: ignore # needs fixing
+    POINTER,
     Structure,
     c_wchar_p,
     WINFUNCTYPE,
     windll,
     byref,
     cast,
-)  # type: ignore # needs fixing
+)
 
 logger = logging.getLogger(__name__)
 
