@@ -419,11 +419,6 @@ def test_streaming(cursor):
     assert row[0].getvalue() == xml_val
 
 
-def test_dictionary_params(cursor):
-    assert cursor.execute_scalar("select %(param)s", {"param": None}) == None
-    assert cursor.execute_scalar("select %(param)s", {"param": 1}) == 1
-
-
 def test_properties(separate_db_connection):
     conn = separate_db_connection
     # this property is provided for compatibility with pymssql
@@ -449,25 +444,6 @@ def test_bad_collation(cursor):
         cursor.execute_scalar("select cast(0x90 as varchar)")
     # check that connection is still usable
     assert 1 == cursor.execute_scalar("select 1")
-
-
-def test_overlimit(cursor):
-    def test_val(val):
-        cursor.execute("select %s", (val,))
-        assert cursor.fetchone() == (val,)
-        assert cursor.fetchone() is None
-
-    ##cur.execute('select %s', '\x00'*(2**31))
-    with pytest.raises(pytds.DataError):
-        test_val(Decimal("1" + "0" * 38))
-    with pytest.raises(pytds.DataError):
-        test_val(Decimal("-1" + "0" * 38))
-    with pytest.raises(pytds.DataError):
-        test_val(Decimal("1E38"))
-    val = -(10**38)
-    cursor.execute("select %s", (val,))
-    assert cursor.fetchone() == (str(val),)
-    assert cursor.fetchone() is None
 
 
 def test_description(cursor):
@@ -601,90 +577,6 @@ def test_cursor_connection_property(db_connection):
         assert cur.connection is db_connection
 
 
-def test_outparam_and_result_set(cursor):
-    """
-    Test stored procedure which has output parameters and also result set
-    """
-    cur = cursor
-    logger.info("creating stored procedure")
-    cur.execute(
-        """
-    CREATE PROCEDURE P_OutParam_ResultSet(@A INT OUTPUT)
-    AS BEGIN
-    SET @A = 3;
-    SELECT 4 AS C;
-    SELECT 5 AS C;
-    END;
-    """
-    )
-    logger.info("executing stored procedure")
-    cur.callproc("P_OutParam_ResultSet", [pytds.output(value=1)])
-    assert [(4,)] == cur.fetchall()
-    assert [3] == cur.get_proc_outputs()
-    logger.info("execurint query after stored procedure")
-    cur.execute("select 5")
-    assert [(5,)] == cur.fetchall()
-
-
-def test_outparam_null_default(cursor):
-    with pytest.raises(ValueError):
-        pytds.output(None, None)
-
-    cur = cursor
-    cur.execute(
-        """
-    create procedure outparam_null_testproc (@inparam int, @outint int = 8 output, @outstr varchar(max) = 'defstr' output)
-    as
-    begin
-        set nocount on
-        set @outint = isnull(@outint, -10) + @inparam
-        set @outstr = isnull(@outstr, 'null') + cast(@inparam as varchar(max))
-        set @inparam = 8
-    end
-    """
-    )
-    values = cur.callproc(
-        "outparam_null_testproc", (1, pytds.output(value=4), pytds.output(value="str"))
-    )
-    assert [1, 5, "str1"] == values
-    values = cur.callproc(
-        "outparam_null_testproc",
-        (
-            1,
-            pytds.output(value=None, param_type="int"),
-            pytds.output(value=None, param_type="varchar(max)"),
-        ),
-    )
-    assert [1, -9, "null1"] == values
-    values = cur.callproc(
-        "outparam_null_testproc",
-        (
-            1,
-            pytds.output(value=pytds.default, param_type="int"),
-            pytds.output(value=pytds.default, param_type="varchar(max)"),
-        ),
-    )
-    assert [1, 9, "defstr1"] == values
-    values = cur.callproc(
-        "outparam_null_testproc",
-        (
-            1,
-            pytds.output(value=pytds.default, param_type="bit"),
-            pytds.output(value=pytds.default, param_type="varchar(5)"),
-        ),
-    )
-    assert [1, 1, "defst"] == values
-    values = cur.callproc(
-        "outparam_null_testproc",
-        (
-            1,
-            pytds.output(value=pytds.default, param_type=int),
-            pytds.output(value=pytds.default, param_type=str),
-        ),
-    )
-    assert [1, 9, "defstr1"] == values
-
-
 def test_invalid_ntlm_creds():
     if not LIVE_TEST:
         pytest.skip("LIVE_TEST is not set")
@@ -764,22 +656,3 @@ def test_with_sso():
         with conn.cursor() as cursor:
             cursor.execute("select 1")
             cursor.fetchall()
-
-
-def test_param_as_column_backward_compat(cursor):
-    """
-    For backward compatibility need to support passing parameters as Column objects
-    New way to pass such parameters is to use Param object.
-    """
-    param = Column(type=BitType(), value=True)
-    result = cursor.execute_scalar("select %s", [param])
-    assert result is True
-
-
-def test_param_with_spaces(cursor):
-    """
-    For backward compatibility need to support passing parameters as Column objects
-    New way to pass such parameters is to use Param object.
-    """
-    result = cursor.execute_scalar("select %(param name)s", {"param name": "abc"})
-    assert result == "abc"

@@ -871,7 +871,7 @@ class _TdsSession:
                     if val is None:
                         names.append("NULL")
                     else:
-                        name = "@P{0}".format(pid)
+                        name = f"@P{pid}"
                         names.append(name)
                         named_params[name] = val
                         pid += 1
@@ -880,21 +880,22 @@ class _TdsSession:
                 else:
                     operation = operation % tuple(names)
             elif isinstance(params, dict):
-                # prepend names with @
-                rename = {}
+                # rename parameters
+                rename: dict[str, Any] = {}
+                pid = 1
                 for name, value in params.items():
                     if value is None:
                         rename[name] = "NULL"
                     else:
-                        mssql_name = "@{0}".format(name.replace(" ", "_"))
+                        mssql_name = f"@P{pid}"
                         rename[name] = mssql_name
                         named_params[mssql_name] = value
+                        pid += 1
                 operation = operation % rename
             if named_params:
                 list_named_params = self._convert_params(named_params)
                 param_definition = ",".join(
-                    "{0} {1}".format(p.name, p.type.get_declaration())
-                    for p in list_named_params
+                    f"{p.name} {p.type.get_declaration()}" for p in list_named_params
                 )
                 self.submit_rpc(
                     tds_base.SP_EXECUTESQL,
