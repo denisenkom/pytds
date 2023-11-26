@@ -5,6 +5,7 @@ from ctypes import (c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER, # type: i
 
 logger = logging.getLogger(__name__)
 
+
 class Status(object):
     SEC_E_OK = 0
     SEC_I_CONTINUE_NEEDED = 0x00090312
@@ -278,7 +279,7 @@ sec_fn = sec_fn.contents
 
 
 class _SecContext(object):
-    def __init__(self, cred: SspiCredentials) -> None:
+    def __init__(self, cred: 'SspiCredentials') -> None:
         self._cred = cred
         self._handle = SecHandle()
         self._ts = TimeStamp()
