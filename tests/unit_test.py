@@ -594,20 +594,6 @@ class TestMessages(unittest.TestCase):
             b"\xfe\xff\xff\xff\xff\xff\xff\xff\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00",
         )
 
-    def test_get_instances(self):
-        data = b"\x05[\x00ServerName;MISHA-PC;InstanceName;SQLEXPRESS;IsClustered;No;Version;10.0.1600.22;tcp;49849;;"
-        ref = {
-            "SQLEXPRESS": {
-                "ServerName": "MISHA-PC",
-                "InstanceName": "SQLEXPRESS",
-                "IsClustered": "No",
-                "Version": "10.0.1600.22",
-                "tcp": "49849",
-            },
-        }
-        instances = pytds.tds._parse_instances_response(data)
-        self.assertDictEqual(ref, instances)
-
 
 def infer_tds_serializer(
     value, serializer_factory, collation=None, bytes_to_unicode=True, allow_tz=True

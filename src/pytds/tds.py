@@ -3,10 +3,6 @@ from __future__ import annotations
 import logging
 import datetime
 
-import socket
-
-from typing import Any
-
 from . import tds_base
 from . import tds_types
 from . import tls
@@ -172,43 +168,3 @@ class _TdsSocket:
     def close_all_mars_sessions(self) -> None:
         if self._smp_manager:
             self._smp_manager.close_all_sessions(keep=self.main_session._transport)
-
-
-def _parse_instances_response(msg: bytes) -> dict[str, dict[str, str]] | None:
-    name: str | None = None
-    if len(msg) > 3 and tds_base.my_ord(msg[0]) == 5:
-        tokens = msg[3:].decode("ascii").split(";")
-        results: dict[str, dict[str, str]] = {}
-        instdict: dict[str, str] = {}
-        got_name = False
-        for token in tokens:
-            if got_name and name:
-                instdict[name] = token
-                got_name = False
-            else:
-                name = token
-                if not name:
-                    if not instdict:
-                        break
-                    results[instdict["InstanceName"].upper()] = instdict
-                    instdict = {}
-                    continue
-                got_name = True
-        return results
-    return None
-
-
-def tds7_get_instances(
-    ip_addr: Any, timeout: float = 5
-) -> dict[str, dict[str, str]] | None:
-    """
-    Get MSSQL instances information from instance browser service endpoint.
-    Returns a dictionary keyed by instance name of dictionaries of instances information.
-    """
-    with socket.socket(type=socket.SOCK_DGRAM) as s:
-        s.settimeout(timeout)
-        # send the request
-        s.sendto(b"\x03", (ip_addr, 1434))
-        msg = s.recv(16 * 1024 - 1)
-        # got data, read and parse
-        return _parse_instances_response(msg)

@@ -25,7 +25,8 @@ from .row_strategies import (
     recordtype_row_strategy,  # noqa: F401 # export for backward compatibility
     RowStrategy,
 )
-from .tds import _TdsSocket, tds7_get_instances, _TdsLogin
+from .tds import _TdsSocket
+from . import instance_browser_client
 from . import tds_base
 from . import utils
 from . import login as pytds_login
@@ -85,29 +86,6 @@ threadsafety = 1
 
 #: This module uses extended python format codes
 paramstyle = "pyformat"
-
-
-def _resolve_instance_port(
-    server: Any, port: int | None, instance: str, timeout: float = 5
-) -> int:
-    if instance and not port:
-        logger.info("querying %s for list of instances", server)
-        instances = tds7_get_instances(server, timeout=timeout)
-        if not instances:
-            raise RuntimeError(
-                "Querying list of instances failed, returned value has invalid format"
-            )
-        if instance not in instances:
-            raise LoginError(
-                "Instance {0} not found on server {1}".format(instance, server)
-            )
-        instdict = instances[instance]
-        if "tcp" not in instdict:
-            raise LoginError(
-                "Instance {0} doen't have tcp connections enabled".format(instance)
-            )
-        port = int(instdict["tcp"])
-    return port or 1433
 
 
 # map to servers deques, used to store active/passive servers
@@ -229,7 +207,7 @@ def connect(
     """
     if use_sso and auth:
         raise ValueError("use_sso cannot be used with auth parameter defined")
-    login = _TdsLogin()
+    login = tds_base._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
     login.user_name = user or ""
@@ -427,7 +405,7 @@ def connect(
 
 
 def _connect(
-    login: _TdsLogin,
+    login: tds_base._TdsLogin,
     host: str,
     port: int | None,
     instance: str,
@@ -447,7 +425,7 @@ def _connect(
     try:
         login.server_name = host
         login.instance_name = instance
-        resolved_port = _resolve_instance_port(
+        resolved_port = instance_browser_client.resolve_instance_port(
             server=host, port=port, instance=instance, timeout=timeout
         )
         if not sock:

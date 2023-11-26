@@ -250,6 +250,7 @@ class MarsConnection(BaseConnection):
         results from the database.
         """
         from .cursor import _MarsCursor
+
         if not self._tds_socket:
             raise self._connection_closed_exception
         cursor = _MarsCursor(
@@ -290,6 +291,7 @@ class NonMarsConnection(BaseConnection):
         results from the database.
         """
         from .cursor import NonMarsCursor
+
         if not self._tds_socket:
             raise self._connection_closed_exception
         # Only one cursor can be active at any given time
