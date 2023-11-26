@@ -185,7 +185,7 @@ ACQUIRE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(
     PCredHandle,  # phCredential
     PTimeStamp    # ptsExpiry
     )
-FREE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(ret_val, POINTER(SecHandle))
+FREE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(ret_val, POINTER(SecHandle)) # type: ignore # needs fixing
 INITIALIZE_SECURITY_CONTEXT_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
     PCredHandle,
@@ -207,7 +207,7 @@ COMPLETE_AUTH_TOKEN_FN = WINFUNCTYPE(
     PSecBufferDesc,  # pToken
     )
 
-FREE_CONTEXT_BUFFER_FN = WINFUNCTYPE(ret_val, PVOID)
+FREE_CONTEXT_BUFFER_FN = WINFUNCTYPE(ret_val, PVOID) # type: ignore # needs fixing
 
 QUERY_CREDENTIAL_ATTRIBUTES_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
