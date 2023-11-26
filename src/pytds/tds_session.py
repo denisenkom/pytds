@@ -1712,6 +1712,28 @@ class _TdsSession:
             if marker == tds_base.TDS_RETURNSTATUS_TOKEN:
                 return
 
+    def process_tabname(self):
+        """
+        Processes TABNAME token
+
+        Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/140e3348-da08-409a-b6c3-f0fc9cee2d6e
+        """
+        r = self._reader
+        total_length = r.get_smallint()
+        if not tds_base.IS_TDS71_PLUS(self):
+            r.get_smallint()  # name length
+        tds_base.skipall(r, total_length)
+
+    def process_colinfo(self):
+        """
+        Process COLNAME token
+
+        Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/aa8466c5-ca3d-48ca-a638-7c1becebe754
+        """
+        r = self._reader
+        total_length = r.get_smallint()
+        tds_base.skipall(r, total_length)
+
 
 _token_map = {
     tds_base.TDS_AUTH_TOKEN: _TdsSession.process_auth,
@@ -1734,4 +1756,6 @@ _token_map = {
     tds_base.TDS_NBC_ROW_TOKEN: lambda self: self.process_nbcrow(),
     tds_base.TDS_ORDERBY_TOKEN: lambda self: self.process_orderby(),
     tds_base.TDS_RETURNSTATUS_TOKEN: lambda self: self.process_returnstatus(),
+    tds_base.TDS_TABNAME_TOKEN: lambda self: self.process_tabname(),
+    tds_base.TDS_COLINFO_TOKEN: lambda self: self.process_colinfo(),
 }
