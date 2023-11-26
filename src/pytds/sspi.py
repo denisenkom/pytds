@@ -169,12 +169,12 @@ def ret_val(value):
 
 
 ENUMERATE_SECURITY_PACKAGES_FN = WINFUNCTYPE(
-    ret_val,
+    ret_val,  # type: ignore # needs fixing
     POINTER(c_ulong),
     POINTER(POINTER(SecPkgInfo)))
 
 ACQUIRE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(
-    ret_val,
+    ret_val,  # type: ignore # needs fixing
     c_wchar_p,    # principal
     c_wchar_p,    # package
     ULONG,        # fCredentialUse
@@ -187,7 +187,7 @@ ACQUIRE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(
     )
 FREE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(ret_val, POINTER(SecHandle))
 INITIALIZE_SECURITY_CONTEXT_FN = WINFUNCTYPE(
-    ret_val,
+    ret_val,  # type: ignore # needs fixing
     PCredHandle,
     PCtxtHandle,     # phContext,
     c_wchar_p,       # pszTargetName,
@@ -202,7 +202,7 @@ INITIALIZE_SECURITY_CONTEXT_FN = WINFUNCTYPE(
     PTimeStamp,      # ptsExpiry
     )
 COMPLETE_AUTH_TOKEN_FN = WINFUNCTYPE(
-    ret_val,
+    ret_val,  # type: ignore # needs fixing
     PCtxtHandle,     # phContext
     PSecBufferDesc,  # pToken
     )
@@ -210,13 +210,13 @@ COMPLETE_AUTH_TOKEN_FN = WINFUNCTYPE(
 FREE_CONTEXT_BUFFER_FN = WINFUNCTYPE(ret_val, PVOID)
 
 QUERY_CREDENTIAL_ATTRIBUTES_FN = WINFUNCTYPE(
-    ret_val,
+    ret_val,  # type: ignore # needs fixing
     PCredHandle,    # cred
     ULONG,          # attribute
     PVOID,          # out buffer
     )
 ACCEPT_SECURITY_CONTEXT_FN = PVOID
-DELETE_SECURITY_CONTEXT_FN = WINFUNCTYPE(ret_val, PCtxtHandle)
+DELETE_SECURITY_CONTEXT_FN = WINFUNCTYPE(ret_val, PCtxtHandle)  # type: ignore # needs fixing
 APPLY_CONTROL_TOKEN_FN = PVOID
 QUERY_CONTEXT_ATTRIBUTES_FN = PVOID
 IMPERSONATE_SECURITY_CONTEXT_FN = PVOID
@@ -224,7 +224,7 @@ REVERT_SECURITY_CONTEXT_FN = PVOID
 MAKE_SIGNATURE_FN = PVOID
 VERIFY_SIGNATURE_FN = PVOID
 QUERY_SECURITY_PACKAGE_INFO_FN = WINFUNCTYPE(
-    ret_val,
+    ret_val,  # type: ignore # needs fixing
     c_wchar_p,  # package name
     POINTER(PSecPkgInfo),
     )
