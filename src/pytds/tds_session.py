@@ -11,8 +11,22 @@ from typing import Callable, Iterable, Any, List
 
 from pytds import tds_base, tds_types
 from pytds.collate import lcid2charset, raw_collation
-from pytds.tds_base import readall, skipall, PreLoginToken, PreLoginEnc, Message, logging_enabled, \
-    _create_exception_by_message, output, default, _TdsLogin, tds7_crypt_pass, logger, _Results, _TdsEnv
+from pytds.tds_base import (
+    readall,
+    skipall,
+    PreLoginToken,
+    PreLoginEnc,
+    Message,
+    logging_enabled,
+    _create_exception_by_message,
+    output,
+    default,
+    _TdsLogin,
+    tds7_crypt_pass,
+    logger,
+    _Results,
+    _TdsEnv,
+)
 from pytds.tds_reader import _TdsReader, ResponseMetadata
 from pytds.tds_writer import _TdsWriter
 from pytds.row_strategies import list_row_strategy, RowStrategy, RowGenerator
@@ -22,7 +36,7 @@ if typing.TYPE_CHECKING:
 
 
 class _TdsSession:
-    """ TDS session
+    """TDS session
 
     This class has the following responsibilities:
     * Track state of a single TDS session if MARS enabled there could be multiple TDS sessions
@@ -30,14 +44,15 @@ class _TdsSession:
     * Provides API to send requests and receive responses
     * Does serialization of requests and deserialization of responses
     """
+
     def __init__(
-            self,
-            tds: _TdsSocket,
-            transport: tds_base.TransportProtocol,
-            tzinfo_factory: tds_types.TzInfoFactoryType | None,
-            env: _TdsEnv,
-            bufsize: int,
-            row_strategy: RowStrategy = list_row_strategy,
+        self,
+        tds: _TdsSocket,
+        transport: tds_base.TransportProtocol,
+        tzinfo_factory: tds_types.TzInfoFactoryType | None,
+        env: _TdsEnv,
+        bufsize: int,
+        row_strategy: RowStrategy = list_row_strategy,
     ):
         self.out_pos = 8
         self.res_info: _Results | None = None
@@ -48,8 +63,12 @@ class _TdsSession:
         self.ret_status: int | None = None
         self.skipped_to_status = False
         self._transport = transport
-        self._reader = _TdsReader(transport=transport, bufsize=bufsize, tds_session=self)
-        self._writer = _TdsWriter(transport=transport, bufsize=bufsize, tds_session=self)
+        self._reader = _TdsReader(
+            transport=transport, bufsize=bufsize, tds_session=self
+        )
+        self._writer = _TdsWriter(
+            transport=transport, bufsize=bufsize, tds_session=self
+        )
         self.in_buf_max = 0
         self.state = tds_base.TDS_IDLE
         self._tds = tds
@@ -107,24 +126,35 @@ class _TdsSession:
         return self._row_strategy
 
     @row_strategy.setter
-    def row_strategy(self, value: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]]) -> None:
-        warnings.warn("Changing row_strategy on live connection is now deprecated, you should set it when creating new connection", DeprecationWarning)
+    def row_strategy(
+        self, value: Callable[[Iterable[str]], Callable[[Iterable[Any]], Any]]
+    ) -> None:
+        warnings.warn(
+            "Changing row_strategy on live connection is now deprecated, you should set it when creating new connection",
+            DeprecationWarning,
+        )
         self._row_strategy = value
 
     def log_response_message(self, msg):
         # logging is disabled by default
         if logging_enabled:
-            logger.info('[%d] %s', self._spid, msg)
+            logger.info("[%d] %s", self._spid, msg)
 
     def __repr__(self):
         fmt = "<_TdsSession state={} tds={} messages={} rows_affected={} use_tz={} spid={} in_cancel={}>"
-        res = fmt.format(repr(self.state), repr(self._tds), repr(self.messages),
-                         repr(self.rows_affected), repr(self.use_tz), repr(self._spid),
-                         self.in_cancel)
+        res = fmt.format(
+            repr(self.state),
+            repr(self._tds),
+            repr(self.messages),
+            repr(self.rows_affected),
+            repr(self.use_tz),
+            repr(self._spid),
+            self.in_cancel,
+        )
         return res
 
     def raise_db_exception(self) -> None:
-        """ Raises exception from last server message
+        """Raises exception from last server message
 
         This function will skip messages: The statement has been terminated
         """
@@ -133,17 +163,17 @@ class _TdsSession:
         msg = None
         while True:
             msg = self.messages[-1]
-            if msg['msgno'] == 3621:  # the statement has been terminated
+            if msg["msgno"] == 3621:  # the statement has been terminated
                 self.messages = self.messages[:-1]
             else:
                 break
 
-        error_msg = ' '.join(m['message'] for m in self.messages)
+        error_msg = " ".join(m["message"] for m in self.messages)
         ex = _create_exception_by_message(msg, error_msg)
         raise ex
 
     def get_type_info(self, curcol):
-        """ Reads TYPE_INFO structure (http://msdn.microsoft.com/en-us/library/dd358284.aspx)
+        """Reads TYPE_INFO structure (http://msdn.microsoft.com/en-us/library/dd358284.aspx)
 
         :param curcol: An instance of :class:`Column` that will receive read information
         """
@@ -160,12 +190,12 @@ class _TdsSession:
         curcol.serializer = serializer_class.from_stream(r)
 
     def tds7_process_result(self):
-        """ Reads and processes COLMETADATA stream
+        """Reads and processes COLMETADATA stream
 
         This stream contains a list of returned columns.
         Stream format link: http://msdn.microsoft.com/en-us/library/dd357363.aspx
         """
-        self.log_response_message('got COLMETADATA')
+        self.log_response_message("got COLMETADATA")
         r = self._reader
 
         # read number of columns and allocate the columns structure
@@ -201,24 +231,27 @@ class _TdsSession:
             scale = curcol.serializer.scale
             size = curcol.serializer.size
             header_tuple.append(
-                (curcol.column_name,
-                 curcol.serializer.get_typeid(),
-                 None,
-                 size,
-                 precision,
-                 scale,
-                 curcol.flags & tds_base.Column.fNullable))
+                (
+                    curcol.column_name,
+                    curcol.serializer.get_typeid(),
+                    None,
+                    size,
+                    precision,
+                    scale,
+                    curcol.flags & tds_base.Column.fNullable,
+                )
+            )
         info.description = tuple(header_tuple)
         self._setup_row_factory()
         return info
 
     def process_param(self):
-        """ Reads and processes RETURNVALUE stream.
+        """Reads and processes RETURNVALUE stream.
 
         This stream is used to send OUTPUT parameters from RPC to client.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd303881.aspx
         """
-        self.log_response_message('got RETURNVALUE message')
+        self.log_response_message("got RETURNVALUE message")
         r = self._reader
         if tds_base.IS_TDS72_PLUS(self):
             ordinal = r.get_usmallint()
@@ -242,7 +275,7 @@ class _TdsSession:
 
         In case when no cancel request is pending this function does nothing.
         """
-        self.log_response_message('got CANCEL message')
+        self.log_response_message("got CANCEL message")
         # silly cases, nothing to do
         if not self.in_cancel:
             return
@@ -256,7 +289,7 @@ class _TdsSession:
             self.begin_response()
 
     def process_msg(self, marker: int) -> None:
-        """ Reads and processes ERROR/INFO streams
+        """Reads and processes ERROR/INFO streams
 
         Stream formats:
 
@@ -265,40 +298,42 @@ class _TdsSession:
 
         :param marker: TDS_ERROR_TOKEN or TDS_INFO_TOKEN
         """
-        self.log_response_message('got ERROR/INFO message')
+        self.log_response_message("got ERROR/INFO message")
         r = self._reader
         r.get_smallint()  # size
         msg: Message = {
-            'marker': marker,
-            'msgno': r.get_int(),
-            'state': r.get_byte(),
-            'severity': r.get_byte(),
-            'sql_state': None,
-            'priv_msg_type': 0,
-            'message': '',
-            'server': '',
-            'proc_name': '',
-            'line_number': 0,
+            "marker": marker,
+            "msgno": r.get_int(),
+            "state": r.get_byte(),
+            "severity": r.get_byte(),
+            "sql_state": None,
+            "priv_msg_type": 0,
+            "message": "",
+            "server": "",
+            "proc_name": "",
+            "line_number": 0,
         }
         if marker == tds_base.TDS_INFO_TOKEN:
-            msg['priv_msg_type'] = 0
+            msg["priv_msg_type"] = 0
         elif marker == tds_base.TDS_ERROR_TOKEN:
-            msg['priv_msg_type'] = 1
+            msg["priv_msg_type"] = 1
         else:
             logger.error('tds_process_msg() called with unknown marker "%d"', marker)
-        msg['message'] = r.read_ucs2(r.get_smallint())
+        msg["message"] = r.read_ucs2(r.get_smallint())
         # server name
-        msg['server'] = r.read_ucs2(r.get_byte())
+        msg["server"] = r.read_ucs2(r.get_byte())
         # stored proc name if available
-        msg['proc_name'] = r.read_ucs2(r.get_byte())
-        msg['line_number'] = r.get_int() if tds_base.IS_TDS72_PLUS(self) else r.get_smallint()
+        msg["proc_name"] = r.read_ucs2(r.get_byte())
+        msg["line_number"] = (
+            r.get_int() if tds_base.IS_TDS72_PLUS(self) else r.get_smallint()
+        )
         # in case extended error data is sent, we just try to discard it
 
         # special case
         self.messages.append(msg)
 
     def process_row(self):
-        """ Reads and handles ROW stream.
+        """Reads and handles ROW stream.
 
         This stream contains list of values of one returned row.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd357254.aspx
@@ -311,7 +346,7 @@ class _TdsSession:
             curcol.value = self.row[i] = curcol.serializer.read(r)
 
     def process_nbcrow(self):
-        """ Reads and handles NBCROW stream.
+        """Reads and handles NBCROW stream.
 
         This stream contains list of values of one returned row in a compressed way,
         introduced in TDS 7.3.B
@@ -321,7 +356,7 @@ class _TdsSession:
         r = self._reader
         info = self.res_info
         if not info:
-            self.bad_stream('got row without info')
+            self.bad_stream("got row without info")
         assert len(info.columns) > 0
         info.row_count += 1
 
@@ -336,7 +371,7 @@ class _TdsSession:
             self.row[i] = value
 
     def process_orderby(self):
-        """ Reads and processes ORDER stream
+        """Reads and processes ORDER stream
 
         Used to inform client by which column dataset is ordered.
         Stream format url: http://msdn.microsoft.com/en-us/library/dd303317.aspx
@@ -345,7 +380,7 @@ class _TdsSession:
         skipall(r, r.get_smallint())
 
     def process_end(self, marker):
-        """ Reads and processes DONE/DONEINPROC/DONEPROC streams
+        """Reads and processes DONE/DONEINPROC/DONEPROC streams
 
         Stream format urls:
 
@@ -356,9 +391,9 @@ class _TdsSession:
         :param marker: Can be TDS_DONE_TOKEN or TDS_DONEINPROC_TOKEN or TDS_DONEPROC_TOKEN
         """
         code_to_str = {
-            tds_base.TDS_DONE_TOKEN: 'DONE',
-            tds_base.TDS_DONEINPROC_TOKEN: 'DONEINPROC',
-            tds_base.TDS_DONEPROC_TOKEN: 'DONEPROC',
+            tds_base.TDS_DONE_TOKEN: "DONE",
+            tds_base.TDS_DONEINPROC_TOKEN: "DONEINPROC",
+            tds_base.TDS_DONEPROC_TOKEN: "DONEPROC",
         }
         self.end_marker = marker
         self.more_rows = False
@@ -371,8 +406,11 @@ class _TdsSession:
         if self.res_info:
             self.res_info.more_results = more_results
         rows_affected = r.get_int8() if tds_base.IS_TDS72_PLUS(self) else r.get_int()
-        self.log_response_message("got {} message, more_res={}, cancelled={}, rows_affected={}".format(
-            code_to_str[marker], more_results, was_cancelled, rows_affected))
+        self.log_response_message(
+            "got {} message, more_res={}, cancelled={}, rows_affected={}".format(
+                code_to_str[marker], more_results, was_cancelled, rows_affected
+            )
+        )
         if was_cancelled or (not more_results and not self.in_cancel):
             self.in_cancel = False
             self.set_state(tds_base.TDS_IDLE)
@@ -381,7 +419,11 @@ class _TdsSession:
         else:
             self.rows_affected = -1
         self.done_flags = status
-        if self.done_flags & tds_base.TDS_DONE_ERROR and not was_cancelled and not self.in_cancel:
+        if (
+            self.done_flags & tds_base.TDS_DONE_ERROR
+            and not was_cancelled
+            and not self.in_cancel
+        ):
             self.raise_db_exception()
 
     def _ensure_transaction(self) -> None:
@@ -389,7 +431,7 @@ class _TdsSession:
             self.begin_tran()
 
     def process_env_chg(self):
-        """ Reads and processes ENVCHANGE stream.
+        """Reads and processes ENVCHANGE stream.
 
         Stream info url: http://msdn.microsoft.com/en-us/library/dd303449.aspx
         """
@@ -400,7 +442,7 @@ class _TdsSession:
         if type_id == tds_base.TDS_ENV_SQLCOLLATION:
             size = r.get_byte()
             self.conn.collation = r.get_collation()
-            logger.info('switched collation to %s', self.conn.collation)
+            logger.info("switched collation to %s", self.conn.collation)
             skipall(r, size - 5)
             # discard old one
             skipall(r, r.get_byte())
@@ -410,7 +452,10 @@ class _TdsSession:
             self.conn.tds72_transaction = r.get_uint8()
             # old val, should be 0
             skipall(r, r.get_byte())
-        elif type_id == tds_base.TDS_ENV_COMMITTRANS or type_id == tds_base.TDS_ENV_ROLLBACKTRANS:
+        elif (
+            type_id == tds_base.TDS_ENV_COMMITTRANS
+            or type_id == tds_base.TDS_ENV_ROLLBACKTRANS
+        ):
             self.conn.tds72_transaction = 0
             # new val, should be 0
             skipall(r, r.get_byte())
@@ -428,28 +473,28 @@ class _TdsSession:
                 self._writer.bufsize = new_block_size
         elif type_id == tds_base.TDS_ENV_DATABASE:
             newval = r.read_ucs2(r.get_byte())
-            logger.info('switched to database %s', newval)
+            logger.info("switched to database %s", newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.database = newval
         elif type_id == tds_base.TDS_ENV_LANG:
             newval = r.read_ucs2(r.get_byte())
-            logger.info('switched language to %s', newval)
+            logger.info("switched language to %s", newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.language = newval
         elif type_id == tds_base.TDS_ENV_CHARSET:
             newval = r.read_ucs2(r.get_byte())
-            logger.info('switched charset to %s', newval)
+            logger.info("switched charset to %s", newval)
             r.read_ucs2(r.get_byte())
             self.conn.env.charset = newval
-            remap = {'iso_1': 'iso8859-1'}
+            remap = {"iso_1": "iso8859-1"}
             self.conn.server_codec = codecs.lookup(remap.get(newval, newval))
         elif type_id == tds_base.TDS_ENV_DB_MIRRORING_PARTNER:
             newval = r.read_ucs2(r.get_byte())
-            logger.info('got mirroring partner %s', newval)
+            logger.info("got mirroring partner %s", newval)
             r.read_ucs2(r.get_byte())
         elif type_id == tds_base.TDS_ENV_LCID:
             lcid = int(r.read_ucs2(r.get_byte()))
-            logger.info('switched lcid to %s', lcid)
+            logger.info("switched lcid to %s", lcid)
             self.conn.server_codec = codecs.lookup(lcid2charset(lcid))
             r.read_ucs2(r.get_byte())
         elif type_id == tds_base.TDS_ENV_UNICODE_DATA_SORT_COMP_FLAGS:
@@ -462,10 +507,15 @@ class _TdsSession:
             protocol = r.get_byte()
             protocol_property = r.get_usmallint()
             alt_server = r.read_ucs2(r.get_usmallint())
-            logger.info('got routing info proto=%d proto_prop=%d alt_srv=%s', protocol, protocol_property, alt_server)
+            logger.info(
+                "got routing info proto=%d proto_prop=%d alt_srv=%s",
+                protocol,
+                protocol_property,
+                alt_server,
+            )
             self.conn.route = {
-                'server': alt_server,
-                'port': protocol_property,
+                "server": alt_server,
+                "port": protocol_property,
             }
             # OLDVALUE = 0x00, 0x00
             r.get_usmallint()
@@ -475,7 +525,7 @@ class _TdsSession:
             skipall(r, size - 1)
 
     def process_auth(self) -> None:
-        """ Reads and processes SSPI stream.
+        """Reads and processes SSPI stream.
 
         Stream info: http://msdn.microsoft.com/en-us/library/dd302844.aspx
         """
@@ -483,7 +533,7 @@ class _TdsSession:
         w = self._writer
         pdu_size = r.get_smallint()
         if not self.authentication:
-            raise tds_base.Error('Got unexpected token')
+            raise tds_base.Error("Got unexpected token")
         packet = self.authentication.handle_next(readall(r, pdu_size))
         if packet:
             w.write(packet)
@@ -493,10 +543,10 @@ class _TdsSession:
         """
         :return: True if transport is connected
         """
-        return self._transport.is_connected() # type: ignore # needs fixing
+        return self._transport.is_connected()  # type: ignore # needs fixing
 
     def bad_stream(self, msg) -> None:
-        """ Called when input stream contains unexpected data.
+        """Called when input stream contains unexpected data.
 
         Will close stream and raise :class:`InterfaceError`
         :param msg: Message for InterfaceError exception.
@@ -507,21 +557,19 @@ class _TdsSession:
 
     @property
     def tds_version(self) -> int:
-        """ Returns integer encoded current TDS protocol version
-        """
+        """Returns integer encoded current TDS protocol version"""
         return self._tds.tds_version
 
     @property
     def conn(self) -> _TdsSocket:
-        """ Reference to owning :class:`_TdsSocket`
-        """
+        """Reference to owning :class:`_TdsSocket`"""
         return self._tds
 
     def close(self) -> None:
         self._transport.close()
 
     def set_state(self, state: int) -> int:
-        """ Switches state of the TDS session.
+        """Switches state of the TDS session.
 
         It also does state transitions checks.
         :param state: New state, one of TDS_PENDING/TDS_READING/TDS_IDLE/TDS_DEAD/TDS_QUERING
@@ -533,29 +581,44 @@ class _TdsSession:
             if prior_state in (tds_base.TDS_READING, tds_base.TDS_QUERYING):
                 self.state = tds_base.TDS_PENDING
             else:
-                raise tds_base.InterfaceError('logic error: cannot chage query state from {0} to {1}'.
-                                              format(tds_base.state_names[prior_state], tds_base.state_names[state]))
+                raise tds_base.InterfaceError(
+                    "logic error: cannot chage query state from {0} to {1}".format(
+                        tds_base.state_names[prior_state], tds_base.state_names[state]
+                    )
+                )
         elif state == tds_base.TDS_READING:
             # transition to READING are valid only from PENDING
             if self.state != tds_base.TDS_PENDING:
-                raise tds_base.InterfaceError('logic error: cannot change query state from {0} to {1}'.
-                                              format(tds_base.state_names[prior_state], tds_base.state_names[state]))
+                raise tds_base.InterfaceError(
+                    "logic error: cannot change query state from {0} to {1}".format(
+                        tds_base.state_names[prior_state], tds_base.state_names[state]
+                    )
+                )
             else:
                 self.state = state
         elif state == tds_base.TDS_IDLE:
             if prior_state == tds_base.TDS_DEAD:
-                raise tds_base.InterfaceError('logic error: cannot change query state from {0} to {1}'.
-                                              format(tds_base.state_names[prior_state], tds_base.state_names[state]))
+                raise tds_base.InterfaceError(
+                    "logic error: cannot change query state from {0} to {1}".format(
+                        tds_base.state_names[prior_state], tds_base.state_names[state]
+                    )
+                )
             self.state = state
         elif state == tds_base.TDS_DEAD:
             self.state = state
         elif state == tds_base.TDS_QUERYING:
             if self.state == tds_base.TDS_DEAD:
-                raise tds_base.InterfaceError('logic error: cannot change query state from {0} to {1}'.
-                                              format(tds_base.state_names[prior_state], tds_base.state_names[state]))
+                raise tds_base.InterfaceError(
+                    "logic error: cannot change query state from {0} to {1}".format(
+                        tds_base.state_names[prior_state], tds_base.state_names[state]
+                    )
+                )
             elif self.state != tds_base.TDS_IDLE:
-                raise tds_base.InterfaceError('logic error: cannot change query state from {0} to {1}'.
-                                              format(tds_base.state_names[prior_state], tds_base.state_names[state]))
+                raise tds_base.InterfaceError(
+                    "logic error: cannot change query state from {0} to {1}".format(
+                        tds_base.state_names[prior_state], tds_base.state_names[state]
+                    )
+                )
             else:
                 self.rows_affected = tds_base.TDS_NO_COUNT
                 self.internal_sp_called = 0
@@ -566,7 +629,7 @@ class _TdsSession:
 
     @contextlib.contextmanager
     def querying_context(self, packet_type: int) -> typing.Iterator[None]:
-        """ Context manager for querying.
+        """Context manager for querying.
 
         Sets state to TDS_QUERYING, and reverts it to TDS_IDLE if exception happens inside managed block,
         and to TDS_PENDING if managed block succeeds and flushes buffer.
@@ -585,7 +648,7 @@ class _TdsSession:
             self._writer.flush()
 
     def make_param(self, name: str, value: Any) -> tds_base.Param:
-        """ Generates instance of :class:`Param` from value and name
+        """Generates instance of :class:`Param` from value and name
 
         Value can also be of a special types:
 
@@ -604,7 +667,10 @@ class _TdsSession:
             return value
 
         if isinstance(value, tds_base.Column):
-            warnings.warn("Usage of Column class as parameter is deprecated, use Param class instead", DeprecationWarning)
+            warnings.warn(
+                "Usage of Column class as parameter is deprecated, use Param class instead",
+                DeprecationWarning,
+            )
             return tds_base.Param(
                 name=name,
                 type=value.type,
@@ -629,26 +695,29 @@ class _TdsSession:
         param_value = value
         if param_type is None:
             param_type = self.conn.type_inferrer.from_value(value)
-        param = tds_base.Param(name=name, type=param_type, flags=param_flags, value=param_value)
+        param = tds_base.Param(
+            name=name, type=param_type, flags=param_flags, value=param_value
+        )
         return param
 
-    def _convert_params(self, parameters: dict[str, Any] | typing.Iterable[Any]) -> List[tds_base.Param]:
-        """ Converts a dict of list of parameters into a list of :class:`Column` instances.
+    def _convert_params(
+        self, parameters: dict[str, Any] | typing.Iterable[Any]
+    ) -> List[tds_base.Param]:
+        """Converts a dict of list of parameters into a list of :class:`Column` instances.
 
         :param parameters: Can be a list of parameter values, or a dict of parameter names to values.
         :return: A list of :class:`Column` instances.
         """
         if isinstance(parameters, dict):
-            return [self.make_param(name, value)
-                    for name, value in parameters.items()]
+            return [self.make_param(name, value) for name, value in parameters.items()]
         else:
             params = []
             for parameter in parameters:
-                params.append(self.make_param('', parameter))
+                params.append(self.make_param("", parameter))
             return params
 
     def cancel_if_pending(self) -> None:
-        """ Cancels current pending request.
+        """Cancels current pending request.
 
         Does nothing if no request is pending, otherwise sends cancel request,
         and waits for response.
@@ -659,8 +728,13 @@ class _TdsSession:
             self.put_cancel()
         self.process_cancel()
 
-    def submit_rpc(self, rpc_name: tds_base.InternalProc | str, params: List[tds_base.Param], flags: int = 0) -> None:
-        """ Sends an RPC request.
+    def submit_rpc(
+        self,
+        rpc_name: tds_base.InternalProc | str,
+        params: List[tds_base.Param],
+        flags: int = 0,
+    ) -> None:
+        """Sends an RPC request.
 
         This call will transition session into pending state.
         If some operation is currently pending on the session, it will be
@@ -672,7 +746,7 @@ class _TdsSession:
         :param params: Stored proc parameters, should be a list of :class:`Column` instances.
         :param flags: See spec for possible flags.
         """
-        logger.info('Sending RPC %s flags=%d', rpc_name, flags)
+        logger.info("Sending RPC %s flags=%d", rpc_name, flags)
         self.messages = []
         self.output_params = {}
         self.cancel_if_pending()
@@ -681,7 +755,9 @@ class _TdsSession:
         with self.querying_context(tds_base.PacketType.RPC):
             if tds_base.IS_TDS72_PLUS(self):
                 self._start_query()
-            if tds_base.IS_TDS71_PLUS(self) and isinstance(rpc_name, tds_base.InternalProc):
+            if tds_base.IS_TDS71_PLUS(self) and isinstance(
+                rpc_name, tds_base.InternalProc
+            ):
                 w.put_smallint(-1)
                 w.put_smallint(rpc_name.proc_id)
             else:
@@ -712,8 +788,7 @@ class _TdsSession:
 
                 # TYPE_INFO structure: https://msdn.microsoft.com/en-us/library/dd358284.aspx
                 serializer = self._tds.type_factory.serializer_by_type(
-                    sql_type=param.type,
-                    collation=self._tds.collation or raw_collation
+                    sql_type=param.type, collation=self._tds.collation or raw_collation
                 )
                 type_id = serializer.type
                 w.put_byte(type_id)
@@ -727,7 +802,11 @@ class _TdsSession:
             column_names = [col[0] for col in self.res_info.description]
             self._row_convertor = self._row_strategy(column_names)
 
-    def callproc(self, procname: tds_base.InternalProc | str, parameters: dict[str, Any] | typing.Iterable[Any]) -> list[Any]:
+    def callproc(
+        self,
+        procname: tds_base.InternalProc | str,
+        parameters: dict[str, Any] | typing.Iterable[Any],
+    ) -> list[Any]:
         self._ensure_transaction()
         results = list(parameters)
         conv_parameters = self._convert_params(parameters)
@@ -752,7 +831,7 @@ class _TdsSession:
         return results
 
     def get_proc_return_status(self) -> int | None:
-        """ Last executed stored procedure's return value
+        """Last executed stored procedure's return value
 
         Returns integer value returned by `RETURN` statement from last executed stored procedure.
         If no value was not returned or no stored procedure was executed return `None`.
@@ -761,7 +840,11 @@ class _TdsSession:
             self.find_return_status()
         return self.ret_status if self.has_status else None
 
-    def executemany(self, operation: str, params_seq: Iterable[list[Any] | tuple[Any, ...] | dict[str, Any]]) -> None:
+    def executemany(
+        self,
+        operation: str,
+        params_seq: Iterable[list[Any] | tuple[Any, ...] | dict[str, Any]],
+    ) -> None:
         """
         Execute same SQL query multiple times for each parameter set in the `params_seq` list.
         """
@@ -773,7 +856,11 @@ class _TdsSession:
         if counts:
             self.rows_affected = sum(counts)
 
-    def execute(self, operation: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None) -> None:
+    def execute(
+        self,
+        operation: str,
+        params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None,
+    ) -> None:
         self._ensure_transaction()
         if params:
             named_params = {}
@@ -782,9 +869,9 @@ class _TdsSession:
                 pid = 1
                 for val in params:
                     if val is None:
-                        names.append('NULL')
+                        names.append("NULL")
                     else:
-                        name = '@P{0}'.format(pid)
+                        name = "@P{0}".format(pid)
                         names.append(name)
                         named_params[name] = val
                         pid += 1
@@ -797,21 +884,27 @@ class _TdsSession:
                 rename = {}
                 for name, value in params.items():
                     if value is None:
-                        rename[name] = 'NULL'
+                        rename[name] = "NULL"
                     else:
-                        mssql_name = '@{0}'.format(name.replace(' ', '_'))
+                        mssql_name = "@{0}".format(name.replace(" ", "_"))
                         rename[name] = mssql_name
                         named_params[mssql_name] = value
                 operation = operation % rename
             if named_params:
                 list_named_params = self._convert_params(named_params)
-                param_definition = u','.join(
-                    u'{0} {1}'.format(p.name, p.type.get_declaration())
-                    for p in list_named_params)
+                param_definition = ",".join(
+                    "{0} {1}".format(p.name, p.type.get_declaration())
+                    for p in list_named_params
+                )
                 self.submit_rpc(
                     tds_base.SP_EXECUTESQL,
-                    [self.make_param('', operation), self.make_param('', param_definition)] + list_named_params,
-                    0)
+                    [
+                        self.make_param("", operation),
+                        self.make_param("", param_definition),
+                    ]
+                    + list_named_params,
+                    0,
+                )
             else:
                 self.submit_plain_query(operation)
         else:
@@ -819,7 +912,11 @@ class _TdsSession:
         self.begin_response()
         self.find_result_or_done()
 
-    def execute_scalar(self, query_string: str, params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None) -> Any:
+    def execute_scalar(
+        self,
+        query_string: str,
+        params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None,
+    ) -> Any:
         """
         This method executes SQL query then returns first column of first row or the
         result.
@@ -843,7 +940,7 @@ class _TdsSession:
         return row[0]
 
     def submit_plain_query(self, operation: str) -> None:
-        """ Sends a plain query to server.
+        """Sends a plain query to server.
 
         This call will transition session into pending state.
         If some operation is currently pending on the session, it will be
@@ -863,8 +960,12 @@ class _TdsSession:
                 self._start_query()
             w.write_ucs2(operation)
 
-    def submit_bulk(self, metadata: list[tds_base.Column], rows: Iterable[collections.abc.Sequence[Any]]) -> None:
-        """ Sends insert bulk command.
+    def submit_bulk(
+        self,
+        metadata: list[tds_base.Column],
+        rows: Iterable[collections.abc.Sequence[Any]],
+    ) -> None:
+        """Sends insert bulk command.
 
         Spec: http://msdn.microsoft.com/en-us/library/dd358082.aspx
 
@@ -872,7 +973,7 @@ class _TdsSession:
         :param rows: A collection of rows, each row is a collection of values.
         :return:
         """
-        logger.info('Sending INSERT BULK')
+        logger.info("Sending INSERT BULK")
         num_cols = len(metadata)
         w = self._writer
         serializers = []
@@ -911,19 +1012,19 @@ class _TdsSession:
                 w.put_int(0)
 
     def put_cancel(self) -> None:
-        """ Sends a cancel request to the server.
+        """Sends a cancel request to the server.
 
         Switches connection to IN_CANCEL state.
         """
-        logger.info('Sending CANCEL')
+        logger.info("Sending CANCEL")
         self._writer.begin_packet(tds_base.PacketType.CANCEL)
         self._writer.flush()
         self.in_cancel = True
 
-    _begin_tran_struct_72 = struct.Struct('<HBB')
+    _begin_tran_struct_72 = struct.Struct("<HBB")
 
     def begin_tran(self) -> None:
-        logger.info('Sending BEGIN TRAN il=%x', self._env.isolation_level)
+        logger.info("Sending BEGIN TRAN il=%x", self._env.isolation_level)
         self.submit_begin_tran(isolation_level=self._env.isolation_level)
         self.process_simple_request()
 
@@ -944,8 +1045,8 @@ class _TdsSession:
             self.submit_plain_query("BEGIN TRANSACTION")
             self.conn.tds72_transaction = 1
 
-    _commit_rollback_tran_struct72_hdr = struct.Struct('<HBB')
-    _continue_tran_struct72 = struct.Struct('<BB')
+    _commit_rollback_tran_struct72_hdr = struct.Struct("<HBB")
+    _continue_tran_struct72 = struct.Struct("<BB")
 
     def rollback(self, cont: bool) -> None:
         """
@@ -956,12 +1057,12 @@ class _TdsSession:
         if self._env.autocommit:
             return
 
-        #if not self._conn or not self._conn.is_connected():
+        # if not self._conn or not self._conn.is_connected():
         #    return
 
         if not self._tds.tds72_transaction:
             return
-        logger.info('Sending ROLLBACK TRAN')
+        logger.info("Sending ROLLBACK TRAN")
         self.submit_rollback(cont, isolation_level=self._env.isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
         self._tds.sock.settimeout(None)
@@ -999,7 +1100,10 @@ class _TdsSession:
                     )
         else:
             self.submit_plain_query(
-                "IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 ROLLBACK")
+                "IF @@TRANCOUNT > 0 ROLLBACK BEGIN TRANSACTION"
+                if cont
+                else "IF @@TRANCOUNT > 0 ROLLBACK"
+            )
             self.conn.tds72_transaction = 1 if cont else 0
 
     def commit(self, cont: bool) -> None:
@@ -1007,7 +1111,7 @@ class _TdsSession:
             return
         if not self._tds.tds72_transaction:
             return
-        logger.info('Sending COMMIT TRAN')
+        logger.info("Sending COMMIT TRAN")
         self.submit_commit(cont, isolation_level=self._env.isolation_level)
         prev_timeout = self._tds.sock.gettimeout()
         self._tds.sock.settimeout(None)
@@ -1040,59 +1144,82 @@ class _TdsSession:
                     )
         else:
             self.submit_plain_query(
-                "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION" if cont else "IF @@TRANCOUNT > 0 COMMIT")
+                "IF @@TRANCOUNT > 0 COMMIT BEGIN TRANSACTION"
+                if cont
+                else "IF @@TRANCOUNT > 0 COMMIT"
+            )
             self.conn.tds72_transaction = 1 if cont else 0
 
-    _tds72_query_start = struct.Struct('<IIHQI')
+    _tds72_query_start = struct.Struct("<IIHQI")
 
     def _start_query(self) -> None:
         w = self._writer
-        w.pack(_TdsSession._tds72_query_start,
-               0x16,  # total length
-               0x12,  # length
-               2,  # type
-               self.conn.tds72_transaction,
-               1,  # request count
-               )
+        w.pack(
+            _TdsSession._tds72_query_start,
+            0x16,  # total length
+            0x12,  # length
+            2,  # type
+            self.conn.tds72_transaction,
+            1,  # request count
+        )
 
     def send_prelogin(self, login: _TdsLogin) -> None:
         from . import intversion
+
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
-        instance_name = login.instance_name or 'MSSQLServer'
-        instance_name_encoded = instance_name.encode('ascii')
+        instance_name = login.instance_name or "MSSQLServer"
+        instance_name_encoded = instance_name.encode("ascii")
         if len(instance_name_encoded) > 65490:
-            raise ValueError('Instance name is too long')
+            raise ValueError("Instance name is too long")
         if tds_base.IS_TDS72_PLUS(self):
             start_pos = 26
             buf = struct.pack(
-                b'>BHHBHHBHHBHHBHHB',
+                b">BHHBHHBHHBHHBHHB",
                 # netlib version
-                PreLoginToken.VERSION, start_pos, 6,
+                PreLoginToken.VERSION,
+                start_pos,
+                6,
                 # encryption
-                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
+                PreLoginToken.ENCRYPTION,
+                start_pos + 6,
+                1,
                 # instance
-                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name_encoded) + 1,
+                PreLoginToken.INSTOPT,
+                start_pos + 6 + 1,
+                len(instance_name_encoded) + 1,
                 # thread id
-                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name_encoded) + 1, 4,
+                PreLoginToken.THREADID,
+                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                4,
                 # MARS enabled
-                PreLoginToken.MARS, start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4, 1,
+                PreLoginToken.MARS,
+                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
+                1,
                 # end
-                PreLoginToken.TERMINATOR
+                PreLoginToken.TERMINATOR,
             )
         else:
             start_pos = 21
             buf = struct.pack(
-                b'>BHHBHHBHHBHHB',
+                b">BHHBHHBHHBHHB",
                 # netlib version
-                PreLoginToken.VERSION, start_pos, 6,
+                PreLoginToken.VERSION,
+                start_pos,
+                6,
                 # encryption
-                PreLoginToken.ENCRYPTION, start_pos + 6, 1,
+                PreLoginToken.ENCRYPTION,
+                start_pos + 6,
+                1,
                 # instance
-                PreLoginToken.INSTOPT, start_pos + 6 + 1, len(instance_name_encoded) + 1,
+                PreLoginToken.INSTOPT,
+                start_pos + 6 + 1,
+                len(instance_name_encoded) + 1,
                 # thread id
-                PreLoginToken.THREADID, start_pos + 6 + 1 + len(instance_name_encoded) + 1, 4,
+                PreLoginToken.THREADID,
+                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                4,
                 # end
-                PreLoginToken.TERMINATOR
+                PreLoginToken.TERMINATOR,
             )
         assert start_pos == len(buf)
         w = self._writer
@@ -1106,20 +1233,22 @@ class _TdsSession:
         w.put_byte(0)  # zero terminate instance_name
         w.put_int(0)  # TODO: change this to thread id
         attribs: dict[str, str | int | bool] = {
-            'lib_ver': f'{intversion:x}',
-            'enc_flag': f'{login.enc_flag:x}',
-            'inst_name': instance_name,
+            "lib_ver": f"{intversion:x}",
+            "enc_flag": f"{login.enc_flag:x}",
+            "inst_name": instance_name,
         }
         if tds_base.IS_TDS72_PLUS(self):
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
-            attribs['mars'] = login.use_mars
-        logger.info('Sending PRELOGIN %s', ' '.join(f'{n}={v!r}' for n, v in attribs.items()))
+            attribs["mars"] = login.use_mars
+        logger.info(
+            "Sending PRELOGIN %s", " ".join(f"{n}={v!r}" for n, v in attribs.items())
+        )
 
         w.flush()
 
     def begin_response(self) -> ResponseMetadata:
-        """ Begins reading next response from server.
+        """Begins reading next response from server.
 
         If timeout happens during reading of first packet will
         send cancellation message.
@@ -1136,48 +1265,58 @@ class _TdsSession:
         p = self._reader.read_whole_packet()
         size = len(p)
         if size <= 0 or resp_header.type != tds_base.PacketType.REPLY:
-            self.bad_stream('Invalid packet type: {0}, expected PRELOGIN(4)'.format(self._reader.packet_type))
+            self.bad_stream(
+                "Invalid packet type: {0}, expected PRELOGIN(4)".format(
+                    self._reader.packet_type
+                )
+            )
         self.parse_prelogin(octets=p, login=login)
 
     def parse_prelogin(self, octets: bytes, login: _TdsLogin) -> None:
         from . import tls
+
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         size = len(octets)
         p = octets
         # default 2, no certificate, no encryptption
         crypt_flag = 2
         i = 0
-        byte_struct = struct.Struct('B')
-        off_len_struct = struct.Struct('>HH')
-        prod_version_struct = struct.Struct('>LH')
+        byte_struct = struct.Struct("B")
+        off_len_struct = struct.Struct(">HH")
+        prod_version_struct = struct.Struct(">LH")
         while True:
             if i >= size:
-                self.bad_stream('Invalid size of PRELOGIN structure')
-            type_id, = byte_struct.unpack_from(p, i)
+                self.bad_stream("Invalid size of PRELOGIN structure")
+            (type_id,) = byte_struct.unpack_from(p, i)
             if type_id == PreLoginToken.TERMINATOR:
                 break
             if i + 4 > size:
-                self.bad_stream('Invalid size of PRELOGIN structure')
+                self.bad_stream("Invalid size of PRELOGIN structure")
             off, l = off_len_struct.unpack_from(p, i + 1)
             if off > size or off + l > size:
-                self.bad_stream('Invalid offset in PRELOGIN structure')
+                self.bad_stream("Invalid offset in PRELOGIN structure")
             if type_id == PreLoginToken.VERSION:
-                self.conn.server_library_version = prod_version_struct.unpack_from(p, off)
+                self.conn.server_library_version = prod_version_struct.unpack_from(
+                    p, off
+                )
             elif type_id == PreLoginToken.ENCRYPTION and l >= 1:
-                crypt_flag, = byte_struct.unpack_from(p, off)
+                (crypt_flag,) = byte_struct.unpack_from(p, off)
             elif type_id == PreLoginToken.MARS:
                 self.conn._mars_enabled = bool(byte_struct.unpack_from(p, off)[0])
             elif type_id == PreLoginToken.INSTOPT:
                 # ignore instance name mismatch
                 pass
             i += 5
-        logger.info("Got PRELOGIN response crypt=%x mars=%d",
-                    crypt_flag, self.conn._mars_enabled)
+        logger.info(
+            "Got PRELOGIN response crypt=%x mars=%d",
+            crypt_flag,
+            self.conn._mars_enabled,
+        )
         # if server do not has certificate do normal login
         login.server_enc_flag = crypt_flag
         if crypt_flag == PreLoginEnc.ENCRYPT_OFF:
             if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
-                self.bad_stream('Server returned unexpected ENCRYPT_ON value')
+                self.bad_stream("Server returned unexpected ENCRYPT_ON value")
             else:
                 # encrypt login packet only
                 tls.establish_channel(self)
@@ -1187,64 +1326,85 @@ class _TdsSession:
         elif crypt_flag == PreLoginEnc.ENCRYPT_REQ:
             if login.enc_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
                 # connection terminated by server and client
-                raise tds_base.Error('Client does not have encryption enabled but it is required by server, '
-                                     'enable encryption and try connecting again')
+                raise tds_base.Error(
+                    "Client does not have encryption enabled but it is required by server, "
+                    "enable encryption and try connecting again"
+                )
             else:
                 # encrypt entire connection
                 tls.establish_channel(self)
         elif crypt_flag == PreLoginEnc.ENCRYPT_NOT_SUP:
             if login.enc_flag == PreLoginEnc.ENCRYPT_ON:
                 # connection terminated by server and client
-                raise tds_base.Error('You requested encryption but it is not supported by server')
+                raise tds_base.Error(
+                    "You requested encryption but it is not supported by server"
+                )
             # do not encrypt anything
         else:
-            self.bad_stream('Unexpected value of enc_flag returned by server: {}'.format(crypt_flag))
+            self.bad_stream(
+                "Unexpected value of enc_flag returned by server: {}".format(crypt_flag)
+            )
 
     def tds7_send_login(self, login: _TdsLogin) -> None:
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
         option_flag2 = login.option_flag2
         user_name = login.user_name
         if len(user_name) > 128:
-            raise ValueError('User name should be no longer that 128 characters')
+            raise ValueError("User name should be no longer that 128 characters")
         if len(login.password) > 128:
-            raise ValueError('Password should be not longer than 128 characters')
+            raise ValueError("Password should be not longer than 128 characters")
         if len(login.change_password) > 128:
-            raise ValueError('Password should be not longer than 128 characters')
+            raise ValueError("Password should be not longer than 128 characters")
         if len(login.client_host_name) > 128:
-            raise ValueError('Host name should be not longer than 128 characters')
+            raise ValueError("Host name should be not longer than 128 characters")
         if len(login.app_name) > 128:
-            raise ValueError('App name should be not longer than 128 characters')
+            raise ValueError("App name should be not longer than 128 characters")
         if len(login.server_name) > 128:
-            raise ValueError('Server name should be not longer than 128 characters')
+            raise ValueError("Server name should be not longer than 128 characters")
         if len(login.database) > 128:
-            raise ValueError('Database name should be not longer than 128 characters')
+            raise ValueError("Database name should be not longer than 128 characters")
         if len(login.language) > 128:
-            raise ValueError('Language should be not longer than 128 characters')
+            raise ValueError("Language should be not longer than 128 characters")
         if len(login.attach_db_file) > 260:
-            raise ValueError('File path should be not longer than 260 characters')
+            raise ValueError("File path should be not longer than 260 characters")
         w = self._writer
         w.begin_packet(tds_base.PacketType.LOGIN)
         self.authentication = None
         current_pos = 86 + 8 if tds_base.IS_TDS72_PLUS(self) else 86
         client_host_name = login.client_host_name
         login.client_host_name = client_host_name
-        packet_size = current_pos + (len(client_host_name) + len(login.app_name) + len(login.server_name) +
-                                     len(login.library) + len(login.language) + len(login.database)) * 2
+        packet_size = (
+            current_pos
+            + (
+                len(client_host_name)
+                + len(login.app_name)
+                + len(login.server_name)
+                + len(login.library)
+                + len(login.language)
+                + len(login.database)
+            )
+            * 2
+        )
         if login.auth:
             self.authentication = login.auth
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
         else:
-            auth_packet = b''
+            auth_packet = b""
             packet_size += (len(user_name) + len(login.password)) * 2
         w.put_int(packet_size)
         w.put_uint(login.tds_version)
         w.put_int(login.blocksize)
         from . import intversion
+
         w.put_uint(intversion)
         w.put_int(login.pid)
         w.put_uint(0)  # connection id
-        option_flag1 = tds_base.TDS_SET_LANG_ON | tds_base.TDS_USE_DB_NOTIFY | tds_base.TDS_INIT_DB_FATAL
+        option_flag1 = (
+            tds_base.TDS_SET_LANG_ON
+            | tds_base.TDS_USE_DB_NOTIFY
+            | tds_base.TDS_INIT_DB_FATAL
+        )
         if not login.bulk_copy:
             option_flag1 |= tds_base.TDS_DUMPLOAD_OFF
         w.put_byte(option_flag1)
@@ -1257,11 +1417,30 @@ class _TdsSession:
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
-        mins_fix = int((login.client_tz.utcoffset(datetime.datetime.now()) or datetime.timedelta()).total_seconds()) // 60
-        logger.info('Sending LOGIN tds_ver=%x bufsz=%d pid=%d opt1=%x opt2=%x opt3=%x cli_tz=%d cli_lcid=%s '
-                    'cli_host=%s lang=%s db=%s',
-                    login.tds_version, w.bufsize, login.pid, option_flag1, option_flag2, option_flag3, mins_fix,
-                    login.client_lcid, client_host_name, login.language, login.database)
+        mins_fix = (
+            int(
+                (
+                    login.client_tz.utcoffset(datetime.datetime.now())
+                    or datetime.timedelta()
+                ).total_seconds()
+            )
+            // 60
+        )
+        logger.info(
+            "Sending LOGIN tds_ver=%x bufsz=%d pid=%d opt1=%x opt2=%x opt3=%x cli_tz=%d cli_lcid=%s "
+            "cli_host=%s lang=%s db=%s",
+            login.tds_version,
+            w.bufsize,
+            login.pid,
+            option_flag1,
+            option_flag2,
+            option_flag3,
+            mins_fix,
+            login.client_lcid,
+            client_host_name,
+            login.language,
+            login.database,
+        )
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
         w.put_smallint(current_pos)
@@ -1302,7 +1481,7 @@ class _TdsSession:
         w.put_smallint(len(login.database))
         current_pos += len(login.database) * 2
         # ClientID
-        client_id = struct.pack('>Q', login.client_id)[2:]
+        client_id = struct.pack(">Q", login.client_id)[2:]
         w.write(client_id)
         # authentication
         w.put_smallint(current_pos)
@@ -1361,17 +1540,23 @@ class _TdsSession:
                 size = r.get_smallint()
                 r.get_byte()  # interface
                 version = r.get_uint_be()
-                self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(version, version)
+                self.conn.tds_version = self._SERVER_TO_CLIENT_MAPPING.get(
+                    version, version
+                )
                 if not tds_base.IS_TDS7_PLUS(self):
-                    self.bad_stream('Only TDS 7.0 and higher are supported')
+                    self.bad_stream("Only TDS 7.0 and higher are supported")
                 # get server product name
                 # ignore product name length, some servers seem to set it incorrectly
                 r.get_byte()
                 size -= 10
                 self.conn.product_name = r.read_ucs2(size // 2)
                 product_version = r.get_uint_be()
-                logger.info('Got LOGINACK tds_ver=%x srv_name=%s srv_ver=%x',
-                            self.conn.tds_version, self.conn.product_name, product_version)
+                logger.info(
+                    "Got LOGINACK tds_ver=%x srv_name=%s srv_ver=%x",
+                    self.conn.tds_version,
+                    self.conn.product_name,
+                    product_version,
+                )
                 # MSSQL 6.5 and 7.0 seem to return strange values for this
                 # using TDS 4.2, something like 5F 06 32 FF for 6.50
                 self.conn.product_version = product_version
@@ -1385,14 +1570,14 @@ class _TdsSession:
         return succeed
 
     def process_returnstatus(self) -> None:
-        self.log_response_message('got RETURNSTATUS message')
+        self.log_response_message("got RETURNSTATUS message")
         self.ret_status = self._reader.get_int()
         self.has_status = True
 
     def process_token(self, marker: int) -> Any:
         handler = _token_map.get(marker)
         if not handler:
-            self.bad_stream(f'Invalid TDS marker: {marker}({marker:x})')
+            self.bad_stream(f"Invalid TDS marker: {marker}({marker:x})")
             return
         return handler(self)
 
@@ -1412,7 +1597,11 @@ class _TdsSession:
         self.begin_response()
         while True:
             marker = self.get_token_id()
-            if marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN, tds_base.TDS_DONEINPROC_TOKEN):
+            if marker in (
+                tds_base.TDS_DONE_TOKEN,
+                tds_base.TDS_DONEPROC_TOKEN,
+                tds_base.TDS_DONEINPROC_TOKEN,
+            ):
                 self.process_end(marker)
                 if not self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
                     return
@@ -1437,10 +1626,14 @@ class _TdsSession:
 
     def _fetchone(self) -> list[Any] | None:
         if self.res_info is None:
-            raise tds_base.ProgrammingError("Previous statement didn't produce any results")
+            raise tds_base.ProgrammingError(
+                "Previous statement didn't produce any results"
+            )
 
         if self.skipped_to_status:
-            raise tds_base.ProgrammingError("Unable to fetch any rows after accessing return_status")
+            raise tds_base.ProgrammingError(
+                "Unable to fetch any rows after accessing return_status"
+            )
 
         if not self.next_row():
             return None
@@ -1455,7 +1648,11 @@ class _TdsSession:
             if marker in (tds_base.TDS_ROW_TOKEN, tds_base.TDS_NBC_ROW_TOKEN):
                 self.process_token(marker)
                 return True
-            elif marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN, tds_base.TDS_DONEINPROC_TOKEN):
+            elif marker in (
+                tds_base.TDS_DONE_TOKEN,
+                tds_base.TDS_DONEPROC_TOKEN,
+                tds_base.TDS_DONEINPROC_TOKEN,
+            ):
                 self.process_end(marker)
                 return False
             else:
@@ -1468,7 +1665,11 @@ class _TdsSession:
             if marker == tds_base.TDS7_RESULT_TOKEN:
                 self.process_token(marker)
                 return True
-            elif marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN, tds_base.TDS_DONEINPROC_TOKEN):
+            elif marker in (
+                tds_base.TDS_DONE_TOKEN,
+                tds_base.TDS_DONEPROC_TOKEN,
+                tds_base.TDS_DONEINPROC_TOKEN,
+            ):
                 self.process_end(marker)
                 if self.done_flags & tds_base.TDS_DONE_MORE_RESULTS:
                     if self.done_flags & tds_base.TDS_DONE_COUNT:
@@ -1488,7 +1689,10 @@ class _TdsSession:
                 return True
             elif marker in (tds_base.TDS_DONE_TOKEN, tds_base.TDS_DONEPROC_TOKEN):
                 self.process_end(marker)
-                if self.done_flags & tds_base.TDS_DONE_MORE_RESULTS and not self.done_flags & tds_base.TDS_DONE_COUNT:
+                if (
+                    self.done_flags & tds_base.TDS_DONE_MORE_RESULTS
+                    and not self.done_flags & tds_base.TDS_DONE_COUNT
+                ):
                     # skip results that don't event have rowcount
                     continue
                 return False
@@ -1513,11 +1717,17 @@ _token_map = {
     tds_base.TDS_AUTH_TOKEN: _TdsSession.process_auth,
     tds_base.TDS_ENVCHANGE_TOKEN: _TdsSession.process_env_chg,
     tds_base.TDS_DONE_TOKEN: lambda self: self.process_end(tds_base.TDS_DONE_TOKEN),
-    tds_base.TDS_DONEPROC_TOKEN: lambda self: self.process_end(tds_base.TDS_DONEPROC_TOKEN),
-    tds_base.TDS_DONEINPROC_TOKEN: lambda self: self.process_end(tds_base.TDS_DONEINPROC_TOKEN),
+    tds_base.TDS_DONEPROC_TOKEN: lambda self: self.process_end(
+        tds_base.TDS_DONEPROC_TOKEN
+    ),
+    tds_base.TDS_DONEINPROC_TOKEN: lambda self: self.process_end(
+        tds_base.TDS_DONEINPROC_TOKEN
+    ),
     tds_base.TDS_ERROR_TOKEN: lambda self: self.process_msg(tds_base.TDS_ERROR_TOKEN),
     tds_base.TDS_INFO_TOKEN: lambda self: self.process_msg(tds_base.TDS_INFO_TOKEN),
-    tds_base.TDS_CAPABILITY_TOKEN: lambda self: self.process_msg(tds_base.TDS_CAPABILITY_TOKEN),
+    tds_base.TDS_CAPABILITY_TOKEN: lambda self: self.process_msg(
+        tds_base.TDS_CAPABILITY_TOKEN
+    ),
     tds_base.TDS_PARAM_TOKEN: lambda self: self.process_param(),
     tds_base.TDS7_RESULT_TOKEN: lambda self: self.tds7_process_result(),
     tds_base.TDS_ROW_TOKEN: lambda self: self.process_row(),

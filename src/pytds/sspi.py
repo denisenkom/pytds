@@ -1,7 +1,18 @@
 import logging
 
-from ctypes import (c_ulong, c_ushort, c_void_p, c_ulonglong, POINTER, # type: ignore # needs fixing
-    Structure, c_wchar_p, WINFUNCTYPE, windll, byref, cast) # type: ignore # needs fixing
+from ctypes import (
+    c_ulong,
+    c_ushort,
+    c_void_p,
+    c_ulonglong,
+    POINTER,  # type: ignore # needs fixing
+    Structure,
+    c_wchar_p,
+    WINFUNCTYPE,
+    windll,
+    byref,
+    cast,
+)  # type: ignore # needs fixing
 
 logger = logging.getLogger(__name__)
 
@@ -31,28 +42,29 @@ class Status(object):
     @classmethod
     def getname(cls, value):
         for name in dir(cls):
-            if name.startswith('SEC_E_') and getattr(cls, name) == value:
+            if name.startswith("SEC_E_") and getattr(cls, name) == value:
                 return name
-        return 'unknown value {0:x}'.format(0x100000000 + value)
+        return "unknown value {0:x}".format(0x100000000 + value)
 
-#define SECBUFFER_EMPTY             0   // Undefined, replaced by provider
-#define SECBUFFER_DATA              1   // Packet data
+
+# define SECBUFFER_EMPTY             0   // Undefined, replaced by provider
+# define SECBUFFER_DATA              1   // Packet data
 SECBUFFER_TOKEN = 2
-#define SECBUFFER_PKG_PARAMS        3   // Package specific parameters
-#define SECBUFFER_MISSING           4   // Missing Data indicator
-#define SECBUFFER_EXTRA             5   // Extra data
-#define SECBUFFER_STREAM_TRAILER    6   // Security Trailer
-#define SECBUFFER_STREAM_HEADER     7   // Security Header
-#define SECBUFFER_NEGOTIATION_INFO  8   // Hints from the negotiation pkg
-#define SECBUFFER_PADDING           9   // non-data padding
-#define SECBUFFER_STREAM            10  // whole encrypted message
-#define SECBUFFER_MECHLIST          11
-#define SECBUFFER_MECHLIST_SIGNATURE 12
-#define SECBUFFER_TARGET            13  // obsolete
-#define SECBUFFER_CHANNEL_BINDINGS  14
-#define SECBUFFER_CHANGE_PASS_RESPONSE 15
-#define SECBUFFER_TARGET_HOST       16
-#define SECBUFFER_ALERT             17
+# define SECBUFFER_PKG_PARAMS        3   // Package specific parameters
+# define SECBUFFER_MISSING           4   // Missing Data indicator
+# define SECBUFFER_EXTRA             5   // Extra data
+# define SECBUFFER_STREAM_TRAILER    6   // Security Trailer
+# define SECBUFFER_STREAM_HEADER     7   // Security Header
+# define SECBUFFER_NEGOTIATION_INFO  8   // Hints from the negotiation pkg
+# define SECBUFFER_PADDING           9   // non-data padding
+# define SECBUFFER_STREAM            10  // whole encrypted message
+# define SECBUFFER_MECHLIST          11
+# define SECBUFFER_MECHLIST_SIGNATURE 12
+# define SECBUFFER_TARGET            13  // obsolete
+# define SECBUFFER_CHANNEL_BINDINGS  14
+# define SECBUFFER_CHANGE_PASS_RESPONSE 15
+# define SECBUFFER_TARGET_HOST       16
+# define SECBUFFER_ALERT             17
 
 SECPKG_CRED_INBOUND = 0x00000001
 SECPKG_CRED_OUTBOUND = 0x00000002
@@ -62,10 +74,10 @@ SECPKG_CRED_RESERVED = 0xF0000000
 
 SECBUFFER_VERSION = 0
 
-#define ISC_REQ_DELEGATE                0x00000001
-#define ISC_REQ_MUTUAL_AUTH             0x00000002
+# define ISC_REQ_DELEGATE                0x00000001
+# define ISC_REQ_MUTUAL_AUTH             0x00000002
 ISC_REQ_REPLAY_DETECT = 4
-#define ISC_REQ_SEQUENCE_DETECT         0x00000008
+# define ISC_REQ_SEQUENCE_DETECT         0x00000008
 ISC_REQ_CONFIDENTIALITY = 0x10
 ISC_REQ_USE_SESSION_KEY = 0x00000020
 ISC_REQ_PROMPT_FOR_CREDS = 0x00000040
@@ -74,22 +86,22 @@ ISC_REQ_ALLOCATE_MEMORY = 0x00000100
 ISC_REQ_USE_DCE_STYLE = 0x00000200
 ISC_REQ_DATAGRAM = 0x00000400
 ISC_REQ_CONNECTION = 0x00000800
-#define ISC_REQ_CALL_LEVEL              0x00001000
-#define ISC_REQ_FRAGMENT_SUPPLIED       0x00002000
-#define ISC_REQ_EXTENDED_ERROR          0x00004000
-#define ISC_REQ_STREAM                  0x00008000
-#define ISC_REQ_INTEGRITY               0x00010000
-#define ISC_REQ_IDENTIFY                0x00020000
-#define ISC_REQ_NULL_SESSION            0x00040000
-#define ISC_REQ_MANUAL_CRED_VALIDATION  0x00080000
-#define ISC_REQ_RESERVED1               0x00100000
-#define ISC_REQ_FRAGMENT_TO_FIT         0x00200000
-#// This exists only in Windows Vista and greater
-#define ISC_REQ_FORWARD_CREDENTIALS     0x00400000
-#define ISC_REQ_NO_INTEGRITY            0x00800000 // honored only by SPNEGO
-#define ISC_REQ_USE_HTTP_STYLE          0x01000000
-#define ISC_REQ_UNVERIFIED_TARGET_NAME  0x20000000
-#define ISC_REQ_CONFIDENTIALITY_ONLY    0x40000000 // honored by SPNEGO/Kerberos
+# define ISC_REQ_CALL_LEVEL              0x00001000
+# define ISC_REQ_FRAGMENT_SUPPLIED       0x00002000
+# define ISC_REQ_EXTENDED_ERROR          0x00004000
+# define ISC_REQ_STREAM                  0x00008000
+# define ISC_REQ_INTEGRITY               0x00010000
+# define ISC_REQ_IDENTIFY                0x00020000
+# define ISC_REQ_NULL_SESSION            0x00040000
+# define ISC_REQ_MANUAL_CRED_VALIDATION  0x00080000
+# define ISC_REQ_RESERVED1               0x00100000
+# define ISC_REQ_FRAGMENT_TO_FIT         0x00200000
+# // This exists only in Windows Vista and greater
+# define ISC_REQ_FORWARD_CREDENTIALS     0x00400000
+# define ISC_REQ_NO_INTEGRITY            0x00800000 // honored only by SPNEGO
+# define ISC_REQ_USE_HTTP_STYLE          0x01000000
+# define ISC_REQ_UNVERIFIED_TARGET_NAME  0x20000000
+# define ISC_REQ_CONFIDENTIALITY_ONLY    0x40000000 // honored by SPNEGO/Kerberos
 
 SECURITY_NETWORK_DREP = 0
 SECURITY_NATIVE_DREP = 0x10
@@ -107,9 +119,11 @@ PLUID = POINTER(c_ulonglong)
 
 class SecHandle(Structure):
     _fields_ = [
-        ('lower', c_void_p),
-        ('upper', c_void_p),
+        ("lower", c_void_p),
+        ("upper", c_void_p),
     ]
+
+
 PSecHandle = POINTER(SecHandle)
 CredHandle = SecHandle
 PCredHandle = PSecHandle
@@ -118,103 +132,110 @@ PCtxtHandle = PSecHandle
 
 class SecBuffer(Structure):
     _fields_ = [
-        ('cbBuffer', ULONG),
-        ('BufferType', ULONG),
-        ('pvBuffer', PVOID),
+        ("cbBuffer", ULONG),
+        ("BufferType", ULONG),
+        ("pvBuffer", PVOID),
     ]
+
+
 PSecBuffer = POINTER(SecBuffer)
 
 
 class SecBufferDesc(Structure):
     _fields_ = [
-        ('ulVersion', ULONG),
-        ('cBuffers', ULONG),
-        ('pBuffers', PSecBuffer),
+        ("ulVersion", ULONG),
+        ("cBuffers", ULONG),
+        ("pBuffers", PSecBuffer),
     ]
+
+
 PSecBufferDesc = POINTER(SecBufferDesc)
 
 
 class SEC_WINNT_AUTH_IDENTITY(Structure):
     _fields_ = [
-        ('User', c_wchar_p),
-        ('UserLength', c_ulong),
-        ('Domain', c_wchar_p),
-        ('DomainLength', c_ulong),
-        ('Password', c_wchar_p),
-        ('PasswordLength', c_ulong),
-        ('Flags', c_ulong),
-        ]
+        ("User", c_wchar_p),
+        ("UserLength", c_ulong),
+        ("Domain", c_wchar_p),
+        ("DomainLength", c_ulong),
+        ("Password", c_wchar_p),
+        ("PasswordLength", c_ulong),
+        ("Flags", c_ulong),
+    ]
 
 
 class SecPkgInfo(Structure):
     _fields_ = [
-        ('fCapabilities', ULONG),
-        ('wVersion', USHORT),
-        ('wRPCID', USHORT),
-        ('cbMaxToken', ULONG),
-        ('Name', c_wchar_p),
-        ('Comment', c_wchar_p),
+        ("fCapabilities", ULONG),
+        ("wVersion", USHORT),
+        ("wRPCID", USHORT),
+        ("cbMaxToken", ULONG),
+        ("Name", c_wchar_p),
+        ("Comment", c_wchar_p),
     ]
+
+
 PSecPkgInfo = POINTER(SecPkgInfo)
 
 
 class SecPkgCredentials_Names(Structure):
-    _fields_ = [('UserName', c_wchar_p)]
+    _fields_ = [("UserName", c_wchar_p)]
 
 
 def ret_val(value):
     if value < 0:
-        raise Exception('SSPI Error {0}'.format(Status.getname(value)))
+        raise Exception("SSPI Error {0}".format(Status.getname(value)))
     return value
 
 
 ENUMERATE_SECURITY_PACKAGES_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
     POINTER(c_ulong),
-    POINTER(POINTER(SecPkgInfo)))
+    POINTER(POINTER(SecPkgInfo)),
+)
 
 ACQUIRE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
-    c_wchar_p,    # principal
-    c_wchar_p,    # package
-    ULONG,        # fCredentialUse
-    PLUID,        # pvLogonID
-    PVOID,        # pAuthData
-    PVOID,        # pGetKeyFn
-    PVOID,        # pvGetKeyArgument
+    c_wchar_p,  # principal
+    c_wchar_p,  # package
+    ULONG,  # fCredentialUse
+    PLUID,  # pvLogonID
+    PVOID,  # pAuthData
+    PVOID,  # pGetKeyFn
+    PVOID,  # pvGetKeyArgument
     PCredHandle,  # phCredential
-    PTimeStamp    # ptsExpiry
-    )
-FREE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(ret_val, POINTER(SecHandle)) # type: ignore # needs fixing
+    PTimeStamp,  # ptsExpiry
+)
+FREE_CREDENTIALS_HANDLE_FN = WINFUNCTYPE(ret_val, POINTER(SecHandle))  # type: ignore # needs fixing
 INITIALIZE_SECURITY_CONTEXT_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
     PCredHandle,
-    PCtxtHandle,     # phContext,
-    c_wchar_p,       # pszTargetName,
-    ULONG,           # fContextReq,
-    ULONG,           # Reserved1,
-    ULONG,           # TargetDataRep,
+    PCtxtHandle,  # phContext,
+    c_wchar_p,  # pszTargetName,
+    ULONG,  # fContextReq,
+    ULONG,  # Reserved1,
+    ULONG,  # TargetDataRep,
     PSecBufferDesc,  # pInput,
-    ULONG,           # Reserved2,
-    PCtxtHandle,     # phNewContext,
+    ULONG,  # Reserved2,
+    PCtxtHandle,  # phNewContext,
     PSecBufferDesc,  # pOutput,
-    PULONG,          # pfContextAttr,
-    PTimeStamp,      # ptsExpiry
-    )
+    PULONG,  # pfContextAttr,
+    PTimeStamp,  # ptsExpiry
+)
 COMPLETE_AUTH_TOKEN_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
-    PCtxtHandle,     # phContext
+    PCtxtHandle,  # phContext
     PSecBufferDesc,  # pToken
-    )
+)
 
-FREE_CONTEXT_BUFFER_FN = WINFUNCTYPE(ret_val, PVOID) # type: ignore # needs fixing
+FREE_CONTEXT_BUFFER_FN = WINFUNCTYPE(ret_val, PVOID)  # type: ignore # needs fixing
 
 QUERY_CREDENTIAL_ATTRIBUTES_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
-    PCredHandle,    # cred
-    ULONG,          # attribute
-    PVOID,          # out buffer
-    )
+    PCredHandle,  # cred
+    ULONG,  # attribute
+    PVOID,  # out buffer
+)
 ACCEPT_SECURITY_CONTEXT_FN = PVOID
 DELETE_SECURITY_CONTEXT_FN = WINFUNCTYPE(ret_val, PCtxtHandle)  # type: ignore # needs fixing
 APPLY_CONTROL_TOKEN_FN = PVOID
@@ -227,7 +248,7 @@ QUERY_SECURITY_PACKAGE_INFO_FN = WINFUNCTYPE(
     ret_val,  # type: ignore # needs fixing
     c_wchar_p,  # package name
     POINTER(PSecPkgInfo),
-    )
+)
 EXPORT_SECURITY_CONTEXT_FN = PVOID
 IMPORT_SECURITY_CONTEXT_FN = PVOID
 ADD_CREDENTIALS_FN = PVOID
@@ -239,47 +260,50 @@ SET_CONTEXT_ATTRIBUTES_FN = PVOID
 
 class SECURITY_FUNCTION_TABLE(Structure):
     _fields_ = [
-        ('dwVersion', c_ulong),
-        ('EnumerateSecurityPackages', ENUMERATE_SECURITY_PACKAGES_FN),
-        ('QueryCredentialsAttributes', QUERY_CREDENTIAL_ATTRIBUTES_FN),
-        ('AcquireCredentialsHandle', ACQUIRE_CREDENTIALS_HANDLE_FN),
-        ('FreeCredentialsHandle', FREE_CREDENTIALS_HANDLE_FN),
-        ('Reserved2', c_void_p),
-        ('InitializeSecurityContext', INITIALIZE_SECURITY_CONTEXT_FN),
-        ('AcceptSecurityContext', ACCEPT_SECURITY_CONTEXT_FN),
-        ('CompleteAuthToken', COMPLETE_AUTH_TOKEN_FN),
-        ('DeleteSecurityContext', DELETE_SECURITY_CONTEXT_FN),
-        ('ApplyControlToken', APPLY_CONTROL_TOKEN_FN),
-        ('QueryContextAttributes', QUERY_CONTEXT_ATTRIBUTES_FN),
-        ('ImpersonateSecurityContext', IMPERSONATE_SECURITY_CONTEXT_FN),
-        ('RevertSecurityContext', REVERT_SECURITY_CONTEXT_FN),
-        ('MakeSignature', MAKE_SIGNATURE_FN),
-        ('VerifySignature', VERIFY_SIGNATURE_FN),
-        ('FreeContextBuffer', FREE_CONTEXT_BUFFER_FN),
-        ('QuerySecurityPackageInfo', QUERY_SECURITY_PACKAGE_INFO_FN),
-        ('Reserved3', c_void_p),
-        ('Reserved4', c_void_p),
-        ('ExportSecurityContext', EXPORT_SECURITY_CONTEXT_FN),
-        ('ImportSecurityContext', IMPORT_SECURITY_CONTEXT_FN),
-        ('AddCredentials', ADD_CREDENTIALS_FN),
-        ('Reserved8', c_void_p),
-        ('QuerySecurityContextToken', QUERY_SECURITY_CONTEXT_TOKEN_FN),
-        ('EncryptMessage', ENCRYPT_MESSAGE_FN),
-        ('DecryptMessage', DECRYPT_MESSAGE_FN),
-        ('SetContextAttributes', SET_CONTEXT_ATTRIBUTES_FN),
-        ]
+        ("dwVersion", c_ulong),
+        ("EnumerateSecurityPackages", ENUMERATE_SECURITY_PACKAGES_FN),
+        ("QueryCredentialsAttributes", QUERY_CREDENTIAL_ATTRIBUTES_FN),
+        ("AcquireCredentialsHandle", ACQUIRE_CREDENTIALS_HANDLE_FN),
+        ("FreeCredentialsHandle", FREE_CREDENTIALS_HANDLE_FN),
+        ("Reserved2", c_void_p),
+        ("InitializeSecurityContext", INITIALIZE_SECURITY_CONTEXT_FN),
+        ("AcceptSecurityContext", ACCEPT_SECURITY_CONTEXT_FN),
+        ("CompleteAuthToken", COMPLETE_AUTH_TOKEN_FN),
+        ("DeleteSecurityContext", DELETE_SECURITY_CONTEXT_FN),
+        ("ApplyControlToken", APPLY_CONTROL_TOKEN_FN),
+        ("QueryContextAttributes", QUERY_CONTEXT_ATTRIBUTES_FN),
+        ("ImpersonateSecurityContext", IMPERSONATE_SECURITY_CONTEXT_FN),
+        ("RevertSecurityContext", REVERT_SECURITY_CONTEXT_FN),
+        ("MakeSignature", MAKE_SIGNATURE_FN),
+        ("VerifySignature", VERIFY_SIGNATURE_FN),
+        ("FreeContextBuffer", FREE_CONTEXT_BUFFER_FN),
+        ("QuerySecurityPackageInfo", QUERY_SECURITY_PACKAGE_INFO_FN),
+        ("Reserved3", c_void_p),
+        ("Reserved4", c_void_p),
+        ("ExportSecurityContext", EXPORT_SECURITY_CONTEXT_FN),
+        ("ImportSecurityContext", IMPORT_SECURITY_CONTEXT_FN),
+        ("AddCredentials", ADD_CREDENTIALS_FN),
+        ("Reserved8", c_void_p),
+        ("QuerySecurityContextToken", QUERY_SECURITY_CONTEXT_TOKEN_FN),
+        ("EncryptMessage", ENCRYPT_MESSAGE_FN),
+        ("DecryptMessage", DECRYPT_MESSAGE_FN),
+        ("SetContextAttributes", SET_CONTEXT_ATTRIBUTES_FN),
+    ]
+
 
 _PInitSecurityInterface = WINFUNCTYPE(POINTER(SECURITY_FUNCTION_TABLE))
-InitSecurityInterface = _PInitSecurityInterface(('InitSecurityInterfaceW', windll.secur32))
+InitSecurityInterface = _PInitSecurityInterface(
+    ("InitSecurityInterfaceW", windll.secur32)
+)
 
 sec_fn = InitSecurityInterface()
 if not sec_fn:
-    raise Exception('InitSecurityInterface failed')
+    raise Exception("InitSecurityInterface failed")
 sec_fn = sec_fn.contents
 
 
 class _SecContext(object):
-    def __init__(self, cred: 'SspiCredentials') -> None:
+    def __init__(self, cred: "SspiCredentials") -> None:
         self._cred = cred
         self._handle = SecHandle()
         self._ts = TimeStamp()
@@ -294,34 +318,41 @@ class _SecContext(object):
         self.close()
 
     def complete_auth_token(self, bufs):
-        sec_fn.CompleteAuthToken(
-            byref(self._handle),
-            byref(_make_buffers_desc(bufs)))
+        sec_fn.CompleteAuthToken(byref(self._handle), byref(_make_buffers_desc(bufs)))
 
-    def next(self,
-             flags,
-             target_name=None,
-             byte_ordering='network',
-             input_buffers=None,
-             output_buffers=None):
-        input_buffers_desc = _make_buffers_desc(input_buffers) if input_buffers else None
-        output_buffers_desc = _make_buffers_desc(output_buffers) if output_buffers else None
+    def next(
+        self,
+        flags,
+        target_name=None,
+        byte_ordering="network",
+        input_buffers=None,
+        output_buffers=None,
+    ):
+        input_buffers_desc = (
+            _make_buffers_desc(input_buffers) if input_buffers else None
+        )
+        output_buffers_desc = (
+            _make_buffers_desc(output_buffers) if output_buffers else None
+        )
         status = sec_fn.InitializeSecurityContext(
             byref(self._cred._handle),
             byref(self._handle),
             target_name,
             flags,
             0,
-            SECURITY_NETWORK_DREP if byte_ordering == 'network' else SECURITY_NATIVE_DREP,
+            SECURITY_NETWORK_DREP
+            if byte_ordering == "network"
+            else SECURITY_NATIVE_DREP,
             byref(input_buffers_desc) if input_buffers_desc else None,
             0,
             byref(self._handle),
             byref(output_buffers_desc) if input_buffers_desc else None,
             byref(self._attrs),
-            byref(self._ts))
+            byref(self._ts),
+        )
         result_buffers = []
         for i, (type, buf) in enumerate(output_buffers):
-            buf = buf[:output_buffers_desc.pBuffers[i].cbBuffer]
+            buf = buf[: output_buffers_desc.pBuffers[i].cbBuffer]
             result_buffers.append((type, buf))
         return status, result_buffers
 
@@ -332,9 +363,16 @@ class SspiCredentials(object):
         self._ts = TimeStamp()
         logger.debug("Acquiring credentials handle")
         sec_fn.AcquireCredentialsHandle(
-            None, package, use,
-            None, byref(identity) if identity and identity.Domain else None,
-            None, None, byref(self._handle), byref(self._ts))
+            None,
+            package,
+            use,
+            None,
+            byref(identity) if identity and identity.Domain else None,
+            None,
+            None,
+            byref(self._handle),
+            byref(self._ts),
+        )
 
     def close(self):
         if self._handle and (self._handle.lower or self._handle.upper):
@@ -349,9 +387,8 @@ class SspiCredentials(object):
         names = SecPkgCredentials_Names()
         try:
             sec_fn.QueryCredentialsAttributes(
-                byref(self._handle),
-                SECPKG_CRED_ATTR_NAMES,
-                byref(names))
+                byref(self._handle), SECPKG_CRED_ATTR_NAMES, byref(names)
+            )
             user_name = str(names.UserName)
         finally:
             p = c_wchar_p.from_buffer(names, SecPkgCredentials_Names.UserName.offset)
@@ -359,17 +396,22 @@ class SspiCredentials(object):
         return user_name
 
     def create_context(
-            self,
-            flags: int,
-            target_name=None,
-            byte_ordering='network',
-            input_buffers=None,
-            output_buffers=None):
+        self,
+        flags: int,
+        target_name=None,
+        byte_ordering="network",
+        input_buffers=None,
+        output_buffers=None,
+    ):
         if self._handle is None:
             raise RuntimeError("Using closed SspiCredentials object")
         ctx = _SecContext(cred=self)
-        input_buffers_desc = _make_buffers_desc(input_buffers) if input_buffers else None
-        output_buffers_desc = _make_buffers_desc(output_buffers) if output_buffers else None
+        input_buffers_desc = (
+            _make_buffers_desc(input_buffers) if input_buffers else None
+        )
+        output_buffers_desc = (
+            _make_buffers_desc(output_buffers) if output_buffers else None
+        )
         logger.debug("Initializing security context")
         status = sec_fn.InitializeSecurityContext(
             byref(self._handle),
@@ -377,16 +419,19 @@ class SspiCredentials(object):
             target_name,
             flags,
             0,
-            SECURITY_NETWORK_DREP if byte_ordering == 'network' else SECURITY_NATIVE_DREP,
+            SECURITY_NETWORK_DREP
+            if byte_ordering == "network"
+            else SECURITY_NATIVE_DREP,
             byref(input_buffers_desc) if input_buffers_desc else None,
             0,
             byref(ctx._handle),
             byref(output_buffers_desc) if output_buffers_desc else None,
             byref(ctx._attrs),
-            byref(ctx._ts))
+            byref(ctx._ts),
+        )
         result_buffers = []
         for i, (type, buf) in enumerate(output_buffers):
-            buf = buf[:output_buffers_desc.pBuffers[i].cbBuffer]
+            buf = buf[: output_buffers_desc.pBuffers[i].cbBuffer]
             result_buffers.append((type, buf))
         return ctx, status, result_buffers
 
@@ -415,7 +460,8 @@ def make_winnt_identity(domain, user_name, password):
     identity.UserLength = len(user_name)
     return identity
 
-#class SspiSecBuffer(object):
+
+# class SspiSecBuffer(object):
 #    def __init__(self, type, buflen=4096):
 #        self._buf = create_string_buffer(int(buflen))
 #        self._desc = SecBuffer()
@@ -423,7 +469,7 @@ def make_winnt_identity(domain, user_name, password):
 #        self._desc.BufferType = type
 #        self._desc.pvBuffer = cast(self._buf, PVOID)
 #
-#class SspiSecBuffers(object):
+# class SspiSecBuffers(object):
 #    def __init__(self):
 #        self._desc = SecBufferDesc()
 #        self._desc.ulVersion = SECBUFFER_VERSION
@@ -444,12 +490,16 @@ def enum_security_packages():
     infos = POINTER(SecPkgInfo)()
     status = sec_fn.EnumerateSecurityPackages(byref(num), byref(infos))
     try:
-        return [{'caps': infos[i].fCapabilities,
-                 'version': infos[i].wVersion,
-                 'rpcid': infos[i].wRPCID,
-                 'max_token': infos[i].cbMaxToken,
-                 'name': infos[i].Name,
-                 'comment': infos[i].Comment,
-                 } for i in range(num.value)]
+        return [
+            {
+                "caps": infos[i].fCapabilities,
+                "version": infos[i].wVersion,
+                "rpcid": infos[i].wRPCID,
+                "max_token": infos[i].cbMaxToken,
+                "name": infos[i].Name,
+                "comment": infos[i].Comment,
+            }
+            for i in range(num.value)
+        ]
     finally:
         sec_fn.FreeContextBuffer(infos)

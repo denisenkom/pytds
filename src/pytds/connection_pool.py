@@ -20,7 +20,8 @@ PoolKeyType = Tuple[
     bool,
     Union[AuthProtocol, None],
     datetime.tzinfo,
-    bool]
+    bool,
+]
 
 
 class ConnectionPool:

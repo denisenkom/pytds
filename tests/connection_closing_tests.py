@@ -15,7 +15,7 @@ def get_spid(conn):
 
 def kill(conn, spid):
     with conn.cursor() as cur:
-        cur.execute('kill {0}'.format(spid))
+        cur.execute("kill {0}".format(spid))
 
 
 def test_cursor_use_after_connection_closing():
@@ -37,7 +37,7 @@ def test_cursor_use_after_connection_closing():
 def test_open_close():
     for x in range(3):
         kwargs = settings.CONNECT_KWARGS.copy()
-        kwargs['database'] = 'master'
+        kwargs["database"] = "master"
         pytds.connect(**kwargs).close()
 
 
@@ -46,13 +46,13 @@ def test_closing_after_closed_by_server():
     You should be able to call close on connection closed by server
     """
     kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs['database'] = 'master'
-    kwargs['autocommit'] = True
+    kwargs["database"] = "master"
+    kwargs["autocommit"] = True
     with pytds.connect(**kwargs) as master_conn:
-        kwargs['autocommit'] = False
+        kwargs["autocommit"] = False
         with pytds.connect(**kwargs) as conn:
             with conn.cursor() as cur:
-                cur.execute('select 1')
+                cur.execute("select 1")
                 conn.commit()
                 kill(master_conn, get_spid(conn))
                 sleep(0.2)

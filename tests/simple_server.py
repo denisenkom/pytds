@@ -10,9 +10,9 @@ import pytds.tds_reader
 import pytds.tds_writer
 import pytds.collate
 
-_BYTE_STRUCT = struct.Struct('B')
-_OFF_LEN_STRUCT = struct.Struct('>HH')
-_PROD_VER_STRUCT = struct.Struct('>LH')
+_BYTE_STRUCT = struct.Struct("B")
+_OFF_LEN_STRUCT = struct.Struct(">HH")
+_PROD_VER_STRUCT = struct.Struct(">LH")
 logger = logging.getLogger(__name__)
 
 
@@ -29,15 +29,15 @@ class TdsParser:
         while True:
             value = None
             if i >= size:
-                self.bad_stream('Invalid size of PRELOGIN structure')
-            type_id, = _BYTE_STRUCT.unpack_from(buf, i)
+                self.bad_stream("Invalid size of PRELOGIN structure")
+            (type_id,) = _BYTE_STRUCT.unpack_from(buf, i)
             if type_id == pytds.tds_base.PreLoginToken.TERMINATOR:
                 break
             if i + 4 > size:
-                self.bad_stream('Invalid size of PRELOGIN structure')
+                self.bad_stream("Invalid size of PRELOGIN structure")
             off, l = _OFF_LEN_STRUCT.unpack_from(buf, i + 1)
             if off > size or off + l > size:
-                self.bad_stream('Invalid offset in PRELOGIN structure')
+                self.bad_stream("Invalid offset in PRELOGIN structure")
             if type_id == pytds.tds_base.PreLoginToken.VERSION:
                 value = _PROD_VER_STRUCT.unpack_from(buf, off)
             elif type_id == pytds.tds_base.PreLoginToken.ENCRYPTION:
@@ -45,7 +45,7 @@ class TdsParser:
             elif type_id == pytds.tds_base.PreLoginToken.MARS:
                 value = bool(_BYTE_STRUCT.unpack_from(buf, off)[0])
             elif type_id == pytds.tds_base.PreLoginToken.INSTOPT:
-                value = buf[off:off+l].decode('ascii')
+                value = buf[off : off + l].decode("ascii")
             i += 5
             result[type_id] = value
         return result
@@ -65,9 +65,11 @@ class TdsGenerator:
             elif type_id == pytds.tds_base.PreLoginToken.MARS:
                 packed = [1 if value else 0]
             elif type_id == pytds.tds_base.PreLoginToken.INSTOPT:
-                packed = value.encode('ascii')
+                packed = value.encode("ascii")
             else:
-                raise Exception(f"not implemented prelogin option {type_id} in prelogin message generator")
+                raise Exception(
+                    f"not implemented prelogin option {type_id} in prelogin message generator"
+                )
 
             data_size = len(packed)
 
@@ -83,7 +85,7 @@ class TdsGenerator:
         return buf
 
 
-class Sock():
+class Sock:
     # wraps request in class compatible with TdsSocket
     def __init__(self, req):
         self._req = req
@@ -108,13 +110,16 @@ class RequestHandler(socketserver.StreamRequestHandler):
         self._transport = Sock(self.request)
 
         r = pytds.tds_reader._TdsReader(tds_session=self, transport=self._transport)
-        w = pytds.tds_writer._TdsWriter(tds_session=self, bufsize=bufsize, transport=self._transport)
+        w = pytds.tds_writer._TdsWriter(
+            tds_session=self, bufsize=bufsize, transport=self._transport
+        )
 
         resp_header = r.begin_response()
         buf = r.read_whole_packet()
         if resp_header.type != pytds.tds_base.PacketType.PRELOGIN:
-            msg = 'Invalid packet type: {0}, expected PRELOGIN({1})'.format(r.packet_type,
-                                                                            pytds.tds_base.PacketType.PRELOGIN)
+            msg = "Invalid packet type: {0}, expected PRELOGIN({1})".format(
+                r.packet_type, pytds.tds_base.PacketType.PRELOGIN
+            )
             self.bad_stream(msg)
         prelogin = parser.parse_prelogin(buf)
         logger.info(f"received prelogin message from client {prelogin}")
@@ -149,9 +154,11 @@ class RequestHandler(socketserver.StreamRequestHandler):
             res_enc = pytds.PreLoginEnc.ENCRYPT_REQ
 
         # sending reply to client's prelogin packet
-        prelogin_resp = gen.generate_prelogin({
-            pytds.tds_base.PreLoginToken.ENCRYPTION: res_enc,
-        })
+        prelogin_resp = gen.generate_prelogin(
+            {
+                pytds.tds_base.PreLoginToken.ENCRYPTION: res_enc,
+            }
+        )
         w.begin_packet(pytds.tds_base.PacketType.REPLY)
         w.write(prelogin_resp)
         w.flush()
@@ -192,7 +199,9 @@ class RequestHandler(socketserver.StreamRequestHandler):
                         w.write(buf)
                         w.flush()
 
-            wrapped_socket = pytds.tls.EncryptedSocket(transport=self.request, tls_conn=tlsconn)
+            wrapped_socket = pytds.tls.EncryptedSocket(
+                transport=self.request, tls_conn=tlsconn
+            )
             r._transport = wrapped_socket
             w._transport = wrapped_socket
 
@@ -200,7 +209,9 @@ class RequestHandler(socketserver.StreamRequestHandler):
             r.begin_response()
             buf = r.read_whole_packet()
         except pytds.tds_base.ClosedConnectionError:
-            logger.info('client closed connection, probably did not like server certificate')
+            logger.info(
+                "client closed connection, probably did not like server certificate"
+            )
             return
         logger.info(f"received login packet from client {buf}")
 
@@ -209,7 +220,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
             r._transport = self._transport
             w._transport = self._transport
 
-        srv_name = 'Simple TDS Server'
+        srv_name = "Simple TDS Server"
         srv_ver = (1, 0, 0, 0)
         tds_version = self.server._tds_version
 
@@ -233,7 +244,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
         w.put_byte(pytds.tds_base.TDS_DONE_TOKEN)
         w.put_usmallint(0)  # status
         w.put_usmallint(0)  # curcmd
-        w.put_uint8(0)   # done row count
+        w.put_uint8(0)  # done row count
 
         w.flush()
 
@@ -244,7 +255,9 @@ class RequestHandler(socketserver.StreamRequestHandler):
 class SimpleServer(socketserver.TCPServer):
     allow_reuse_address = True
 
-    def __init__(self, address, enc, cert=None, pkey=None, tds_version=pytds.tds_base.TDS74):
+    def __init__(
+        self, address, enc, cert=None, pkey=None, tds_version=pytds.tds_base.TDS74
+    ):
         self._enc = enc
         super().__init__(address, RequestHandler)
         ctx = None
@@ -265,11 +278,11 @@ class SimpleServer(socketserver.TCPServer):
 
 
 def run(address):
-    logger.info('Starting server...')
+    logger.info("Starting server...")
     with SimpleServer(address) as server:
-        logger.info('Press Ctrl+C to stop the server')
+        logger.info("Press Ctrl+C to stop the server")
         server.serve_forever()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run()

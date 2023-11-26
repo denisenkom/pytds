@@ -27,7 +27,7 @@ class FixedOffsetTimezone(tzinfo):
         return ZERO
 
 
-utc = FixedOffsetTimezone(offset=0, name='UTC')
+utc = FixedOffsetTimezone(offset=0, name="UTC")
 
 
 STDOFFSET = timedelta(seconds=-_time.timezone)
@@ -40,7 +40,6 @@ DSTDIFF = DSTOFFSET - STDOFFSET
 
 
 class LocalTimezone(tzinfo):
-
     def utcoffset(self, dt):
         if self._isdst(dt):
             return DSTOFFSET
@@ -57,11 +56,20 @@ class LocalTimezone(tzinfo):
         return _time.tzname[self._isdst(dt)]
 
     def _isdst(self, dt):
-        tt = (dt.year, dt.month, dt.day,
-              dt.hour, dt.minute, dt.second,
-              dt.weekday(), 0, 0)
+        tt = (
+            dt.year,
+            dt.month,
+            dt.day,
+            dt.hour,
+            dt.minute,
+            dt.second,
+            dt.weekday(),
+            0,
+            0,
+        )
         stamp = _time.mktime(tt)
         tt = _time.localtime(stamp)
         return tt.tm_isdst > 0
+
 
 local = LocalTimezone()

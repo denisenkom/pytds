@@ -5,13 +5,13 @@ import pytds.tds
 
 
 BUFSIZE = 4096
-HEADER = struct.Struct('>BBHHBx')
+HEADER = struct.Struct(">BBHHBx")
 
 
 class Sock:
     def __init__(self):
         self._read_pos = 0
-        self._buf = bytearray(b'\x00' * BUFSIZE)
+        self._buf = bytearray(b"\x00" * BUFSIZE)
         HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
 
     def sendall(self, data, flags=0):
@@ -24,14 +24,14 @@ class Sock:
             HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
             self._read_pos = 0
         to_read = min(size, BUFSIZE - self._read_pos)
-        buffer[:to_read] = self._buf[self._read_pos:self._read_pos+to_read]
+        buffer[:to_read] = self._buf[self._read_pos : self._read_pos + to_read]
         return to_read
 
     def recv(self, size):
         if self._read_pos >= len(self._buf):
             HEADER.pack_into(self._buf, 0, 0, 0, BUFSIZE, 0, 0)
             self._read_pos = 0
-        res = self._buf[self._read_pos:self._read_pos + size]
+        res = self._buf[self._read_pos : self._read_pos + size]
         self._read_pos += len(res)
         return res
 
@@ -52,6 +52,6 @@ pr.enable()
 for _ in range(50000):
     rdr.recv(BUFSIZE)
 pr.disable()
-sortby = 'tottime'
+sortby = "tottime"
 ps = pstats.Stats(pr).sort_stats(sortby)
 ps.print_stats()

@@ -12,6 +12,7 @@ from . import tds_types
 from .tds_base import PreLoginEnc, _TdsEnv, _TdsLogin, Route
 from .row_strategies import list_row_strategy
 from .smp import SmpManager
+
 # _token_map is needed by sqlalchemy_pytds connector
 from .tds_session import _token_map, _TdsSession
 
@@ -23,14 +24,14 @@ logger = logging.getLogger(__name__)
 # if MARS is not used it would have single _TdsSession instance
 class _TdsSocket(object):
     def __init__(
-            self,
-            sock: tds_base.TransportProtocol,
-            login: _TdsLogin,
-            tzinfo_factory: tds_types.TzInfoFactoryType | None = None,
-            row_strategy=list_row_strategy,
-            use_tz: datetime.tzinfo | None = None,
-            autocommit=False,
-            isolation_level=0,
+        self,
+        sock: tds_base.TransportProtocol,
+        login: _TdsLogin,
+        tzinfo_factory: tds_types.TzInfoFactoryType | None = None,
+        row_strategy=list_row_strategy,
+        use_tz: datetime.tzinfo | None = None,
+        autocommit=False,
+        isolation_level=0,
     ):
         self._is_connected = False
         self.env = _TdsEnv()
@@ -64,7 +65,7 @@ class _TdsSocket(object):
             type_factory=self.type_factory,
             collation=self.collation,
             bytes_to_unicode=self._login.bytes_to_unicode,
-            allow_tz=not self.use_tz
+            allow_tz=not self.use_tz,
         )
         self.server_library_version = (0, 0)
         self.product_name = ""
@@ -72,11 +73,13 @@ class _TdsSocket(object):
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
-        return fmt.format(self.tds72_transaction, self._mars_enabled,
-                          self.tds_version, self.use_tz)
+        return fmt.format(
+            self.tds72_transaction, self._mars_enabled, self.tds_version, self.use_tz
+        )
 
     def login(self) -> Route | None:
         from . import tls
+
         self._login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         if tds_base.IS_TDS71_PLUS(self):
             self._main_session.send_prelogin(self._login)
@@ -91,15 +94,20 @@ class _TdsSocket(object):
             return self.route
 
         # update block size if server returned different one
-        if self._main_session._writer.bufsize != self._main_session._reader.get_block_size():
-            self._main_session._reader.set_block_size(self._main_session._writer.bufsize)
+        if (
+            self._main_session._writer.bufsize
+            != self._main_session._reader.get_block_size()
+        ):
+            self._main_session._reader.set_block_size(
+                self._main_session._writer.bufsize
+            )
 
         self.type_factory = tds_types.SerializerFactory(self.tds_version)
         self.type_inferrer = tds_types.TdsTypeInferrer(
             type_factory=self.type_factory,
             collation=self.collation,
             bytes_to_unicode=self._login.bytes_to_unicode,
-            allow_tz=not self.use_tz
+            allow_tz=not self.use_tz,
         )
         if self._mars_enabled:
             self._smp_manager = SmpManager(self.sock)
@@ -114,9 +122,9 @@ class _TdsSocket(object):
         self._is_connected = True
         q = []
         if self._login.database and self.env.database != self._login.database:
-            q.append('use ' + tds_base.tds_quote_id(self._login.database))
+            q.append("use " + tds_base.tds_quote_id(self._login.database))
         if q:
-            self._main_session.submit_plain_query(''.join(q))
+            self._main_session.submit_plain_query("".join(q))
             self._main_session.process_simple_request()
         return None
 
@@ -130,7 +138,9 @@ class _TdsSocket(object):
 
     def create_session(self) -> _TdsSession:
         if not self._smp_manager:
-            raise RuntimeError("Calling create_session on a non-MARS connection does not work")
+            raise RuntimeError(
+                "Calling create_session on a non-MARS connection does not work"
+            )
         return _TdsSession(
             tds=self,
             transport=self._smp_manager.create_session(),
@@ -162,7 +172,7 @@ class _TdsSocket(object):
 def _parse_instances(msg: bytes) -> dict[str, dict[str, str]] | None:
     name: str | None = None
     if len(msg) > 3 and tds_base.my_ord(msg[0]) == 5:
-        tokens = msg[3:].decode('ascii').split(';')
+        tokens = msg[3:].decode("ascii").split(";")
         results: dict[str, dict[str, str]] = {}
         instdict: dict[str, str] = {}
         got_name = False
@@ -175,24 +185,27 @@ def _parse_instances(msg: bytes) -> dict[str, dict[str, str]] | None:
                 if not name:
                     if not instdict:
                         break
-                    results[instdict['InstanceName'].upper()] = instdict
+                    results[instdict["InstanceName"].upper()] = instdict
                     instdict = {}
                     continue
                 got_name = True
         return results
     return None
 
+
 #
 # Get port of all instances
 # @return default port number or 0 if error
 # @remark experimental, cf. MC-SQLR.pdf.
 #
-def tds7_get_instances(ip_addr: Any, timeout: float = 5) -> dict[str, dict[str, str]] | None:
+def tds7_get_instances(
+    ip_addr: Any, timeout: float = 5
+) -> dict[str, dict[str, str]] | None:
     s = socket.socket(type=socket.SOCK_DGRAM)
     s.settimeout(timeout)
     try:
         # send the request
-        s.sendto(b'\x03', (ip_addr, 1434))
+        s.sendto(b"\x03", (ip_addr, 1434))
         msg = s.recv(16 * 1024 - 1)
         # got data, read and parse
         return _parse_instances(msg)

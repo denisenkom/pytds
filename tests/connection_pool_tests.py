@@ -2,7 +2,7 @@ import unittest
 import settings
 import pytds
 
-LIVE_TEST = getattr(settings, 'LIVE_TEST', True)
+LIVE_TEST = getattr(settings, "LIVE_TEST", True)
 
 
 def test_broken_connection_in_pool():
@@ -23,7 +23,7 @@ def test_broken_connection_in_pool():
     # kill this connection, need to use another connection to do that
     spid = sess.execute_scalar("select @@spid")
     with extra_conn.cursor() as cur:
-        cur.execute(f'kill {spid}')
+        cur.execute(f"kill {spid}")
 
     # create new connection, it should attempt to use connection from the pool
     # it should detect that connection is bad and create new one
