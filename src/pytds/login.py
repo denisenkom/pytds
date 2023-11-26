@@ -59,7 +59,7 @@ class SspiAuth(AuthProtocol):
             self._sname = spn
         else:
             primary_host_name, _, _ = socket.gethostbyname_ex(server_name)
-            self._sname = "MSSQLSvc/{0}:{1}".format(primary_host_name, port)
+            self._sname = f"MSSQLSvc/{primary_host_name}:{port}"
 
         # using Negotiate system will use proper protocol (either NTLM or Kerberos)
         self._cred = sspi.SspiCredentials(

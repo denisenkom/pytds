@@ -9,6 +9,7 @@ from typing import Any
 
 from . import tds_base
 from . import tds_types
+from . import tls
 from .tds_base import PreLoginEnc, _TdsEnv, _TdsLogin, Route
 from .row_strategies import list_row_strategy
 from .smp import SmpManager
@@ -16,16 +17,19 @@ from .smp import SmpManager
 # _token_map is needed by sqlalchemy_pytds connector
 from .tds_session import (
     _token_map,  # noqa: F401 # _token_map is needed by sqlalchemy_pytds connector
-    _TdsSession
+    _TdsSession,
 )
 
 logger = logging.getLogger(__name__)
 
 
-# this class represents root TDS connection
-# if MARS is used it can have multiple sessions represented by _TdsSession class
-# if MARS is not used it would have single _TdsSession instance
-class _TdsSocket(object):
+class _TdsSocket:
+    """
+    This class represents root TDS connection
+    if MARS is used it can have multiple sessions represented by _TdsSession class
+    if MARS is not used it would have single _TdsSession instance
+    """
+
     def __init__(
         self,
         sock: tds_base.TransportProtocol,
@@ -81,8 +85,6 @@ class _TdsSocket(object):
         )
 
     def login(self) -> Route | None:
-        from . import tls
-
         self._login.server_enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         if tds_base.IS_TDS71_PLUS(self._main_session):
             self._main_session.send_prelogin(self._login)
@@ -172,7 +174,7 @@ class _TdsSocket(object):
             self._smp_manager.close_all_sessions(keep=self.main_session._transport)
 
 
-def _parse_instances(msg: bytes) -> dict[str, dict[str, str]] | None:
+def _parse_instances_response(msg: bytes) -> dict[str, dict[str, str]] | None:
     name: str | None = None
     if len(msg) > 3 and tds_base.my_ord(msg[0]) == 5:
         tokens = msg[3:].decode("ascii").split(";")
@@ -196,21 +198,17 @@ def _parse_instances(msg: bytes) -> dict[str, dict[str, str]] | None:
     return None
 
 
-#
-# Get port of all instances
-# @return default port number or 0 if error
-# @remark experimental, cf. MC-SQLR.pdf.
-#
 def tds7_get_instances(
     ip_addr: Any, timeout: float = 5
 ) -> dict[str, dict[str, str]] | None:
-    s = socket.socket(type=socket.SOCK_DGRAM)
-    s.settimeout(timeout)
-    try:
+    """
+    Get MSSQL instances information from instance browser service endpoint.
+    Returns a dictionary keyed by instance name of dictionaries of instances information.
+    """
+    with socket.socket(type=socket.SOCK_DGRAM) as s:
+        s.settimeout(timeout)
         # send the request
         s.sendto(b"\x03", (ip_addr, 1434))
         msg = s.recv(16 * 1024 - 1)
         # got data, read and parse
-        return _parse_instances(msg)
-    finally:
-        s.close()
+        return _parse_instances_response(msg)

@@ -965,7 +965,7 @@ class _TdsLogin:
         self.load_balancer: LoadBalancer | None = None
         self.bytes_to_unicode = False
         self.auth: AuthProtocol | None = None
-        self.servers: deque[Tuple[Any, int, str]] = deque()
+        self.servers: deque[Tuple[Any, int | None, str]] = deque()
         self.server_enc_flag = 0
 
 

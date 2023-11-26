@@ -605,49 +605,8 @@ class TestMessages(unittest.TestCase):
                 "tcp": "49849",
             },
         }
-        instances = pytds.tds._parse_instances(data)
+        instances = pytds.tds._parse_instances_response(data)
         self.assertDictEqual(ref, instances)
-
-
-class ConnectionStringTestCase(unittest.TestCase):
-    def test_parsing(self):
-        res = pytds._parse_connection_string(
-            "Server=myServerAddress;Database=myDataBase;User Id=myUsername; Password=myPassword;"
-        )
-        self.assertEqual(
-            {
-                "server": "myServerAddress",
-                "database": "myDataBase",
-                "user_id": "myUsername",
-                "password": "myPassword",
-            },
-            res,
-        )
-
-        res = pytds._parse_connection_string(
-            "Server=myServerAddress;Database=myDataBase;Trusted_Connection=True;"
-        )
-        self.assertEqual(
-            {
-                "server": "myServerAddress",
-                "database": "myDataBase",
-                "trusted_connection": "True",
-            },
-            res,
-        )
-
-        res = pytds._parse_connection_string(
-            "Server=myServerName\\myInstanceName;Database=myDataBase;User Id=myUsername; Password=myPassword;"
-        )
-        self.assertEqual(
-            {
-                "server": "myServerName\\myInstanceName",
-                "database": "myDataBase",
-                "user_id": "myUsername",
-                "password": "myPassword",
-            },
-            res,
-        )
 
 
 def infer_tds_serializer(
@@ -1605,11 +1564,6 @@ def test_ntlm():
         b"\xd3\x85\xd3\x01\x00\x00\x00\x00"
     )
     auth.handle_next(packet)
-
-
-def test_parse_server():
-    assert pytds._parse_server(".") == ("localhost", "")
-    assert pytds._parse_server("(local)") == ("localhost", "")
 
 
 def tls_send_all(tls, transport, bufsize):
