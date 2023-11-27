@@ -4,7 +4,7 @@ import pytest
 import sqlalchemy.engine
 from sqlalchemy import create_engine
 
-import pytds.tds
+import pytds.tds_socket
 import settings
 import sqlalchemy_schema
 import utils
@@ -12,7 +12,7 @@ import utils
 
 logger = logging.getLogger(__name__)
 LIVE_TEST = getattr(settings, "LIVE_TEST", True)
-pytds.tds.logging_enabled = True
+pytds.tds_base.logging_enabled = True
 
 
 @pytest.fixture(scope="module")

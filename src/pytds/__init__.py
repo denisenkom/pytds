@@ -25,7 +25,7 @@ from .row_strategies import (
     recordtype_row_strategy,  # noqa: F401 # export for backward compatibility
     RowStrategy,
 )
-from .tds import _TdsSocket
+from .tds_socket import _TdsSocket
 from . import instance_browser_client
 from . import tds_base
 from . import utils

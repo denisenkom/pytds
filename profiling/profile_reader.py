@@ -1,7 +1,7 @@
 import struct
 import cProfile
 import pstats
-import pytds.tds
+import pytds.tds_socket
 
 
 BUFSIZE = 4096

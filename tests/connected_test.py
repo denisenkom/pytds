@@ -23,7 +23,7 @@ from tests.utils import tran_count
 
 logger = logging.getLogger(__name__)
 LIVE_TEST = getattr(settings, "LIVE_TEST", True)
-pytds.tds.logging_enabled = True
+pytds.tds_base.logging_enabled = True
 
 
 def test_integrity_error(cursor):

@@ -16,7 +16,7 @@ import OpenSSL.crypto
 
 import pytds
 from pytds.collate import raw_collation, Collation
-from pytds.tds import (
+from pytds.tds_socket import (
     _TdsSocket,
     _TdsLogin,
 )
@@ -1622,7 +1622,7 @@ def test_output_param_value_not_match_type():
 
 
 def test_tds_session_raise_db_exception():
-    tds = pytds.tds._TdsSocket(sock=None, login=_TdsLogin())
+    tds = pytds.tds_socket._TdsSocket(sock=None, login=_TdsLogin())
     sess = tds.main_session
     with pytest.raises(pytds.Error) as ex:
         sess.raise_db_exception()

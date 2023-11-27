@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import base64
+import ctypes
 import logging
 import socket
 
@@ -42,7 +44,7 @@ class SspiAuth(AuthProtocol):
         server_name: str = "",
         port: int | None = None,
         spn: str | None = None,
-    ):
+    ) -> None:
         from . import sspi
 
         # parse username/password informations
@@ -75,7 +77,6 @@ class SspiAuth(AuthProtocol):
 
     def create_packet(self) -> bytes:
         from . import sspi
-        import ctypes
 
         buf = ctypes.create_string_buffer(4096)
         ctx, status, bufs = self._cred.create_context(
@@ -91,7 +92,6 @@ class SspiAuth(AuthProtocol):
 
     def handle_next(self, packet: bytes) -> bytes | None:
         from . import sspi
-        import ctypes
 
         if self._ctx:
             buf = ctypes.create_string_buffer(4096)
@@ -128,7 +128,7 @@ class NtlmAuth(AuthProtocol):
     :type ntlm_compatibility: int
     """
 
-    def __init__(self, user_name: str, password: str, ntlm_compatibility: int = 3):
+    def __init__(self, user_name: str, password: str, ntlm_compatibility: int = 3) -> None:
         self._user_name = user_name
         if "\\" in user_name:
             domain, self._user = user_name.split("\\", 1)
@@ -170,7 +170,7 @@ class SpnegoAuth(AuthProtocol):
     Takes same parameters as spnego.client function.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         try:
             import spnego
         except ImportError:
@@ -180,7 +180,10 @@ class SpnegoAuth(AuthProtocol):
         self._context = spnego.client(*args, **kwargs)
 
     def create_packet(self) -> bytes:
-        return self._context.step()
+        result = self._context.step()
+        if not result:
+            raise RuntimeError("spnego did not create initial packet")
+        return result
 
     def handle_next(self, packet: bytes) -> bytes | None:
         return self._context.step(packet)
@@ -190,7 +193,7 @@ class SpnegoAuth(AuthProtocol):
 
 
 class KerberosAuth(AuthProtocol):
-    def __init__(self, server_principal):
+    def __init__(self, server_principal: str) -> None:
         try:
             import kerberos  # type: ignore # fix later
         except ImportError:
@@ -198,28 +201,24 @@ class KerberosAuth(AuthProtocol):
         self._kerberos = kerberos
         res, context = kerberos.authGSSClientInit(server_principal)
         if res < 0:
-            raise RuntimeError("authGSSClientInit failed with code {}".format(res))
+            raise RuntimeError(f"authGSSClientInit failed with code {res}")
         logger.info("Initialized GSS context")
         self._context = context
 
     def create_packet(self) -> bytes:
-        import base64
-
         res = self._kerberos.authGSSClientStep(self._context, "")
         if res < 0:
-            raise RuntimeError("authGSSClientStep failed with code {}".format(res))
+            raise RuntimeError(f"authGSSClientStep failed with code {res}")
         data = self._kerberos.authGSSClientResponse(self._context)
         logger.info("created first client GSS packet %s", data)
         return base64.b64decode(data)
 
     def handle_next(self, packet: bytes) -> bytes | None:
-        import base64
-
         res = self._kerberos.authGSSClientStep(
             self._context, base64.b64encode(packet).decode("ascii")
         )
         if res < 0:
-            raise RuntimeError("authGSSClientStep failed with code {}".format(res))
+            raise RuntimeError(f"authGSSClientStep failed with code {res}")
         if res == self._kerberos.AUTH_GSS_COMPLETE:
             logger.info("GSS authentication completed")
             return b""

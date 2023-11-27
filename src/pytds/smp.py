@@ -1,5 +1,7 @@
-# This file implements Session Multiplex Protocol used by MARS connections
-# Protocol documentation https://msdn.microsoft.com/en-us/library/cc219643.aspx
+"""
+This file implements Session Multiplex Protocol used by MARS connections
+Protocol documentation https://msdn.microsoft.com/en-us/library/cc219643.aspx
+"""
 from __future__ import annotations
 
 import struct

@@ -1,3 +1,6 @@
+"""
+This module implements TdsWriter class
+"""
 import struct
 
 from pytds import tds_base

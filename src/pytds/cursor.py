@@ -13,7 +13,7 @@ import pytds
 from pytds.connection import Connection, MarsConnection, NonMarsConnection
 from pytds.tds_types import NVarCharType, TzInfoFactoryType
 
-from pytds.tds import _TdsSession
+from pytds.tds_socket import _TdsSession
 
 from pytds import tds_base
 from .tds_base import logger

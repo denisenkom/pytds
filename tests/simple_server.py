@@ -5,7 +5,7 @@ import logging
 
 import OpenSSL.SSL
 
-import pytds.tds
+import pytds.tds_socket
 import pytds.tds_reader
 import pytds.tds_writer
 import pytds.collate

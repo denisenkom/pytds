@@ -1,3 +1,6 @@
+"""
+This module implements TdsSession class
+"""
 from __future__ import annotations
 
 import codecs
@@ -32,7 +35,7 @@ from pytds.tds_writer import _TdsWriter
 from pytds.row_strategies import list_row_strategy, RowStrategy, RowGenerator
 
 if typing.TYPE_CHECKING:
-    from pytds.tds import _TdsSocket
+    from pytds.tds_socket import _TdsSocket
 
 
 class _TdsSession:

@@ -1,3 +1,7 @@
+"""
+This module implements various row strategies.
+E.g. row strategy that generated dictionaries or named tuples for rows.
+"""
 import collections
 import keyword
 import re

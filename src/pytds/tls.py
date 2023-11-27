@@ -26,7 +26,7 @@ if typing.TYPE_CHECKING:
 class EncryptedSocket(tds_base.TransportProtocol):
     def __init__(
         self, transport: tds_base.TransportProtocol, tls_conn: OpenSSL.SSL.Connection
-    ):
+    ) -> None:
         super().__init__()
         self._transport = transport
         self._tls_conn = tls_conn

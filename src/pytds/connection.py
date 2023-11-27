@@ -7,7 +7,7 @@ import typing
 import warnings
 import weakref
 from . import tds_base
-from . import tds
+from .tds_socket import _TdsSocket
 from . import row_strategies
 from .tds_base import logger
 from . import connection_pool
@@ -73,10 +73,10 @@ class BaseConnection(Connection):
         self,
         pooling: bool,
         key: connection_pool.PoolKeyType,
-        tds_socket: tds._TdsSocket,
+        tds_socket: _TdsSocket,
     ) -> None:
         # _tds_socket is set to None when connection is closed
-        self._tds_socket: tds._TdsSocket | None = tds_socket
+        self._tds_socket: _TdsSocket | None = tds_socket
         self._key = key
         self._pooling = pooling
         # references to all cursors opened from connection
@@ -236,7 +236,7 @@ class MarsConnection(BaseConnection):
         self,
         pooling: bool,
         key: connection_pool.PoolKeyType,
-        tds_socket: tds._TdsSocket,
+        tds_socket: _TdsSocket,
     ):
         super().__init__(pooling=pooling, key=key, tds_socket=tds_socket)
 
@@ -276,7 +276,7 @@ class NonMarsConnection(BaseConnection):
         self,
         pooling: bool,
         key: connection_pool.PoolKeyType,
-        tds_socket: tds._TdsSocket,
+        tds_socket: _TdsSocket,
     ):
         super().__init__(pooling=pooling, key=key, tds_socket=tds_socket)
         self._active_cursor: NonMarsCursor | None = None

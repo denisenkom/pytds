@@ -1,3 +1,6 @@
+"""
+This module implements various data types supported by Microsoft SQL Server
+"""
 from __future__ import annotations
 
 import itertools

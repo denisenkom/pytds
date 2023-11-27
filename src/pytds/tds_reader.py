@@ -1,3 +1,6 @@
+"""
+This module implements TdsReader class
+"""
 from __future__ import annotations
 
 import struct

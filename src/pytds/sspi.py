@@ -1,3 +1,6 @@
+"""
+This module implements wrapper for Windows SSPI API
+"""
 import logging
 
 from ctypes import (  # type: ignore # needs fixing
