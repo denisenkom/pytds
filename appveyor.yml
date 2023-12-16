@@ -36,11 +36,13 @@ before_test:
       $instanceName = $env:SQLINSTANCE
       Start-Service "MSSQL`$$instanceName"
       Start-Service "SQLBrowser"
-  - sqlcmd -S "(local)\%SQLINSTANCE%" -Q "Use [master]; CREATE DATABASE test;"
+  - sqlcmd -S "(local)\%SQLINSTANCE%" -Q "Use [master]; CREATE DATABASE test; ALTER DATABASE test SET READ_COMMITTED_SNAPSHOT ON; ALTER DATABASE test SET ALLOW_SNAPSHOT_ISOLATION ON"
   - sqlcmd -S "(local)\%SQLINSTANCE%" -h -1 -Q "set nocount on; Select @@version"
 
 
 test_script:
+  - mypy src
+  - ruff check src
   - pytest -v --junitxml=junit-results.xml --cov=./
   - ps: |
       $wc = New-Object 'System.Net.WebClient'

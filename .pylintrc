@@ -1,0 +1,4 @@
+[MAIN]
+
+# At this point I prefer to have if/else even when there is a return in the if branch
+disable=no-else-return

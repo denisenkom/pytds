@@ -7,11 +7,18 @@
 """
 from __future__ import annotations
 
+import datetime
+import logging
 import socket
-import sys
-from typing import Protocol, Iterable
+import struct
+import typing
+from collections import deque
+from typing import Protocol, Iterable, TypedDict, Tuple, Any
 
-from _socket import SocketType
+import pytds
+from pytds.collate import ucs2_codec
+
+logger = logging.getLogger("pytds")
 
 # tds protocol versions
 TDS70 = 0x70000000
@@ -23,10 +30,25 @@ TDS73 = TDS73A
 TDS73B = 0x730B0003
 TDS74 = 0x74000004
 
-IS_TDS7_PLUS = lambda x: x.tds_version >= TDS70
-IS_TDS71_PLUS = lambda x: x.tds_version >= TDS71
-IS_TDS72_PLUS = lambda x: x.tds_version >= TDS72
-IS_TDS73_PLUS = lambda x: x.tds_version >= TDS73A
+
+if typing.TYPE_CHECKING:
+    from pytds.tds_session import _TdsSession
+
+
+def IS_TDS7_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS70
+
+
+def IS_TDS71_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS71
+
+
+def IS_TDS72_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS72
+
+
+def IS_TDS73_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS73A
 
 
 # https://msdn.microsoft.com/en-us/library/dd304214.aspx
@@ -185,7 +207,7 @@ IMAGETYPE = SYBIMAGE = 34  # 0x22
 TEXTTYPE = SYBTEXT = 35  # 0x23
 SYBVARBINARY = 37  # 0x25
 INTNTYPE = SYBINTN = 38  # 0x26
-SYBVARCHAR = 39         # 0x27
+SYBVARCHAR = 39  # 0x27
 BINARYTYPE = SYBBINARY = 45  # 0x2D
 SYBCHAR = 47  # 0x2F
 INT1TYPE = SYBINT1 = 48  # 0x30
@@ -256,11 +278,11 @@ SYBXML = 163  # 0xA3
 TDS_UT_TIMESTAMP = 80
 
 # compute operator
-SYBAOPCNT = 0x4b
-SYBAOPCNTU = 0x4c
-SYBAOPSUM = 0x4d
-SYBAOPSUMU = 0x4e
-SYBAOPAVG = 0x4f
+SYBAOPCNT = 0x4B
+SYBAOPCNTU = 0x4C
+SYBAOPSUM = 0x4D
+SYBAOPSUMU = 0x4E
+SYBAOPAVG = 0x4F
 SYBAOPAVGU = 0x50
 SYBAOPMIN = 0x51
 SYBAOPMAX = 0x52
@@ -282,7 +304,7 @@ TDS_QUERYING = 1
 TDS_PENDING = 2
 TDS_READING = 3
 TDS_DEAD = 4
-state_names = ['IDLE', 'QUERYING', 'PENDING', 'READING', 'DEAD']
+state_names = ["IDLE", "QUERYING", "PENDING", "READING", "DEAD"]
 
 TDS_ENCRYPTION_OFF = 0
 TDS_ENCRYPTION_REQUEST = 1
@@ -295,6 +317,7 @@ class PreLoginToken:
 
     Spec link: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/60f56408-0188-4cd5-8b90-25c6f2423868
     """
+
     VERSION = 0
     ENCRYPTION = 1
     INSTOPT = 2
@@ -303,7 +326,7 @@ class PreLoginToken:
     TRACEID = 5
     FEDAUTHREQUIRED = 6
     NONCEOPT = 7
-    TERMINATOR = 0xff
+    TERMINATOR = 0xFF
 
 
 class PreLoginEnc:
@@ -312,19 +335,20 @@ class PreLoginEnc:
 
     Spec link: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/60f56408-0188-4cd5-8b90-25c6f2423868
     """
+
     ENCRYPT_OFF = 0  # Encryption available but off
     ENCRYPT_ON = 1  # Encryption available and on
     ENCRYPT_NOT_SUP = 2  # Encryption not available
     ENCRYPT_REQ = 3  # Encryption required
 
 
-PLP_MARKER = 0xffff
-PLP_NULL = 0xffffffffffffffff
-PLP_UNKNOWN = 0xfffffffffffffffe
+PLP_MARKER = 0xFFFF
+PLP_NULL = 0xFFFFFFFFFFFFFFFF
+PLP_UNKNOWN = 0xFFFFFFFFFFFFFFFE
 
 TDS_NO_COUNT = -1
 
-TVP_NULL_TOKEN = 0xffff
+TVP_NULL_TOKEN = 0xFFFF
 
 # TVP COLUMN FLAGS
 TVP_COLUMN_DEFAULT_FLAG = 0x200
@@ -344,7 +368,7 @@ class CommonEqualityMixin(object):
 
 
 def iterdecode(iterable, codec):
-    """ Uses an incremental decoder to decode each chunk of string in iterable.
+    """Uses an incremental decoder to decode each chunk of string in iterable.
     This function is a generator.
 
     :param iterable: Iterable object which yields raw data to be decoded.
@@ -353,7 +377,7 @@ def iterdecode(iterable, codec):
     decoder = codec.incrementaldecoder()
     for chunk in iterable:
         yield decoder.decode(chunk)
-    yield decoder.decode(b'', True)
+    yield decoder.decode(b"", True)
 
 
 def force_unicode(s):
@@ -362,7 +386,7 @@ def force_unicode(s):
     """
     if isinstance(s, bytes):
         try:
-            return s.decode('utf8')
+            return s.decode("utf8")
         except UnicodeDecodeError as e:
             raise DatabaseError(e)
     elif isinstance(s, str):
@@ -372,58 +396,50 @@ def force_unicode(s):
 
 
 def tds_quote_id(ident):
-    """ Quote an identifier according to MSSQL rules
+    """Quote an identifier according to MSSQL rules
 
     :param ident: identifier to quote
     :returns: Quoted identifier
     """
-    return '[{0}]'.format(ident.replace(']', ']]'))
+    return "[{0}]".format(ident.replace("]", "]]"))
 
 
 # store a tuple of programming error codes
 prog_errors = (
-    102,    # syntax error
-    207,    # invalid column name
-    208,    # invalid object name
-    2812,   # unknown procedure
-    4104    # multi-part identifier could not be bound
+    102,  # syntax error
+    207,  # invalid column name
+    208,  # invalid object name
+    2812,  # unknown procedure
+    4104,  # multi-part identifier could not be bound
 )
 
 # store a tuple of integrity error codes
 integrity_errors = (
-    515,    # NULL insert
-    547,    # FK related
-    2601,   # violate unique index
-    2627,   # violate UNIQUE KEY constraint
+    515,  # NULL insert
+    547,  # FK related
+    2601,  # violate unique index
+    2627,  # violate UNIQUE KEY constraint
 )
 
 
-if sys.version_info[0] >= 3:
-    exc_base_class = Exception
+def my_ord(val):
+    return val
 
-    def my_ord(val):
-        return val
 
-    def join_bytearrays(ba):
-        return b''.join(ba)
-
-else:
-    exc_base_class = StandardError
-    my_ord = ord
-
-    def join_bytearrays(bas):
-        return b''.join(bytes(ba) for ba in bas)
+def join_bytearrays(ba):
+    return b"".join(ba)
 
 
 # exception hierarchy
-class Warning(exc_base_class):
+class Warning(Exception):
     pass
 
 
-class Error(exc_base_class):
+class Error(Exception):
     """
     Base class for all error classes, except TimeoutError
     """
+
     pass
 
 
@@ -434,6 +450,7 @@ class InterfaceError(Error):
     """
     TODO add documentation
     """
+
     pass
 
 
@@ -441,31 +458,57 @@ class DatabaseError(Error):
     """
     This error is raised when MSSQL server returns an error which includes error number
     """
+
+    def __init__(self, msg: str, exc: typing.Any | None = None):
+        super().__init__(msg, exc)
+        self.msg_no = 0
+        self.text = msg
+        self.srvname = ""
+        self.procname = ""
+        self.number = 0
+        self.severity = 0
+        self.state = 0
+        self.line = 0
+
     @property
     def message(self):
         if self.procname:
-            return 'SQL Server message %d, severity %d, state %d, ' \
-                   'procedure %s, line %d:\n%s' % (self.number,
-                                                   self.severity, self.state, self.procname,
-                                                   self.line, self.text)
+            return (
+                "SQL Server message %d, severity %d, state %d, "
+                "procedure %s, line %d:\n%s"
+                % (
+                    self.number,
+                    self.severity,
+                    self.state,
+                    self.procname,
+                    self.line,
+                    self.text,
+                )
+            )
         else:
-            return 'SQL Server message %d, severity %d, state %d, ' \
-                   'line %d:\n%s' % (self.number, self.severity,
-                                     self.state, self.line, self.text)
+            return "SQL Server message %d, severity %d, state %d, " "line %d:\n%s" % (
+                self.number,
+                self.severity,
+                self.state,
+                self.line,
+                self.text,
+            )
 
 
 class ClosedConnectionError(InterfaceError):
     """
     This error is raised when MSSQL server closes connection.
     """
+
     def __init__(self):
-        super(ClosedConnectionError, self).__init__('Server closed connection')
+        super(ClosedConnectionError, self).__init__("Server closed connection")
 
 
 class DataError(Error):
     """
     This error is raised when input parameter contains data which cannot be converted to acceptable data type.
     """
+
     pass
 
 
@@ -473,6 +516,7 @@ class OperationalError(DatabaseError):
     """
     TODO add documentation
     """
+
     pass
 
 
@@ -480,6 +524,7 @@ class LoginError(OperationalError):
     """
     This error is raised if provided login credentials are invalid
     """
+
     pass
 
 
@@ -487,6 +532,7 @@ class IntegrityError(DatabaseError):
     """
     TODO add documentation
     """
+
     pass
 
 
@@ -494,6 +540,7 @@ class InternalError(DatabaseError):
     """
     TODO add documentation
     """
+
     pass
 
 
@@ -501,6 +548,7 @@ class ProgrammingError(DatabaseError):
     """
     TODO add documentation
     """
+
     pass
 
 
@@ -508,6 +556,7 @@ class NotSupportedError(DatabaseError):
     """
     TODO add documentation
     """
+
     pass
 
 
@@ -516,6 +565,7 @@ class DBAPITypeObject:
     """
     TODO add documentation
     """
+
     def __init__(self, *values):
         self.values = set(values)
 
@@ -532,15 +582,32 @@ class DBAPITypeObject:
 
 
 # standard dbapi type objects
-STRING = DBAPITypeObject(SYBVARCHAR, SYBCHAR, SYBTEXT,
-                         XSYBNVARCHAR, XSYBNCHAR, SYBNTEXT,
-                         XSYBVARCHAR, XSYBCHAR, SYBMSXML)
+STRING = DBAPITypeObject(
+    SYBVARCHAR,
+    SYBCHAR,
+    SYBTEXT,
+    XSYBNVARCHAR,
+    XSYBNCHAR,
+    SYBNTEXT,
+    XSYBVARCHAR,
+    XSYBCHAR,
+    SYBMSXML,
+)
 BINARY = DBAPITypeObject(SYBIMAGE, SYBBINARY, SYBVARBINARY, XSYBVARBINARY, XSYBBINARY)
-NUMBER = DBAPITypeObject(SYBBIT, SYBBITN, SYBINT1, SYBINT2, SYBINT4, SYBINT8, SYBINTN,
-                         SYBREAL, SYBFLT8, SYBFLTN)
+NUMBER = DBAPITypeObject(
+    SYBBIT,
+    SYBBITN,
+    SYBINT1,
+    SYBINT2,
+    SYBINT4,
+    SYBINT8,
+    SYBINTN,
+    SYBREAL,
+    SYBFLT8,
+    SYBFLTN,
+)
 DATETIME = DBAPITypeObject(SYBDATETIME, SYBDATETIME4, SYBDATETIMN)
-DECIMAL = DBAPITypeObject(SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC,
-                          SYBDECIMAL)
+DECIMAL = DBAPITypeObject(SYBMONEY, SYBMONEY4, SYBMONEYN, SYBNUMERIC, SYBDECIMAL)
 ROWID = DBAPITypeObject()
 
 # non-standard, but useful type objects
@@ -553,6 +620,7 @@ class InternalProc(object):
     """
     TODO add documentation
     """
+
     def __init__(self, proc_id, name):
         self.proc_id = proc_id
         self.name = name
@@ -560,13 +628,14 @@ class InternalProc(object):
     def __unicode__(self):
         return self.name
 
-SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, 'sp_executesql')
-SP_PREPARE = InternalProc(TDS_SP_PREPARE, 'sp_prepare')
-SP_EXECUTE = InternalProc(TDS_SP_EXECUTE, 'sp_execute')
+
+SP_EXECUTESQL = InternalProc(TDS_SP_EXECUTESQL, "sp_executesql")
+SP_PREPARE = InternalProc(TDS_SP_PREPARE, "sp_prepare")
+SP_EXECUTE = InternalProc(TDS_SP_EXECUTE, "sp_execute")
 
 
 def skipall(stm, size):
-    """ Skips exactly size bytes in stm
+    """Skips exactly size bytes in stm
 
     If EOF is reached before size bytes are skipped
     will raise :class:`ClosedConnectionError`
@@ -590,7 +659,7 @@ def skipall(stm, size):
 
 
 def read_chunks(stm, size):
-    """ Reads exactly size bytes from stm and produces chunks
+    """Reads exactly size bytes from stm and produces chunks
 
     May call stm.read multiple times until required
     number of bytes is read.
@@ -603,7 +672,7 @@ def read_chunks(stm, size):
     :param size: Number of bytes to read.
     """
     if size == 0:
-        yield b''
+        yield b""
         return
 
     res = stm.recv(size)
@@ -620,7 +689,7 @@ def read_chunks(stm, size):
 
 
 def readall(stm, size):
-    """ Reads exactly size bytes from stm
+    """Reads exactly size bytes from stm
 
     May call stm.read multiple times until required
     number of bytes read.
@@ -656,7 +725,7 @@ def readall_fast(stm, size):
 
 
 def total_seconds(td):
-    """ Total number of seconds in timedelta object
+    """Total number of seconds in timedelta object
 
     Python 2.6 doesn't have total_seconds method, this function
     provides a backport
@@ -673,6 +742,7 @@ class Param:
     :type name: str
     :param type: Type of the parameter, e.g. :class:`pytds.tds_types.IntType`
     """
+
     def __init__(self, name: str = "", type=None, value=None, flags: int = 0):
         self.name = name
         self.type = type
@@ -698,13 +768,14 @@ class Column(CommonEqualityMixin):
     :param flags: Combination of flags for the column, multiple flags can be combined using binary or operator.
                   Possible flags are described above.
     """
+
     fNullable = 1
     fCaseSen = 2
     fReadWrite = 8
     fIdentity = 0x10
     fComputed = 0x20
 
-    def __init__(self, name='', type=None, flags=fNullable, value=None):
+    def __init__(self, name="", type=None, flags=fNullable, value=None):
         self.char_codec = None
         self.column_name = name
         self.column_usertype = 0
@@ -716,16 +787,18 @@ class Column(CommonEqualityMixin):
     def __repr__(self):
         val = self.value
         if isinstance(val, bytes) and len(self.value) > 100:
-            val = self.value[:100] + b'... len is ' + str(len(val)).encode('ascii')
+            val = self.value[:100] + b"... len is " + str(len(val)).encode("ascii")
         if isinstance(val, str) and len(self.value) > 100:
-            val = self.value[:100] + '... len is ' + str(len(val))
-        return '<Column(name={},type={},value={},flags={},user_type={},codec={})>'.format(
-            repr(self.column_name),
-            repr(self.type),
-            repr(val),
-            repr(self.flags),
-            repr(self.column_usertype),
-            repr(self.char_codec),
+            val = self.value[:100] + "... len is " + str(len(val))
+        return (
+            "<Column(name={},type={},value={},flags={},user_type={},codec={})>".format(
+                repr(self.column_name),
+                repr(self.type),
+                repr(val),
+                repr(self.flags),
+                repr(self.column_usertype),
+                repr(self.char_codec),
+            )
         )
 
     def choose_serializer(self, type_factory, collation):
@@ -736,7 +809,31 @@ class Column(CommonEqualityMixin):
 
 
 class TransportProtocol(Protocol):
-    def is_connected(self) -> bool:
+    """
+    This protocol mimics socket protocol
+    """
+
+    # def is_connected(self) -> bool:
+    #    ...
+
+    def close(self) -> None:
+        ...
+
+    def gettimeout(self) -> float | None:
+        ...
+
+    def settimeout(self, timeout: float | None) -> None:
+        ...
+
+    def sendall(self, buf: bytes, flags: int = 0) -> None:
+        ...
+
+    def recv(self, size: int) -> bytes:
+        ...
+
+    def recv_into(
+        self, buf: bytearray | memoryview, size: int = 0, flags: int = 0
+    ) -> int:
         ...
 
 
@@ -754,3 +851,180 @@ class AuthProtocol(Protocol):
 
     def close(self) -> None:
         ...
+
+
+# packet header
+# https://msdn.microsoft.com/en-us/library/dd340948.aspx
+_header = struct.Struct(">BBHHBx")
+
+_byte = struct.Struct("B")
+_smallint_le = struct.Struct("<h")
+_smallint_be = struct.Struct(">h")
+_usmallint_le = struct.Struct("<H")
+_usmallint_be = struct.Struct(">H")
+_int_le = struct.Struct("<l")
+_int_be = struct.Struct(">l")
+_uint_le = struct.Struct("<L")
+_uint_be = struct.Struct(">L")
+_int8_le = struct.Struct("<q")
+_int8_be = struct.Struct(">q")
+_uint8_le = struct.Struct("<Q")
+_uint8_be = struct.Struct(">Q")
+
+
+logging_enabled = False
+
+
+# stored procedure output parameter
+class output:
+    @property
+    def type(self):
+        """
+        This is either the sql type declaration or python type instance
+        of the parameter.
+        """
+        return self._type
+
+    @property
+    def value(self):
+        """
+        This is the value of the parameter.
+        """
+        return self._value
+
+    def __init__(self, value: Any = None, param_type=None):
+        """Creates procedure output parameter.
+
+        :param param_type: either sql type declaration or python type
+        :param value: value to pass into procedure
+        """
+        if param_type is None:
+            if value is None or value is default:
+                raise ValueError("Output type cannot be autodetected")
+        elif isinstance(param_type, type) and value is not None:
+            if value is not default and not isinstance(value, param_type):
+                raise ValueError(
+                    "value should match param_type, value is {}, param_type is '{}'".format(
+                        repr(value), param_type.__name__
+                    )
+                )
+        self._type = param_type
+        self._value = value
+
+
+class _Default:
+    pass
+
+
+default = _Default()
+
+
+def tds7_crypt_pass(password: str) -> bytearray:
+    """Mangle password according to tds rules
+
+    :param password: Password str
+    :returns: Byte-string with encoded password
+    """
+    encoded = bytearray(ucs2_codec.encode(password)[0])
+    for i, ch in enumerate(encoded):
+        encoded[i] = ((ch << 4) & 0xFF | (ch >> 4)) ^ 0xA5
+    return encoded
+
+
+class _TdsLogin:
+    def __init__(self) -> None:
+        self.client_host_name = ""
+        self.library = ""
+        self.server_name = ""
+        self.instance_name = ""
+        self.user_name = ""
+        self.password = ""
+        self.app_name = ""
+        self.port: int | None = None
+        self.language = ""
+        self.attach_db_file = ""
+        self.tds_version = TDS74
+        self.database = ""
+        self.bulk_copy = False
+        self.client_lcid = 0
+        self.use_mars = False
+        self.pid = 0
+        self.change_password = ""
+        self.client_id = 0
+        self.cafile: str | None = None
+        self.validate_host = True
+        self.enc_login_only = False
+        self.enc_flag = 0
+        self.tls_ctx = None
+        self.client_tz: datetime.tzinfo = pytds.tz.local
+        self.option_flag2 = 0
+        self.connect_timeout = 0.0
+        self.query_timeout: float | None = None
+        self.blocksize = 4096
+        self.readonly = False
+        self.load_balancer: LoadBalancer | None = None
+        self.bytes_to_unicode = False
+        self.auth: AuthProtocol | None = None
+        self.servers: deque[Tuple[Any, int | None, str]] = deque()
+        self.server_enc_flag = 0
+
+
+class _TdsEnv:
+    def __init__(self):
+        self.database = None
+        self.language = None
+        self.charset = None
+        self.autocommit = False
+        # Transaction isolation level
+        self.isolation_level = 0
+
+
+def _create_exception_by_message(
+    msg: Message, custom_error_msg: str | None = None
+) -> ProgrammingError | IntegrityError | OperationalError:
+    msg_no = msg["msgno"]
+    if custom_error_msg is not None:
+        error_msg = custom_error_msg
+    else:
+        error_msg = msg["message"]
+    ex: ProgrammingError | IntegrityError | OperationalError
+    if msg_no in prog_errors:
+        ex = ProgrammingError(error_msg)
+    elif msg_no in integrity_errors:
+        ex = IntegrityError(error_msg)
+    else:
+        ex = OperationalError(error_msg)
+    ex.msg_no = msg["msgno"]
+    ex.text = msg["message"]
+    ex.srvname = msg["server"]
+    ex.procname = msg["proc_name"]
+    ex.number = msg["msgno"]
+    ex.severity = msg["severity"]
+    ex.state = msg["state"]
+    ex.line = msg["line_number"]
+    return ex
+
+
+class Message(TypedDict):
+    marker: int
+    msgno: int
+    state: int
+    severity: int
+    sql_state: int | None
+    priv_msg_type: int
+    message: str
+    server: str
+    proc_name: str
+    line_number: int
+
+
+class Route(TypedDict):
+    server: str
+    port: int
+
+
+class _Results(object):
+    def __init__(self) -> None:
+        self.columns: list[Column] = []
+        self.row_count = 0
+        self.description: tuple[tuple[str, Any, None, int, int, int, int], ...] = ()

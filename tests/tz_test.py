@@ -3,7 +3,7 @@ from pytds import tz
 
 
 def test_tz():
-    assert tz.FixedOffsetTimezone(0, 'UTC').tzname(None) == 'UTC'
+    assert tz.FixedOffsetTimezone(0, "UTC").tzname(None) == "UTC"
     lz = tz.LocalTimezone()
     jan_1 = datetime.datetime(2010, 1, 1, 0, 0)
     july_1 = datetime.datetime(2010, 7, 1, 0, 0)

@@ -31,18 +31,17 @@
 #
 #   include RELEASE-VERSION
 
-__all__ = ("get_git_version")
+__all__ = "get_git_version"
 
 from subprocess import Popen, PIPE
 
 
 def call_git_describe(abbrev=4):
     try:
-        p = Popen(['git', 'describe', '--abbrev=%d' % abbrev],
-                  stdout=PIPE, stderr=PIPE)
+        p = Popen(["git", "describe", "--abbrev=%d" % abbrev], stdout=PIPE, stderr=PIPE)
         p.stderr.close()
         line = p.stdout.readlines()[0]
-        return line.strip().decode('utf8')
+        return line.strip().decode("utf8")
 
     except:
         return None
@@ -54,7 +53,7 @@ def read_release_version():
 
         try:
             version = f.readlines()[0]
-            return version.strip().decode('utf8')
+            return version.strip().decode("utf8")
 
         finally:
             f.close()
@@ -87,7 +86,7 @@ def get_git_version(abbrev=4):
     # If we still don't have anything, that's an error.
 
     if version is None:
-        return 'unknown'
+        return "unknown"
 
     # If the current version is different from what's in the
     # RELEASE-VERSION file, update the file to be current.
