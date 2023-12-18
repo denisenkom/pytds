@@ -66,12 +66,11 @@ from .tds_base import (
 
 
 from . import tls
-import pkg_resources  # type: ignore # fix later
 from .tds_base import logger
 
 __author__ = "Mikhail Denisenko <denisenkom@gmail.com>"
 try:
-    __version__ = pkg_resources.get_distribution("python-tds").version
+    __version__ = utils.package_version("python-tds")
 except Exception:
     __version__ = "DEV"
 
