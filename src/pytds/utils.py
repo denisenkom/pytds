@@ -4,10 +4,15 @@ other modules.
 """
 from __future__ import annotations
 import logging
+import sys
 import time
 import typing
 from collections.abc import Callable
 
+if sys.version_info < (3, 8):
+    import pkg_resources
+else:
+    from importlib import metadata
 
 logger = logging.getLogger("pytds")
 T = typing.TypeVar("T")
@@ -80,3 +85,9 @@ def ver_to_int(ver: str) -> int:
         return 0
     maj, minor, _ = ver.split(".")
     return (int(maj) << 24) + (int(minor) << 16)
+
+
+def package_version(name: str) -> str:
+    if sys.version_info < (3, 8):
+        return pkg_resources.get_distribution(name).version
+    return metadata.version(name)
