@@ -13,12 +13,16 @@ if os.path.exists(connection_json_path):
     default_user = conf["sqluser"]
     default_password = conf["sqlpassword"]
     default_use_mars = conf["use_mars"]
+    default_auth = conf["auth"]
+    default_cafile = conf.get("cafile")
 else:
     default_host = None
     default_database = "test"
     default_user = "sa"
     default_password = "sa"
     default_use_mars = True
+    default_auth = None
+    default_cafile = None
 
 LIVE_TEST = "HOST" in os.environ or default_host
 if LIVE_TEST:
@@ -40,7 +44,10 @@ if LIVE_TEST:
         "bytes_to_unicode": True,
         "pooling": True,
         "timeout": 30,
+        "cafile": default_cafile,
     }
+    if default_auth:
+        CONNECT_KWARGS["auth"] = getattr(pytds.login, default_auth)()
 
     if "tds_version" in os.environ:
         CONNECT_KWARGS["tds_version"] = getattr(pytds, os.environ["tds_version"])

@@ -553,16 +553,21 @@ class Auth(unittest.TestCase):
     def test_sspi(self):
         from pytds.login import SspiAuth
 
-        with connect(settings.HOST, auth=SspiAuth()) as conn:
+        with connect(**{
+            **settings.CONNECT_KWARGS,
+            "auth": SspiAuth()
+        }) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("select 1")
                 cursor.fetchall()
 
     @unittest.skipIf(getattr(settings, "SKIP_SQL_AUTH", False), "SKIP_SQL_AUTH is set")
     def test_sqlauth(self):
-        with connect(
-            settings.HOST, user=settings.USER, password=settings.PASSWORD
-        ) as conn:
+        with connect(**{
+            **settings.CONNECT_KWARGS,
+            "user": settings.USER,
+            "password": settings.PASSWORD,
+        }) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("select 1")
                 cursor.fetchall()
