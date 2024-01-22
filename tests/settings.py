@@ -13,7 +13,7 @@ if os.path.exists(connection_json_path):
     default_user = conf["sqluser"]
     default_password = conf["sqlpassword"]
     default_use_mars = conf["use_mars"]
-    default_auth = conf["auth"]
+    default_auth = conf.get("auth")
     default_cafile = conf.get("cafile")
 else:
     default_host = None

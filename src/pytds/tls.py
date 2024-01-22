@@ -187,14 +187,18 @@ def establish_channel(tds_sock: _TdsSession) -> None:
                 w.write(req)
                 w.flush()
             logger.debug("receiving response from the server")
-            r.begin_response()
-            resp = r.read_whole_packet()
-            # TODO validate r.packet_type
-            logger.debug(
-                "adding %d bytes of the response into the TLS connection buffer",
-                len(resp),
-            )
-            conn.bio_write(resp)
+            resp_meta = r.begin_response()
+            if resp_meta.type != tds_base.PacketType.PRELOGIN:
+                raise tds_base.Error(
+                    f"Invalid packet type was received from server, expected PRELOGIN(18) got {resp_meta.type}"
+                )
+            while not r.stream_finished():
+                resp = r.recv(4096)
+                logger.debug(
+                    "adding %d bytes of the response into the TLS connection buffer",
+                    len(resp),
+                )
+                conn.bio_write(resp)
         else:
             logger.info("TLS handshake is complete")
             if login.validate_host:
