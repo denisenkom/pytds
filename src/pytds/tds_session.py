@@ -1270,7 +1270,7 @@ class _TdsSession:
         size = len(p)
         if size <= 0 or resp_header.type != tds_base.PacketType.REPLY:
             self.bad_stream(
-                "Invalid packet type: {0}, expected PRELOGIN(4)".format(
+                "Invalid packet type: {0}, expected REPLY(4)".format(
                     self._reader.packet_type
                 )
             )

@@ -181,7 +181,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
                     except OpenSSL.SSL.WantReadError:
                         pass
                     else:
-                        w.begin_packet(pytds.tds_base.PacketType.REPLY)
+                        w.begin_packet(pytds.tds_base.PacketType.PRELOGIN)
                         w.write(buf)
                         w.flush()
 
@@ -195,7 +195,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
                     except OpenSSL.SSL.WantReadError:
                         pass
                     else:
-                        w.begin_packet(pytds.tds_base.PacketType.REPLY)
+                        w.begin_packet(pytds.tds_base.PacketType.PRELOGIN)
                         w.write(buf)
                         w.flush()
 
