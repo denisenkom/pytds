@@ -12,17 +12,17 @@ Tag current commit by running:
 
  git tag -a <version>
 
+Install build and twine:
+
+ python3 -m pip install --user --upgrade twine build
+
 Check build:
 
- python setup.py sdist
+ python -m build
 
 Push to github:
 
  git push && git push --tags
-
-Install twine:
-
- python3 -m pip install --user --upgrade twine
 
 Upload to pypi:
 
