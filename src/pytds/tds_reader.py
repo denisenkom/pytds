@@ -181,7 +181,7 @@ class _TdsReader:
         :param codec: Instance of codec to decode string
         :returns: Unicode string
         """
-        return codec.decode(readall(self, size))[0]
+        return codec.decode(readall(self, size), errors="ignore")[0]
 
     def get_collation(self) -> Collation:
         """Reads :class:`Collation` object from stream"""
