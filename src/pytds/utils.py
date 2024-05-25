@@ -49,13 +49,16 @@ def exponential_backoff(
                     work_actual_time,
                 )
             ex_handler(ex)
-            if time.time() >= end_time:
-                raise TimeoutError() from ex
-            remaining_attempt_time = try_time - (time.time() - try_start_time)
+            cur_time = time.time()
+            remaining_attempt_time = try_time - (cur_time - try_start_time)
             logger.info("Will retry after %f seconds", remaining_attempt_time)
             if remaining_attempt_time > 0:
                 time.sleep(remaining_attempt_time)
+            cur_time += remaining_attempt_time
+            if cur_time >= end_time:
+                raise TimeoutError() from ex
             try_time *= backoff_factor
+            try_time = min(try_time, end_time - cur_time)
 
 
 def parse_server(server: str) -> tuple[str, str]:
