@@ -134,7 +134,7 @@ def validate_host(cert, name: bytes) -> bool:
         ext = cert.get_extension(i)
         if ext.get_short_name() == b"subjectAltName":
             s = str(ext)
-            if is_san_matching(s, s_name):
+            if is_san_matching(s.upper(), s_name.upper()):
                 return True
 
     # TODO check if wildcard is needed in CN as well
