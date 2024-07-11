@@ -11,6 +11,7 @@ import struct
 import typing
 import warnings
 from typing import Callable, Iterable, Any, List
+from itertools import chain
 
 from pytds import tds_base, tds_types
 from pytds.collate import lcid2charset, raw_collation
@@ -1175,7 +1176,37 @@ class _TdsSession:
         instance_name_encoded = instance_name.encode("ascii")
         if len(instance_name_encoded) > 65490:
             raise ValueError("Instance name is too long")
-        if tds_base.IS_TDS72_PLUS(self):
+        if tds_base.IS_TDS74_PLUS(self):
+            start_pos = 31
+            buf = struct.pack(
+                b">BHHBHHBHHBHHBHHBHHB",
+                # netlib version
+                PreLoginToken.VERSION,
+                start_pos,
+                6,
+                # encryption
+                PreLoginToken.ENCRYPTION,
+                start_pos + 6,
+                1,
+                # instance
+                PreLoginToken.INSTOPT,
+                start_pos + 6 + 1,
+                len(instance_name_encoded) + 1,
+                # thread id
+                PreLoginToken.THREADID,
+                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                4,
+                # MARS enabled
+                PreLoginToken.MARS,
+                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
+                1,
+                PreLoginToken.FEDAUTHREQUIRED,
+                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4 + 1,
+                1,
+                # end
+                PreLoginToken.TERMINATOR,
+            )
+        elif tds_base.IS_TDS72_PLUS(self):
             start_pos = 26
             buf = struct.pack(
                 b">BHHBHHBHHBHHBHHB",
@@ -1245,6 +1276,9 @@ class _TdsSession:
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
             attribs["mars"] = login.use_mars
+        if tds_base.IS_TDS74_PLUS(self):
+            w.put_byte(1 if login.access_token else 0)
+            attribs["fedauth"] = bool(login.access_token)
         logger.info(
             "Sending PRELOGIN %s", " ".join(f"{n}={v!r}" for n, v in attribs.items())
         )
@@ -1310,6 +1344,10 @@ class _TdsSession:
             elif type_id == PreLoginToken.INSTOPT:
                 # ignore instance name mismatch
                 pass
+            elif type_id == PreLoginToken.FEDAUTHREQUIRED:
+                self.conn.fedauth_required = bool(byte_struct.unpack_from(p,off)[0])
+            elif type_id == PreLoginToken.NONCEOPT:
+                login.nonce = p[off : off + length]
             i += 5
         logger.info(
             "Got PRELOGIN response crypt=%x mars=%d",
@@ -1393,6 +1431,23 @@ class _TdsSession:
             self.authentication = login.auth
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
+        elif login.access_token:
+            fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("ASCII"))) 
+            length = len(fedauth_token)
+            noncelen = len(login.nonce) if login.nonce else 0
+            buffer = bytearray()
+            buffer.extend(struct.pack("B", tds_base.TDS_LOGIN_FEATURE_FEDAUTH))
+            buffer.extend(struct.pack("<I", length + noncelen + 4 + 1))
+            buffer.extend(struct.pack("B", (tds_base.TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN << 1) |   
+                                     (tds_base.TDS_FEDAUTH_OPTIONS_ECHO_YES if self.conn.fedauth_required else tds_base.TDS_FEDAUTH_OPTIONS_ECHO_NO)))
+            buffer.extend(struct.pack("<I", length))
+            buffer.extend(fedauth_token)
+            if login.nonce:
+                buffer.extend(struct.pack("<I", noncelen))
+                buffer.extend(login.nonce)
+            buffer.extend(struct.pack("B", 0xFF))
+            auth_packet = bytes(buffer)
+            packet_size += len(auth_packet) + 4
         else:
             auth_packet = b""
             packet_size += (len(user_name) + len(login.password)) * 2
@@ -1412,7 +1467,7 @@ class _TdsSession:
         if not login.bulk_copy:
             option_flag1 |= tds_base.TDS_DUMPLOAD_OFF
         w.put_byte(option_flag1)
-        if self.authentication:
+        if self.authentication and not login.access_token:
             option_flag2 |= tds_base.TDS_INTEGRATED_SECURITY_ON
         w.put_byte(option_flag2)
         type_flags = 0
@@ -1420,6 +1475,8 @@ class _TdsSession:
             type_flags |= tds_base.TDS_FREADONLY_INTENT
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
+        if login.access_token:
+            option_flag3 |= 0x10 # fExtension
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
         mins_fix = (
             int(
@@ -1450,7 +1507,7 @@ class _TdsSession:
         w.put_smallint(current_pos)
         w.put_smallint(len(client_host_name))
         current_pos += len(client_host_name) * 2
-        if self.authentication:
+        if self.authentication or login.access_token:
             w.put_smallint(0)
             w.put_smallint(0)
             w.put_smallint(0)
@@ -1469,9 +1526,18 @@ class _TdsSession:
         w.put_smallint(current_pos)
         w.put_smallint(len(login.server_name))
         current_pos += len(login.server_name) * 2
-        # reserved
-        w.put_smallint(0)
-        w.put_smallint(0)
+        # extension
+        extension_offset = None
+        if login.access_token:
+            w.put_smallint(current_pos)
+            w.put_usmallint(4)
+            current_pos += 4
+            extension_offset = current_pos
+            current_pos += len(auth_packet)
+        else:
+            # reserved
+            w.put_smallint(0)
+            w.put_smallint(0)
         # library name
         w.put_smallint(current_pos)
         w.put_smallint(len(login.library))
@@ -1489,8 +1555,11 @@ class _TdsSession:
         w.write(client_id)
         # authentication
         w.put_smallint(current_pos)
-        w.put_smallint(len(auth_packet))
-        current_pos += len(auth_packet)
+        if login.access_token:
+            w.put_smallint(0)
+        else:
+            w.put_smallint(len(auth_packet))
+            current_pos += len(auth_packet)
         # db file
         w.put_smallint(current_pos)
         w.put_smallint(len(login.attach_db_file))
@@ -1502,15 +1571,18 @@ class _TdsSession:
             # sspi long
             w.put_int(0)
         w.write_ucs2(client_host_name)
-        if not self.authentication:
+        if not self.authentication and not login.access_token:
             w.write_ucs2(user_name)
             w.write(tds7_crypt_pass(login.password))
         w.write_ucs2(login.app_name)
         w.write_ucs2(login.server_name)
+        if extension_offset:
+            w.put_uint(extension_offset)
+            w.write(auth_packet)
         w.write_ucs2(login.library)
         w.write_ucs2(login.language)
         w.write_ucs2(login.database)
-        if self.authentication:
+        if self.authentication and not login.access_token:
             w.write(auth_packet)
         w.write_ucs2(login.attach_db_file)
         w.write_ucs2(login.change_password)
@@ -1737,11 +1809,41 @@ class _TdsSession:
         r = self._reader
         total_length = r.get_smallint()
         tds_base.skipall(r, total_length)
+    
+    def process_featureextack(self):
+        """
+        Process FEATUREEXTACK token
+
+        Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2eb82f8e-11f0-46dc-b42d-27302fa4701a
+        """
+        r = self._reader
+        def get_featureackopt():
+            feature_id = r.get_byte()
+            if feature_id == 0xFF:
+                return None, None
+            feature_ack_len = r.get_uint()
+            if feature_id == tds_base.TDS_LOGIN_FEATURE_FEDAUTH and feature_ack_len >= 32:
+                sig = None
+                nonce,_ = r.read_fast(32)
+                if feature_ack_len > 32:
+                    sig, _ = r.read_fast(32)
+                return feature_id, (nonce, sig)
+            elif feature_id == tds_base.TDS_LOGIN_FEATURE_UTF8_SUPPORT and feature_ack_len > 0: 
+                utf8_support = r.get_byte()
+                return feature_id, utf8_support
+            else:
+                 feature_ack, _ = r.read_fast(feature_ack_len)  
+            return feature_id, feature_ack
+        while True:
+            feature_id, feature_ack = get_featureackopt()
+            if feature_id is None:
+                break
 
 
 _token_map = {
     tds_base.TDS_AUTH_TOKEN: _TdsSession.process_auth,
     tds_base.TDS_ENVCHANGE_TOKEN: _TdsSession.process_env_chg,
+    tds_base.TDS_CONTROL_TOKEN: lambda self: self.process_featureextack(),
     tds_base.TDS_DONE_TOKEN: lambda self: self.process_end(tds_base.TDS_DONE_TOKEN),
     tds_base.TDS_DONEPROC_TOKEN: lambda self: self.process_end(
         tds_base.TDS_DONEPROC_TOKEN

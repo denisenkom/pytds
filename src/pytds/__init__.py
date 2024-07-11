@@ -145,6 +145,7 @@ def connect(
     pooling: bool = False,
     use_sso: bool = False,
     isolation_level: int = 0,
+    access_token: str | None = None
 ):
     """
     Opens connection to the database
@@ -202,6 +203,8 @@ def connect(
     :type enc_login_only: bool
     :keyword use_sso: Enables SSO login, e.g. Kerberos using SSPI on Windows and kerberos package on other platforms.
              Cannot be used together with auth parameter.
+    :keyword access_token: Federated Authentication Token
+    :type access_token: str
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
@@ -222,6 +225,7 @@ def connect(
     login.bulk_copy = False
     login.client_lcid = lcid.LANGID_ENGLISH_US
     login.use_mars = use_mars
+    login.access_token = access_token
     login.pid = os.getpid()
     login.change_password = ""
     login.client_id = uuid.getnode()  # client mac address

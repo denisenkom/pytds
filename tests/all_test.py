@@ -572,6 +572,15 @@ class Auth(unittest.TestCase):
                 cursor.execute("select 1")
                 cursor.fetchall()
 
+    @unittest.skipUnless(os.getenv("SECURITY_TOKEN"), "requires SECURITY_TOKEN environment variable to be set")
+    def test_security_token(self):
+        with connect(**{
+            **settings.CONNECT_KWARGS,
+            "access_token": os.getenv("SECURITY_TOKEN")
+            }) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("select 1")
+                cursor.fetchall()
 
 class CloseCursorTwice(ConnectionTestCase):
     def runTest(self):

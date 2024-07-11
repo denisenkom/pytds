@@ -51,6 +51,9 @@ def IS_TDS73_PLUS(x: _TdsSession):
     return x.tds_version >= TDS73A
 
 
+def IS_TDS74_PLUS(x: _TdsSession):
+    return x.tds_version >= TDS74
+
 # https://msdn.microsoft.com/en-us/library/dd304214.aspx
 class PacketType:
     QUERY = 1
@@ -251,6 +254,24 @@ TDS_FSQLTYPE_SQL_DFLT = 0x00
 TDS_FSQLTYPE_SQL_TSQL = 0x01
 TDS_FOLEDB = 0x10
 TDS_FREADONLY_INTENT = 0x20
+
+
+# as per https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
+TDS_LOGIN_FEATURE_SESSIONRECOVERY = 0x01
+TDS_LOGIN_FEATURE_FEDAUTH = 0x02
+TDS_LOGIN_FEATURE_COLUMNENCRYPTION = 0x04
+TDS_LOGIN_FEATURE_GLOBALTRANSACTIONS = 0x05
+TDS_LOGIN_FEATURE_AZURESQLSUPPORT = 0x08
+TDS_LOGIN_FEATURE_DATACLASSIFICATION = 0x09
+TDS_LOGIN_FEATURE_UTF8_SUPPORT = 0x0A
+TDS_LOGIN_FEATURE_AZURESQLDNSCACHING = 0x0B
+
+TDS_FEDAUTH_OPTIONS_LIBRARY_LIVEID_COMPACTTOKEN = 0x00
+TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN = 0x01
+TDS_FEDAUTH_OPTIONS_LIBRARY_ADAL = 0x02
+TDS_FEDAUTH_OPTIONS_ECHO_YES = 0x01
+TDS_FEDAUTH_OPTIONS_ECHO_NO = 0x00
+
 
 #
 # Sybase only types
@@ -967,6 +988,8 @@ class _TdsLogin:
         self.auth: AuthProtocol | None = None
         self.servers: deque[Tuple[Any, int | None, str]] = deque()
         self.server_enc_flag = 0
+        self.access_token: str | None = None
+        self.nonce: bytes | None = None
 
 
 class _TdsEnv:
