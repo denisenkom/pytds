@@ -1176,7 +1176,7 @@ class _TdsSession:
         instance_name_encoded = instance_name.encode("ascii")
         if len(instance_name_encoded) > 65490:
             raise ValueError("Instance name is too long")
-        if tds_base.IS_TDS74_PLUS(self):
+        if login.access_token and tds_base.IS_TDS74_PLUS(self):
             start_pos = 31
             buf = struct.pack(
                 b">BHHBHHBHHBHHBHHBHHB",
@@ -1276,8 +1276,8 @@ class _TdsSession:
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
             attribs["mars"] = login.use_mars
-        if tds_base.IS_TDS74_PLUS(self):
-            w.put_byte(1 if login.access_token else 0)
+        if tds_base.IS_TDS74_PLUS(self) and login.access_token:
+            w.put_byte(1)
             attribs["fedauth"] = bool(login.access_token)
         logger.info(
             "Sending PRELOGIN %s", " ".join(f"{n}={v!r}" for n, v in attribs.items())
