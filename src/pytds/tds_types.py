@@ -1485,7 +1485,7 @@ class DateTimeSerializer(BasePrimitiveTypeSerializer, BaseDateTimeSerializer):
 
     @classmethod
     def encode(cls, value):
-        if type(value) == datetime.date:
+        if type(value) is datetime.date:
             value = datetime.datetime.combine(value, datetime.time(0, 0, 0))
         dt = DateTime.from_pydatetime(value)
         return cls._struct.pack(dt.days, dt.time_part)
