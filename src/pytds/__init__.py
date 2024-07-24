@@ -145,7 +145,8 @@ def connect(
     pooling: bool = False,
     use_sso: bool = False,
     isolation_level: int = 0,
-    access_token: str | None = None
+    access_token: str | None = None,
+    nonce: bytes | None = None,
 ):
     """
     Opens connection to the database
@@ -205,6 +206,8 @@ def connect(
              Cannot be used together with auth parameter.
     :keyword access_token: Federated Authentication Token
     :type access_token: str
+    :keyword nonce: Nonce for encryption (32 bytes)
+    :type nonce: bytes
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
@@ -232,6 +235,7 @@ def connect(
     login.cafile = cafile
     login.validate_host = validate_host
     login.enc_login_only = enc_login_only
+    login.nonce = nonce
     if cafile:
         if not tls.OPENSSL_AVAILABLE:
             raise ValueError(

@@ -563,7 +563,7 @@ class TestMessages(unittest.TestCase):
                 + b"\x5e\x00\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00\x6c\x00\x07\x00\x7a\x00\x0a\x00"
                 + b"\x8e\x00"
                 + b"\x04\x00" # extension enable
-                + b"\xa7\x00\x07\x00\xb5\x00\x02\x00\xb9\x00\x08\x00"
+                + b"\x92\x00\x07\x00\xa0\x00\x02\x00\xa4\x00\x08\x00"
                 + b"\x12\x34\x56\x78\x90\xab" # client id
                 + b"\xc9\x00"
                 + b"\x00\x00" # auth
@@ -571,16 +571,16 @@ class TestMessages(unittest.TestCase):
                 + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"
                 + b"a\x00p\x00p\x00n\x00a\x00m\x00e\x00"
                 + b"s\x00e\x00r\x00v\x00e\x00r\x00n\x00a\x00m\x00e\x00"
-                + b"\x92\x00\x00\x00" #extension offset
+                + b"\xb4\x00\x00\x00" #extension offset
+                + b"l\x00i\x00b\x00r\x00a\x00r\x00y\x00"
+                + b"e\x00n\x00"
+                + b"d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00"
                 + b"\x02" # TDS_LOGIN_FEATURE_FEDAUTH
                 + b"\x0f\x00\x00\x00" # length
                 + b"\x02" # TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN
                 + b"\x0a\x00\x00\x00" # length
                 + b"t\x00o\x00k\x00e\x00n\x00"
                 + b"\xff" # terminate extension
-                + b"l\x00i\x00b\x00r\x00a\x00r\x00y\x00"
-                + b"e\x00n\x00"
-                + b"d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00"
                 + b"f\x00i\x00l\x00e\x00p\x00a\x00t\x00h\x00",
             )
 

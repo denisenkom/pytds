@@ -1176,97 +1176,10 @@ class _TdsSession:
         instance_name_encoded = instance_name.encode("ascii")
         if len(instance_name_encoded) > 65490:
             raise ValueError("Instance name is too long")
-        if login.access_token and tds_base.IS_TDS74_PLUS(self):
-            start_pos = 31
-            buf = struct.pack(
-                b">BHHBHHBHHBHHBHHBHHB",
-                # netlib version
-                PreLoginToken.VERSION,
-                start_pos,
-                6,
-                # encryption
-                PreLoginToken.ENCRYPTION,
-                start_pos + 6,
-                1,
-                # instance
-                PreLoginToken.INSTOPT,
-                start_pos + 6 + 1,
-                len(instance_name_encoded) + 1,
-                # thread id
-                PreLoginToken.THREADID,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
-                4,
-                # MARS enabled
-                PreLoginToken.MARS,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
-                1,
-                PreLoginToken.FEDAUTHREQUIRED,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4 + 1,
-                1,
-                # end
-                PreLoginToken.TERMINATOR,
-            )
-        elif tds_base.IS_TDS72_PLUS(self):
-            start_pos = 26
-            buf = struct.pack(
-                b">BHHBHHBHHBHHBHHB",
-                # netlib version
-                PreLoginToken.VERSION,
-                start_pos,
-                6,
-                # encryption
-                PreLoginToken.ENCRYPTION,
-                start_pos + 6,
-                1,
-                # instance
-                PreLoginToken.INSTOPT,
-                start_pos + 6 + 1,
-                len(instance_name_encoded) + 1,
-                # thread id
-                PreLoginToken.THREADID,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
-                4,
-                # MARS enabled
-                PreLoginToken.MARS,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
-                1,
-                # end
-                PreLoginToken.TERMINATOR,
-            )
-        else:
-            start_pos = 21
-            buf = struct.pack(
-                b">BHHBHHBHHBHHB",
-                # netlib version
-                PreLoginToken.VERSION,
-                start_pos,
-                6,
-                # encryption
-                PreLoginToken.ENCRYPTION,
-                start_pos + 6,
-                1,
-                # instance
-                PreLoginToken.INSTOPT,
-                start_pos + 6 + 1,
-                len(instance_name_encoded) + 1,
-                # thread id
-                PreLoginToken.THREADID,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
-                4,
-                # end
-                PreLoginToken.TERMINATOR,
-            )
-        assert start_pos == len(buf)
-        w = self._writer
-        w.begin_packet(tds_base.PacketType.PRELOGIN)
-        w.write(buf)
-        w.put_uint_be(intversion)
-        w.put_usmallint_be(0)  # build number
-        # encryption flag
-        w.put_byte(login.enc_flag)
-        w.write(instance_name_encoded)
-        w.put_byte(0)  # zero terminate instance_name
-        w.put_int(0)  # TODO: change this to thread id
+        prelogin_fields = {PreLoginToken.VERSION: struct.pack(">LH", intversion, 0), # intversion, build number
+                           PreLoginToken.ENCRYPTION: struct.pack("B", login.enc_flag),
+                           PreLoginToken.INSTOPT: instance_name_encoded + b"\x00", # zero terminate instance_name
+                           PreLoginToken.THREADID: struct.pack(">L", 0)} # TODO: change this to thread id        
         attribs: dict[str, str | int | bool] = {
             "lib_ver": f"{intversion:x}",
             "enc_flag": f"{login.enc_flag:x}",
@@ -1274,11 +1187,31 @@ class _TdsSession:
         }
         if tds_base.IS_TDS72_PLUS(self):
             # MARS (1 enabled)
-            w.put_byte(1 if login.use_mars else 0)
+            prelogin_fields[PreLoginToken.MARS] = b'\x01' if login.use_mars else b'\x00'
             attribs["mars"] = login.use_mars
-        if tds_base.IS_TDS74_PLUS(self) and login.access_token:
-            w.put_byte(1)
-            attribs["fedauth"] = bool(login.access_token)
+        if tds_base.IS_TDS74_PLUS(self):
+            if login.access_token:
+                prelogin_fields[PreLoginToken.FEDAUTHREQUIRED] = b'\x01'
+                attribs["fedauth"] = bool(login.access_token)
+            if login.nonce:
+                prelogin_fields[PreLoginToken.NONCEOPT] = login.nonce
+                attribs["nonce"] = login.nonce
+       
+        w = self._writer
+        w.begin_packet(tds_base.PacketType.PRELOGIN)
+        start_pos = 5*len(prelogin_fields) + 1
+
+        for field, value in prelogin_fields.items():
+            value_len = len(value)
+            buf = struct.pack(">BHH", field, start_pos, value_len)
+            w.write(buf)
+            start_pos += value_len
+
+        w.write(struct.pack("B",PreLoginToken.TERMINATOR))
+
+        for value in prelogin_fields.values():
+            w.write(value)
+
         logger.info(
             "Sending PRELOGIN %s", " ".join(f"{n}={v!r}" for n, v in attribs.items())
         )
@@ -1437,13 +1370,12 @@ class _TdsSession:
             noncelen = len(login.nonce) if login.nonce else 0
             buffer = bytearray()
             buffer.extend(struct.pack("B", tds_base.TDS_LOGIN_FEATURE_FEDAUTH))
-            buffer.extend(struct.pack("<I", length + noncelen + 4 + 1))
+            buffer.extend(struct.pack("<I", length + noncelen + 1 + 4))
             buffer.extend(struct.pack("B", (tds_base.TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN << 1) |   
                                      (tds_base.TDS_FEDAUTH_OPTIONS_ECHO_YES if self.conn.fedauth_required else tds_base.TDS_FEDAUTH_OPTIONS_ECHO_NO)))
             buffer.extend(struct.pack("<I", length))
             buffer.extend(fedauth_token)
             if login.nonce:
-                buffer.extend(struct.pack("<I", noncelen))
                 buffer.extend(login.nonce)
             buffer.extend(struct.pack("B", 0xFF))
             auth_packet = bytes(buffer)
@@ -1527,13 +1459,10 @@ class _TdsSession:
         w.put_smallint(len(login.server_name))
         current_pos += len(login.server_name) * 2
         # extension
-        extension_offset = None
         if login.access_token:
             w.put_smallint(current_pos)
             w.put_usmallint(4)
             current_pos += 4
-            extension_offset = current_pos
-            current_pos += len(auth_packet)
         else:
             # reserved
             w.put_smallint(0)
@@ -1550,6 +1479,10 @@ class _TdsSession:
         w.put_smallint(current_pos)
         w.put_smallint(len(login.database))
         current_pos += len(login.database) * 2
+        extension_offset = None
+        if login.access_token:
+            extension_offset = current_pos
+            current_pos += len(auth_packet)
         # ClientID
         client_id = struct.pack(">Q", login.client_id)[2:]
         w.write(client_id)
@@ -1578,12 +1511,10 @@ class _TdsSession:
         w.write_ucs2(login.server_name)
         if extension_offset:
             w.put_uint(extension_offset)
-            w.write(auth_packet)
         w.write_ucs2(login.library)
         w.write_ucs2(login.language)
         w.write_ucs2(login.database)
-        if self.authentication and not login.access_token:
-            w.write(auth_packet)
+        w.write(auth_packet)
         w.write_ucs2(login.attach_db_file)
         w.write_ucs2(login.change_password)
         w.flush()
