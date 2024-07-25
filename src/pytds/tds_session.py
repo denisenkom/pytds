@@ -1195,7 +1195,7 @@ class _TdsSession:
                 attribs["fedauth"] = bool(login.access_token)
             if login.nonce:
                 prelogin_fields[PreLoginToken.NONCEOPT] = login.nonce
-                attribs["nonce"] = login.nonce
+                attribs["nonce"] = login.nonce.hex()
        
         w = self._writer
         w.begin_packet(tds_base.PacketType.PRELOGIN)
