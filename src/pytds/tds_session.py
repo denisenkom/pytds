@@ -1766,7 +1766,6 @@ class _TdsSession:
                  feature_ack = readall(r, feature_ack_len)  
             return feature_id, feature_ack
         while True:
-            breakpoint()
             feature_id, feature_ack = get_featureackopt()
             if feature_id is None:
                 break
