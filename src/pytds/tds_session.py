@@ -1755,17 +1755,18 @@ class _TdsSession:
             feature_ack_len = r.get_uint()
             if feature_id == tds_base.TDS_LOGIN_FEATURE_FEDAUTH and feature_ack_len >= 32:
                 sig = None
-                nonce,_ = r.read_fast(32)
+                nonce = readall(r, 32)
                 if feature_ack_len > 32:
-                    sig, _ = r.read_fast(32)
+                    sig = readall(r, 32)
                 return feature_id, (nonce, sig)
             elif feature_id == tds_base.TDS_LOGIN_FEATURE_UTF8_SUPPORT and feature_ack_len > 0: 
                 utf8_support = r.get_byte()
                 return feature_id, utf8_support
             else:
-                 feature_ack, _ = r.read_fast(feature_ack_len)  
+                 feature_ack = readall(r, feature_ack_len)  
             return feature_id, feature_ack
         while True:
+            breakpoint()
             feature_id, feature_ack = get_featureackopt()
             if feature_id is None:
                 break
