@@ -69,13 +69,8 @@ from . import tls
 from .tds_base import logger
 
 __author__ = "Mikhail Denisenko <denisenkom@gmail.com>"
-try:
-    __version__ = utils.package_version("python-tds")
-except Exception:
-    __version__ = "DEV"
 
-
-intversion = utils.ver_to_int(__version__)
+intversion = utils.ver_to_int("1.0.0")
 
 #: Compliant with DB SIG 2.0
 apilevel = "2.0"
