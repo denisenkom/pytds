@@ -4,7 +4,6 @@ other modules.
 """
 from __future__ import annotations
 import logging
-import sys
 import time
 import typing
 from collections.abc import Callable
