@@ -21,6 +21,7 @@ install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
   - choco install rust
+  - choco install openssl --version=1.1.1.2100
   - pip install -r requirements.txt
   - pip install -r test_requirements.txt
   - pip uninstall -y python-tds
