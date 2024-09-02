@@ -23,6 +23,7 @@ install:
   - choco install rust
   - set INCLUDE=C:\OpenSSL-Win64\include;%INCLUDE%
   - set LIB=C:\OpenSSL-Win64\lib;%LIB%
+  - set OPENSSL_DIR=C:\OpenSSL-Win64
   - pip install -r requirements.txt
   - pip install -r test_requirements.txt
   - pip uninstall -y python-tds
