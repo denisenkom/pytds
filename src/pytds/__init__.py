@@ -349,7 +349,6 @@ def connect(
                         tds_socket=tds_socket,
                     )
         host, port, instance = login.servers[0]
-        login.servers.rotate(1)
         return _connect(
             login=login,
             host=host,
@@ -369,7 +368,7 @@ def connect(
     def ex_handler(ex: Exception) -> None:
         if isinstance(ex, LoginError):
             raise ex
-        elif isinstance(ex, BrokenPipeError) or isinstance(ex, socket.timeout):
+        elif isinstance(ex, BrokenPipeError):
             # Allow to retry when BrokenPipeError is received
             pass
         elif isinstance(ex, OperationalError):
@@ -417,14 +416,17 @@ def _connect(
     """
     Establish physical connection and login.
     """
-    login.server_name = host
-    login.instance_name = instance
-    resolved_port = instance_browser_client.resolve_instance_port(
-        server=host, port=port, instance=instance, timeout=timeout
-    )
-    if not sock:
-        logger.info("Opening socket to %s:%d", host, resolved_port)
-        sock = socket.create_connection((host, resolved_port), timeout)
+    try:
+        login.server_name = host
+        login.instance_name = instance
+        resolved_port = instance_browser_client.resolve_instance_port(
+            server=host, port=port, instance=instance, timeout=timeout
+        )
+        if not sock:
+            logger.info("Opening socket to %s:%d", host, resolved_port)
+            sock = socket.create_connection((host, resolved_port), timeout)
+    except Exception as e:
+        raise LoginError(f"Cannot connect to server '{host}': {e}") from e
     try:
         sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 
