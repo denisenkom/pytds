@@ -111,53 +111,6 @@ def test_connection_timeout_with_mars():
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-def test_connection_timeout_no_mars():
-    kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs.update(
-        {
-            "use_mars": False,
-            "timeout": 1,
-            "pooling": True,
-        }
-    )
-    with connect(**kwargs) as conn:
-        with conn.cursor() as cur:
-            with pytest.raises(TimeoutError):
-                cur.execute("waitfor delay '00:00:05'")
-        with conn.cursor() as cur:
-            cur.execute("select 1")
-            cur.fetchall()
-
-        # test cancelling
-        with conn.cursor() as cur:
-            cur.execute("select 1")
-            cur.cancel()
-            assert cur.fetchall() == []
-            cur.execute("select 2")
-            assert cur.fetchall() == [(2,)]
-
-        # test rollback
-        conn.rollback()
-
-        # test callproc on non-mars connection
-        with conn.cursor() as cur:
-            cur.callproc("sp_reset_connection")
-
-        with conn.cursor() as cur:
-            # test spid property on non-mars cursor
-            assert cur.spid is not None
-
-            # test tzinfo_factory property r/w
-            cur.tzinfo_factory = cur.tzinfo_factory
-
-    # test non-mars cursor with connection pool enabled
-    with connect(**kwargs) as conn:
-        with conn.cursor() as cur:
-            cur.execute("select 1")
-            assert cur.fetchall() == [(1,)]
-
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_connection_no_mars_autocommit():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
@@ -208,6 +161,54 @@ def test_connection_no_mars_autocommit():
         # calling description on closed cursor works
         # this test does not have to pass
         assert cur.native_description is None
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_connection_timeout_no_mars():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update(
+        {
+            "use_mars": False,
+            "timeout": 1,
+            "pooling": True,
+        }
+    )
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            with pytest.raises(TimeoutError):
+                cur.execute("waitfor delay '00:00:05'")
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.fetchall()
+
+        # test cancelling
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.cancel()
+            assert cur.fetchall() == []
+            cur.execute("select 2")
+            assert cur.fetchall() == [(2,)]
+
+        # test rollback
+        conn.rollback()
+
+        # test callproc on non-mars connection
+        with conn.cursor() as cur:
+            cur.callproc("sp_reset_connection")
+
+        with conn.cursor() as cur:
+            # test spid property on non-mars cursor
+            assert cur.spid is not None
+
+            # test tzinfo_factory property r/w
+            cur.tzinfo_factory = cur.tzinfo_factory
+
+    # test non-mars cursor with connection pool enabled
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            assert cur.fetchall() == [(1,)]
+
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_row_strategies():
