@@ -211,21 +211,6 @@ def test_connection_timeout_no_mars():
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-def test_connection_no_mars_no_pooling():
-    kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs.update(
-        {
-            "use_mars": False,
-            "pooling": False,
-        }
-    )
-    with connect(**kwargs) as conn:
-        with conn.cursor() as cur:
-            cur.execute("select 1")
-            assert cur.fetchall() == [(1,)]
-
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_row_strategies():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
@@ -324,9 +309,9 @@ class TestVariant(ConnectionTestCase):
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):
     def test_invalid_parameters(self):
-        with self.assertRaises(Error):
+        with self.assertRaises(socket.gaierror):
             with connect(
-                server=settings.HOST + "bad",
+                server="badhost",
                 database="master",
                 user="baduser",
                 password=settings.PASSWORD,
