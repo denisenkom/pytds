@@ -24,6 +24,7 @@ install:
   - set INCLUDE=C:\OpenSSL-Win64\include;%INCLUDE%
   - set LIB=C:\OpenSSL-Win64\lib;%LIB%
   - set OPENSSL_DIR=C:\OpenSSL-Win64
+  - set PATH=C:\MinGW\bin;%PATH%
   - pip install -r requirements.txt
   - pip install -r test_requirements.txt
   - pip uninstall -y python-tds
