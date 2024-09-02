@@ -198,9 +198,9 @@ class TestVariant(ConnectionTestCase):
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):
     def test_invalid_parameters(self):
-        with self.assertRaises(Error):
+        with self.assertRaises(socket.gaierror):
             with connect(
-                server=settings.HOST + "bad",
+                server="badhost",
                 database="master",
                 user="baduser",
                 password=settings.PASSWORD,
