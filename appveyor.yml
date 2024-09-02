@@ -24,6 +24,7 @@ install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
+  - choco install rust
   - pip install -e .
   - pip install -r test_requirements.txt
 
