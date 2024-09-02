@@ -25,7 +25,8 @@ install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
   - choco install rust
-  - choco install openssl --version=1.1.1.2100
+  - ps: Start-FileDownload 'http://slproweb.com/download/Win32OpenSSL-1_0_2a.exe'
+  - ps: msiexec /i Win32OpenSSL-1_0_2a.exe
   - pip install -e .
   - pip install -r test_requirements.txt
 
