@@ -32,7 +32,7 @@ install:
   - set LIB=C:\OpenSSL-Win64\lib;%LIB%
   - set OPENSSL_DIR=C:\OpenSSL-Win64
   - pip install -e .
-  - pip install distutils # needed to build cryptography package
+  - pip install setuptools  # needed to build cryptography package
   - pip install -r test_requirements.txt
 
 build_script:
