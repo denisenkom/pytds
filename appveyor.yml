@@ -25,11 +25,11 @@ install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
   - choco install rust
+  - set PATH=C:\MinGW\bin;%HomeDrive%%HomePath%\.cargo\bin;%PATH%
   - rustup target add i686-pc-windows-gnu
   - set INCLUDE=C:\OpenSSL-Win64\include;%INCLUDE%
   - set LIB=C:\OpenSSL-Win64\lib;%LIB%
   - set OPENSSL_DIR=C:\OpenSSL-Win64
-  - set PATH=C:\MinGW\bin;%PATH%
   - pip install -e .
   - pip install -r test_requirements.txt
 
