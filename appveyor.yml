@@ -27,7 +27,7 @@ install:
   - choco install rust rustup.install
   - set PATH=C:\MinGW\bin;%HomeDrive%%HomePath%\.cargo\bin;%PATH%
   - dir %HomeDrive%%HomePath%
-  - rustup target add i686-pc-windows-gnu
+  - rustup target add i686-pc-windows-msvc
   - set INCLUDE=C:\OpenSSL-Win64\include;%INCLUDE%
   - set LIB=C:\OpenSSL-Win64\lib;%LIB%
   - set OPENSSL_DIR=C:\OpenSSL-Win64
