@@ -77,6 +77,13 @@ def test_dictionary_params(cursor):
     assert cursor.execute_scalar("select %(param)s", {"param": 1}) == 1
 
 
+def test_percent_escaping(cursor):
+    # issue #171
+    assert cursor.execute_scalar("select 'x %% y'") == "x %% y"
+    assert cursor.execute_scalar("select 'x %% y'", {}) == "x % y"
+    assert cursor.execute_scalar("select 'x %% y'", tuple()) == "x % y"
+
+
 def test_overlimit(cursor):
     def test_val(val):
         cursor.execute("select %s", (val,))

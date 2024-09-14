@@ -13,8 +13,8 @@ namedlist
 # see example failure: https://ci.appveyor.com/project/denisenkom/pytds/builds/37803561/job/lln9d25ye5vnljbr
 # requiring older cryptography library to avoid this error
 cryptography < 3.3
-sqlalchemy-pytds==1.0.0
-SQLAlchemy==2.0.22
+sqlalchemy-pytds
+SQLAlchemy==2.0.34
 mypy==1.7.1
 pytest-mypy==0.10.3
 ruff==0.6.3
