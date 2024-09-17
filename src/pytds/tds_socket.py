@@ -76,6 +76,7 @@ class _TdsSocket:
         self.server_library_version = (0, 0)
         self.product_name = ""
         self.product_version = 0
+        self.fedauth_required = False
 
     def __repr__(self) -> str:
         fmt = "<_TdsSocket tran={} mars={} tds_version={} use_tz={}>"
