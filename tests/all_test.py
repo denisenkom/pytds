@@ -308,7 +308,7 @@ class TestVariant(ConnectionTestCase):
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):
-    def test_invalid_parameters(self):
+    def test_bad_host(self):
         with self.assertRaises(socket.gaierror):
             with connect(
                 server="badhost",
@@ -319,6 +319,8 @@ class BadConnection(unittest.TestCase):
             ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1")
+
+    def test_bad_database(self):
         with self.assertRaises(Error):
             with connect(
                 server=settings.HOST,
@@ -328,6 +330,8 @@ class BadConnection(unittest.TestCase):
             ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1")
+
+    def test_bad_user(self):
         with self.assertRaises(Error):
             with connect(
                 server=settings.HOST, database="master", user="baduser", password=None
