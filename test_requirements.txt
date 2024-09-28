@@ -18,3 +18,4 @@ SQLAlchemy==2.0.34
 mypy==1.7.1
 pytest-mypy==0.10.3
 ruff==0.6.3
+setuptools==75.1.0
