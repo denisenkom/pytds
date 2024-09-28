@@ -40,6 +40,7 @@ before_test:
 test_script:
   - mypy src
   - ruff check src
+  - set PYTHONPATH=src
   - pytest -v --junitxml=junit-results.xml --cov=./
   - ps: |
       $wc = New-Object 'System.Net.WebClient'
