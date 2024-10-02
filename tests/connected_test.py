@@ -577,6 +577,10 @@ def test_cursor_connection_property(db_connection):
         assert cur.connection is db_connection
 
 
+@pytest.mark.skipif(
+    not utils.hashlib_supports_md4(),
+    reason="Current python version does not support MD4 which is needed for NTLM"
+)
 def test_invalid_ntlm_creds():
     if not LIVE_TEST:
         pytest.skip("LIVE_TEST is not set")

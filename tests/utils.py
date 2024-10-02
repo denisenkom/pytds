@@ -1,3 +1,4 @@
+import hashlib
 import sys
 import unittest
 from io import BytesIO
@@ -197,3 +198,12 @@ def create_test_database(connection: pytds.Connection):
 
 def tran_count(cursor: pytds.Cursor) -> int:
     return cursor.execute_scalar("select @@trancount")
+
+
+def hashlib_supports_md4() -> bool:
+    try:
+        hashlib.new('md4', b'test').digest()
+    except ValueError as e:
+        return False
+    else:
+        return True
