@@ -5,6 +5,7 @@ codecov
 # TypeError: deprecated() got an unexpected keyword argument 'name'
 # Example failing build: https://ci.appveyor.com/project/denisenkom/pytds/builds/46539355/job/aq6d65ej1oi0i59p
 pyOpenSSL<22.1.0
+types-pyOpenSSL
 pyDes
 ntlm-auth
 pyspnego

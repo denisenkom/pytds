@@ -158,10 +158,13 @@ def establish_channel(tds_sock: _TdsSession) -> None:
     w = tds_sock._writer
     r = tds_sock._reader
     login = tds_sock.conn._login
+    tls_ctx = login.tls_ctx
+    if not tls_ctx:
+        raise Exception("login.tls_ctx is not set unexpectedly")
 
     bhost = login.server_name.encode("ascii")
 
-    conn = OpenSSL.SSL.Connection(login.tls_ctx)
+    conn = OpenSSL.SSL.Connection(tls_ctx)
     conn.set_tlsext_host_name(bhost)
     # change connection to client mode
     conn.set_connect_state()
