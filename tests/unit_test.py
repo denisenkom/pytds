@@ -1336,7 +1336,7 @@ def root_ca_path(test_ca):
 
 @pytest.fixture
 def address():
-    return ("127.0.0.1", 1434)
+    return ("127.0.0.1", 3434)
 
 
 @pytest.fixture

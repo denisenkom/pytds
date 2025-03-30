@@ -291,7 +291,7 @@ class BaseCursor(Cursor, collections.abc.Iterator):
         params: list[typing.Any]
         | tuple[typing.Any, ...]
         | dict[str, typing.Any]
-        | None = (),
+        | None = None,
     ) -> BaseCursor:
         """Execute an SQL query
 
