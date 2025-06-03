@@ -1342,6 +1342,13 @@ class _TdsSession:
             raise ValueError("Language should be not longer than 128 characters")
         if len(login.attach_db_file) > 260:
             raise ValueError("File path should be not longer than 260 characters")
+        if login.access_token == "":
+            raise ValueError("Access token must not be an empty string")
+
+        if login.access_token is not None:
+            if not tds_base.IS_TDS74_PLUS(self):
+                raise ValueError("Access token authentication requires TDS version 7.4 or higher")
+
         w = self._writer
         w.begin_packet(tds_base.PacketType.LOGIN)
         self.authentication = None
@@ -1365,7 +1372,7 @@ class _TdsSession:
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
         elif login.access_token:
-            fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("ASCII"))) 
+            fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("UTF-8")))
             length = len(fedauth_token)
             noncelen = len(login.nonce) if login.nonce else 0
             buffer = bytearray()
