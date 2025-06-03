@@ -547,6 +547,20 @@ class TestMessages(unittest.TestCase):
             ValueError, "File path should be not longer than 260 characters"
         ):
             tds._main_session.tds7_send_login(login)
+
+        login.attach_db_file = "x"
+        login.access_token = ""
+        with self.assertRaisesRegex(
+            ValueError, "Access token must not be an empty string"
+        ):
+            tds._main_session.tds7_send_login(login)
+
+        login.access_token = "notempty"
+        with self.assertRaisesRegex(
+            ValueError, "Access token authentication requires TDS version 7.4 or higher"
+        ):
+            tds._main_session.tds7_send_login(login)
+
         self.assertEqual(sock._sent, b"")
 
     def test_access_token_login_generation(self):
