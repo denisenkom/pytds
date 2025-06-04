@@ -83,7 +83,7 @@ class TestAccessTokenValidation:
                 disable_connect_retry=True,
                 login_timeout=0.1,  # Quick timeout since we expect connection to fail
             )
-        except pytds.LoginError:
+        except (pytds.LoginError, pytds.OperationalError):
             # Expected - connection will fail, but validation should have passed
             pass
         except ValueError:
