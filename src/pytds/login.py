@@ -204,7 +204,20 @@ class KerberosAuth(AuthProtocol):
             raise RuntimeError(f"authGSSClientInit failed with code {res}")
         logger.info("Initialized GSS context")
         self._context = context
+       
+class AzureTokenAuth(AuthProtocol):
+    def __init__(self, token: str) -> None:
+        self._token = token
 
+    def create_packet(self) -> bytes:
+        return build_token_login_packet(self._token)
+
+    def handle_next(self, packet: bytes) -> bytes | None:
+        # Token-based auth is usually a single packet
+        return None
+
+    def close(self) -> None:
+        pass
     def create_packet(self) -> bytes:
         res = self._kerberos.authGSSClientStep(self._context, "")
         if res < 0:
