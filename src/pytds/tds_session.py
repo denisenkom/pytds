@@ -866,7 +866,7 @@ class _TdsSession:
         params: list[Any] | tuple[Any, ...] | dict[str, Any] | None = None,
     ) -> None:
         self._ensure_transaction()
-        if params:
+        if params is not None:
             named_params = {}
             if isinstance(params, (list, tuple)):
                 names = []

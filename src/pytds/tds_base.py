@@ -33,6 +33,7 @@ TDS74 = 0x74000004
 
 if typing.TYPE_CHECKING:
     from pytds.tds_session import _TdsSession
+    import OpenSSL
 
 
 def IS_TDS7_PLUS(x: _TdsSession):
@@ -976,7 +977,7 @@ class _TdsLogin:
         self.validate_host = True
         self.enc_login_only = False
         self.enc_flag = 0
-        self.tls_ctx = None
+        self.tls_ctx: None | OpenSSL.SSL.Context = None
         self.client_tz: datetime.tzinfo = pytds.tz.local
         self.option_flag2 = 0
         self.connect_timeout = 0.0

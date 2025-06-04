@@ -36,15 +36,16 @@ __all__ = "get_git_version"
 from subprocess import Popen, PIPE
 
 
-def call_git_describe(abbrev=4):
+def git_describe(abbrev=4):
     try:
-        p = Popen(["git", "describe", "--abbrev=%d" % abbrev], stdout=PIPE, stderr=PIPE)
+        p = Popen(["git", "describe", "--long", "--abbrev=%d" % abbrev], stdout=PIPE, stderr=PIPE)
         p.stderr.close()
         line = p.stdout.readlines()[0]
-        return line.strip().decode("utf8")
-
+        version_str = line.strip().decode("utf8")
+        version, changes, commit_hash = version_str.split("-")
+        return version, int(changes), commit_hash
     except:
-        return None
+        return None, None, None
 
 
 def read_release_version():
@@ -75,7 +76,7 @@ def get_git_version(abbrev=4):
 
     # First try to get the current version using “git describe”.
 
-    version = call_git_describe(abbrev)
+    version, changes, commit_hash = git_describe(abbrev)
 
     # If that doesn't work, fall back on the value that's in
     # RELEASE-VERSION.
@@ -87,6 +88,9 @@ def get_git_version(abbrev=4):
 
     if version is None:
         return "unknown"
+
+    if changes is not None and changes != 0:
+        version += f".dev{changes}"
 
     # If the current version is different from what's in the
     # RELEASE-VERSION file, update the file to be current.

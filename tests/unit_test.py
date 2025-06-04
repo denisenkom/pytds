@@ -104,6 +104,7 @@ from pytds.tds_types import (
     VarBinarySerializer72,
 )
 import pytds.login
+import utils
 
 tzoffset = pytds.tz.FixedOffsetTimezone
 logger = logging.getLogger(__name__)
@@ -1510,7 +1511,7 @@ def root_ca_path(test_ca):
 
 @pytest.fixture
 def address():
-    return ("127.0.0.1", 1434)
+    return ("127.0.0.1", 3434)
 
 
 @pytest.fixture
@@ -1711,6 +1712,10 @@ def test_cert_with_san(test_ca, server_key, address, root_ca_path):
             pass
 
 
+@pytest.mark.skipif(
+    not utils.hashlib_supports_md4(),
+    reason="Current python version does not support MD4 which is needed for NTLM"
+)
 def test_ntlm():
     # test NTLM packet generation without actual server
     auth = pytds.login.NtlmAuth(user_name="testuser", password="password")
