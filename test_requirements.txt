@@ -5,6 +5,7 @@ codecov
 # TypeError: deprecated() got an unexpected keyword argument 'name'
 # Example failing build: https://ci.appveyor.com/project/denisenkom/pytds/builds/46539355/job/aq6d65ej1oi0i59p
 pyOpenSSL<22.1.0
+types-pyOpenSSL
 pyDes
 ntlm-auth
 pyspnego
@@ -13,8 +14,9 @@ namedlist
 # see example failure: https://ci.appveyor.com/project/denisenkom/pytds/builds/37803561/job/lln9d25ye5vnljbr
 # requiring older cryptography library to avoid this error
 cryptography < 3.3
-sqlalchemy-pytds==1.0.0
-SQLAlchemy==2.0.22
-mypy
-pytest-mypy
-ruff
+sqlalchemy-pytds
+SQLAlchemy==2.0.34
+mypy==1.7.1
+pytest-mypy==0.10.3
+ruff==0.6.3
+setuptools==75.1.0

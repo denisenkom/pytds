@@ -3,8 +3,8 @@
 # This file is placed into the public domain.
 
 # Calculates the current version number.  If possible, this is the
-# output of “git describe”, modified to conform to the versioning
-# scheme that setuptools uses.  If “git describe” returns an error
+# output of "git describe", modified to conform to the versioning
+# scheme that setuptools uses.  If "git describe" returns an error
 # (most likely because we're in an unpacked copy of a release tarball,
 # rather than in a git working copy), then we fall back on reading the
 # contents of the RELEASE-VERSION file.
@@ -36,9 +36,16 @@ __all__ = "get_git_version"
 from subprocess import Popen, PIPE
 
 
-def call_git_describe(abbrev=4):
-    # Temporarily disabled to fix version issue
-    return None
+def git_describe(abbrev=4):
+    try:
+        p = Popen(["git", "describe", "--long", "--abbrev=%d" % abbrev], stdout=PIPE, stderr=PIPE)
+        p.stderr.close()
+        line = p.stdout.readlines()[0]
+        version_str = line.strip().decode("utf8")
+        version, changes, commit_hash = version_str.split("-")
+        return version, int(changes), commit_hash
+    except:
+        return None, None, None
 
 
 def read_release_version():
@@ -67,9 +74,9 @@ def get_git_version(abbrev=4):
 
     release_version = read_release_version()
 
-    # First try to get the current version using “git describe”.
+    # First try to get the current version using "git describe".
 
-    version = call_git_describe(abbrev)
+    version, changes, commit_hash = git_describe(abbrev)
 
     # If that doesn't work, fall back on the value that's in
     # RELEASE-VERSION.
@@ -81,6 +88,9 @@ def get_git_version(abbrev=4):
 
     if version is None:
         return "unknown"
+
+    if changes is not None and changes != 0:
+        version += f".dev{changes}"
 
     # If the current version is different from what's in the
     # RELEASE-VERSION file, update the file to be current.

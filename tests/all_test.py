@@ -1,6 +1,7 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
 from __future__ import unicode_literals
+import collections
 import os
 import random
 import string
@@ -211,22 +212,7 @@ def test_connection_timeout_no_mars():
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-def test_connection_no_mars_no_pooling():
-    kwargs = settings.CONNECT_KWARGS.copy()
-    kwargs.update(
-        {
-            "use_mars": False,
-            "pooling": False,
-        }
-    )
-    with connect(**kwargs) as conn:
-        with conn.cursor() as cur:
-            cur.execute("select 1")
-            assert cur.fetchall() == [(1,)]
-
-
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-def test_row_strategies():
+def test_list_row_strategy():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
@@ -237,17 +223,29 @@ def test_row_strategies():
         with conn.cursor() as cur:
             cur.execute("select 1")
             assert cur.fetchall() == [[1]]
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_namedtuple_row_strategy():
+    kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
             "row_strategy": pytds.namedtuple_row_strategy,
         }
     )
-    import collections
-
     with connect(**kwargs) as conn:
         with conn.cursor() as cur:
             cur.execute("select 1 as f")
             assert cur.fetchall() == [collections.namedtuple("Row", ["f"])(1)]
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+@pytest.mark.skipif(
+    not hasattr(collections, "Mapping"),
+    reason="Skip this test if current version of Python does not define Mapping class"
+)
+def test_recordtype_row_strategy():
+    kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
             "row_strategy": pytds.recordtype_row_strategy,
@@ -323,10 +321,10 @@ class TestVariant(ConnectionTestCase):
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):
-    def test_invalid_parameters(self):
-        with self.assertRaises(Error):
+    def test_bad_host(self):
+        with self.assertRaises(socket.gaierror):
             with connect(
-                server=settings.HOST + "bad",
+                server="badhost",
                 database="master",
                 user="baduser",
                 password=settings.PASSWORD,
@@ -334,6 +332,8 @@ class BadConnection(unittest.TestCase):
             ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1")
+
+    def test_bad_database(self):
         with self.assertRaises(Error):
             with connect(
                 server=settings.HOST,
@@ -343,6 +343,8 @@ class BadConnection(unittest.TestCase):
             ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1")
+
+    def test_bad_user(self):
         with self.assertRaises(Error):
             with connect(
                 server=settings.HOST, database="master", user="baduser", password=None

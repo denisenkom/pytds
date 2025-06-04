@@ -69,13 +69,8 @@ from . import tls
 from .tds_base import logger
 
 __author__ = "Mikhail Denisenko <denisenkom@gmail.com>"
-try:
-    __version__ = utils.package_version("python-tds")
-except Exception:
-    __version__ = "DEV"
 
-
-intversion = utils.ver_to_int(__version__)
+intversion = utils.ver_to_int("1.0.0")
 
 #: Compliant with DB SIG 2.0
 apilevel = "2.0"
@@ -370,6 +365,7 @@ def connect(
                         tds_socket=tds_socket,
                     )
         host, port, instance = login.servers[0]
+        login.servers.rotate(1)
         return _connect(
             login=login,
             host=host,
@@ -389,7 +385,7 @@ def connect(
     def ex_handler(ex: Exception) -> None:
         if isinstance(ex, LoginError):
             raise ex
-        elif isinstance(ex, BrokenPipeError):
+        elif isinstance(ex, BrokenPipeError) or isinstance(ex, socket.timeout):
             # Allow to retry when BrokenPipeError is received
             pass
         elif isinstance(ex, OperationalError):
@@ -437,17 +433,14 @@ def _connect(
     """
     Establish physical connection and login.
     """
-    try:
-        login.server_name = host
-        login.instance_name = instance
-        resolved_port = instance_browser_client.resolve_instance_port(
-            server=host, port=port, instance=instance, timeout=timeout
-        )
-        if not sock:
-            logger.info("Opening socket to %s:%d", host, resolved_port)
-            sock = socket.create_connection((host, resolved_port), timeout)
-    except Exception as e:
-        raise LoginError(f"Cannot connect to server '{host}': {e}") from e
+    login.server_name = host
+    login.instance_name = instance
+    resolved_port = instance_browser_client.resolve_instance_port(
+        server=host, port=port, instance=instance, timeout=timeout
+    )
+    if not sock:
+        logger.info("Opening socket to %s:%d", host, resolved_port)
+        sock = socket.create_connection((host, resolved_port), timeout)
     try:
         sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
 
