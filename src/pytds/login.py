@@ -229,3 +229,20 @@ class KerberosAuth(AuthProtocol):
 
     def close(self) -> None:
         pass
+import struct
+
+def build_token_login_packet(token: str) -> bytes:
+    """
+    Constructs a SQL Server login packet using an Azure AD access token.
+    """
+    # Token must be UTF-16LE encoded and null-terminated
+    token_bytes = token.encode('utf-16le') + b'\x00\x00'
+    
+    # Prefix with SSPI header
+    sspi_prefix = b'\x11\x00\x00\x00'
+    
+    # Total length of packet
+    total_length = len(sspi_prefix) + len(token_bytes)
+    
+    # Combine header + token
+    return struct.pack('<I', total_length) + sspi_prefix + token_bytes
