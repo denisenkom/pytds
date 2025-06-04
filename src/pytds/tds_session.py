@@ -1365,7 +1365,7 @@ class _TdsSession:
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
         elif login.access_token:
-            fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("ASCII"))) 
+            fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("UTF-8"))) 
             length = len(fedauth_token)
             noncelen = len(login.nonce) if login.nonce else 0
             buffer = bytearray()

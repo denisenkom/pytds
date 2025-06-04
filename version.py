@@ -37,14 +37,8 @@ from subprocess import Popen, PIPE
 
 
 def call_git_describe(abbrev=4):
-    try:
-        p = Popen(["git", "describe", "--abbrev=%d" % abbrev], stdout=PIPE, stderr=PIPE)
-        p.stderr.close()
-        line = p.stdout.readlines()[0]
-        return line.strip().decode("utf8")
-
-    except:
-        return None
+    # Temporarily disabled to fix version issue
+    return None
 
 
 def read_release_version():

@@ -28,6 +28,7 @@ Features
 * Table-valued parameters
 * TLS connection encryption
 * Kerberos support on non-Windows platforms (requires kerberos package)
+* Azure Active Directory authentication (token-based)
 
 Installation
 ------------
@@ -77,6 +78,29 @@ To connect to database do
 To enable TLS you should also provide cafile parameter which should be a file name containing trusted CAs in PEM format.
 
 For detailed documentation of connection parameters see: `pytds.connect`_
+
+Azure AD Authentication
+-----------------------
+
+To connect using Azure Active Directory authentication, you need to obtain an access token and pass it to the connect function:
+
+.. code-block:: python
+
+    import pytds
+    from azure.identity import DefaultAzureCredential
+
+    # Obtain an access token
+    credential = DefaultAzureCredential()
+    token = credential.get_token("https://database.windows.net//.default")
+    
+    # Connect using the token
+    with pytds.connect('server.database.windows.net', 'database', 
+                       access_token=token.token) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1")
+            cur.fetchall()
+
+For more examples, including service principal and managed identity authentication, see the `examples/azure_ad_auth_example.py` file.
 
 
 .. _Python DBAPI: http://legacy.python.org/dev/peps/pep-0249/

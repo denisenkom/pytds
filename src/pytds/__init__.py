@@ -228,6 +228,14 @@ def connect(
     login.bulk_copy = False
     login.client_lcid = lcid.LANGID_ENGLISH_US
     login.use_mars = use_mars
+    
+    # Validation for access_token
+    if access_token is not None:
+        if access_token == "":
+            raise ValueError("access_token cannot be an empty string")
+        if tds_version < tds_base.TDS74:
+            raise ValueError("access_token requires TDS 7.4 or higher")
+    
     login.access_token = access_token
     login.pid = os.getpid()
     login.change_password = ""
