@@ -6,6 +6,19 @@
 .. moduleauthor:: Mikhail Denisenko <denisenkom@gmail.com>
 """
 from __future__ import annotations
+from .login import SqlAuth, NtlmAuth, SspiAuth, AzureTokenAuth
+
+def create_authentication(auth, user_name, password, server_name):
+    if auth == 'sql':
+        return SqlAuth(user_name, password)
+    elif auth == 'ntlm':
+        return NtlmAuth(user_name, password, server_name)
+    elif auth == 'sspi':
+        return SspiAuth()
+    elif auth == 'azuretoken':
+        return AzureTokenAuth(user_name=user_name, server_name=server_name)
+    else:
+        raise ValueError(f"Unknown authentication type: {auth}")
 
 import datetime
 import logging
