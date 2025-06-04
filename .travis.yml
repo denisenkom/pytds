@@ -4,11 +4,18 @@ python:
   - "3.5"
   - "3.6"
   - "3.7"
+services:
+  - docker
+before_install:
+  - docker run -d --name sqledge -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=YourStrong!Passw0rd' -p 1433:1433 mcr.microsoft.com/azure-sql-edge:latest
+  - sleep 30  # Give SQL Edge time to start
 install:
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
   - pip install -e .
   - pip install -r test_requirements.txt
+env:
+  - PYTDS_TEST_TOKEN=dummy  # Edge only checks token length
 script:
   - pytest -v --junitxml=junit-results.xml --cov=./
   - codecov
