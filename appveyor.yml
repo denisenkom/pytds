@@ -17,11 +17,12 @@ environment:
       SQLINSTANCE: SQL2017
 
 install:
-- choco install vcredist140 -y
-  - choco install microsoft-odbc-driver-for-sql-server -y
-  - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
+  - choco install vcredist140 -y --no-progress
+  - refreshenv
+  - choco install microsoft-odbc-driver-for-sql-server -y --no-progress
+  - 'SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%'
   - python --version
-  - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
+  - 'python -c "import struct; print(struct.calcsize(\'P\') * 8)"'
   - pip install -r requirements.txt
   - pip install -r test_requirements.txt
   - pip uninstall -y python-tds
