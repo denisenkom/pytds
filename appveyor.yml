@@ -17,6 +17,7 @@ environment:
       SQLINSTANCE: SQL2017
 
 install:
+- choco install vcredist140 -y
   - choco install microsoft-odbc-driver-for-sql-server -y
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
