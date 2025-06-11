@@ -356,7 +356,6 @@ class TestMessages(unittest.TestCase):
         login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
         login.use_mars = False
         login.access_token = "token"
-        login.nonce = b'abcdefghijklmnopqrstuvwxyzabcdef'
         tds = _TdsSocket(sock=sock, login=login)
         tds._main_session.send_prelogin(login)
         template = (
