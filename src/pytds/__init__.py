@@ -204,6 +204,10 @@ def connect(
     """
     if use_sso and auth:
         raise ValueError("use_sso cannot be used with auth parameter defined")
+
+    if (user or password) and access_token:
+        raise ValueError("user/password cannot be used at the same time with access_token")
+
     login = tds_base._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
