@@ -17,6 +17,7 @@ import pytds.tz
 from .connection import MarsConnection, NonMarsConnection, Connection
 from .cursor import Cursor  # noqa: F401 # export for backward compatibility
 from .login import KerberosAuth, SspiAuth, AuthProtocol  # noqa: F401 # export for backward compatibility
+from .azure_auth import AzureTokenAuth  # noqa: F401
 from .row_strategies import (
     tuple_row_strategy,
     list_row_strategy,  # noqa: F401 # export for backward compatibility
