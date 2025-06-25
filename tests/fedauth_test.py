@@ -1,5 +1,4 @@
 import json
-import os
 import urllib.request
 import urllib.parse
 import unittest
@@ -12,12 +11,13 @@ from pytds import (
 LIVE_TEST = getattr(settings, "LIVE_TEST", True)
 
 
+@unittest.skipUnless(settings.TENANT_ID, "requires TENANT_ID to be set")
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_fedauth_connection():
     token = get_access_token(
-        os.getenv("TENANT_ID"),
-        os.getenv("CLIENT_ID"),
-        os.getenv("CLIENT_SECRET")
+        settings.TENANT_ID,
+        settings.CLIENT_ID,
+        settings.CLIENT_SECRET
     )["access_token"]
 
     kwargs = settings.CONNECT_KWARGS.copy()

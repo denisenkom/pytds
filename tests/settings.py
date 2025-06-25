@@ -10,6 +10,9 @@ if os.path.exists(connection_json_path):
     conf = json.load(open(connection_json_path, "rb"))
     default_host = conf["host"]
     default_database = conf["database"]
+    default_tenant_id = conf["tenant_id"]
+    default_client_id = conf["client_id"]
+    default_client_secret = conf["client_secret"]
     default_user = conf["sqluser"]
     default_password = conf["sqlpassword"]
     default_use_mars = conf["use_mars"]
@@ -18,6 +21,9 @@ if os.path.exists(connection_json_path):
 else:
     default_host = None
     default_database = "test"
+    default_tenant_id = None
+    default_client_id = None
+    default_client_secret = None
     default_user = "sa"
     default_password = "sa"
     default_use_mars = True
@@ -28,6 +34,9 @@ LIVE_TEST = "HOST" in os.environ or default_host
 if LIVE_TEST:
     HOST = os.environ.get("HOST", default_host)
     DATABASE = os.environ.get("DATABASE", default_database)
+    TENANT_ID = os.environ.get("TENANT_ID", default_tenant_id)
+    CLIENT_ID = os.environ.get("CLIENT_ID", default_client_id)
+    CLIENT_SECRET = os.environ.get("CLIENT_SECRET", default_client_secret)
     USER = os.environ.get("SQLUSER", default_user)
     PASSWORD = os.environ.get("SQLPASSWORD", default_password)
     USE_MARS = bool(os.environ.get("USE_MARS", default_use_mars))
