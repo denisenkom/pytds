@@ -8,7 +8,7 @@ import socket
 import time
 import uuid
 import warnings
-from typing import Any
+from typing import Any, Callable
 
 from pytds.tds_types import TzInfoFactoryType
 from . import lcid
@@ -140,7 +140,7 @@ def connect(
     pooling: bool = False,
     use_sso: bool = False,
     isolation_level: int = 0,
-    access_token: str | None = None,
+    access_token_callable: Callable[[], str] | None = None,
 ):
     """
     Opens connection to the database
@@ -198,15 +198,15 @@ def connect(
     :type enc_login_only: bool
     :keyword use_sso: Enables SSO login, e.g. Kerberos using SSPI on Windows and kerberos package on other platforms.
              Cannot be used together with auth parameter.
-    :keyword access_token: Federated Authentication Token
-    :type access_token: str
+    :keyword access_token_callable: Callable that returns a Federated Authentication Token
+    :type access_token_callable: Callable[[], str]
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
         raise ValueError("use_sso cannot be used with auth parameter defined")
 
-    if (user or password) and access_token:
-        raise ValueError("user/password cannot be used at the same time with access_token")
+    if (user or password) and access_token_callable:
+        raise ValueError("user/password cannot be used with access_token_callable")
 
     login = tds_base._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
@@ -224,13 +224,15 @@ def connect(
     login.bulk_copy = False
     login.client_lcid = lcid.LANGID_ENGLISH_US
     login.use_mars = use_mars
-    login.access_token = access_token
     login.pid = os.getpid()
     login.change_password = ""
     login.client_id = uuid.getnode()  # client mac address
     login.cafile = cafile
     login.validate_host = validate_host
     login.enc_login_only = enc_login_only
+    if access_token_callable is not None:
+        login.access_token = access_token_callable()
+
     if cafile:
         if not tls.OPENSSL_AVAILABLE:
             raise ValueError(

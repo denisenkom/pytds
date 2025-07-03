@@ -14,18 +14,12 @@ LIVE_TEST = getattr(settings, "LIVE_TEST", True)
 @unittest.skipUnless(settings.TENANT_ID, "requires TENANT_ID to be set")
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_fedauth_connection():
-    token = get_access_token(
-        settings.TENANT_ID,
-        settings.CLIENT_ID,
-        settings.CLIENT_SECRET
-    )["access_token"]
-
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
             "user": None,
             "password": None,
-            "access_token": token
+            "access_token_callable": get_access_token
         }
     )
 
@@ -35,7 +29,11 @@ def test_fedauth_connection():
             assert cur.fetchall() == [(1,)]
 
 
-def get_access_token(tenant_id, client_id, client_secret):
+def get_access_token():
+    tenant_id = settings.TENANT_ID
+    client_id = settings.CLIENT_ID
+    client_secret = settings.CLIENT_SECRET
+
     # Authority and scope
     AUTHORITY = f'https://login.microsoftonline.com/{tenant_id}'
     TOKEN_URL = f'{AUTHORITY}/oauth2/v2.0/token'
@@ -58,5 +56,5 @@ def get_access_token(tenant_id, client_id, client_secret):
 
     with urllib.request.urlopen(req) as response:
         resp_data = response.read()
-        return json.loads(resp_data)
+        return json.loads(resp_data)["access_token"]
 
