@@ -1370,14 +1370,14 @@ class _TdsSession:
             packet_size += len(auth_packet)
         elif login.access_token:
             fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("UTF-8")))
-            length = len(fedauth_token)
+            tokenlen = len(fedauth_token)
             noncelen = len(login.nonce) if login.nonce else 0
             buffer = bytearray()
             buffer.extend(struct.pack("B", tds_base.TDS_LOGIN_FEATURE_FEDAUTH))
-            buffer.extend(struct.pack("<I", length + noncelen + 1 + 4))
-            buffer.extend(struct.pack("B", (tds_base.TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN << 1) |   
+            buffer.extend(struct.pack("<I", tokenlen + noncelen + 1 + 4))
+            buffer.extend(struct.pack("B", (tds_base.TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN << 1) |
                                      (tds_base.TDS_FEDAUTH_OPTIONS_ECHO_YES if self.conn.fedauth_required else tds_base.TDS_FEDAUTH_OPTIONS_ECHO_NO)))
-            buffer.extend(struct.pack("<I", length))
+            buffer.extend(struct.pack("<I", tokenlen))
             buffer.extend(fedauth_token)
             if login.nonce:
                 buffer.extend(login.nonce)
