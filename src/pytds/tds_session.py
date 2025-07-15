@@ -11,7 +11,6 @@ import struct
 import typing
 import warnings
 from typing import Callable, Iterable, Any, List
-from itertools import chain
 
 from pytds import tds_base, tds_types
 from pytds.collate import lcid2charset, raw_collation
@@ -1369,7 +1368,7 @@ class _TdsSession:
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
         elif login.access_token:
-            fedauth_token = bytes(chain.from_iterable((b, 0) for b in login.access_token.encode("UTF-8")))
+            fedauth_token = login.access_token.encode("UTF-16LE")
             tokenlen = len(fedauth_token)
             noncelen = len(login.nonce) if login.nonce else 0
             buffer = bytearray()
