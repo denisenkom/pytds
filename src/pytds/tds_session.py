@@ -33,6 +33,7 @@ from pytds.tds_base import (
 from pytds.tds_reader import _TdsReader, ResponseMetadata
 from pytds.tds_writer import _TdsWriter
 from pytds.row_strategies import list_row_strategy, RowStrategy, RowGenerator
+from pytds.fedauth import fedauth_packet
 
 if typing.TYPE_CHECKING:
     from pytds.tds_socket import _TdsSocket
@@ -1368,20 +1369,7 @@ class _TdsSession:
             auth_packet = login.auth.create_packet()
             packet_size += len(auth_packet)
         elif login.access_token:
-            fedauth_token = login.access_token.encode("UTF-16LE")
-            tokenlen = len(fedauth_token)
-            noncelen = len(login.nonce) if login.nonce else 0
-            buffer = bytearray()
-            buffer.extend(struct.pack("B", tds_base.TDS_LOGIN_FEATURE_FEDAUTH))
-            buffer.extend(struct.pack("<I", tokenlen + noncelen + 1 + 4))
-            buffer.extend(struct.pack("B", (tds_base.TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN << 1) |
-                                     (tds_base.TDS_FEDAUTH_OPTIONS_ECHO_YES if self.conn.fedauth_required else tds_base.TDS_FEDAUTH_OPTIONS_ECHO_NO)))
-            buffer.extend(struct.pack("<I", tokenlen))
-            buffer.extend(fedauth_token)
-            if login.nonce:
-                buffer.extend(login.nonce)
-            buffer.extend(struct.pack("B", 0xFF))
-            auth_packet = bytes(buffer)
+            auth_packet = fedauth_packet(login, self.conn.fedauth_required)
             packet_size += len(auth_packet) + 4
         else:
             auth_packet = b""
