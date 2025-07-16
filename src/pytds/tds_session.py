@@ -1452,7 +1452,7 @@ class _TdsSession:
         # extension
         if login.access_token:
             w.put_smallint(current_pos)
-            w.put_usmallint(4)
+            w.put_usmallint(4) # size of the token length field
             current_pos += 4
         else:
             # reserved
