@@ -6,6 +6,8 @@ from .tds_base import _TdsLogin
 
 
 def fedauth_packet(login: _TdsLogin, fedauth_required: bool) -> bytes:
+    if login.access_token is None:
+        raise ValueError("Cannot build fedauth packet without access_token")
     fedauth_token = login.access_token.encode("UTF-16LE")
     tokenlen = len(fedauth_token)
     noncelen = len(login.nonce) if login.nonce else 0
