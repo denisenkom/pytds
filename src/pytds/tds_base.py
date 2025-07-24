@@ -13,7 +13,7 @@ import socket
 import struct
 import typing
 from collections import deque
-from typing import Protocol, Iterable, TypedDict, Tuple, Any
+from typing import Callable, Protocol, Iterable, TypedDict, Tuple, Any
 
 import pytds
 from pytds.collate import ucs2_codec
@@ -989,6 +989,7 @@ class _TdsLogin:
         self.auth: AuthProtocol | None = None
         self.servers: deque[Tuple[Any, int | None, str]] = deque()
         self.server_enc_flag = 0
+        self.access_token_callable: Callable[[], str] | None = None
         self.access_token: str | None = None
         self.nonce: bytes | None = None
 

@@ -230,8 +230,7 @@ def connect(
     login.cafile = cafile
     login.validate_host = validate_host
     login.enc_login_only = enc_login_only
-    if access_token_callable is not None:
-        login.access_token = access_token_callable()
+    login.access_token_callable = access_token_callable
 
     if cafile:
         if not tls.OPENSSL_AVAILABLE:
@@ -432,6 +431,10 @@ def _connect(
     resolved_port = instance_browser_client.resolve_instance_port(
         server=host, port=port, instance=instance, timeout=timeout
     )
+
+    if login.access_token_callable is not None:
+        login.access_token = login.access_token_callable()
+
     if not sock:
         logger.info("Opening socket to %s:%d", host, resolved_port)
         sock = socket.create_connection((host, resolved_port), timeout)
