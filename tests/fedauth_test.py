@@ -13,7 +13,7 @@ LIVE_TEST = getattr(settings, "LIVE_TEST", True)
 
 @unittest.skipUnless(settings.TENANT_ID, "requires TENANT_ID to be set")
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-def test_fedauth_connection():
+def test_fedauth_connection(): # pragma: no cover
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
@@ -29,7 +29,7 @@ def test_fedauth_connection():
             assert cur.fetchall() == [(1,)]
 
 
-def get_access_token():
+def get_access_token(): # pragma: no cover
     tenant_id = settings.TENANT_ID
     client_id = settings.CLIENT_ID
     client_secret = settings.CLIENT_SECRET
