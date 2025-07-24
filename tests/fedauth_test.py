@@ -11,6 +11,7 @@ from pytds import (
 LIVE_TEST = getattr(settings, "LIVE_TEST", True)
 
 
+@unittest.skipUnless(settings.TENANT_ID, "requires TENANT_ID to be set")
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 def test_fedauth_connection():
     kwargs = settings.CONNECT_KWARGS.copy()
