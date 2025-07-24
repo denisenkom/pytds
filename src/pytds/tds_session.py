@@ -1739,6 +1739,7 @@ class _TdsSession:
         Ref: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/2eb82f8e-11f0-46dc-b42d-27302fa4701a
         """
         r = self._reader
+        features = []
         def get_featureackopt():
             feature_id = r.get_byte()
             if feature_id == 0xFF:
@@ -1758,8 +1759,12 @@ class _TdsSession:
             return feature_id, feature_ack
         while True:
             feature_id, feature_ack = get_featureackopt()
+            features.append(feature_id)
             if feature_id is None:
                 break
+
+        if self.conn.fedauth_required and tds_base.TDS_LOGIN_FEATURE_FEDAUTH not in features:
+            self.bad_stream("Server didn't send expected FEDAUTH in FEATUREEXTACK")
 
 
 _token_map = {
