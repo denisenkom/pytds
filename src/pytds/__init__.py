@@ -208,6 +208,9 @@ def connect(
     if (user or password) and access_token_callable:
         raise ValueError("user/password cannot be used with access_token_callable")
 
+    if not (user or password) and not access_token_callable:
+        raise ValueError("provide either user/password or access_token_callable")
+
     login = tds_base._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
