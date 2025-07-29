@@ -453,7 +453,7 @@ class TestMessages(unittest.TestCase):
             + b"^\x00\x07\x00l\x00\x04\x00t\x00\x07\x00\x82\x00\x07\x00\x90\x00\n\x00\x00\x00\x00\x00\xa4\x00\x07"
             + b"\x00\xb2\x00\x02\x00\xb6\x00\x08\x00"
             + b"\x12\x34\x56\x78\x90\xab"
-            + b"\xc6\x00\x00"
+            + b"\x00\x00\x00"
             + b"\x00\xc6\x00\x08\x00\xd6\x00\x00\x00\x00\x00\x00\x00"
             + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"
             + b"t\x00e\x00s\x00t\x00"
@@ -476,7 +476,7 @@ class TestMessages(unittest.TestCase):
             + b"00100000"
             + binascii.hexlify(struct.pack("<l", pytds.intversion))
             + b"6400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b"
-            + b"2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073"
+            + b"2000200b60008001234567890ab00000000c6000800d60000000000000073007500620064006500760031007400650073"
             + b"007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0"
             + b"065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c00650070006100"
             + b"74006800",
@@ -604,7 +604,7 @@ class TestMessages(unittest.TestCase):
                 + b"\x04\x00" # extension enable
                 + b"\x92\x00\x07\x00\xa0\x00\x02\x00\xa4\x00\x08\x00"
                 + b"\x12\x34\x56\x78\x90\xab" # client id
-                + b"\xc9\x00"
+                + b"\x00\x00"
                 + b"\x00\x00" # auth
                 + b"\xc9\x00\x08\x00\xd9\x00\x00\x00\x00\x00\x00\x00"
                 + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"
@@ -661,7 +661,7 @@ class TestMessages(unittest.TestCase):
                 + b"\x04\x00" # extension enable
                 + b"\x92\x00\x07\x00\xa0\x00\x02\x00\xa4\x00\x08\x00"
                 + b"\x12\x34\x56\x78\x90\xab" # client id
-                + b"\xe9\x00"
+                + b"\x00\x00"
                 + b"\x00\x00" # auth
                 + b"\xe9\x00\x08\x00\xf9\x00\x00\x00\x00\x00\x00\x00"
                 + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"

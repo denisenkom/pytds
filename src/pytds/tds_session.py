@@ -1319,61 +1319,37 @@ class _TdsSession:
 
     def tds7_send_login(self, login: _TdsLogin) -> None:
         # https://msdn.microsoft.com/en-us/library/dd304019.aspx
-        option_flag2 = login.option_flag2
-        user_name = login.user_name
-        if len(user_name) > 128:
-            raise ValueError("User name should be no longer that 128 characters")
-        if len(login.password) > 128:
-            raise ValueError("Password should be not longer than 128 characters")
-        if len(login.change_password) > 128:
-            raise ValueError("Password should be not longer than 128 characters")
-        if len(login.client_host_name) > 128:
-            raise ValueError("Host name should be not longer than 128 characters")
-        if len(login.app_name) > 128:
-            raise ValueError("App name should be not longer than 128 characters")
-        if len(login.server_name) > 128:
-            raise ValueError("Server name should be not longer than 128 characters")
-        if len(login.database) > 128:
-            raise ValueError("Database name should be not longer than 128 characters")
-        if len(login.language) > 128:
-            raise ValueError("Language should be not longer than 128 characters")
-        if len(login.attach_db_file) > 260:
-            raise ValueError("File path should be not longer than 260 characters")
-        if login.access_token == "":
-            raise ValueError("Access token must not be an empty string")
-
-        if login.access_token is not None:
-            if not tds_base.IS_TDS74_PLUS(self):
-                raise ValueError("Access token authentication requires TDS version 7.4 or higher")
+        self.validate_login(login)
 
         w = self._writer
         w.begin_packet(tds_base.PacketType.LOGIN)
-        self.authentication = None
         current_pos = 86 + 8 if tds_base.IS_TDS72_PLUS(self) else 86
-        client_host_name = login.client_host_name
-        login.client_host_name = client_host_name
         packet_size = (
             current_pos
             + (
-                len(client_host_name)
+                len(login.client_host_name)
                 + len(login.app_name)
                 + len(login.server_name)
                 + len(login.library)
                 + len(login.language)
                 + len(login.database)
-            )
-            * 2
+            ) * 2
         )
+        self.authentication = None
         if login.auth:
             self.authentication = login.auth
             auth_packet = login.auth.create_packet()
+            ext_packet = b""
             packet_size += len(auth_packet)
         elif login.access_token:
-            auth_packet = fedauth_packet(login, self.conn.fedauth_required)
-            packet_size += len(auth_packet) + 4
+            auth_packet = b""
+            ext_packet = fedauth_packet(login, self.conn.fedauth_required)
+            packet_size += len(ext_packet) + 4
         else:
             auth_packet = b""
-            packet_size += (len(user_name) + len(login.password)) * 2
+            ext_packet = b""
+            packet_size += (len(login.user_name) + len(login.password)) * 2
+
         w.put_int(packet_size)
         w.put_uint(login.tds_version)
         w.put_int(login.blocksize)
@@ -1390,6 +1366,7 @@ class _TdsSession:
         if not login.bulk_copy:
             option_flag1 |= tds_base.TDS_DUMPLOAD_OFF
         w.put_byte(option_flag1)
+        option_flag2 = login.option_flag2
         if self.authentication and not login.access_token:
             option_flag2 |= tds_base.TDS_INTEGRATED_SECURITY_ON
         w.put_byte(option_flag2)
@@ -1421,15 +1398,16 @@ class _TdsSession:
             option_flag3,
             mins_fix,
             login.client_lcid,
-            client_host_name,
+            login.client_host_name,
             login.language,
             login.database,
         )
         w.put_int(mins_fix)
         w.put_int(login.client_lcid)
+        # OFFSET
         w.put_smallint(current_pos)
-        w.put_smallint(len(client_host_name))
-        current_pos += len(client_host_name) * 2
+        w.put_smallint(len(login.client_host_name))
+        current_pos += len(login.client_host_name) * 2
         if self.authentication or login.access_token:
             w.put_smallint(0)
             w.put_smallint(0)
@@ -1437,8 +1415,8 @@ class _TdsSession:
             w.put_smallint(0)
         else:
             w.put_smallint(current_pos)
-            w.put_smallint(len(user_name))
-            current_pos += len(user_name) * 2
+            w.put_smallint(len(login.user_name))
+            current_pos += len(login.user_name) * 2
             w.put_smallint(current_pos)
             w.put_smallint(len(login.password))
             current_pos += len(login.password) * 2
@@ -1470,20 +1448,22 @@ class _TdsSession:
         w.put_smallint(current_pos)
         w.put_smallint(len(login.database))
         current_pos += len(login.database) * 2
+        # extension
         extension_offset = None
         if login.access_token:
             extension_offset = current_pos
-            current_pos += len(auth_packet)
+            current_pos += len(ext_packet)
         # ClientID
         client_id = struct.pack(">Q", login.client_id)[2:]
         w.write(client_id)
-        # authentication
-        w.put_smallint(current_pos)
-        if login.access_token:
-            w.put_smallint(0)
-        else:
+        # SSPI
+        if self.authentication:
+            w.put_smallint(current_pos)
             w.put_smallint(len(auth_packet))
             current_pos += len(auth_packet)
+        else:
+            w.put_smallint(0)
+            w.put_smallint(0)
         # db file
         w.put_smallint(current_pos)
         w.put_smallint(len(login.attach_db_file))
@@ -1494,9 +1474,11 @@ class _TdsSession:
             w.put_smallint(len(login.change_password))
             # sspi long
             w.put_int(0)
-        w.write_ucs2(client_host_name)
+
+        # DATA
+        w.write_ucs2(login.client_host_name)
         if not self.authentication and not login.access_token:
-            w.write_ucs2(user_name)
+            w.write_ucs2(login.user_name)
             w.write(tds7_crypt_pass(login.password))
         w.write_ucs2(login.app_name)
         w.write_ucs2(login.server_name)
@@ -1505,10 +1487,37 @@ class _TdsSession:
         w.write_ucs2(login.library)
         w.write_ucs2(login.language)
         w.write_ucs2(login.database)
-        w.write(auth_packet)
+        if self.authentication:
+            w.write(auth_packet)
+        elif login.access_token:
+            w.write(ext_packet)
         w.write_ucs2(login.attach_db_file)
         w.write_ucs2(login.change_password)
         w.flush()
+
+    def validate_login(self, login: _TdsLogin) -> None:
+        if len(login.user_name) > 128:
+            raise ValueError("User name should be no longer that 128 characters")
+        if len(login.password) > 128:
+            raise ValueError("Password should be not longer than 128 characters")
+        if len(login.change_password) > 128:
+            raise ValueError("Password should be not longer than 128 characters")
+        if len(login.client_host_name) > 128:
+            raise ValueError("Host name should be not longer than 128 characters")
+        if len(login.app_name) > 128:
+            raise ValueError("App name should be not longer than 128 characters")
+        if len(login.server_name) > 128:
+            raise ValueError("Server name should be not longer than 128 characters")
+        if len(login.database) > 128:
+            raise ValueError("Database name should be not longer than 128 characters")
+        if len(login.language) > 128:
+            raise ValueError("Language should be not longer than 128 characters")
+        if len(login.attach_db_file) > 260:
+            raise ValueError("File path should be not longer than 260 characters")
+        if login.access_token == "":
+            raise ValueError("Access token must not be an empty string")
+        if login.access_token and not tds_base.IS_TDS74_PLUS(self):
+                raise ValueError("Access token authentication requires TDS version 7.4 or higher")
 
     _SERVER_TO_CLIENT_MAPPING = {
         0x07000000: tds_base.TDS70,
