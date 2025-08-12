@@ -106,6 +106,7 @@ TDS_SEND_YUKON_BINARY_XML = 0x02
 TDS_REQUEST_USER_INSTANCE = 0x04
 TDS_UNKNOWN_COLLATION_HANDLING = 0x08
 TDS_ANY_COLLATION = 0x10
+TDS_EXTENSION = 0x20  # Feature extensions present
 
 TDS5_PARAMFMT2_TOKEN = 32  # 0x20
 TDS_LANGUAGE_TOKEN = 33  # 0x20    TDS 5.0 only
@@ -341,6 +342,35 @@ class PreLoginEnc:
     ENCRYPT_ON = 1  # Encryption available and on
     ENCRYPT_NOT_SUP = 2  # Encryption not available
     ENCRYPT_REQ = 3  # Encryption required
+
+
+class FeatureExtension:
+    """
+    LOGIN7 Feature Extension identifiers.
+
+    Spec link: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
+    """
+
+    SESSIONRECOVERY = 0x01
+    FEDAUTH = 0x02
+    COLUMNENCRYPTION = 0x04
+    GLOBALTRANSACTIONS = 0x05
+    AZURESQLSUPPORT = 0x08
+    DATACLASSIFICATION = 0x09
+    UTF8_SUPPORT = 0x0A
+    AZURESQLDNSCACHING = 0x0B
+    JSONSUPPORT = 0x0D
+    TERMINATOR = 0xFF
+
+
+class FedAuthLibrary:
+    """
+    Federated Authentication Library identifiers.
+    """
+
+    LIVE_ID_COMPACT_TOKEN = 0x00
+    SECURITY_TOKEN = 0x01
+    ADAL = 0x02  # Azure Active Directory Authentication Library
 
 
 PLP_MARKER = 0xFFFF
@@ -968,6 +998,8 @@ class _TdsLogin:
         self.auth: AuthProtocol | None = None
         self.servers: deque[Tuple[Any, int | None, str]] = deque()
         self.server_enc_flag = 0
+        self.fedauth_required = False  # Server requires federated authentication
+        self.fedauth_nonce: bytes | None = None  # Nonce from server for federated auth
 
 
 class _TdsEnv:

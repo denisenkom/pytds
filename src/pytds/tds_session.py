@@ -1169,62 +1169,129 @@ class _TdsSession:
 
     def send_prelogin(self, login: _TdsLogin) -> None:
         from . import intversion
+        from .login import AzureTokenAuth
 
         # https://msdn.microsoft.com/en-us/library/dd357559.aspx
         instance_name = login.instance_name or "MSSQLServer"
         instance_name_encoded = instance_name.encode("ascii")
         if len(instance_name_encoded) > 65490:
             raise ValueError("Instance name is too long")
+
+        # Check if we're using Azure token authentication
+        is_token_auth = isinstance(login.auth, AzureTokenAuth)
+
         if tds_base.IS_TDS72_PLUS(self):
-            start_pos = 26
-            buf = struct.pack(
-                b">BHHBHHBHHBHHBHHB",
-                # netlib version
-                PreLoginToken.VERSION,
-                start_pos,
-                6,
-                # encryption
-                PreLoginToken.ENCRYPTION,
-                start_pos + 6,
-                1,
-                # instance
-                PreLoginToken.INSTOPT,
-                start_pos + 6 + 1,
-                len(instance_name_encoded) + 1,
-                # thread id
-                PreLoginToken.THREADID,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
-                4,
-                # MARS enabled
-                PreLoginToken.MARS,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
-                1,
-                # end
-                PreLoginToken.TERMINATOR,
-            )
+            if is_token_auth:
+                # Include FEDAUTHREQUIRED token for Azure token authentication
+                start_pos = 31  # 5 more bytes for FEDAUTHREQUIRED
+                buf = struct.pack(
+                    b">BHHBHHBHHBHHBHHBHHB",
+                    # netlib version
+                    PreLoginToken.VERSION,
+                    start_pos,
+                    6,
+                    # encryption
+                    PreLoginToken.ENCRYPTION,
+                    start_pos + 6,
+                    1,
+                    # instance
+                    PreLoginToken.INSTOPT,
+                    start_pos + 6 + 1,
+                    len(instance_name_encoded) + 1,
+                    # thread id
+                    PreLoginToken.THREADID,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                    4,
+                    # MARS enabled
+                    PreLoginToken.MARS,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
+                    1,
+                    # FEDAUTH required
+                    PreLoginToken.FEDAUTHREQUIRED,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4 + 1,
+                    1,
+                    # end
+                    PreLoginToken.TERMINATOR,
+                )
+            else:
+                start_pos = 26
+                buf = struct.pack(
+                    b">BHHBHHBHHBHHBHHB",
+                    # netlib version
+                    PreLoginToken.VERSION,
+                    start_pos,
+                    6,
+                    # encryption
+                    PreLoginToken.ENCRYPTION,
+                    start_pos + 6,
+                    1,
+                    # instance
+                    PreLoginToken.INSTOPT,
+                    start_pos + 6 + 1,
+                    len(instance_name_encoded) + 1,
+                    # thread id
+                    PreLoginToken.THREADID,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                    4,
+                    # MARS enabled
+                    PreLoginToken.MARS,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
+                    1,
+                    # end
+                    PreLoginToken.TERMINATOR,
+                )
         else:
-            start_pos = 21
-            buf = struct.pack(
-                b">BHHBHHBHHBHHB",
-                # netlib version
-                PreLoginToken.VERSION,
-                start_pos,
-                6,
-                # encryption
-                PreLoginToken.ENCRYPTION,
-                start_pos + 6,
-                1,
-                # instance
-                PreLoginToken.INSTOPT,
-                start_pos + 6 + 1,
-                len(instance_name_encoded) + 1,
-                # thread id
-                PreLoginToken.THREADID,
-                start_pos + 6 + 1 + len(instance_name_encoded) + 1,
-                4,
-                # end
-                PreLoginToken.TERMINATOR,
-            )
+            if is_token_auth:
+                # Include FEDAUTHREQUIRED token for Azure token authentication (pre-TDS72)
+                start_pos = 26  # 5 more bytes for FEDAUTHREQUIRED
+                buf = struct.pack(
+                    b">BHHBHHBHHBHHBHHB",
+                    # netlib version
+                    PreLoginToken.VERSION,
+                    start_pos,
+                    6,
+                    # encryption
+                    PreLoginToken.ENCRYPTION,
+                    start_pos + 6,
+                    1,
+                    # instance
+                    PreLoginToken.INSTOPT,
+                    start_pos + 6 + 1,
+                    len(instance_name_encoded) + 1,
+                    # thread id
+                    PreLoginToken.THREADID,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                    4,
+                    # FEDAUTH required
+                    PreLoginToken.FEDAUTHREQUIRED,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1 + 4,
+                    1,
+                    # end
+                    PreLoginToken.TERMINATOR,
+                )
+            else:
+                start_pos = 21
+                buf = struct.pack(
+                    b">BHHBHHBHHBHHB",
+                    # netlib version
+                    PreLoginToken.VERSION,
+                    start_pos,
+                    6,
+                    # encryption
+                    PreLoginToken.ENCRYPTION,
+                    start_pos + 6,
+                    1,
+                    # instance
+                    PreLoginToken.INSTOPT,
+                    start_pos + 6 + 1,
+                    len(instance_name_encoded) + 1,
+                    # thread id
+                    PreLoginToken.THREADID,
+                    start_pos + 6 + 1 + len(instance_name_encoded) + 1,
+                    4,
+                    # end
+                    PreLoginToken.TERMINATOR,
+                )
         assert start_pos == len(buf)
         w = self._writer
         w.begin_packet(tds_base.PacketType.PRELOGIN)
@@ -1245,6 +1312,12 @@ class _TdsSession:
             # MARS (1 enabled)
             w.put_byte(1 if login.use_mars else 0)
             attribs["mars"] = login.use_mars
+
+        if is_token_auth:
+            # FEDAUTHREQUIRED (1 = required)
+            w.put_byte(1)
+            attribs["fedauth_required"] = True
+
         logger.info(
             "Sending PRELOGIN %s", " ".join(f"{n}={v!r}" for n, v in attribs.items())
         )
@@ -1310,11 +1383,19 @@ class _TdsSession:
             elif type_id == PreLoginToken.INSTOPT:
                 # ignore instance name mismatch
                 pass
+            elif type_id == PreLoginToken.FEDAUTHREQUIRED and length >= 1:
+                (fedauth_flag,) = byte_struct.unpack_from(p, off)
+                login.fedauth_required = bool(fedauth_flag)
+            elif type_id == PreLoginToken.NONCEOPT and length >= 32:
+                # Extract the 32-byte nonce for federated authentication
+                login.fedauth_nonce = p[off:off + 32]
             i += 5
         logger.info(
-            "Got PRELOGIN response crypt=%x mars=%d",
+            "Got PRELOGIN response crypt=%x mars=%d fedauth_required=%s nonce=%s",
             crypt_flag,
             self.conn._mars_enabled,
+            login.fedauth_required,
+            "present" if login.fedauth_nonce else "none",
         )
         # if server do not has certificate do normal login
         login.server_enc_flag = crypt_flag
@@ -1396,6 +1477,13 @@ class _TdsSession:
         else:
             auth_packet = b""
             packet_size += (len(user_name) + len(login.password)) * 2
+
+        # Add feature extension size for token authentication
+        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+            # Extension header: 4 bytes (offset to feature extensions)
+            # FEDAUTH feature: 1 byte (feature ID) + 4 bytes (data length) + 2 bytes (data)
+            # Terminator: 1 byte
+            packet_size += 4 + 1 + 4 + 2 + 1
         w.put_int(packet_size)
         w.put_uint(login.tds_version)
         w.put_int(login.blocksize)
@@ -1420,6 +1508,8 @@ class _TdsSession:
             type_flags |= tds_base.TDS_FREADONLY_INTENT
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
+        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+            option_flag3 |= tds_base.TDS_EXTENSION
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
         mins_fix = (
             int(
@@ -1469,9 +1559,15 @@ class _TdsSession:
         w.put_smallint(current_pos)
         w.put_smallint(len(login.server_name))
         current_pos += len(login.server_name) * 2
-        # reserved
-        w.put_smallint(0)
-        w.put_smallint(0)
+        # reserved / extension
+        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+            # Extension offset and length
+            extension_offset = current_pos + (len(login.library) + len(login.language) + len(login.database)) * 2 + len(auth_packet) + len(login.attach_db_file) * 2 + len(login.change_password) * 2
+            w.put_smallint(extension_offset)
+            w.put_smallint(4)  # Extension block length (just the offset to feature extensions)
+        else:
+            w.put_smallint(0)
+            w.put_smallint(0)
         # library name
         w.put_smallint(current_pos)
         w.put_smallint(len(login.library))
@@ -1514,6 +1610,62 @@ class _TdsSession:
             w.write(auth_packet)
         w.write_ucs2(login.attach_db_file)
         w.write_ucs2(login.change_password)
+
+        # Add feature extensions for token authentication
+        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+            # Extension block: offset to feature extensions (4 bytes)
+            feature_ext_offset = 4  # Relative to start of extension block
+            w.put_int(feature_ext_offset)
+
+            # FEDAUTH feature extension
+            w.put_byte(tds_base.FeatureExtension.FEDAUTH)  # Feature ID
+            w.put_int(2)  # Feature data length
+
+            # Feature data for ADAL
+            options = (tds_base.FedAuthLibrary.ADAL << 1) | (1 if login.fedauth_required else 0)  # bFedAuthLibrary + fFedAuthEcho
+            w.put_byte(options)
+            w.put_byte(0x02)  # Workflow: Integrated (we're using tokens, not username/password)
+
+            # Terminator
+            w.put_byte(tds_base.FeatureExtension.TERMINATOR)
+
+        w.flush()
+
+    def send_fedauth_token(self, login: _TdsLogin) -> None:
+        """Send FEDAUTH token packet containing the access token.
+
+        This is sent after LOGIN7 when using Azure Active Directory token authentication.
+
+        Spec: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/827d9632-2957-4d54-b9ea-384530ae79d0
+        """
+        from .login import AzureTokenAuth
+
+        if not isinstance(login.auth, AzureTokenAuth):
+            raise ValueError("FEDAUTH token can only be sent with AzureTokenAuth")
+
+        access_token = login.auth.get_access_token()
+        token_bytes = access_token.encode('utf-8')
+
+        w = self._writer
+        w.begin_packet(tds_base.PacketType.FEDAUTHTOKEN)
+
+        # DataLen (4 bytes) - total length of data that follows
+        data_len = 4 + len(token_bytes)  # L_VARBYTE length (4) + token data
+        if login.fedauth_nonce:
+            data_len += len(login.fedauth_nonce)  # Add nonce length if present
+        w.put_int(data_len)
+
+        # FedAuthToken as L_VARBYTE (4-byte length + data)
+        w.put_int(len(token_bytes))
+        w.write(token_bytes)
+
+        # Nonce (32 bytes) - echo back the nonce from server if provided
+        if login.fedauth_nonce:
+            w.write(login.fedauth_nonce)
+
+        logger.info("Sending FEDAUTH token packet, token_len=%d, nonce=%s",
+                   len(token_bytes), "present" if login.fedauth_nonce else "none")
+
         w.flush()
 
     _SERVER_TO_CLIENT_MAPPING = {

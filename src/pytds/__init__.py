@@ -16,7 +16,7 @@ from . import connection_pool
 import pytds.tz
 from .connection import MarsConnection, NonMarsConnection, Connection
 from .cursor import Cursor  # noqa: F401 # export for backward compatibility
-from .login import KerberosAuth, SspiAuth, AuthProtocol  # noqa: F401 # export for backward compatibility
+from .login import KerberosAuth, SspiAuth, AuthProtocol, AzureTokenAuth  # noqa: F401 # export for backward compatibility
 from .row_strategies import (
     tuple_row_strategy,
     list_row_strategy,  # noqa: F401 # export for backward compatibility
@@ -140,6 +140,7 @@ def connect(
     pooling: bool = False,
     use_sso: bool = False,
     isolation_level: int = 0,
+    access_token: str | None = None,
 ):
     """
     Opens connection to the database
@@ -197,10 +198,18 @@ def connect(
     :type enc_login_only: bool
     :keyword use_sso: Enables SSO login, e.g. Kerberos using SSPI on Windows and kerberos package on other platforms.
              Cannot be used together with auth parameter.
+    :keyword access_token: Azure Active Directory access token for token-based authentication.
+             When provided, creates an AzureTokenAuth instance automatically.
+             Cannot be used together with auth, use_sso, user, or password parameters.
+    :type access_token: str
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
         raise ValueError("use_sso cannot be used with auth parameter defined")
+    if access_token is not None and (auth or use_sso or user or password):
+        raise ValueError("access_token cannot be used with auth, use_sso, user, or password parameters")
+    if access_token is not None and not access_token.strip():
+        raise ValueError("access_token cannot be empty")
     login = tds_base._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
     login.library = "Python TDS Library"
@@ -291,6 +300,8 @@ def connect(
             login.auth = pytds_login.SspiAuth(spn=spn)
         except ImportError:
             login.auth = pytds_login.KerberosAuth(spn)
+    elif access_token:
+        login.auth = AzureTokenAuth(access_token)
     else:
         login.auth = auth
 

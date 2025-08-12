@@ -91,6 +91,12 @@ class _TdsSocket:
         self._main_session.tds7_send_login(self._login)
         if self._login.server_enc_flag == PreLoginEnc.ENCRYPT_OFF:
             tls.revert_to_clear(self._main_session)
+
+        # Send FEDAUTH token if using token authentication
+        from .login import AzureTokenAuth
+        if isinstance(self._login.auth, AzureTokenAuth):
+            self._main_session.send_fedauth_token(self._login)
+
         self._main_session.begin_response()
         if not self._main_session.process_login_tokens():
             self._main_session.raise_db_exception()

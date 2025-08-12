@@ -229,3 +229,48 @@ class KerberosAuth(AuthProtocol):
 
     def close(self) -> None:
         pass
+
+
+class AzureTokenAuth(AuthProtocol):
+    """Azure Active Directory token-based authentication
+
+    This class implements token-based authentication for Azure SQL Database
+    using Azure Active Directory access tokens. The token can be obtained
+    from Azure managed identity, service principal, or other Azure AD token providers.
+
+    :param access_token: The Azure AD access token as a string
+    :type access_token: str
+    """
+
+    def __init__(self, access_token: str) -> None:
+        if not access_token or not access_token.strip():
+            raise ValueError("Access token cannot be empty")
+        self._access_token = access_token
+        self._token_sent = False
+        logger.info("Initialized Azure token authentication")
+
+    def create_packet(self) -> bytes:
+        """Create the initial authentication packet.
+
+        For token-based authentication, this returns an empty packet since
+        the actual token is sent via the FEDAUTH packet after LOGIN7.
+        """
+        logger.info("Creating initial auth packet for Azure token authentication")
+        return b""
+
+    def handle_next(self, packet: bytes) -> bytes | None:
+        """Handle the next authentication packet from the server.
+
+        For token-based authentication, this should not be called during
+        normal flow since the token is sent via FEDAUTH packet.
+        """
+        logger.info("Received auth packet in Azure token authentication")
+        return None
+
+    def close(self) -> None:
+        """Close the authentication context."""
+        pass
+
+    def get_access_token(self) -> str:
+        """Get the access token for sending in FEDAUTH packet."""
+        return self._access_token

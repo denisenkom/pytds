@@ -28,6 +28,7 @@ Features
 * Table-valued parameters
 * TLS connection encryption
 * Kerberos support on non-Windows platforms (requires kerberos package)
+* Azure Active Directory token-based authentication for Azure SQL Database
 
 Installation
 ------------
@@ -75,6 +76,54 @@ To connect to database do
 
 
 To enable TLS you should also provide cafile parameter which should be a file name containing trusted CAs in PEM format.
+
+Azure Active Directory Authentication
+--------------------------------------
+
+To connect to Azure SQL Database using Azure Active Directory token-based authentication:
+
+.. code-block:: python
+
+    import pytds
+
+    # Using an access token obtained from Azure AD
+    access_token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9..."  # Your Azure AD access token
+
+    with pytds.connect(
+        dsn='your-server.database.windows.net',
+        database='your-database',
+        access_token=access_token
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchall()
+
+The access token can be obtained using various methods:
+
+* Azure Managed Identity (for applications running in Azure)
+* Service Principal authentication
+* Interactive authentication flows
+* Azure CLI (`az account get-access-token --resource https://database.windows.net/`)
+
+Example using Azure Identity library to get a token:
+
+.. code-block:: python
+
+    from azure.identity import DefaultAzureCredential
+    import pytds
+
+    # Get token using Azure Identity (works with managed identity, service principal, etc.)
+    credential = DefaultAzureCredential()
+    token = credential.get_token("https://database.windows.net/.default")
+
+    with pytds.connect(
+        dsn='your-server.database.windows.net',
+        database='your-database',
+        access_token=token.token
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT CURRENT_USER")
+            print(cur.fetchone())
 
 For detailed documentation of connection parameters see: `pytds.connect`_
 
