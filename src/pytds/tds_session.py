@@ -1478,8 +1478,12 @@ class _TdsSession:
             auth_packet = b""
             packet_size += (len(user_name) + len(login.password)) * 2
 
+        # Check if we're using Azure token authentication
+        from .login import AzureTokenAuth
+        is_token_auth = isinstance(login.auth, AzureTokenAuth)
+
         # Add feature extension size for token authentication
-        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+        if is_token_auth and tds_base.IS_TDS73_PLUS(self):
             # Extension header: 4 bytes (offset to feature extensions)
             # FEDAUTH feature: 1 byte (feature ID) + 4 bytes (data length) + 2 bytes (data)
             # Terminator: 1 byte
@@ -1508,7 +1512,7 @@ class _TdsSession:
             type_flags |= tds_base.TDS_FREADONLY_INTENT
         w.put_byte(type_flags)
         option_flag3 = tds_base.TDS_UNKNOWN_COLLATION_HANDLING
-        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+        if is_token_auth and tds_base.IS_TDS73_PLUS(self):
             option_flag3 |= tds_base.TDS_EXTENSION
         w.put_byte(option_flag3 if tds_base.IS_TDS73_PLUS(self) else 0)
         mins_fix = (
@@ -1560,7 +1564,7 @@ class _TdsSession:
         w.put_smallint(len(login.server_name))
         current_pos += len(login.server_name) * 2
         # reserved / extension
-        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+        if is_token_auth and tds_base.IS_TDS73_PLUS(self):
             # Extension offset and length
             extension_offset = current_pos + (len(login.library) + len(login.language) + len(login.database)) * 2 + len(auth_packet) + len(login.attach_db_file) * 2 + len(login.change_password) * 2
             w.put_smallint(extension_offset)
@@ -1612,7 +1616,7 @@ class _TdsSession:
         w.write_ucs2(login.change_password)
 
         # Add feature extensions for token authentication
-        if is_token_auth and tds_base.IS_TDS74_PLUS(self):
+        if is_token_auth and tds_base.IS_TDS73_PLUS(self):
             # Extension block: offset to feature extensions (4 bytes)
             feature_ext_offset = 4  # Relative to start of extension block
             w.put_int(feature_ext_offset)
