@@ -243,6 +243,18 @@ class TestMessages(unittest.TestCase):
         self.assertFalse(tds._mars_enabled)
         self.assertTupleEqual(tds.server_library_version, (0xA001588, 0))
 
+        sock = _FakeSock(
+            [
+                b'\x04\x01\x00\x31\x00\00\x01\x00\x00\x00\x1f\x00\x06\x01\x00\x25\x00\x01\x02\x00\x26\x00\x01\x03\x00\x27\x00\x00\x04\x00\x27\x00\x01\x06\x00\x28\x00\x01\xff\x0c\x00\x14\xe5\x00\x00\x02\x00\x00\x01',
+            ]
+        )
+        #test fedauth
+        login = _TdsLogin()
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
+        tds = _TdsSocket(sock=sock, login=login)
+        tds._main_session.process_prelogin(login)
+        self.assertTrue(tds.fedauth_required)
+
         # test bad packet type
         sock = _FakeSock(
             [
@@ -336,11 +348,45 @@ class TestMessages(unittest.TestCase):
         with self.assertRaises(UnicodeEncodeError):
             tds._main_session.send_prelogin(login)
         self.assertEqual(sock._sent, b"")
+    
+    def test_prelogin_generation_fedauth(self):
+        sock = _FakeSock("")
+        login = _TdsLogin()
+        login.instance_name = "MSSQLServer"
+        login.enc_flag = PreLoginEnc.ENCRYPT_NOT_SUP
+        login.use_mars = False
+        login.access_token = "token"
+        tds = _TdsSocket(sock=sock, login=login)
+        tds._main_session.send_prelogin(login)
+        template = (
+              b"\x12\x01\x00\x40\x00\x00\x00\x00\x00\x00"
+            + b"\x1f\x00\x06"
+            + b"\x01\x00\x25\x00\x01"
+            + b"\x02\x00\x26\x00\x0c"
+            + b"\x03\x00\x32\x00\x04"
+            + b"\x04\x00\x36\x00\x01\x06\x00\x37\x00\x01"
+            + b"\xff"
+            + struct.pack(">l", pytds.intversion)
+            + b"\x00\x00\x02MSSQLServer\x00\x00\x00\x00\x00\x00"
+            + b"\x01"
+        )
+
+        self.assertEqual(sock._sent, template)
 
     def test_login_parsing(self):
         sock = _FakeSock(
             [
                 b"\x04\x01\x01\xad\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            ]
+        )
+        tds = _TdsSocket(sock=sock, login=_TdsLogin())
+        tds._main_session.begin_response()
+        tds._main_session.process_login_tokens()
+
+        # test featextack
+        sock = _FakeSock(
+            [
+                b"\x04\x01\x01\xda\x00Z\x01\x00\xe3/\x00\x01\x10S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00\x06m\x00a\x00s\x00t\x00e\x00r\x00\xab~\x00E\x16\x00\x00\x02\x00/\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00 \x00c\x00o\x00n\x00t\x00e\x00x\x00t\x00 \x00t\x00o\x00 \x00'\x00S\x00u\x00b\x00m\x00i\x00s\x00s\x00i\x00o\x00n\x00P\x00o\x00r\x00t\x00a\x00l\x00'\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xe3\x08\x00\x07\x05\t\x04\x00\x01\x00\x00\xe3\x17\x00\x02\nu\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00\x00\xabn\x00G\x16\x00\x00\x01\x00'\x00C\x00h\x00a\x00n\x00g\x00e\x00d\x00 \x00l\x00a\x00n\x00g\x00u\x00a\x00g\x00e\x00 \x00s\x00e\x00t\x00t\x00i\x00n\x00g\x00 \x00t\x00o\x00 \x00u\x00s\x00_\x00e\x00n\x00g\x00l\x00i\x00s\x00h\x00.\x00\tM\x00S\x00S\x00Q\x00L\x00H\x00V\x003\x000\x00\x00\x01\x00\x00\x00\xad6\x00\x01s\x0b\x00\x03\x16M\x00i\x00c\x00r\x00o\x00s\x00o\x00f\x00t\x00 \x00S\x00Q\x00L\x00 \x00S\x00e\x00r\x00v\x00e\x00r\x00\x00\x00\x00\x00\n\x00\x15\x88\xe3\x13\x00\x04\x044\x000\x009\x006\x00\x044\x000\x009\x006\x00\xae\x02\x20\x00\x00\x00\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6A\x6B\x6C\x6D\x6E\x6F\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x61\x62\x63\x64\x65\x66\x0a\x01\x00\x00\x00\x01\xff\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
             ]
         )
         tds = _TdsSocket(sock=sock, login=_TdsLogin())
@@ -407,7 +453,7 @@ class TestMessages(unittest.TestCase):
             + b"^\x00\x07\x00l\x00\x04\x00t\x00\x07\x00\x82\x00\x07\x00\x90\x00\n\x00\x00\x00\x00\x00\xa4\x00\x07"
             + b"\x00\xb2\x00\x02\x00\xb6\x00\x08\x00"
             + b"\x12\x34\x56\x78\x90\xab"
-            + b"\xc6\x00\x00"
+            + b"\x00\x00\x00"
             + b"\x00\xc6\x00\x08\x00\xd6\x00\x00\x00\x00\x00\x00\x00"
             + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"
             + b"t\x00e\x00s\x00t\x00"
@@ -430,7 +476,7 @@ class TestMessages(unittest.TestCase):
             + b"00100000"
             + binascii.hexlify(struct.pack("<l", pytds.intversion))
             + b"6400000000000000e000000810ffffff040200005e0007006c000400740007008200070090000a0000000000a4000700b"
-            + b"2000200b60008001234567890abc6000000c6000800d60000000000000073007500620064006500760031007400650073"
+            + b"2000200b60008001234567890ab00000000c6000800d60000000000000073007500620064006500760031007400650073"
             + b"007400e2a5f3a592a5e2a5a2a5d2a5e3a56100700070006e0061006d0065007300650072007600650072006e0061006d0"
             + b"065006c0069006200720061007200790065006e0064006100740061006200610073006500660069006c00650070006100"
             + b"74006800",
@@ -505,7 +551,135 @@ class TestMessages(unittest.TestCase):
             ValueError, "File path should be not longer than 260 characters"
         ):
             tds._main_session.tds7_send_login(login)
+
+        login.attach_db_file = "x"
+        login.access_token = ""
+        with self.assertRaisesRegex(
+            ValueError, "Access token must not be an empty string"
+        ):
+            tds._main_session.tds7_send_login(login)
+
+        login.access_token = "notempty"
+        with self.assertRaisesRegex(
+            ValueError, "Access token authentication requires TDS version 7.4 or higher"
+        ):
+            tds._main_session.tds7_send_login(login)
+
         self.assertEqual(sock._sent, b"")
+
+    def test_access_token_login_generation(self):
+            sock = _FakeSock(b"")
+            login = _TdsLogin()
+            login.access_token = "token"
+            login.app_name = "appname"
+            login.server_name = "servername"
+            login.library = "library"
+            login.language = "en"
+            login.database = "database"
+            #login.auth = None
+            login.tds_version = TDS74
+            login.bulk_copy = True
+            login.client_lcid = 0x204
+            login.attach_db_file = "filepath"
+            login.client_host_name = "subdev1"
+            login.pid = 100
+            login.client_tz = tzoffset(-4 * 60)
+            login.client_id = 0x1234567890AB
+            tds = _TdsSocket(sock=sock, login=login)
+            tds._main_session.tds7_send_login(login)
+            self.assertEqual(
+                sock._sent,
+                b"\x10\x01\x00\xe1\x00\x00\x00\x00"  # header
+                + b"\xc9\x00\x00\x00"  # size
+                + b"\x04\x00\x00\x74"  # tds version
+                + b"\x00\x10\x00\x00"  # buf size
+                + struct.pack("<l", pytds.intversion)
+                + b"d\x00\x00\x00"  # pid
+                + b"\x00\x00\x00\x00"  # connection id of primary server (whatever that means)
+                + b"\xe0\x00\x00\x18"  # flags (bulk_copy, integrated securtiy, extension)
+                + b"\x10\xff\xff\xff"  # client tz
+                + b"\x04\x02\x00\x00"  # client lcid
+                + b"\x5e\x00\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00\x6c\x00\x07\x00\x7a\x00\x0a\x00"
+                + b"\x8e\x00"
+                + b"\x04\x00" # extension enable
+                + b"\x92\x00\x07\x00\xa0\x00\x02\x00\xa4\x00\x08\x00"
+                + b"\x12\x34\x56\x78\x90\xab" # client id
+                + b"\x00\x00"
+                + b"\x00\x00" # auth
+                + b"\xc9\x00\x08\x00\xd9\x00\x00\x00\x00\x00\x00\x00"
+                + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"
+                + b"a\x00p\x00p\x00n\x00a\x00m\x00e\x00"
+                + b"s\x00e\x00r\x00v\x00e\x00r\x00n\x00a\x00m\x00e\x00"
+                + b"\xb4\x00\x00\x00" #extension offset
+                + b"l\x00i\x00b\x00r\x00a\x00r\x00y\x00"
+                + b"e\x00n\x00"
+                + b"d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00"
+                + b"\x02" # TDS_LOGIN_FEATURE_FEDAUTH
+                + b"\x0f\x00\x00\x00" # length
+                + b"\x02" # TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN
+                + b"\x0a\x00\x00\x00" # length
+                + b"t\x00o\x00k\x00e\x00n\x00"
+                + b"\xff" # terminate extension
+                + b"f\x00i\x00l\x00e\x00p\x00a\x00t\x00h\x00",
+            )
+
+    def test_access_token_login_generation_nonce(self):
+            sock = _FakeSock(b"")
+            login = _TdsLogin()
+            login.access_token = "token"
+            login.app_name = "appname"
+            login.server_name = "servername"
+            login.library = "library"
+            login.language = "en"
+            login.database = "database"
+            #login.auth = None
+            login.tds_version = TDS74
+            login.bulk_copy = True
+            login.client_lcid = 0x204
+            login.attach_db_file = "filepath"
+            login.client_host_name = "subdev1"
+            login.pid = 100
+            login.client_tz = tzoffset(-4 * 60)
+            login.client_id = 0x1234567890AB
+            login.nonce = b'abcdefghijklmnopqrstuvwxyzabcdef'
+            tds = _TdsSocket(sock=sock, login=login)
+            tds._main_session.tds7_send_login(login)
+            self.assertEqual(
+                sock._sent,
+                b"\x10\x01\x01\x01\x00\x00\x00\x00"  # header
+                + b"\xe9\x00\x00\x00"  # size
+                + b"\x04\x00\x00\x74"  # tds version
+                + b"\x00\x10\x00\x00"  # buf size
+                + struct.pack("<l", pytds.intversion)
+                + b"d\x00\x00\x00"  # pid
+                + b"\x00\x00\x00\x00"  # connection id of primary server (whatever that means)
+                + b"\xe0\x00\x00\x18"  # flags (bulk_copy, integrated securtiy, extension)
+                + b"\x10\xff\xff\xff"  # client tz
+                + b"\x04\x02\x00\x00"  # client lcid
+                + b"\x5e\x00\x07\x00\x00\x00\x00\x00\x00\x00\x00\x00\x6c\x00\x07\x00\x7a\x00\x0a\x00"
+                + b"\x8e\x00"
+                + b"\x04\x00" # extension enable
+                + b"\x92\x00\x07\x00\xa0\x00\x02\x00\xa4\x00\x08\x00"
+                + b"\x12\x34\x56\x78\x90\xab" # client id
+                + b"\x00\x00"
+                + b"\x00\x00" # auth
+                + b"\xe9\x00\x08\x00\xf9\x00\x00\x00\x00\x00\x00\x00"
+                + b"s\x00u\x00b\x00d\x00e\x00v\x001\x00"
+                + b"a\x00p\x00p\x00n\x00a\x00m\x00e\x00"
+                + b"s\x00e\x00r\x00v\x00e\x00r\x00n\x00a\x00m\x00e\x00"
+                + b"\xb4\x00\x00\x00" #extension offset
+                + b"l\x00i\x00b\x00r\x00a\x00r\x00y\x00"
+                + b"e\x00n\x00"
+                + b"d\x00a\x00t\x00a\x00b\x00a\x00s\x00e\x00"
+                + b"\x02" # TDS_LOGIN_FEATURE_FEDAUTH
+                + b"\x2f\x00\x00\x00" # length
+                + b"\x02" # TDS_FEDAUTH_OPTIONS_LIBRARY_SECURITYTOKEN
+                + b"\x0a\x00\x00\x00" # length
+                + b"t\x00o\x00k\x00e\x00n\x00"
+                + b"\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6A\x6B\x6C\x6D\x6E\x6F\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x61\x62\x63\x64\x65\x66"
+                + b"\xff" # terminate extension
+                + b"f\x00i\x00l\x00e\x00p\x00a\x00t\x00h\x00",
+            )
 
     def test_submit_plain_query(self):
         sock = _FakeSock(b"")

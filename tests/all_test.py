@@ -263,10 +263,8 @@ def test_recordtype_row_strategy():
             assert row[:] == (3, 2)
 
 
-@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+@unittest.skipUnless(hasattr(settings, "BROWSER_ADDRESS"), "BROWSER_ADDRESS setting is not defined")
 def test_get_instances():
-    if not hasattr(settings, "BROWSER_ADDRESS"):
-        return unittest.skip("BROWSER_ADDRESS setting is not defined")
     pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
 
 
@@ -574,6 +572,15 @@ class Auth(unittest.TestCase):
                 cursor.execute("select 1")
                 cursor.fetchall()
 
+    @unittest.skipUnless(os.getenv("SECURITY_TOKEN"), "requires SECURITY_TOKEN environment variable to be set")
+    def test_security_token(self):
+        with connect(**{
+            **settings.CONNECT_KWARGS,
+            "access_token": os.getenv("SECURITY_TOKEN")
+            }) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("select 1")
+                cursor.fetchall()
 
 class CloseCursorTwice(ConnectionTestCase):
     def runTest(self):
