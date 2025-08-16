@@ -18,6 +18,9 @@ if os.path.exists(connection_json_path):
     default_use_mars = conf["use_mars"]
     default_auth = conf.get("auth")
     default_cafile = conf.get("cafile")
+    azure_host = conf["azure_host"]
+    azure_cafile = conf.get("azure_cafile")
+    azure_database = conf.get("azure_database")
 else:
     default_host = None
     default_database = "test"
@@ -29,6 +32,9 @@ else:
     default_use_mars = True
     default_auth = None
     default_cafile = None
+    azure_host = None
+    azure_cafile = None
+    azure_database = None
 
 LIVE_TEST = "HOST" in os.environ or default_host
 if LIVE_TEST:
