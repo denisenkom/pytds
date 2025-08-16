@@ -22,7 +22,8 @@ def test_fedauth_connection(): # pragma: no cover
             "access_token_callable": get_access_token,
             "server": settings.azure_host,
             "cafile": settings.azure_cafile,
-            "database": settings.azure_database
+            "database": settings.azure_database,
+            "auth": None
         }
     )
 
