@@ -378,8 +378,8 @@ def connect(
     def ex_handler(ex: Exception) -> None:
         if isinstance(ex, LoginError):
             raise ex
-        elif isinstance(ex, BrokenPipeError) or isinstance(ex, socket.timeout):
-            # Allow to retry when BrokenPipeError is received
+        elif isinstance(ex, BrokenPipeError) or isinstance(ex, ConnectionError) or isinstance(ex, socket.timeout):
+            # Allow to retry when various connection errors occur
             pass
         elif isinstance(ex, OperationalError):
             # if there are more than one message this means
