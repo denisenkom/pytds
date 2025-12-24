@@ -21,8 +21,6 @@ environment:
       SQLINSTANCE: SQL2017
     - PYTHON: "C:\\Python313-x64"
       SQLINSTANCE: SQL2017
-    - PYTHON: "C:\\Python38-x64"
-      SQLINSTANCE: SQL2017
 
 install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
