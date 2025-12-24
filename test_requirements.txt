@@ -12,7 +12,7 @@ namedlist
 # cryptography 3.4.5 fails build, requires rust compiler
 # see example failure: https://ci.appveyor.com/project/denisenkom/pytds/builds/37803561/job/lln9d25ye5vnljbr
 # requiring older cryptography library to avoid this error
-cryptography==42.0.0
+cryptography==44.0.1
 sqlalchemy-pytds
 SQLAlchemy==2.0.34
 mypy==1.7.1
