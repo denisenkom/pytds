@@ -24,13 +24,13 @@ install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
   - python --version
   - "python -c \"import struct; print(struct.calcsize('P') * 8)\""
-  - choco install rust rustup.install
-  - set PATH=C:\MinGW\bin;%HomeDrive%%HomePath%\.cargo\bin;%PATH%
+  #- choco install rust rustup.install
+  #- set PATH=C:\MinGW\bin;%HomeDrive%%HomePath%\.cargo\bin;%PATH%
   - dir %HomeDrive%%HomePath%
-  - rustup target add i686-pc-windows-msvc
-  - set INCLUDE=C:\OpenSSL-Win64\include;%INCLUDE%
-  - set LIB=C:\OpenSSL-Win64\lib;%LIB%
-  - set OPENSSL_DIR=C:\OpenSSL-Win64
+  #- rustup target add i686-pc-windows-msvc
+  #- set INCLUDE=C:\OpenSSL-Win64\include;%INCLUDE%
+  #- set LIB=C:\OpenSSL-Win64\lib;%LIB%
+  #- set OPENSSL_DIR=C:\OpenSSL-Win64
   - pip install -e .
   - pip install setuptools  # needed to build cryptography package
   - pip install -r test_requirements.txt
