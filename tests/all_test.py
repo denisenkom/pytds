@@ -233,21 +233,24 @@ def test_row_strategies():
         with conn.cursor() as cur:
             cur.execute("select 1 as f")
             assert cur.fetchall() == [collections.namedtuple("Row", ["f"])(1)]
-    kwargs.update(
-        {
-            "row_strategy": pytds.recordtype_row_strategy,
-        }
-    )
-    with connect(**kwargs) as conn:
-        with conn.cursor() as cur:
-            cur.execute("select 1 as e, 2 as f")
-            (row,) = cur.fetchall()
-            assert row.e == 1
-            assert row.f == 2
-            assert row[0] == 1
-            assert row[:] == (1, 2)
-            row[0] = 3
-            assert row[:] == (3, 2)
+
+    if sys.version_info < (3, 10):
+        # this test depends on namedlist library which is not supported in Python 3.10+
+        kwargs.update(
+            {
+                "row_strategy": pytds.recordtype_row_strategy,
+            }
+        )
+        with connect(**kwargs) as conn:
+            with conn.cursor() as cur:
+                cur.execute("select 1 as e, 2 as f")
+                (row,) = cur.fetchall()
+                assert row.e == 1
+                assert row.f == 2
+                assert row[0] == 1
+                assert row[:] == (1, 2)
+                row[0] = 3
+                assert row[:] == (3, 2)
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
