@@ -981,7 +981,7 @@ class _TdsLogin:
             import OpenSSL.SSL  # type: ignore # needs fixing
             self.tls_ctx: OpenSSL.SSL.Context | None = None
         except ImportError:
-            self.tls_ctx: None | OpenSSL.SSL.Context = None
+            self.tls_ctx = None
         self.client_tz: datetime.tzinfo = pytds.tz.local
         self.option_flag2 = 0
         self.connect_timeout = 0.0
