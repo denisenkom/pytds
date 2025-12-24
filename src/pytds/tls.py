@@ -163,6 +163,9 @@ def establish_channel(tds_sock: _TdsSession) -> None:
         raise Exception("login.tls_ctx is not set unexpectedly")
 
     bhost = login.server_name.encode("ascii")
+    tls_ctx = login.tls_ctx
+    if tls_ctx is None:
+        raise tds_base.Error("TLS context is not set")
 
     conn = OpenSSL.SSL.Connection(tls_ctx)
     conn.set_tlsext_host_name(bhost)
