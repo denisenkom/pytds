@@ -1,6 +1,7 @@
 # vim: set fileencoding=utf8 :
 from __future__ import with_statement
 from __future__ import unicode_literals
+import collections
 import os
 import random
 import string
@@ -211,7 +212,7 @@ def test_connection_timeout_no_mars():
 
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
-def test_row_strategies():
+def test_list_row_strategy():
     kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
@@ -222,41 +223,48 @@ def test_row_strategies():
         with conn.cursor() as cur:
             cur.execute("select 1")
             assert cur.fetchall() == [[1]]
+
+
+@unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+def test_namedtuple_row_strategy():
+    kwargs = settings.CONNECT_KWARGS.copy()
     kwargs.update(
         {
             "row_strategy": pytds.namedtuple_row_strategy,
         }
     )
-    import collections
-
     with connect(**kwargs) as conn:
         with conn.cursor() as cur:
             cur.execute("select 1 as f")
             assert cur.fetchall() == [collections.namedtuple("Row", ["f"])(1)]
 
-    if sys.version_info < (3, 10):
-        # this test depends on namedlist library which is not supported in Python 3.10+
-        kwargs.update(
-            {
-                "row_strategy": pytds.recordtype_row_strategy,
-            }
-        )
-        with connect(**kwargs) as conn:
-            with conn.cursor() as cur:
-                cur.execute("select 1 as e, 2 as f")
-                (row,) = cur.fetchall()
-                assert row.e == 1
-                assert row.f == 2
-                assert row[0] == 1
-                assert row[:] == (1, 2)
-                row[0] = 3
-                assert row[:] == (3, 2)
-
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
+@pytest.mark.skipif(
+    not hasattr(collections, "Mapping"),
+    reason="Skip this test if current version of Python does not define Mapping class"
+)
+def test_recordtype_row_strategy():
+    kwargs = settings.CONNECT_KWARGS.copy()
+    kwargs.update(
+        {
+            "row_strategy": pytds.recordtype_row_strategy,
+        }
+    )
+    with connect(**kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1 as e, 2 as f")
+            (row,) = cur.fetchall()
+            assert row.e == 1
+            assert row.f == 2
+            assert row[0] == 1
+            assert row[:] == (1, 2)
+            row[0] = 3
+            assert row[:] == (3, 2)
+
+
+@unittest.skipUnless(hasattr(settings, "BROWSER_ADDRESS"), "BROWSER_ADDRESS setting is not defined")
 def test_get_instances():
-    if not hasattr(settings, "BROWSER_ADDRESS"):
-        return unittest.skip("BROWSER_ADDRESS setting is not defined")
     pytds.tds.tds7_get_instances(settings.BROWSER_ADDRESS)
 
 
@@ -311,7 +319,7 @@ class TestVariant(ConnectionTestCase):
 
 @unittest.skipUnless(LIVE_TEST, "requires HOST variable to be set")
 class BadConnection(unittest.TestCase):
-    def test_invalid_parameters(self):
+    def test_bad_host(self):
         with self.assertRaises(socket.gaierror):
             with connect(
                 server="badhost",
@@ -322,6 +330,8 @@ class BadConnection(unittest.TestCase):
             ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1")
+
+    def test_bad_database(self):
         with self.assertRaises(Error):
             with connect(
                 server=settings.HOST,
@@ -331,6 +341,8 @@ class BadConnection(unittest.TestCase):
             ) as conn:
                 with conn.cursor() as cur:
                     cur.execute("select 1")
+
+    def test_bad_user(self):
         with self.assertRaises(Error):
             with connect(
                 server=settings.HOST, database="master", user="baduser", password=None
@@ -560,6 +572,15 @@ class Auth(unittest.TestCase):
                 cursor.execute("select 1")
                 cursor.fetchall()
 
+    @unittest.skipUnless(os.getenv("SECURITY_TOKEN"), "requires SECURITY_TOKEN environment variable to be set")
+    def test_security_token(self):
+        with connect(**{
+            **settings.CONNECT_KWARGS,
+            "access_token": os.getenv("SECURITY_TOKEN")
+            }) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("select 1")
+                cursor.fetchall()
 
 class CloseCursorTwice(ConnectionTestCase):
     def runTest(self):

@@ -158,6 +158,9 @@ def establish_channel(tds_sock: _TdsSession) -> None:
     w = tds_sock._writer
     r = tds_sock._reader
     login = tds_sock.conn._login
+    tls_ctx = login.tls_ctx
+    if not tls_ctx:
+        raise Exception("login.tls_ctx is not set unexpectedly")
 
     bhost = login.server_name.encode("ascii")
     tls_ctx = login.tls_ctx

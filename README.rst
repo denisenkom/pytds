@@ -28,6 +28,7 @@ Features
 * Table-valued parameters
 * TLS connection encryption
 * Kerberos support on non-Windows platforms (requires kerberos package)
+* Token-based authentication
 
 Installation
 ------------
@@ -72,6 +73,48 @@ To connect to database do
         with conn.cursor() as cur:
             cur.execute("select 1")
             cur.fetchall()
+
+or with token-based authentication
+
+.. code-block:: python
+
+    import os
+    import pytds
+    import msal
+
+    SQL_SERVER = 'your-server'
+    DATABASE = 'your-db'
+    CAFILE = '/etc/ssl/cert.pem'
+
+    def get_access_token():
+        tenant_id = os.getenv("TENANT_ID")
+        client_id = os.getenv("CLIENT_ID")
+        client_secret = os.getenv("CLIENT_SECRET")
+
+        authority = f'https://login.microsoftonline.com/{tenant_id}'
+        scope = ['https://database.windows.net/.default']
+
+        app = msal.ConfidentialClientApplication(
+            client_id=client_id,
+            client_credential=client_secret,
+            authority=authority
+        )
+
+        result = app.acquire_token_for_client(scopes=scope)
+        if "access_token" not in result:
+            raise RuntimeError(f"Token acquisition failed: {result.get('error_description')}")
+        return result["access_token"]
+
+    # Use the token callable when connecting
+    with pytds.connect(
+        server=SQL_SERVER,
+        database=DATABASE,
+        access_token_callable=get_access_token,
+        cafile=CAFILE,
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT TOP 1 name FROM sys.databases')
+            print(cur.fetchone())
 
 
 To enable TLS you should also provide cafile parameter which should be a file name containing trusted CAs in PEM format.
