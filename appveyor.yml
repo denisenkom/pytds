@@ -10,15 +10,11 @@ environment:
   DATABASE: test
   matrix:
     - PYTHON: "C:\\Python310"
-      SQLINSTANCE: SQL2016
+      SQLINSTANCE: SQL2017
     - PYTHON: "C:\\Python310-x64"
-      SQLINSTANCE: SQL2016
+      SQLINSTANCE: SQL2017
     - PYTHON: "C:\\Python310-x64"
-      SQLINSTANCE: SQL2014
-    - PYTHON: "C:\\Python310-x64"
-      SQLINSTANCE: SQL2012SP1
-    - PYTHON: "C:\\Python310-x64"
-      SQLINSTANCE: SQL2008R2SP2
+      SQLINSTANCE: SQL2019
 
 install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
