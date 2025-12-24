@@ -16,7 +16,6 @@ from collections import deque
 from typing import Protocol, Iterable, TypedDict, Tuple, Any
 
 import pytds
-import pytds.tls
 from pytds.collate import ucs2_codec
 
 logger = logging.getLogger("pytds")
@@ -956,10 +955,10 @@ class _TdsLogin:
         self.validate_host = True
         self.enc_login_only = False
         self.enc_flag = 0
-        if pytds.tls.OPENSSL_AVAILABLE:
-            import OpenSSL.SSL
+        try:
+            import OpenSSL.SSL  # type: ignore # needs fixing
             self.tls_ctx: OpenSSL.SSL.Context | None = None
-        else:
+        except ImportError:
             self.tls_ctx = None
         self.client_tz: datetime.tzinfo = pytds.tz.local
         self.option_flag2 = 0
