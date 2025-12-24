@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import logging
 import socket
 import struct
@@ -977,7 +978,11 @@ class _TdsLogin:
         self.validate_host = True
         self.enc_login_only = False
         self.enc_flag = 0
-        self.tls_ctx: None | OpenSSL.SSL.Context = None
+        if importlib.util.find_spec("OpenSSL.SSL") is not None:
+            # If you only need the name for a type hint, use a string forward reference
+            self.tls_ctx: "OpenSSL.SSL.Context | None" = None
+        else:
+            self.tls_ctx = None
         self.client_tz: datetime.tzinfo = pytds.tz.local
         self.option_flag2 = 0
         self.connect_timeout = 0.0
