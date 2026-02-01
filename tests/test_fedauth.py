@@ -55,15 +55,21 @@ class TestFedAuth(unittest.TestCase):
         self.assertTrue(mock_connect.called)
         
         # Check if the login object passed to _connect has the token set
-        # _connect args: login, host, port, ...
-        # args[0] is login object
+        # _connect is called with kwargs in __init__.py
         call_args = mock_connect.call_args
-        if call_args.args:
-            login_obj = call_args.args[0]
-        else:
-            login_obj = call_args.kwargs['login']
+        login_obj = call_args.kwargs['login']
             
         self.assertEqual(login_obj.access_token, token)
+
+    def test_connect_validation_errors(self):
+        """Verify that invalid combinations of parameters raise ValueError"""
+        # Case 1: user/password AND access_token
+        with self.assertRaisesRegex(ValueError, "user/password cannot be used with access_token"):
+            connect(dsn="localhost", user="user", password="password", access_token="token")
+
+        # Case 2: access_token AND access_token_callable
+        with self.assertRaisesRegex(ValueError, "access_token cannot be used with access_token_callable"):
+            connect(dsn="localhost", access_token="token", access_token_callable=lambda: "token")
 
 if __name__ == '__main__':
     unittest.main()
