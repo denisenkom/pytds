@@ -141,6 +141,7 @@ def connect(
     use_sso: bool = False,
     isolation_level: int = 0,
     access_token_callable: Callable[[], str] | None = None,
+    access_token: str | None = None,
 ):
     """
     Opens connection to the database
@@ -200,13 +201,18 @@ def connect(
              Cannot be used together with auth parameter.
     :keyword access_token_callable: Callable that returns a Federated Authentication Token
     :type access_token_callable: Callable[[], str]
+    :keyword access_token: string containing Federated Authentication Token
+    :type access_token: str
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
         raise ValueError("use_sso cannot be used with auth parameter defined")
 
-    if (user or password) and access_token_callable:
-        raise ValueError("user/password cannot be used with access_token_callable")
+    if (user or password) and (access_token_callable or access_token):
+        raise ValueError("user/password cannot be used with access_token or access_token_callable")
+
+    if access_token_callable and access_token:
+        raise ValueError("access_token cannot be used with access_token_callable")
 
     login = tds_base._TdsLogin()
     login.client_host_name = socket.gethostname()[:128]
@@ -231,6 +237,7 @@ def connect(
     login.validate_host = validate_host
     login.enc_login_only = enc_login_only
     login.access_token_callable = access_token_callable
+    login.access_token = access_token
 
     if cafile:
         if not tls.OPENSSL_AVAILABLE:
