@@ -1,12 +1,12 @@
 pytest>=3.3.2
 pytest-cov
 codecov
-pyOpenSSL==25.3.0
+pyOpenSSL>=26.0.0
 pyDes
 ntlm-auth
 pyspnego
 namedlist
-cryptography==46.0.5
+cryptography>=46.0.6
 sqlalchemy-pytds
 SQLAlchemy==2.0.34
 mypy==1.7.1
