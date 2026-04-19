@@ -15,3 +15,6 @@ def test_san():
     # test parsing multiple SANs
     assert is_san_matching("DNS:westus2-a.control.database.windows.net,DNS:*.database.windows.net", "my-sql-server.database.windows.net")
     assert is_san_matching("DNS:westus2-a.control.database.windows.net, DNS:*.database.windows.net", "my-sql-server.database.windows.net")
+    # test that DNS: prefix removal doesn't strip uppercase letters from hostname
+    assert is_san_matching("DNS:DNSSERVER.example.com", "DNSSERVER.example.com")
+    assert is_san_matching("DNS:SQL-DNS-Node.database.windows.net", "SQL-DNS-Node.database.windows.net")
