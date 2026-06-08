@@ -134,13 +134,14 @@ def connect(
     server: str | None = None,
     cafile: str | None = None,
     sock: socket.socket | None = None,
-    validate_host: bool = True,
+    validate_host: bool | str = True,
     enc_login_only: bool = False,
     disable_connect_retry: bool = False,
     pooling: bool = False,
     use_sso: bool = False,
     isolation_level: int = 0,
     access_token_callable: Callable[[], str] | None = None,
+    server_name: str | None = None,
 ):
     """
     Opens connection to the database
@@ -362,6 +363,7 @@ def connect(
         return _connect(
             login=login,
             host=host,
+            server_name=server_name,
             port=port,
             instance=instance,
             timeout=attempt_timeout,
@@ -411,6 +413,7 @@ def connect(
 def _connect(
     login: tds_base._TdsLogin,
     host: str,
+    server_name: str | None,
     port: int | None,
     instance: str,
     timeout: float,
@@ -426,7 +429,7 @@ def _connect(
     """
     Establish physical connection and login.
     """
-    login.server_name = host
+    login.server_name = server_name or host
     login.instance_name = instance
     resolved_port = instance_browser_client.resolve_instance_port(
         server=host, port=port, instance=instance, timeout=timeout
@@ -465,11 +468,11 @@ def _connect(
             ###  Change SPN once route exists
 
             if isinstance(login.auth, pytds_login.SspiAuth):
-                route_spn = f"MSSQLSvc@{host}:{port}"
+                route_spn = f"MSSQLSvc@{login.server_name}:{port}"
                 login.auth = pytds_login.SspiAuth(
                     user_name=login.user_name,
                     password=login.password,
-                    server_name=host,
+                    server_name=login.server_name,
                     port=port,
                     spn=route_spn,
                 )
@@ -477,6 +480,7 @@ def _connect(
             return _connect(
                 login=login,
                 host=route["server"],
+                server_name=server_name,
                 port=route["port"],
                 instance=instance,
                 timeout=timeout,
