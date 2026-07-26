@@ -1711,6 +1711,149 @@ def test_cert_with_san(test_ca, server_key, address, root_ca_path):
             pass
 
 
+def test_logical_server_name_defaults_to_host(address):
+    with SimpleServer(address=address):
+        with pytds.connect(
+            dsn=address[0],
+            port=address[1],
+            user="sa",
+            password="password",
+            disable_connect_retry=True,
+            autocommit=True,
+        ) as con:
+            login = con._tds_socket._login
+            assert login.server_name == address[0]
+            assert login.tls_hostname == address[0]
+
+
+def test_logical_server_name_override(address):
+    with SimpleServer(address=address):
+        with pytds.connect(
+            dsn=address[0],
+            port=address[1],
+            user="sa",
+            password="password",
+            disable_connect_retry=True,
+            autocommit=True,
+            logical_server_name="logical.example.com",
+        ) as con:
+            login = con._tds_socket._login
+            # server_name (used for LOGIN7/SPN) is overridden
+            assert login.server_name == "logical.example.com"
+            # tls_hostname defaults to the (overridden) server_name
+            assert login.tls_hostname == "logical.example.com"
+
+
+def test_tls_hostname_defaults_to_logical_server_name(
+    test_ca, server_key, address, root_ca_path
+):
+    from cryptography import x509
+
+    builder = x509.CertificateBuilder()
+
+    # certificate issued for the logical server name, not for the dsn/address
+    cert = test_ca.sign(
+        name="logicalname",
+        cb=builder.subject_name(
+            x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, "logicalname")])
+        )
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+        .serial_number(x509.random_serial_number())
+        .public_key(server_key.public_key()),
+    )
+
+    with SimpleServer(
+        address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=cert, key=server_key
+    ):
+        with pytds.connect(
+            dsn=address[0],
+            port=address[1],
+            user="sa",
+            password="password",
+            disable_connect_retry=True,
+            autocommit=True,
+            cafile=root_ca_path,
+            logical_server_name="logicalname",
+        ) as con:
+            login = con._tds_socket._login
+            assert login.tls_hostname == "logicalname"
+
+
+def test_tls_hostname_override_takes_precedence(
+    test_ca, server_key, address, root_ca_path
+):
+    from cryptography import x509
+
+    builder = x509.CertificateBuilder()
+
+    # certificate issued for the tls_hostname, not for logical_server_name or dsn
+    cert = test_ca.sign(
+        name="certname",
+        cb=builder.subject_name(
+            x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, "certname")])
+        )
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+        .serial_number(x509.random_serial_number())
+        .public_key(server_key.public_key()),
+    )
+
+    with SimpleServer(
+        address=address, enc=PreLoginEnc.ENCRYPT_ON, cert=cert, key=server_key
+    ):
+        with pytds.connect(
+            dsn=address[0],
+            port=address[1],
+            user="sa",
+            password="password",
+            disable_connect_retry=True,
+            autocommit=True,
+            cafile=root_ca_path,
+            logical_server_name="logical.example.com",
+            tls_hostname="certname",
+        ) as con:
+            login = con._tds_socket._login
+            # server_name (LOGIN7/SPN) keeps the logical override
+            assert login.server_name == "logical.example.com"
+            # tls_hostname overrides validation independently of server_name
+            assert login.tls_hostname == "certname"
+
+
+def test_tls_hostname_mismatch_fails(test_ca, server_key, address, root_ca_path):
+    from cryptography import x509
+
+    builder = x509.CertificateBuilder()
+
+    cert = test_ca.sign(
+        name="certname",
+        cb=builder.subject_name(
+            x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, "certname")])
+        )
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+        .serial_number(x509.random_serial_number())
+        .public_key(server_key.public_key()),
+    )
+
+    with SimpleServer(
+        address=address, enc=PreLoginEnc.ENCRYPT_OFF, cert=cert, key=server_key
+    ):
+        with pytest.raises(pytds.Error) as excinfo:
+            pytds.connect(
+                dsn=address[0],
+                port=address[1],
+                user="sa",
+                password="password",
+                disable_connect_retry=True,
+                cafile=root_ca_path,
+                tls_hostname="wrong.example.com",
+            )
+        assert "Certificate does not match host name 'wrong.example.com'" in str(
+            excinfo.value
+        )
+
+
 @pytest.mark.skipif(
     not utils.hashlib_supports_md4(),
     reason="Current python version does not support MD4 which is needed for NTLM"

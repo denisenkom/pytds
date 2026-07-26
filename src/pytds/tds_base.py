@@ -959,6 +959,7 @@ class _TdsLogin:
         self.client_host_name = ""
         self.library = ""
         self.server_name = ""
+        self.tls_hostname = ""
         self.instance_name = ""
         self.user_name = ""
         self.password = ""
