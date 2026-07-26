@@ -769,6 +769,38 @@ class TestMessages(unittest.TestCase):
             b"\xfe\xff\xff\xff\xff\xff\xff\xff\x08\x00\x00\x00t\x00e\x00s\x00t\x00\x00\x00\x00\x00",
         )
 
+    def test_varbinary_max_serializer(self):
+        # Regression: VarBinarySerializerMax.write must send PLP_UNKNOWN as the
+        # total length (like the NVarChar/VarChar Max serializers above), not the
+        # known length. Sending the known length makes SQL Server's bulk path read
+        # the value -- including the inner chunk-length prefix -- as raw bytes,
+        # corrupting varbinary(max) bulk inserts (and varbinary(max) -> CLR UDT).
+        sock = _FakeSock(b"")
+        tds = _TdsSocket(sock=sock, login=_TdsLogin())
+        tds.tds_version = TDS72
+        w = tds._main_session._writer
+
+        t = VarBinarySerializerMax()
+
+        t.write_info(w)
+        self.assertEqual(w._buf[: w._pos], b"\xff\xff")  # PLP_MARKER -> varbinary(max)
+
+        w._pos = 0
+        t.write(w, b"test")
+        self.assertEqual(
+            w._buf[: w._pos],
+            b"\xfe\xff\xff\xff\xff\xff\xff\xff"  # total length = PLP_UNKNOWN (streaming)
+            b"\x04\x00\x00\x00"  # chunk length = 4
+            b"test"  # chunk data
+            b"\x00\x00\x00\x00",  # PLP terminator (zero-length chunk)
+        )
+
+        w._pos = 0
+        t.write(w, None)
+        self.assertEqual(
+            w._buf[: w._pos], b"\xff\xff\xff\xff\xff\xff\xff\xff"  # PLP_NULL
+        )
+
 
 def infer_tds_serializer(
     value, serializer_factory, collation=None, bytes_to_unicode=True, allow_tz=True

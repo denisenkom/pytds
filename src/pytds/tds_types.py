@@ -1187,7 +1187,13 @@ class VarBinarySerializerMax(VarBinarySerializer):
         if val is None:
             w.put_uint8(tds_base.PLP_NULL)
         else:
-            w.put_uint8(len(val))
+            # PLP total length must be PLP_UNKNOWN (streaming), like the NVarChar/
+            # VarChar Max serializers. Sending the known length here makes SQL
+            # Server's bulk path read the value (incl. the inner chunk-length
+            # prefix) as raw bytes, corrupting it -- which surfaces as a
+            # "premature end-of-message" desync, or a UDT deserialize running off
+            # the end when bulk-copying varbinary(max) into a CLR UDT column.
+            w.put_uint8(tds_base.PLP_UNKNOWN)
             if val:
                 w.put_uint(len(val))
                 w.write(val)
