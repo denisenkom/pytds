@@ -141,6 +141,8 @@ def connect(
     use_sso: bool = False,
     isolation_level: int = 0,
     access_token_callable: Callable[[], str] | None = None,
+    logical_server_name: str | None = None,
+    tls_hostname: str | None = None,
 ):
     """
     Opens connection to the database
@@ -200,6 +202,14 @@ def connect(
              Cannot be used together with auth parameter.
     :keyword access_token_callable: Callable that returns a Federated Authentication Token
     :type access_token_callable: Callable[[], str]
+    :keyword logical_server_name: The server name to present during login and to use when
+      building the Kerberos/SSPI SPN, if it differs from the host being connected to
+      (e.g. when connecting through a proxy). Defaults to the connection host.
+    :type logical_server_name: str
+    :keyword tls_hostname: The host name to use for TLS SNI and certificate validation, if it
+      differs from ``logical_server_name`` (e.g. when a proxy performs TLS termination under a
+      different name). Defaults to ``logical_server_name``.
+    :type tls_hostname: str
     :returns: An instance of :class:`Connection`
     """
     if use_sso and auth:
@@ -295,7 +305,7 @@ def connect(
         parsed_servers.append((host, instance_port, instance))
 
     if use_sso:
-        spn = f"MSSQLSvc@{parsed_servers[0][0]}:{parsed_servers[0][1]}"
+        spn = f"MSSQLSvc@{logical_server_name or parsed_servers[0][0]}:{parsed_servers[0][1]}"
         try:
             login.auth = pytds_login.SspiAuth(spn=spn)
         except ImportError:
@@ -362,6 +372,8 @@ def connect(
         return _connect(
             login=login,
             host=host,
+            logical_server_name=logical_server_name,
+            tls_hostname=tls_hostname,
             port=port,
             instance=instance,
             timeout=attempt_timeout,
@@ -411,6 +423,8 @@ def connect(
 def _connect(
     login: tds_base._TdsLogin,
     host: str,
+    logical_server_name: str | None,
+    tls_hostname: str | None,
     port: int | None,
     instance: str,
     timeout: float,
@@ -426,7 +440,8 @@ def _connect(
     """
     Establish physical connection and login.
     """
-    login.server_name = host
+    login.server_name = logical_server_name or host
+    login.tls_hostname = tls_hostname or login.server_name
     login.instance_name = instance
     resolved_port = instance_browser_client.resolve_instance_port(
         server=host, port=port, instance=instance, timeout=timeout
@@ -465,11 +480,11 @@ def _connect(
             ###  Change SPN once route exists
 
             if isinstance(login.auth, pytds_login.SspiAuth):
-                route_spn = f"MSSQLSvc@{host}:{port}"
+                route_spn = f"MSSQLSvc@{login.server_name}:{port}"
                 login.auth = pytds_login.SspiAuth(
                     user_name=login.user_name,
                     password=login.password,
-                    server_name=host,
+                    server_name=login.server_name,
                     port=port,
                     spn=route_spn,
                 )
@@ -477,6 +492,8 @@ def _connect(
             return _connect(
                 login=login,
                 host=route["server"],
+                logical_server_name=logical_server_name,
+                tls_hostname=tls_hostname,
                 port=route["port"],
                 instance=instance,
                 timeout=timeout,

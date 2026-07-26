@@ -162,7 +162,7 @@ def establish_channel(tds_sock: _TdsSession) -> None:
     if not tls_ctx:
         raise Exception("login.tls_ctx is not set unexpectedly")
 
-    bhost = login.server_name.encode("ascii")
+    bhost = login.tls_hostname.encode("ascii")
     tls_ctx = login.tls_ctx
     if tls_ctx is None:
         raise tds_base.Error("TLS context is not set")
@@ -211,7 +211,7 @@ def establish_channel(tds_sock: _TdsSession) -> None:
                 if not validate_host(cert=conn.get_peer_certificate(), name=bhost):
                     raise tds_base.Error(
                         "Certificate does not match host name '{}'".format(
-                            login.server_name
+                            login.tls_hostname
                         )
                     )
             enc_sock = EncryptedSocket(transport=tds_sock.conn.sock, tls_conn=conn)
