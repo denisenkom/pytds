@@ -1,0 +1,6 @@
+# cryptography removed 32-bit Windows wheel support in 49.0.0
+# (deprecated in 47.0.0, removed in 49.0.0 - see
+# https://cryptography.io/en/latest/changelog/). Applied only to the
+# 32-bit AppVeyor leg via PIP_CONSTRAINT so 64-bit legs still get the
+# latest cryptography release.
+cryptography<49.0.0

@@ -11,6 +11,9 @@ environment:
   matrix:
     - PYTHON: "C:\\Python310"
       SQLINSTANCE: SQL2017
+      # cryptography dropped 32-bit Windows wheels in 49.0.0; cap it here only
+      # so 64-bit legs keep getting the latest release. See win32_constraints.txt
+      PIP_CONSTRAINT: win32_constraints.txt
     - PYTHON: "C:\\Python310-x64"
       SQLINSTANCE: SQL2017
     - PYTHON: "C:\\Python310-x64"
