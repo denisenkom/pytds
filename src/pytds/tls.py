@@ -94,8 +94,9 @@ def verify_cb(conn, cert, err_num, err_depth, ret_code: int) -> bool:
 
 
 def is_san_matching(san: str, host_name: str) -> bool:
+    host_name = host_name.lower()
     for item in san.split(','):
-        dnsentry = item.strip().removeprefix('DNS:').strip()
+        dnsentry = item.strip().removeprefix('DNS:').strip().lower()
         # SANs are usually have form like: DNS:hostname
         if dnsentry == host_name:
             return True

@@ -18,3 +18,9 @@ def test_san():
     # test that DNS: prefix removal doesn't strip uppercase letters from hostname
     assert is_san_matching("DNS:DNSSERVER.example.com", "DNSSERVER.example.com")
     assert is_san_matching("DNS:SQL-DNS-Node.database.windows.net", "SQL-DNS-Node.database.windows.net")
+    # test that SAN matching is case insensitive, DNS names are not case sensitive
+    assert is_san_matching("DATABASE.COM", "database.com")
+    assert is_san_matching("database.com", "DATABASE.COM")
+    assert is_san_matching("DaTaBaSe.CoM", "dAtAbAsE.cOm")
+    assert is_san_matching("DNS:*.Database.Windows.Net", "my-sql-server.database.windows.net")
+    assert is_san_matching("DNS:*.database.windows.net", "my-sql-server.DATABASE.WINDOWS.NET")
