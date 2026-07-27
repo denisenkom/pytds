@@ -323,7 +323,10 @@ def test_empty_query(cursor):
         (pytds.tds_types.VariantType(), [None]),
         # (pytds.tds_types.VariantType(), [100]),
         # (pytds.tds_types.ImageType(), [None]),
-        (pytds.tds_types.VarBinaryMaxType(), [None]),
+        (
+            pytds.tds_types.VarBinaryMaxType(),
+            [b"x" * 10000, b"foo", b"", None, b"bar"],
+        ),
         # (pytds.tds_types.NTextType(), [None]),
         # (pytds.tds_types.TextType(), [None]),
         # (pytds.tds_types.ImageType(), [b'']),
