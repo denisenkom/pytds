@@ -20,9 +20,9 @@ def test_san():
     # test stripping DNS:
     assert is_san_matching("DNS:westus2-a.control.database.windows.net", "westus2-a.control.database.windows.net")
     assert is_san_matching("DNS:*.database.windows.net", "my-sql-server.database.windows.net")
-    # test parsing multiple SANs
-    assert is_san_matching("DNS:westus2-a.control.database.windows.net,DNS:*.database.windows.net", "my-sql-server.database.windows.net")
-    assert is_san_matching("DNS:westus2-a.control.database.windows.net, DNS:*.database.windows.net", "my-sql-server.database.windows.net")
+    # test that a non-matching entry among multiple SANs doesn't affect the matching one
+    assert not is_san_matching("DNS:westus2-a.control.database.windows.net", "my-sql-server.database.windows.net")
+    assert is_san_matching("DNS:*.database.windows.net", "my-sql-server.database.windows.net")
     # test that DNS: prefix removal doesn't strip uppercase letters from hostname
     assert is_san_matching("DNS:DNSSERVER.example.com", "DNSSERVER.example.com")
     assert is_san_matching("DNS:SQL-DNS-Node.database.windows.net", "SQL-DNS-Node.database.windows.net")
@@ -73,3 +73,11 @@ def test_validate_host_san_match():
 def test_validate_host_san_no_match():
     cert = _make_cert("database.com", ["other.database.windows.net"])
     assert not validate_host(cert, b"my-sql-server.database.windows.net")
+
+
+def test_validate_host_multiple_san_entries():
+    cert = _make_cert(
+        "database.com",
+        ["westus2-a.control.database.windows.net", "*.database.windows.net"],
+    )
+    assert validate_host(cert, b"my-sql-server.database.windows.net")

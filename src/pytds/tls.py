@@ -96,22 +96,19 @@ def verify_cb(conn, cert, err_num, err_depth, ret_code: int) -> bool:
     return ret_code == 1
 
 
-def is_san_matching(san: str, host_name: str) -> bool:
+def is_san_matching(dnsentry: str, host_name: str) -> bool:
     host_name = host_name.lower()
-    for item in san.split(','):
-        dnsentry = item.strip().removeprefix('DNS:').strip().lower()
-        # SANs are usually have form like: DNS:hostname
-        if dnsentry == host_name:
+    # SANs usually have form like: DNS:hostname
+    dnsentry = dnsentry.strip().removeprefix('DNS:').strip().lower()
+    if dnsentry == host_name:
+        return True
+    if dnsentry[0:2] == "*.":  # support for wildcards, but only at the first position
+        afterstar_parts = dnsentry[2:]
+        afterstar_parts_sname = ".".join(
+            host_name.split(".")[1:]
+        )  # remove first part of dns name
+        if afterstar_parts == afterstar_parts_sname:
             return True
-        if (
-            dnsentry[0:2] == "*."
-        ):  # support for wildcards, but only at the first position
-            afterstar_parts = dnsentry[2:]
-            afterstar_parts_sname = ".".join(
-                host_name.split(".")[1:]
-            )  # remove first part of dns name
-            if afterstar_parts == afterstar_parts_sname:
-                return True
     return False
 
 
@@ -142,7 +139,7 @@ def validate_host(cert, name: bytes) -> bool:
         pass
     else:
         dns_names = san_ext.value.get_values_for_type(x509.DNSName)
-        if is_san_matching(",".join(dns_names), s_name):
+        if any(is_san_matching(dns_name, s_name) for dns_name in dns_names):
             return True
 
     # TODO check if wildcard is needed in CN as well
