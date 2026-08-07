@@ -11,6 +11,9 @@ except ImportError:
 else:
     OPENSSL_AVAILABLE = True
 
+from cryptography import x509
+from cryptography.x509.oid import ExtensionOID
+
 from . import tds_base
 
 BUFSIZE = 65536
@@ -131,12 +134,16 @@ def validate_host(cert, name: bytes) -> bool:
 
     # checking SAN
     s_name = name.decode("ascii")
-    for i in range(cert.get_extension_count()):
-        ext = cert.get_extension(i)
-        if ext.get_short_name() == b"subjectAltName":
-            s = str(ext)
-            if is_san_matching(s, s_name):
-                return True
+    try:
+        san_ext = cert.to_cryptography().extensions.get_extension_for_oid(
+            ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+        )
+    except x509.ExtensionNotFound:
+        pass
+    else:
+        dns_names = san_ext.value.get_values_for_type(x509.DNSName)
+        if is_san_matching(",".join(dns_names), s_name):
+            return True
 
     # TODO check if wildcard is needed in CN as well
     return False
