@@ -11,6 +11,9 @@ except ImportError:
 else:
     OPENSSL_AVAILABLE = True
 
+from cryptography import x509
+from cryptography.x509.oid import ExtensionOID
+
 from . import tds_base
 
 BUFSIZE = 65536
@@ -93,22 +96,19 @@ def verify_cb(conn, cert, err_num, err_depth, ret_code: int) -> bool:
     return ret_code == 1
 
 
-def is_san_matching(san: str, host_name: str) -> bool:
+def is_san_matching(dnsentry: str, host_name: str) -> bool:
     host_name = host_name.lower()
-    for item in san.split(','):
-        dnsentry = item.strip().removeprefix('DNS:').strip().lower()
-        # SANs are usually have form like: DNS:hostname
-        if dnsentry == host_name:
+    # SANs usually have form like: DNS:hostname
+    dnsentry = dnsentry.strip().removeprefix('DNS:').strip().lower()
+    if dnsentry == host_name:
+        return True
+    if dnsentry[0:2] == "*.":  # support for wildcards, but only at the first position
+        afterstar_parts = dnsentry[2:]
+        afterstar_parts_sname = ".".join(
+            host_name.split(".")[1:]
+        )  # remove first part of dns name
+        if afterstar_parts == afterstar_parts_sname:
             return True
-        if (
-            dnsentry[0:2] == "*."
-        ):  # support for wildcards, but only at the first position
-            afterstar_parts = dnsentry[2:]
-            afterstar_parts_sname = ".".join(
-                host_name.split(".")[1:]
-            )  # remove first part of dns name
-            if afterstar_parts == afterstar_parts_sname:
-                return True
     return False
 
 
@@ -131,12 +131,16 @@ def validate_host(cert, name: bytes) -> bool:
 
     # checking SAN
     s_name = name.decode("ascii")
-    for i in range(cert.get_extension_count()):
-        ext = cert.get_extension(i)
-        if ext.get_short_name() == b"subjectAltName":
-            s = str(ext)
-            if is_san_matching(s, s_name):
-                return True
+    try:
+        san_ext = cert.to_cryptography().extensions.get_extension_for_oid(
+            ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+        )
+    except x509.ExtensionNotFound:
+        pass
+    else:
+        dns_names = san_ext.value.get_values_for_type(x509.DNSName)
+        if any(is_san_matching(dns_name, s_name) for dns_name in dns_names):
+            return True
 
     # TODO check if wildcard is needed in CN as well
     return False
